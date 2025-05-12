@@ -1,0 +1,40 @@
+{
+  "name": "dauvray/laravel-socializer",
+  "description": "genaral functionality for Laravel CMS",
+  "keywords": ["laravel", "cms"],
+  "license": "MIT",
+  "authors": [
+    {
+      "name": "David Auvray",
+      "email": "dauvray@outlook.fr"
+    }
+  ],
+  "require": {
+    "php": "^8.2",
+    "laravel/framework": "^12.0",
+    "vesoft-inc/nebula-php": "dev-main"
+  },
+  "autoload": {
+    "psr-4": {
+      "Dauvray\\Socializer\\": "src/",
+      "Dauvray\\Socializer\\Factories\\": "src/factories/",
+      "Dauvray\\Socializer\\Seeders\\": "src/seeders/"
+    },
+    "files": [
+
+    ]
+  },
+  "minimum-stability": "dev",
+  "prefer-stable": true,
+  "extra": {
+    "laravel": {
+      "providers": [
+        "Dauvray\\Socializer\\ServiceProvider"
+      ],
+      "aliases": {
+      }
+    }
+  },
+  "repositories": {
+  }
+}

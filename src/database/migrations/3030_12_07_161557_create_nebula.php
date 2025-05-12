@@ -1,0 +1,211 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+
+return new class extends Migration
+{
+    /**
+     * Run the migrations.
+     */
+    public function up(): void
+    {
+        $nebula = app('nebulaGraph');
+
+        /*
+        | SPACE
+        */
+
+        $nebula->createSpace(config('database.connections.nebula.space'));
+        sleep(config('socializer.nebulagraph.sleeping_duration'));
+        
+        $nebula->useSpace(config('database.connections.nebula.space'));
+
+        /*
+        | TAGS
+        */
+
+        $nebula->createTag(config('socializer.nebulagraph.tags.user'));
+        $nebula->createTag(config('socializer.nebulagraph.tags.comment'));
+        $nebula->createTag(config('socializer.nebulagraph.tags.post'));
+        $nebula->createTag(config('socializer.nebulagraph.tags.share'));
+        $nebula->createTag(config('socializer.nebulagraph.tags.feed'));
+        $nebula->createTag(config('socializer.nebulagraph.tags.wall'));
+        $nebula->createTag(config('socializer.nebulagraph.tags.chat'));
+        $nebula->createTag(config('socializer.nebulagraph.tags.message'));
+        $nebula->createTag(config('socializer.nebulagraph.tags.server'));
+        $nebula->createTag(config('socializer.nebulagraph.tags.room'));
+        $nebula->createTag(config('socializer.nebulagraph.tags.data'));
+        $nebula->createTag(config('socializer.nebulagraph.tags.page'));
+        $nebula->createTag(config('socializer.nebulagraph.tags.whiteboard'));
+        $nebula->createTag(config('socializer.nebulagraph.tags.classroom'));
+        $nebula->createTag(config('socializer.nebulagraph.tags.article'));
+        $nebula->createTag(config('socializer.nebulagraph.tags.marketplace'));
+        $nebula->createTag(config('socializer.nebulagraph.tags.application'));
+
+        /*
+        | EDGE
+        */
+        
+        $nebula->createEdge(config('socializer.nebulagraph.edges.has_creator'));
+        $nebula->createEdge(config('socializer.nebulagraph.edges.reply_of'));
+        $nebula->createEdge(config('socializer.nebulagraph.edges.liked_by'));
+        $nebula->createEdge(config('socializer.nebulagraph.edges.disliked_by'));
+        $nebula->createEdge(config('socializer.nebulagraph.edges.followed_by'));
+        $nebula->createEdge(config('socializer.nebulagraph.edges.published_in'));
+        $nebula->createEdge(config('socializer.nebulagraph.edges.owned_by'));
+        $nebula->createEdge(config('socializer.nebulagraph.edges.shared_by'));
+        $nebula->createEdge(config('socializer.nebulagraph.edges.sharing_of'));
+        $nebula->createEdge(config('socializer.nebulagraph.edges.shared_in'));
+        $nebula->createEdge(config('socializer.nebulagraph.edges.registered_in'));
+
+        /*
+        | INDEXES
+        */
+
+        $nebula->createTagIndex('user', 'user_index');
+        $nebula->createTagIndex('feed', 'feed_index');
+        $nebula->createTagIndex('post', 'post_index');
+        $nebula->createTagIndex('server', 'server_index');
+        $nebula->createTagIndex('room', 'room_index');
+
+
+        sleep(config('socializer.nebulagraph.sleeping_duration'));
+
+        /*
+        | VERTEX
+        */
+        $feed_users = [];
+
+        foreach(config('estarter.models.user')::all() as $user) {
+
+            $nebula->insertVertex(
+                config('socializer.nebulagraph.tags.user.name'), 
+                array_merge(
+                    $nebula->populatePropsFromPattern(
+                        $user, 
+                        config('socializer.nebulagraph.vertices.user')
+                    ),
+                    [
+                        'identifier' => hideIdentifier($user)
+                    ]
+                )
+            );
+
+            $result = $nebula->insertVertex(
+                config('socializer.nebulagraph.tags.feed.name'), 
+                    []
+            );
+
+            $result2 = $nebula->insertVertex(
+                config('socializer.nebulagraph.tags.wall.name'), 
+                    [
+                        'questionnaire_id' => config('socializer.posts.classic_form'),
+                    ]
+            );
+
+            $feed_users[] = [
+                'user' => $user->vertexid,
+                'feed' => getVertexIdFromInsert($result),
+                'wall' => getVertexIdFromInsert($result2)
+            ];
+        }
+
+        
+        foreach(config('eblogger.models.article')::all() as $article) {
+            $nebula->insertVertex(
+                config('socializer.nebulagraph.tags.article.name'), 
+                array_merge(
+                    $nebula->populatePropsFromPattern(
+                        $article, 
+                        config('socializer.nebulagraph.vertices.article')
+                    ),
+                    [
+                        'identifier' => hideIdentifier($article)
+                    ]
+                )
+            );
+        }
+
+        $nebula->insertVertex(
+            config('socializer.nebulagraph.tags.marketplace.name'),
+            ['id' => 'marketplace']
+        );
+       
+
+        sleep(config('socializer.nebulagraph.sleeping_duration'));
+
+        /*
+        | RELATIONSHIP
+        */
+
+        foreach( $feed_users as $relation) {
+
+            // create user feed
+            $nebula->insertEdge(
+                config('socializer.nebulagraph.edges.owned_by.name'), 
+                [
+                    $relation['feed'].'->'.$relation['user'] => config('socializer.nebulagraph.edges.owned_by.props')
+                ]
+            );
+
+            // create user wall
+            $nebula->insertEdge(
+                config('socializer.nebulagraph.edges.owned_by.name'), 
+                [
+                    $relation['wall'].'->'.$relation['user'] => config('socializer.nebulagraph.edges.owned_by.props')
+                ]
+            );
+
+            // user follow his wall
+            $nebula->insertEdge(
+                config('socializer.nebulagraph.edges.followed_by.name'), 
+                [
+                    $relation['wall'].'->'.$relation['user'] => config('socializer.nebulagraph.edges.followed_by.props')
+                ]
+            );
+        }
+
+       
+        foreach(config('eblogger.models.article')::all() as $article) {
+            // relie article et auteur
+            // Defini le sens de la relation et passe des parametres
+            // e.g : Article2->User3 => []
+            $nebula->insertEdge(
+                config('socializer.nebulagraph.edges.has_creator.name'), 
+                [
+                    config('socializer.nebulagraph.tags.article.name').$article->id.'->'.config('socializer.nebulagraph.tags.user.name').$article->author->id => config('socializer.nebulagraph.edges.has_creator.props')
+                ]
+            );
+        }
+        
+    }
+
+    /**
+     * Reverse the migrations.
+     */
+    public function down(): void
+    {
+        $nebula = app('nebulaGraph');
+
+        $nebula->dropSpace(config('database.connections.nebula.space'));
+
+        // $nebula->dropTag(config('socializer.nebulagraph.tags.comment.name'));
+        // $nebula->dropTag(config('socializer.nebulagraph.tags.user.name'));
+
+        // $users = User::all();
+
+        // foreach($users as $user) {
+        //     $nebula->deleteVertex([config('socializer.nebulagraph.tags.user.name').$user->id], true); 
+        // }
+
+        // if(config('eblogger')) {
+        //     $nebula->dropTag(config('socializer.nebulagraph.tags.article.name'));
+        //     $articles = config('eblogger.models.article')::all();
+        //     foreach($articles as $article) {
+        //         $nebula->deleteVertex([config('socializer.nebulagraph.tags.article.name').$article->id], true);
+        //     }
+        // }
+
+        // $nebula->dropEdge(config('socializer.nebulagraph.edges.has_creator.name'));
+    }
+};

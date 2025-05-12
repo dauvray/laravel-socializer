@@ -1,0 +1,299 @@
+<?php
+
+namespace Dauvray\Socializer\app\Services;
+
+use Illuminate\Support\Facades\Auth;
+
+class ApplicationIA
+{
+    public $nebula = null;
+    public $user = null;
+
+    public function __construct()
+    {
+        $this->nebula = app('nebulaGraph');
+        $this->user = Auth::user();
+    }
+
+    public function createApplicationVertice($vid, $new_content)
+    {
+        // todo a protéger
+        unset($new_content['content_type']);
+
+        $vertex = $this->nebula->insertVertex(
+            config('socializer.nebulagraph.tags.application.name'),
+            $new_content
+        );
+
+        if(!is_array($vertex)) {
+            return false;
+        } 
+
+        $new_vid = getVertexIdFromInsert($vertex);
+
+        if(!$new_vid) {
+            return false;
+        }
+
+        // create mongodb application
+        $application = config('socializer.models.application')::create([
+            "model_id" => $this->user->id,
+            "model_type" => get_class($this->user),
+            "vertexid" => $new_vid,
+            "infos" => null,
+            "code" => null,
+            "specs" => null,
+            "data" => null,
+        ]);
+
+        $application->code =  [
+            "name" => 'SFC',
+            "dependencies" => ['Vue', 'Bootstrap', 'vue-i18n'],
+            "template" => '<h1>{{ message.hello }}</h1>',
+            "script" => "{  name: 'SFC',props: ['users', 'room'],  data() {return { }}}",
+            "style" => '',
+            'translations' => [
+                'fr' => [
+                    'message' => [
+                        'hello' => 'Bonjour',
+                    ],
+                ],
+                'en' => [
+                    'message' => [
+                        'hello' => 'Hello',
+                    ],
+                ],
+            ], 
+            "metadata" => [
+                "version" => "1.0.0",
+                "createdAt" => "current date",
+                "author" => "Creator Name",
+                "description" => "component description"
+            ]
+            ];
+
+        $application->save();
+        
+        // application / room relation
+        $this->nebula->insertEdge(
+            config('socializer.nebulagraph.edges.published_in.name'), 
+            [
+                $new_vid.'->'.$vid => config('socializer.nebulagraph.edges.published_in.props')
+            ]
+        );
+
+        // application / creator relation
+        $this->nebula->insertEdge(
+            config('socializer.nebulagraph.edges.has_creator.name'), 
+            [
+                $new_vid.'->'.$this->user->vertexid => config('socializer.nebulagraph.edges.has_creator.props')
+            ]
+        );
+
+        // create page to store application database 
+        $vertex = $this->nebula->insertVertex(
+            config('socializer.nebulagraph.tags.page.name'),
+            $new_content
+        );
+
+        if(!is_array($vertex)) {
+            return false;
+        } 
+
+        $page_vid = getVertexIdFromInsert($vertex);
+
+        // create mongodb page for data
+        $page = config('socializer.models.page')::create([
+            "model_id" => $this->user->id,
+            "model_type" => get_class($this->user),
+            "application_id" => $new_vid,
+            "room_id" => $vid,
+            "content" => null,
+            "vertexid" => $page_vid,
+        ]);
+
+        // page / room relation
+        $this->nebula->insertEdge(
+            config('socializer.nebulagraph.edges.owned_by.name'), 
+            [
+                $page_vid.'->'.$vid => config('socializer.nebulagraph.edges.owned_by.props')
+            ]
+        );
+
+        // page / application relation
+        $this->nebula->insertEdge(
+            config('socializer.nebulagraph.edges.published_in.name'), 
+            [
+                $page_vid.'->'.$new_vid => config('socializer.nebulagraph.edges.published_in.props')
+            ]
+        );
+
+        return $new_vid;
+    }
+
+    public function saveApplicationIA($request)
+    {
+        // todo a protéger
+        $application = config('socializer.models.application')::where([
+            ["vertexid", $request->get('vertexid')],
+        ])->first();
+
+        $data = $request->get('data');
+        $application->code = $data['code'] ?? null;
+        $application->infos = $data['infos'] ?? null;
+        $application->save();
+
+        $this->setPublished($application);
+
+        return response()->json(['message' => 'Application sauvegardée'], 200);
+    }
+
+    private function setPublished($application)
+    {
+
+        if(!isset($application->infos['published'])) {
+            return;
+        }
+
+        $published = filter_var($application->infos['published'], FILTER_VALIDATE_BOOLEAN);
+
+        if($published) {
+            $this->nebula->insertEdge('published_in', [$application->vertexid.'->marketplace' => []]);
+        } else {
+            $this->nebula->deleteEdge('published_in', [$application->vertexid.'->marketplace']);
+        }
+    }
+
+    public function databaseAction($request)
+    {
+        // todo a protéger
+
+        try{
+            $operation = $request->get('operation');
+            $payload = $request->get('content');
+            $vertexid = $request->get('vertexid');
+
+            $database_app = config('socializer.models.page')::where([
+                ["application_id", $vertexid],
+            ])->first();
+
+            $database = $database_app->content ?? [];
+
+            switch($operation) {
+                case 'create':
+                    $database[] = $payload;
+                    break;
+                case 'update':
+                    // parfois le modele utilise update au lieu de create pour un seul element
+                    $exist = false;
+                    foreach($database as $key => $value) {
+                        // if($this->_isMultiArray($payload)) {
+
+                        //     foreach($payload as $p) {
+                        //         if($value->id == $p['id']) {
+                        //             $database[$key] = $p;
+                        //             $exist = true;
+                        //         }
+                        //     }
+
+                        // } else {
+
+                            if($value['id'] == $payload['id']) {
+                                $database[$key] = $payload;
+                                $exist = true;
+                            }
+                        //}
+                    }
+
+                    if(!$exist) {
+                        $database[] = $payload;
+                    }
+                    break;
+                case 'delete':
+                    $select_key = null;
+                    foreach($database as $key => $value) {
+
+                        // is a list of elements ?
+                        // if($this->_isMultiArray($payload)) {
+
+                        //     $select_key = [];
+
+                        //     foreach($payload as $p) {
+                            
+                        //         if($value->id == $p['id']) {
+                        //             $select_key[] = $key;
+                        //         }
+                        //     }
+
+                        // } else {
+
+                            if($value['id'] == $payload['id']) {
+                                $select_key = $key;
+                            }
+                        //}
+                    }
+
+                    if(is_array($select_key)) {
+                        foreach($select_key as $key) {
+                            unset($database[$key]);
+                        }
+                    } else  {
+                        unset($database[$select_key]);
+                    }
+                    break;
+            }
+
+            $database_app->content = $database;
+
+            if($database_app->save()) {
+                return response()->json([
+                    'action'=> 'database',
+                    'data' => [
+                        'operation' => $operation, 
+                        'status' => 'success',
+                        'content' => $payload,
+                        ]
+                ], 200);
+            }
+
+        } catch(\Exception $e) {
+            
+            return response()->json([
+                'action'=> 'database',
+                'data' => [
+                    'operation' => $operation, 
+                    'status' => 'error'
+                    ]
+            ]);
+
+        }
+    }
+
+    // private function _isMultiArray($a){
+    //     if(isset($a[0])) return TRUE;
+    //     return FALSE;
+    // }
+
+    public function loadApplicationIA($request)
+    {
+        $room_id = $request->get('room_id');
+
+        $app_vertex = $this->nebula->execute("MATCH (r:room)<-[:published_in]-(a:application)<-[:published_in]-(p:page) where id(r) == '$room_id' return a,p");
+       
+        $app_id = $app_vertex[0]['a']['id'];
+        $database_id = $app_vertex[0]['p']['id'];
+
+        $application = config('socializer.models.application')::where([
+            ["vertexid", $app_id],
+        ])->select('code', 'infos')->first();
+
+        $database = config('socializer.models.page')::where([
+            ["vertexid", $database_id],
+        ])->select('content')->first();
+
+        $application->code = stringIsJSON($application->code) ? json_decode($application->code) : $application->code;
+        $application->data = stringIsJSON($database->content) ? json_decode($database->content) : $database->content;
+
+        return $application;
+    }
+}

@@ -1,0 +1,323 @@
+<?php
+
+use Illuminate\Support\Facades\Route;
+
+/*----------------------------------------------------------------------
+| Comments
+|----------------------------------------------------------------------*/
+
+Route::post('/send-comment',
+    config('socializer.controllers_front.comment').'@submitComment')
+    ->name('comments.store');
+
+Route::post('/send-sub-comment',
+    config('socializer.controllers_front.comment').'@submitSubComment')
+    ->name('subcomments.store');
+
+Route::post('/delete-comment',
+    config('socializer.controllers_front.comment').'@deleteComment')
+    ->name('comments.delete');
+
+/*----------------------------------------------------------------------
+| Likes
+|----------------------------------------------------------------------*/
+
+Route::post('/send-like',
+    config('socializer.controllers_front.like').'@submitLike')
+    ->name('likes.store');
+
+/*----------------------------------------------------------------------
+| Walls
+|----------------------------------------------------------------------*/
+
+Route::get('/wall/{slug}', 
+    config('socializer.controllers_front.wall').'@getWallOwner')
+    ->name('wall.owner');
+
+/*----------------------------------------------------------------------
+| Feed
+|----------------------------------------------------------------------*/
+
+Route::get('/owner-feed/{idenfifier}', 
+    config('socializer.controllers_front.feed').'@getOwnerFeed')
+    ->name('feed.owner');
+
+Route::get('/owner-wall/{idenfifier}', 
+    config('socializer.controllers_front.feed').'@getOwnerWall')
+    ->name('wall.owner2');
+
+Route::get('/get-feed-posts/{feedid}', 
+    config('socializer.controllers_front.feed').'@getFeedPosts')
+    ->name('feed.posts');
+
+Route::post('/send-feed-post',
+    config('socializer.controllers_front.feed').'@sendFeedPost')
+    ->name('feed.send.post'); 
+
+Route::post('/share-feed-post',
+    config('socializer.controllers_front.feed').'@shareFeedPost')
+    ->name('feed.share.post'); 
+
+Route::post('/delete-feed-post',
+    config('socializer.controllers_front.feed').'@deleteFeedPost')
+    ->name('feed.delete.post'); 
+
+Route::post('/trigger-feed-activity',
+    config('socializer.controllers_front.feed').'@triggerFeedActivity')
+    ->name('feed.trigger.activity'); 
+
+Route::post('/feed-subscribe-alert',
+    config('socializer.controllers_front.feed').'@feedSubscribeAlert')
+    ->name('feed.trigger.alert'); 
+
+/*----------------------------------------------------------------------
+| Chat
+|----------------------------------------------------------------------*/
+
+Route::get('/load-my-conversations', 
+    config('socializer.controllers_front.chat').'@getConversations')
+    ->name('chat.get.conversations');
+
+Route::get('/load-conversation/{vertex_id}', 
+    config('socializer.controllers_front.chat').'@getConversation')
+    ->name('chat.get.conversation');
+
+Route::get('/create-new-conversations', 
+    config('socializer.controllers_front.chat').'@createConversation')
+    ->name('chat.create.conversation');
+
+Route::get('/delete-conversation/{vertex_id}', 
+    config('socializer.controllers_front.chat').'@deleteConversation')
+    ->name('chat.delete.conversation');
+
+Route::get('/quit-conversation/{vertex_id}', 
+    config('socializer.controllers_front.chat').'@quitConversation')
+    ->name('chat.quit.conversation');
+
+Route::post('/send-chat-message',
+    config('socializer.controllers_front.chat').'@sendMessage')
+    ->name('chat.send');
+
+Route::post('/add-contact-to-conversation',
+    config('socializer.controllers_front.chat').'@addContactToConversation')
+    ->name('chat.add.contact');
+
+/*----------------------------------------------------------------------
+| Servers
+|----------------------------------------------------------------------*/
+
+Route::post('/create-server', 
+    config('socializer.controllers_front.server').'@createServer')
+    ->name('server.create');
+
+Route::post('/update-server', 
+    config('socializer.controllers_front.server').'@updateServer')
+    ->name('server.update');
+
+Route::post('/update-server-rooms', 
+    config('socializer.controllers_front.server').'@updateServerRooms')
+    ->name('server.update.rooms');
+
+Route::get('/delete-server/{vertex_id}', 
+    config('socializer.controllers_front.server').'@deleteServer')
+    ->name('server.delete');
+
+Route::get('/get-registered-servers', 
+    config('socializer.controllers_front.server').'@getRegisteredServers')
+    ->name('server.load.registered');
+
+Route::get('/get-all-servers', 
+    config('socializer.controllers_front.server').'@getAllServers')
+    ->name('server.load.all');
+
+Route::get('/load-server/{vertex_id}', 
+    config('socializer.controllers_front.server').'@getServer')
+    ->name('server.get.server');
+
+/*----------------------------------------------------------------------
+| Questionnaires
+|----------------------------------------------------------------------*/    
+
+Route::post('/get-server-questionnaire', 
+    config('socializer.controllers_front.server').'@getServerQuestionnaires')
+    ->name('server.get.questionnaire');
+
+Route::post('/save-server-questionnaire', 
+    config('socializer.controllers_front.server').'@manageServerQuestionnaires')
+    ->name('server.manage.questionnaire');
+
+Route::post('/update-server-questionnaire', 
+    config('socializer.controllers_front.server').'@updateServerQuestionnaires')
+    ->name('server.update.questionnaire');
+
+Route::post('/load-server-questionnaire-list', 
+    config('socializer.controllers_front.server').'@getServerQuestionnaireList')
+    ->name('server.get.questionnaires');
+
+Route::post('delete-server-questionnaire',
+    config('socializer.controllers_front.server').'@deleteServerQuestionnaire');
+
+Route::post('/send-social-answers', 
+    config('socializer.controllers_front.server').'@sendQuestionnaireAnswers');
+
+Route::post('/get-answers-server/{server_id}', 
+    config('socializer.controllers_front.server').'@getQuestionnaireAnswers');
+
+Route::post('/send-server-questionnaire-filters', 
+    config('socializer.controllers_front.server').'@applyFilters');
+   
+Route::post('/get-server-questionnaire-filters', 
+    config('socializer.controllers_front.server').'@getQuestionnaireFilters');    
+
+Route::post('/renderer-server-questionnaire',
+    config('socializer.controllers_front.server').'@getJSONRender');
+
+Route::post('/get-server-panel-answers-list',
+    config('socializer.controllers_front.server').'@getAdminpanelList');
+
+Route::post('/get-server-author-answers-list',
+    config('socializer.controllers_front.server').'@getAuthorpanelList');
+
+Route::post('/delete-server-answer-questionnaire',
+    config('socializer.controllers_front.server').'@deleteAnswersQuestionnaire');
+
+/*----------------------------------------------------------------------
+| Rooms
+|----------------------------------------------------------------------*/
+
+Route::post('/create-server-room', 
+    config('socializer.controllers_front.server').'@createRoomServer')
+    ->name('server.create.room');
+
+Route::post('/create-sub-content', 
+    config('socializer.controllers_front.server').'@createSubContent')
+    ->name('server.create.subcontent');
+
+Route::post('/update-server-room', 
+    config('socializer.controllers_front.server').'@updateRoomServer')
+    ->name('server.update.room');
+
+Route::get('/delete-server-room/{vertex_id}', 
+    config('socializer.controllers_front.server').'@deleteRoom')
+    ->name('server.delete.room');
+
+Route::get('/load-room/{room_id}', 
+    config('socializer.controllers_front.server').'@getRoom')
+    ->name('server.get.room');
+
+Route::post('/add-room_module', 
+    config('socializer.controllers_front.server').'@addRoomModule')
+    ->name('server.module.add');
+
+ /*----------------------------------------------------------------------
+| Pages
+|----------------------------------------------------------------------*/
+
+Route::get('/get-room-page/{page_id}', 
+    config('socializer.controllers_front.page').'@loadPage')
+    ->name('server.get.page');
+
+Route::post('/update-room-page', 
+    config('socializer.controllers_front.page').'@updatePage')
+    ->name('server.update.page');
+
+
+/*----------------------------------------------------------------------
+| Users
+|----------------------------------------------------------------------*/
+
+Route::post('/get-user-list',
+    config('socializer.controllers_front.user').'@getUsersList')
+    ->name('users.load');
+
+Route::post('/send-alert-to-user', 
+    config('socializer.controllers_front.user').'@sendAlertToUser')
+    ->name('user.alert');
+
+/*----------------------------------------------------------------------
+| Followers
+|----------------------------------------------------------------------*/
+
+Route::post('/follow-user', 
+    config('socializer.controllers_front.user').'@followUser')
+    ->name('users.follow');
+    
+Route::post('/unfollow-user', 
+    config('socializer.controllers_front.user').'@unfollowUser')
+    ->name('users.unfollow');
+
+
+/*----------------------------------------------------------------------
+| Images
+|----------------------------------------------------------------------*/
+
+Route::post('/update-avatar', 
+    config('socializer.controllers_front.user').'@updateAvatar')
+    ->name('users.avatar.update');
+
+Route::post('/update-cover', 
+    config('socializer.controllers_front.user').'@updateCover')
+    ->name('users.cover.update');
+
+    /****************************
+     * FILES VueFinder
+     ****************************/
+Route::any('/server-finder-files', 
+    config('socializer.controllers_front.server').'@getVueFinderFiles')
+    ->name('server.files.index');
+
+/*----------------------------------------------------------------------
+| WhiteBoard
+|----------------------------------------------------------------------*/
+
+Route::post('/save-white-board', 
+    config('socializer.controllers_front.whiteboard').'@saveWhiteBoard')
+    ->name('whiteboard.save');
+
+
+Route::post('/load-white-board', 
+    config('socializer.controllers_front.whiteboard').'@loadWhiteBoard')
+    ->name('whiteboard.load');
+
+/*----------------------------------------------------------------------
+| Application IA
+|----------------------------------------------------------------------*/
+
+Route::post('/save-ia-application', 
+    config('socializer.controllers_front.application_ia').'@saveApplicationIA')
+    ->name('iaApp.save');
+
+Route::post('/load-ia-application', 
+    config('socializer.controllers_front.application_ia').'@loadApplicationIA')
+    ->name('iaApp.load');
+
+Route::post('/app-ia-database-action', 
+    config('socializer.controllers_front.application_ia').'@databaseAction')
+    ->name('iaApp.database');
+
+/*----------------------------------------------------------------------
+| Store
+|----------------------------------------------------------------------*/
+
+Route::post('/get-store-applications', 
+    config('socializer.controllers_front.store').'@getApplications')
+    ->name('store.load.applications');
+
+
+/*...................... WEBRTC .....................*/
+
+Route::post('/ask-to-peer-id', 
+    config('socializer.controllers_front.user').'@askForPeerId')
+    ->name('users.peer.ask');
+
+Route::post('/response-to-peer-id', 
+    config('socializer.controllers_front.user').'@responseToPeerId')
+    ->name('users.peer.response');
+
+Route::post('/response-to-authorization-peer', 
+    config('socializer.controllers_front.user').'@responseToPeerAuthorization')
+    ->name('users.peer.response.authorization');
+
+Route::post('/close-connection-to-peer-id', 
+    config('socializer.controllers_front.user').'@closeConnectionToPeerId')
+    ->name('users.peer.close');

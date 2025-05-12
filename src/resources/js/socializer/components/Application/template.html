@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html data-bs-theme="dark">
+  <head>
+    <meta charset="UTF-8">
+     <!-- DEPENDENCIES_PLACEHOLDER -->
+    <style>
+      html,body,#app {
+        height: 100%;
+        width: 100%;
+        margin: 0;
+        padding: 0;
+      }
+    <!-- STYLE_PLACEHOLDER -->
+    </style>
+    <script src="/vendor/estarter/embed-iframe.js"></script
+  </head>
+  <body>
+    <div id="app"></div>
+    <script>
+      function init() {
+        // Encapsuler le script pour être sûr qu'il est interprété comme une expression objet
+        const dynamicComponent = (<!-- SCRIPT_PLACEHOLDER -->);
+        // Échapper le template avec JSON.stringify pour éviter des conflits
+        dynamicComponent.template = <!-- TEMPLATE_PLACEHOLDER -->;
+        const i18n = VueI18n.createI18n({
+          legacy: false,
+          locale: "fr",
+          fallbackLocale: "en",
+          messages: <!-- TRANSLATION_PLACEHOLDER -->
+        });
+        let iframeApp = Vue.createApp(dynamicComponent, {
+          users: <!-- USERS_PLACEHOLDER -->,
+          room: <!-- ROOM_PLACEHOLDER -->,
+          database: <!-- DATABASE_PLACEHOLDER -->
+        });
+        iframeApp.use(i18n);
+        iframeApp.mount("#app");
+      }
+      if (window.Vue) {
+        init();
+      } else {
+        document.addEventListener("DOMContentLoaded", init);
+      }
+    </script>
+  </body>
+</html>

@@ -1,0 +1,61 @@
+<template>
+    <button 
+       v-if="!followed"
+        type="button" 
+        class="btn btn-primary btn-sm flex-grow-1"
+        @click="onFollow"
+        ><IconWidget icon="splotch"></IconWidget> Suivre
+    </button>
+    <button v-else
+        type="button" 
+        class="btn btn-warning btn-sm flex-grow-1"
+        @click="onUnfollow"
+        ><IconWidget icon="splotch"></IconWidget> Ne plus suivre
+    </button>
+</template>
+
+<script>
+    import { mapActions, mapState } from 'pinia'
+    import { useCommunityStore } from '~socializer/stores/community.js'
+    import IconWidget from '~estarter/components/widgets/IconWidget.vue'
+
+    export default {
+        name: 'FollowButton',
+        components: {
+            IconWidget,
+        },
+        props: {
+            user: {
+                type: Object,
+                required: true
+            }
+        },
+        data() {
+            return {
+                followed: this.user.followed
+            }
+        },  
+        methods: {
+            ...mapActions(useCommunityStore, [
+                'followUser',
+                'unfollowUser',
+            ]),
+            onFollow() {
+                this.followUser(this.user.identifier)
+                .then(status => {
+                    if(status === 'success') {
+                        this.followed = true
+                    }
+                })
+            },
+            onUnfollow() {
+                this.unfollowUser(this.user.identifier)
+                .then(status => {
+                    if(status === 'success') {
+                        this.followed = false
+                    }
+                })
+            }
+        }
+    }
+</script>
