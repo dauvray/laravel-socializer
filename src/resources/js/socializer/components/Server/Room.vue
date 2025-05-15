@@ -1,5 +1,4 @@
 <template>
-
     <div v-if="currentRoom"
         class="room-wrapper">
         <div id="room-navigation"></div>

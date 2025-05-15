@@ -66,8 +66,9 @@
                 :editable="isOwner"
                 :isServerHome="showServerPage"
             ></PageComponent>
+
             <router-view 
-               :key="$route.fullPath"
+               :key="$route.params.roomId"
                 @update-users-room="onUpdateRoomUsers"
             ></router-view>
         </section>
@@ -190,9 +191,7 @@
             this.initLoadServer(this.$route.params.serverId)
         },
         mounted() {
-           
-                this.sidebarWidth = this.initialSidebarWidth
-           
+            this.sidebarWidth = this.initialSidebarWidth
         },
         unmounted() {
             Echo.leave(this.channel)

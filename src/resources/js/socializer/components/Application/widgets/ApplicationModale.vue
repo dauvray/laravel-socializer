@@ -133,6 +133,16 @@
                                     aria-selected="false"
                                 >Style</a>
                             </li>
+                            <li class="nav-item">
+                                <a class="nav-link"
+                                    id="translations-tab" 
+                                    data-bs-toggle="tab" 
+                                    href="#translations"
+                                    role="tab" 
+                                    aria-controls="translations" 
+                                    aria-selected="false"
+                                >Traductions</a>
+                            </li>
                         </ul>
 
                         <div class="tab-content">
@@ -166,6 +176,17 @@
                                     lang="css"
                                     :code="componentData.style || ''"
                                     @input="onUpdateCSS"
+                                ></CodeEditor>
+                            </div>
+
+                            <div class="tab-pane fade ps-3 pe-3" 
+                                id="translations" 
+                                role="tabpanel" 
+                                aria-labelledby="translations-tab">
+                                <CodeEditor
+                                    lang="javascript"
+                                    :code="JSON.stringify(componentData.translations) || ''"
+                                    @input="onUpdateTransaltions"
                                 ></CodeEditor>
                             </div>
                         </div>
@@ -290,6 +311,10 @@
                  this.codeApp.style = css
                  this.isDirty = true
             },
+            onUpdateTransaltions(translations) {
+                 this.codeApp.translations = JSON.parse(translations)
+                 this.isDirty = true
+            }
         }
     }
 </script>

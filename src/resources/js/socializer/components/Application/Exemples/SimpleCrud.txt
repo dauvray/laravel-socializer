@@ -1,0 +1,252 @@
+{
+    "name": "Simple CRUD",
+    "dependencies": ["Vue","Bootstrap","bootstrap.js","vue-i18n"],
+    "template": '<h1>{{ $t("message.hello") }}</h1>
+<!-- Button trigger modal -->
+<button type="button" class="btn btn-primary" @click="addItem">Ajouter</button>
+
+<!-- Modal -->
+<div
+  class="modal fade"
+  id="appModal"
+  tabindex="-1"
+  aria-labelledby="exampleModalLabel"
+  aria-hidden="true"
+>
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h1 class="modal-title fs-5" id="exampleModalLabel">Modal title</h1>
+        <button
+          type="button"
+          class="btn-close"
+          data-bs-dismiss="modal"
+          aria-label="Close"
+        ></button>
+      </div>
+      <div class="modal-body">
+        <form v-if="selectedData">
+          <div class="mb-3">
+            <label for="titleField" class="form-label">Titre</label>
+            <input
+              v-model="selectedData.title"
+              type="text"
+              class="form-control"
+              id="titleField"
+            />
+          </div>
+          <div class="mb-3">
+            <label for="refField" class="form-label">Référence</label>
+            <input
+              v-model="selectedData.ref"
+              type="text"
+              class="form-control"
+              id="refField"
+            />
+          </div>
+          <label for="typeField" class="form-label">Catégorie</label>
+          <select
+            id="typeField"
+            class="form-select"
+            v-model="selectedData.type"
+          >
+            <option disabled>type de produit</option>
+            <option value="desktop">PC</option>
+            <option value="laptop">PC portable</option>
+            <option value="screen">Ecran</option>
+            <option value="keyboard">Clavier</option>
+          </select>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button
+          type="button"
+          class="btn btn-secondary"
+          data-bs-dismiss="modal"
+          @click="resetSelection"
+        >
+          Annuler
+        </button>
+        <button
+          type="button"
+          class="btn btn-primary"
+          data-bs-dismiss="modal"
+          @click="saveItem"
+        >
+          Valider
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+<!-- Table -->
+<table class="table">
+  <thead>
+    <tr>
+      <th scope="col">#</th>
+      <th scope="col">ID</th>
+      <th scope="col">Titre</th>
+      <th scope="col">type</th>
+      <th scope="col">Ref</th>
+      <th scope="col">Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr v-for="(item,idx) in localDB" :key="idx">
+      <th scope="row">{{ idx + 1 }}</th>
+      <td>{{ item.id }}</td>
+      <td>{{ item.title }}</td>
+      <td>{{ item.type }}</td>
+      <td>{{ item.ref }}</td>
+      <td>
+        <button
+          type="button"
+          class="btn btn-primary"
+          @click="deleteItem(item.id)"
+        >
+          Supprimer
+        </button>
+        <button
+          type="button"
+          class="btn btn-primary"
+          @click="editItem(item.id)"
+        >
+          Editer
+        </button>
+      </td>
+    </tr>
+  </tbody>
+</table>
+',
+"script": '{  name: 'SFC',
+        props: ['users', 'room', 'database'],  
+        data() {
+            return {
+                localDB: [...this.database],
+                appModal: null,
+                modeEdition: false,
+                selectedData: null
+            }
+        },
+        mounted() {
+            window.addEventListener("message", this.receiveFromParent);
+            this.appModal = new bootstrap.Modal('#appModal')
+        },
+        beforeUnmount() {
+            window.removeEventListener("message", this.receiveFromParent);
+        },
+        methods: {
+            sendToParent(message) {
+                window.parent.postMessage(JSON.parse(JSON.stringify(message)),window.location.origin);
+            },
+            receiveFromParent(event) {
+                if (event.origin !== window.location.origin) return;
+                const data = event.data;
+
+                if (data.action === 'database') {
+                    if (data.data && data.data.event && data.status === 'success') {
+                        switch (data.data.event) {
+                            case 'create':
+                                this.itemCreated(data.data.payload)
+                                break
+                            case 'update':
+                                this.itemUpdated(data.data.payload)
+                                break
+                            case 'delete':
+                                this.itemDeleted(data.data.payload)
+                                break
+                            case 'read':
+                                break
+                        }
+                    }
+                }   
+            },
+            generateUniqueId() {
+            const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+            const timestamp = Date.now().toString(36).slice(-4);
+            let randomPart = '';
+            for (let i = 0; i < 6; i++) {
+                const randomIndex = Math.floor(Math.random() * chars.length);
+                randomPart += chars[randomIndex];
+            }
+            return timestamp + randomPart;
+            },
+            resetSelection() {
+                this.selectedData = null
+                this.modeEdition = false
+            },
+            addItem() {
+                this.selectedData = {
+                    type: null,
+                    id: this.generateUniqueId(),
+                    title: null,
+                    ref: null,
+                }
+                this.appModal.show()
+            },
+            saveItem() {
+                const message = {
+                    action: "database",
+                    data: {
+                    event: this.modeEdition ? 'update' : 'create',
+                    payload: {
+                        "type": this.selectedData.type,
+                        "id": this.selectedData.id,
+                        "title": this.selectedData.title,
+                        "ref": this.selectedData.ref,
+                    }
+                    }
+                };
+                this.sendToParent(message);
+                this.resetSelection()
+            },
+            itemCreated(payload) {
+                this.localDB.push(payload)
+            },
+            deleteItem(idx) {
+                const message = {
+                    action: "database",
+                    data: {
+                    event: "delete",
+                    payload: {
+                        "id": idx,
+                    }
+                    }
+                };
+                this.sendToParent(message);
+            },
+            itemDeleted(payload) {
+                this.localDB = this.localDB.filter( item => {
+                    return item.id !== payload.id
+                })
+            },
+            editItem(idx) {
+                const selection = this.localDB.find( item => item.id === idx)
+                this.selectedData = {...selection}
+                this.modeEdition = true
+                this.appModal.show()
+            },
+            itemUpdated(payload) {
+                objIndex = this.localDB.findIndex(obj => obj.id === payload.id);
+                this.localDB[objIndex] = payload
+            }
+    }
+    }',
+    "style": null,
+    "translations": {
+        "fr": {
+            "message":{
+                "title":"Connexion entre utilisateurs",
+                "label": "Utilisateurs présents",
+            }
+        },
+        "en":{
+            "message":{
+                "title":"Users connection",
+                "label": "Users in room",
+            }
+        }
+    }",
+    "metadata": "{\"version\":\"1.0.0\",\"createdAt\":\"current date\",\"author\":\"Creator Name\",\"description\":\"component description\"}"
+ 
+}

@@ -146,9 +146,11 @@
             const data = event.detail
 
             this.sendData({
-                  action: 'update_scene',
-                  from: this.me.name,
-                  details: data,
+              data: {
+                    action: 'update_scene',
+                    from: this.me.name,
+                    details: data,
+                }
               }, this.whiteBoardId)
 
               if(this.isSavable) {
@@ -158,9 +160,11 @@
           handlePointerMove(event) {
             const data = event.detail;
             this.sendData({
+              data:{
                 action: 'pointer_move',
                 from: this.me.name,
                 details: data,
+              }
             }, this.whiteBoardId)
           },
           handleFileUpload(event) {

@@ -48,9 +48,9 @@ class ApplicationIA
 
         $application->code =  [
             "name" => 'SFC',
-            "dependencies" => ['Vue', 'Bootstrap', 'vue-i18n'],
-            "template" => '<h1>{{ message.hello }}</h1>',
-            "script" => "{  name: 'SFC',props: ['users', 'room'],  data() {return { }}}",
+            "dependencies" => ['Vue', 'bootstrap', 'vue-i18n','bootstrap.js'],
+            "template" => '<h1>{{ $t("message.hello") }}</h1>',
+            "script" => "{  name: 'SFC',props: ['users', 'room', 'database'],  data() {return { }}}",
             "style" => '',
             'translations' => [
                 'fr' => [
@@ -169,110 +169,62 @@ class ApplicationIA
         // todo a protéger
 
         try{
-            $operation = $request->get('operation');
-            $payload = $request->get('content');
+            $operation = $request->get('event');
+            $payload = $request->get('payload');
             $vertexid = $request->get('vertexid');
 
+            // data are saved in the page model
             $database_app = config('socializer.models.page')::where([
                 ["application_id", $vertexid],
             ])->first();
 
-            $database = $database_app->content ?? [];
+            $database = $database_app->data ?? [];
 
             switch($operation) {
                 case 'create':
                     $database[] = $payload;
                     break;
                 case 'update':
-                    // parfois le modele utilise update au lieu de create pour un seul element
-                    $exist = false;
                     foreach($database as $key => $value) {
-                        // if($this->_isMultiArray($payload)) {
-
-                        //     foreach($payload as $p) {
-                        //         if($value->id == $p['id']) {
-                        //             $database[$key] = $p;
-                        //             $exist = true;
-                        //         }
-                        //     }
-
-                        // } else {
-
-                            if($value['id'] == $payload['id']) {
-                                $database[$key] = $payload;
-                                $exist = true;
-                            }
-                        //}
-                    }
-
-                    if(!$exist) {
-                        $database[] = $payload;
+                        if($value['id'] == $payload['id']) {
+                            $database[$key] = $payload;
+                        }
                     }
                     break;
                 case 'delete':
-                    $select_key = null;
                     foreach($database as $key => $value) {
-
-                        // is a list of elements ?
-                        // if($this->_isMultiArray($payload)) {
-
-                        //     $select_key = [];
-
-                        //     foreach($payload as $p) {
-                            
-                        //         if($value->id == $p['id']) {
-                        //             $select_key[] = $key;
-                        //         }
-                        //     }
-
-                        // } else {
-
-                            if($value['id'] == $payload['id']) {
-                                $select_key = $key;
-                            }
-                        //}
-                    }
-
-                    if(is_array($select_key)) {
-                        foreach($select_key as $key) {
-                            unset($database[$key]);
+                        if($value['id'] == $payload['id']) {
+                             unset($database[$key]);
                         }
-                    } else  {
-                        unset($database[$select_key]);
                     }
                     break;
             }
 
-            $database_app->content = $database;
+            $database_app->data = $database;
 
             if($database_app->save()) {
                 return response()->json([
                     'action'=> 'database',
+                    'status' => 'success',
                     'data' => [
-                        'operation' => $operation, 
-                        'status' => 'success',
-                        'content' => $payload,
+                        'event' => $operation, 
+                        'payload' => $payload,
                         ]
                 ], 200);
             }
 
         } catch(\Exception $e) {
-            
+           // dump($e->getMessage());
             return response()->json([
                 'action'=> 'database',
+                'status' => 'error',
                 'data' => [
-                    'operation' => $operation, 
-                    'status' => 'error'
+                    'event' => $operation, 
                     ]
             ]);
 
         }
     }
-
-    // private function _isMultiArray($a){
-    //     if(isset($a[0])) return TRUE;
-    //     return FALSE;
-    // }
 
     public function loadApplicationIA($request)
     {
@@ -289,10 +241,10 @@ class ApplicationIA
 
         $database = config('socializer.models.page')::where([
             ["vertexid", $database_id],
-        ])->select('content')->first();
+        ])->select('data')->first();
 
         $application->code = stringIsJSON($application->code) ? json_decode($application->code) : $application->code;
-        $application->data = stringIsJSON($database->content) ? json_decode($database->content) : $database->content;
+        $application->data = $database->data ?? [];
 
         return $application;
     }

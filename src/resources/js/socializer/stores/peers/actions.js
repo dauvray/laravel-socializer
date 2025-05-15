@@ -16,7 +16,7 @@ export default {
             port: import.meta.env.VITE_PEERS_SERVER_PORT,
             path: import.meta.env.VITE_PEERS_SERVER_PATH,
             key: import.meta.env.VITE_PEERS_SERVER_KEY,
-            secure: true
+            secure: true,
             })
 
         this.localPeer.on('open', id => {

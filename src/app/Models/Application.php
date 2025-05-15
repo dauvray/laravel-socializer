@@ -32,6 +32,10 @@ class Application extends Model
         'specs',
     ];
 
+    // protected $casts = [
+    //     'code' => 'array',
+    // ];
+
 
     /*
     |--------------------------------------------------------------------------

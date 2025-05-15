@@ -20,6 +20,7 @@
         </div>
 
         <iframe
+            :class="{'opacity-0': !componentLoaded}"
             ref="sandboxFrame"
             style="width: 100%; height: 100%;"
             sandbox="allow-scripts allow-same-origin allow-modals allow-forms"
@@ -77,11 +78,8 @@
         },
         async mounted() {
             await nextTick()
-           
-            window.addEventListener('message', this.handleMessageFromIframe, false)
-            this.$refs.sandboxFrame.onload = () => {
-
-            };
+            window.addEventListener('message', this.handleMessageFromIframe)
+            this.$refs.sandboxFrame.onload = () => {}
         },
         beforeUnmount() {
             window.removeEventListener('message', this.handleMessageFromIframe)
@@ -169,14 +167,13 @@
                             }).join('')
                         }
 
-
                         // Remplacement des placeholders dans le template HTML importé
                         const processedHtml = htmlTemplate
                         .replace('<!-- DEPENDENCIES_PLACEHOLDER -->', dependenciesURL )
                         .replace('<!-- STYLE_PLACEHOLDER -->', this.componentData.style || '')
                         .replace('<!-- SCRIPT_PLACEHOLDER -->', this.componentData.script || '')
                         .replace('<!-- TEMPLATE_PLACEHOLDER -->', JSON.stringify(this.componentData.template))
-                        .replace('<!-- TRANSLATION_PLACEHOLDER -->',  JSON.stringify(JSON.parse(this.componentData.translations)))
+                        .replace('<!-- TRANSLATION_PLACEHOLDER -->',  JSON.stringify(this.componentData.translations))
                         .replace('<!-- USERS_PLACEHOLDER -->', JSON.stringify(this.filterdUsers))
                         .replace('<!-- ROOM_PLACEHOLDER -->', JSON.stringify(this.room))
                         .replace('<!-- DATABASE_PLACEHOLDER -->', JSON.stringify(this.database));
@@ -184,11 +181,8 @@
                         iframeDoc.open()
                         iframeDoc.write(processedHtml)
                         iframeDoc.close()
-
                     } 
 
-                    this.componentLoaded = true
-                  
                 } catch (err) {
                     this.error = `Erreur : ${err.message}`
                     console.error(err)
@@ -215,9 +209,10 @@
                  await this.loadComponent()
             },
             async handleMessageFromIframe(event) {
-                // Pour plus de sécurité, vérifiez event.origin ici si besoin.
-                //console.log('Message reçu de l’iframe:', event.data)
-                // Vous pouvez agir en fonction du contenu du message
+                if(event.origin !== import.meta.env.VITE_APP_URL) {
+                    console.log('Message non autorisé')
+                    return
+                }
 
                 const data = isStringifiedJSon(event.data) ? JSON.parse(event.data) : event.data
                 const action = data.action
@@ -234,8 +229,8 @@
                         }, this.room.id)
                         break
                     case'resize_iframe':
+                        this.$refs.sandboxFrame.style.height = Number( data.height )
                         this.componentLoaded = true
-                        this.$refs.sandboxFrame.style.height = `${data.height}px`
                         break
                     default:
                         console.log('Action non reconnue')
