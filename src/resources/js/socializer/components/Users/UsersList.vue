@@ -1,7 +1,9 @@
 <template>
-    <ThumbnailUserWidget v-for="user in users"
-        :user="user"
-    ></ThumbnailUserWidget>
+    <div class="m-3">
+        <ThumbnailUserWidget v-for="user in users"
+            :user="user"
+        ></ThumbnailUserWidget>
+    </div>
 </template>
 
 <script>

@@ -35,20 +35,20 @@
         <div class="card-body">
             <div class="card-text" v-html="item.post.content"></div>
         </div>
-        
-        <div class="card-footer">
-            <LikeButtons
-                :likes="item.post.likes"
-                :dislikes="item.post.dislikes"
-                @like-item="onLikeItem"
-            ></LikeButtons>
-            <ShareButton
-                v-if="canShare"
-                @share-item="onSharePost"
-            ></ShareButton>
-            <span v-if="item.post.shares">{{ item.post.shares }} republication</span>
-        </div>
     </div>
+
+           
+    <LikeButtons
+        :likes="item.post.likes"
+        :dislikes="item.post.dislikes"
+        @like-item="onLikeItem"
+    ></LikeButtons>
+    <ShareButton
+        v-if="canShare"
+        @share-item="onSharePost"
+    ></ShareButton>
+    <span v-if="item.post.shares">{{ item.post.shares }} republication</span>
+     
     <socializer-comments
         :canbecommented="true" 
         :formvisible="false" 

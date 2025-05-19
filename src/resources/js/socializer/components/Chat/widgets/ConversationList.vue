@@ -5,16 +5,15 @@
             @click="onCreateChat"
             ><IconWidget icon="plus"></IconWidget> Nouvelle conversation
         </button>
-
-        <ul class="list-group list-group-flush">
-            <li v-for="conversation in conversations" 
-                class="list-group-item">
-                <ConversationButton
-                    :conversation="conversation"
-                    @join-chat="onJoinChat"
-                ></ConversationButton>
-            </li>
-        </ul>
+            <ul class="list-group list-group-flush">
+                <li v-for="conversation in conversations" 
+                    class="list-group-item">
+                    <ConversationButton
+                        :conversation="conversation"
+                        @join-chat="onJoinChat"
+                    ></ConversationButton>
+                </li>
+            </ul>
     </div>
 
 </template>
@@ -42,7 +41,6 @@
                 required: true
             }
         },
-
         methods: {
             onJoinChat(vertexid) {
                 this.$emit('join-chat', vertexid)

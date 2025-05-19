@@ -78,7 +78,7 @@
                 this.$refs.video.srcObject = this.stream
                 this.$refs.video.onloadedmetadata = () => {
                     this.$refs.video.play()
-                    .catch((err) => console.error(`Erreur de lecture pour ${videoElementId} :`, err));
+                    .catch((err) => console.error(`Erreur de lecture pour ${videoId} :`, err));
                 }
             }
             this.eventBus.$on("videoPlayerEvent", this.onPlayerEvent)

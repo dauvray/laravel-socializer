@@ -1,50 +1,50 @@
 <template>
+    <div class="m-3">
+        <button 
+            class="btn btn-primary btn-sm"
+            @click="onCreateServer"
+            ><IconWidget icon="plus"></IconWidget> Nouveau domaine
+        </button>
+        <ModalWidget
+            data-test="fmd-modal-plugin"
+            v-if="showModal"
+            class="d-flex justify-content-end"
+            modalClasses="modal-lg"
+            target="server-create-modal"
+            :trigger="showModal"
+            :canValidate="canValidate"
+            :showBtn="false"
+            @hidden="onCancelEditModal"
+            @saveModalChanges="onSaveUpdatedModal">
+                <template #header>
+                    header
+                </template>
+                <template #body>
+                    <questionnaire-component
+                        ref="serverQuestionnaire"
+                        v-if="currentQuestionnaire"
+                        :questionnaireid="currentQuestionnaire"
+                        :isstandalone="true"
+                        :deportvalidation="true"
+                        :deport-sending=true
+                        @deport-sending="onQuestionnaireData"
+                        @deported-validation="onQuestionnaireValidation"
+                    ></questionnaire-component>
+                </template>
+        </ModalWidget>
 
-    <button 
-        class="btn btn-primary btn-sm"
-        @click="onCreateServer"
-        ><IconWidget icon="plus"></IconWidget> Nouveau domaine
-    </button>
-    <ModalWidget
-        data-test="fmd-modal-plugin"
-        v-if="showModal"
-        class="d-flex justify-content-end"
-        modalClasses="modal-lg"
-        target="server-create-modal"
-        :trigger="showModal"
-        :canValidate="canValidate"
-        :showBtn="false"
-        @hidden="onCancelEditModal"
-        @saveModalChanges="onSaveUpdatedModal">
-            <template #header>
-                header
-            </template>
-            <template #body>
-                <questionnaire-component
-                    ref="serverQuestionnaire"
-                    v-if="currentQuestionnaire"
-                    :questionnaireid="currentQuestionnaire"
-                    :isstandalone="true"
-                    :deportvalidation="true"
-                    :deport-sending=true
-                    @deport-sending="onQuestionnaireData"
-                    @deported-validation="onQuestionnaireValidation"
-                ></questionnaire-component>
-            </template>
-    </ModalWidget>
-
-    <h3>Domaines</h3>
-    <ul v-if="servers" 
-        class="list-group list-group-flush">
-        <li v-for="server in servers"
-            class="list-group-item"
-            :key="server.id">
-            <router-link :to="{ name: 'server', params: { serverId: server.id }}">
-                <IconWidget icon="server"></IconWidget> {{ server.name }}
-            </router-link>
-        </li>
-    </ul>
-
+        <h3>Domaines</h3>
+        <ul v-if="servers" 
+            class="list-group list-group-flush">
+            <li v-for="server in servers"
+                class="list-group-item"
+                :key="server.id">
+                <router-link :to="{ name: 'server', params: { serverId: server.id }}">
+                    <IconWidget icon="server"></IconWidget> {{ server.name }}
+                </router-link>
+            </li>
+        </ul>
+    </div>
 </template>
 
 <script>

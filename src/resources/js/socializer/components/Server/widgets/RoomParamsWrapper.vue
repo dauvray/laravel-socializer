@@ -181,3 +181,9 @@
         }
     }
 </script>
+
+<style scoped>
+    .accordion-item {
+        margin-bottom: 10px;
+    }
+</style>

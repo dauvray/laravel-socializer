@@ -1,7 +1,7 @@
 <template>
     <button
         type="button"
-        class="btn btn-primary shadow-sm"
+        class="btn btn-primary btn-sm shadow-sm mb-2"
         title="Configurer le questionnaire"
         @click="onShowModal"
         ><IconWidget icon='paper-plane'></IconWidget> Publier

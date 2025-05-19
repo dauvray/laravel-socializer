@@ -101,7 +101,7 @@
     import CaptureUserButton from '~socializer/components/WebRTC/widgets/CaptureUserButton.vue'
     import Gravatar from '~estarter/components/widgets/Gravatar.vue'
     import RoomParamsWrapper from './widgets/RoomParamsWrapper.vue'
-    import resizable from "~socializer/components/WebRTC/directives/resizable.js";
+    import resizable from "~socializer/directives/resizable.js"
 
     export default {
         name: 'Server',

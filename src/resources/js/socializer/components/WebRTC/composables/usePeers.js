@@ -4,7 +4,7 @@ import { usePeerStore } from '~socializer/stores/peers.js'
 import { useServerStore } from '~socializer/stores/server.js'
 import { useMeStore } from '~estarter/stores/me.js'
 import { deepGet, uniqueId } from '~estarter/services/helpers.js'
-import Draggable from '~socializer/components/WebRTC/directives/draggable.js'
+import Draggable from '~socializer/directives/draggable.js'
 
 export function usePeers(props, type = 'data', room = null) {
 
@@ -200,7 +200,6 @@ export function usePeers(props, type = 'data', room = null) {
                         type: peerStore.queuedConnections[slug].type,
                     })
 
-
                    // Recevoir et afficher le flux vidéo distant
                     connection.call.on('stream', (remoteStream) => {
                         createVideoElement({
@@ -241,11 +240,11 @@ export function usePeers(props, type = 'data', room = null) {
         )
     }
 
-    const syncUsersConnections = (Users) => {
-        Users.forEach( user => {
+    const syncUsersConnections = (users) => {
+        users.forEach( user => {
             if(user.slug !== meStore.getMe.slug 
                     && !queuedConnections.hasOwnProperty(user.slug)
-                    && !deepGet(connections, `${onAirRoom}.${user.slug}.${currentType.value}`, false)
+                    && !deepGet(connections, `${onAirRoom.value}.${user.slug}.${currentType.value}`, false)
                 ) {
                 getRemotePeerId(user.slug)
             }
@@ -282,14 +281,14 @@ export function usePeers(props, type = 'data', room = null) {
     } 
 
     const startWebcamStream = async (options) => {
-        currentStream.value = await navigator.mediaDevices.getUserMedia(options)
         peerStore.startVideoStream()
         onAirRoom.value = currentRoom.value || deepGet(serverStore, 'currentRoom.id', null)
+        currentStream.value = await navigator.mediaDevices.getUserMedia(options)
     }
 
     const startVisioStream = async options => {
         currentStream.value = await navigator.mediaDevices.getUserMedia(options)
-        onAirRoom.value = currentCallRoomId.value //currentRoom.value || deepGet(serverStore, 'currentRoom.id', null)
+        onAirRoom.value = currentCallRoomId.value
     }
 
     const startScreenCapture = async () => {

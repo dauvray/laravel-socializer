@@ -98,6 +98,17 @@ export default [
                             ]
                         }
                     },
+                     {
+                        path: `audio/:vertexId`,
+                        name: 'audio',
+                        component: () => import('~socializer/components/AudioRoom/AudioRoom.vue'),
+                        meta: {
+                            breadcrumb: [
+                                { name: 'Accueil', link: '/'},
+                                { name: 'Salon audio', link: null },
+                            ]
+                        }
+                    },
                     {
                         path: `chat/:vertexId`,
                         name: 'chat',

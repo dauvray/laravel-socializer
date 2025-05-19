@@ -11,7 +11,7 @@
 
 <script>
     import { defineAsyncComponent } from 'vue'
-    import Draggable from '~socializer/components/WebRTC/directives/draggable.js'
+    import Draggable from '~socializer/directives/draggable.js'
 
     export default {
         name: 'AlertComponent',

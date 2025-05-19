@@ -1,6 +1,11 @@
 <template>
     <div class="conversations-wrapper">
-        <div class="conversations-list-wrapper">
+        <div class="conversations-list-wrapper"
+            v-resizable="{
+                min: initialSidebarWidth,
+                max: 600,
+                callback: updateSidebarWidth
+            }">
             <ConversationList
                 :conversations="conversations"
                 @join-chat="onJoinChat"
@@ -20,6 +25,8 @@
     import ConversationList from '~socializer/components/Chat/widgets/ConversationList.vue'
     import { mapActions, mapState } from 'pinia'
     import { useChatStore } from '~socializer/stores/chat.js'
+    import { useConversationsStore } from '~socializer/stores/conversations.js'
+    import resizable from "~socializer/directives/resizable.js"
 
     export default {
         name: 'Teams',
@@ -27,8 +34,13 @@
             ConversationList,
             ChatWidget,
         },
+        directives: {
+            resizable,
+        },
         data() {
             return {
+                initialSidebarWidth: 300,
+                sidebarWidth : null,
                 chat: null
             }
         },
@@ -36,18 +48,25 @@
             document.querySelector('body').classList.add("conversations-page")
             this.loadConversations()
         },
+        mounted() {
+            this.sidebarWidth = this.initialSidebarWidth
+        },
         computed: {
             ...mapState(useChatStore, {
-                conversations: 'getConversations',
                 currentConversation: 'getCurrentConversation',
-            })
+            }),
+            ...mapState(useConversationsStore, {
+                conversations: 'getConversations',
+            }),
         },
         methods: {
             ...mapActions(useChatStore, [
-                'loadConversations',
                 'createConversation',
                 'loadConversation',
                 'leaveCurrentConversation',
+            ]),
+            ...mapActions(useConversationsStore, [
+                'loadConversations',
             ]),
             onJoinChat(vertexid) {
                 this.leaveCurrentConversation()
@@ -63,6 +82,9 @@
                     this.chat = res
                 })
             },
+            updateSidebarWidth(newWidth) {
+                this.sidebarWidth = newWidth;
+            }
         }
     }
 </script>

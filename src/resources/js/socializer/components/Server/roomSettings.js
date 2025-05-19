@@ -14,6 +14,12 @@ const coreComponentMapping = Object.assign({
         name: 'Page',
         selectable: true
      },
+     audio: {
+         component: 'AudioComponent',
+         description: 'Salon audio',
+         name: 'Audio',
+         selectable: true
+     },
      chat: {
         component: 'ChatComponent',
         description: 'Chat, visio et call',

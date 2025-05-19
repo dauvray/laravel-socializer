@@ -1,6 +1,5 @@
 <template>
     <div class="feed-user">
-        <h1>Mon fil</h1>
         <PublishButton
             v-if="feed"
             :feedFormId="feed.questionnaire"
