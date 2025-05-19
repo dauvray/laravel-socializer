@@ -14,7 +14,7 @@ class WallController extends Controller
         $user = User::firstWhere('slug', $slug);
         $userNebula = $service->getGraphUser($user);
 
-        $resource = array_merge($user->toArray(), $userNebula, ['vertexid' => $user->vertexId]);
+        $resource = array_merge($user->toArray(), $userNebula, ['vertexid' => $user->vertexId, 'connected' => $user->connected]);
 
         if(!$user) {
             abort(404);

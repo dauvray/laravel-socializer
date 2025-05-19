@@ -4,7 +4,7 @@ namespace Dauvray\Socializer\app\Services;
 
 use Illuminate\Support\Facades\Auth;
 use Dauvray\Socializer\app\Http\Resources\UserCollection;
-
+use Illuminate\Support\Facades\Cache;
 
 class Users
 {
@@ -72,7 +72,9 @@ class Users
 
         foreach( $results as $res) {
             $user = $res['user'];
+            $user_id = $user['id'];
             $user['id'] = null;
+            $user['connected'] = Cache::has('user-is-online-' . str_replace('user','',$user_id)) ? 1 : 0;
             $user['follow_status'] = $res['follow_status'];
             $user['nb_followers'] = $res['nb_followers'];
             $formated[] = (object)$user;
