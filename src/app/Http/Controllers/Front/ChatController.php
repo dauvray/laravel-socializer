@@ -18,6 +18,21 @@ class ChatController extends Controller
         $service->sendMessage($request);
     }
 
+    public function deleteMessage(Request $request, ChatService $service)
+    {
+        $request->validate([
+            'message_id' => 'required',
+            'room_id' => 'required',
+        ]);
+
+        $service->deleteMessage($request);
+    }
+
+    public function setEmoji(Request $request, ChatService $service)
+    {
+        $service->setEmoji($request);
+    }
+
     public function getConversations(ChatService $service)
     {
         return response()->json($service->getConversations(), 200);

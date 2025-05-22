@@ -1,10 +1,10 @@
 <template>
-    <div class="dropdown">
+    <div class="dropdown" ref="dropdown">
         <button class="btn" data-bs-toggle="dropdown">
             <IconWidget icon="user-friends"></IconWidget> {{ conversation.nb_contacts }}
         </button>
         <ul class="dropdown-menu">
-            <li><span class="ms-3">Contacts</span>
+            <li><span class="ms-3">Participants</span>
                 <ul class="list-group list-group-flush">
                     <li v-for="contact in conversation.users" 
                         class="list-group-item list-group-item-action"
@@ -13,9 +13,10 @@
                             <Gravatar 
                                 :user="contact"
                                 style="width:35px;"
-                                :showStatus="false"
+                                size="small"
+                                :showStatus="true"
                             ></Gravatar>
-                            <span class="ms-3">{{ contact.name }}</span>
+                            <UserWallLink class="ms-2" :user="contact"></UserWallLink>
                         </div>
                     </li>
                 </ul>
@@ -64,9 +65,11 @@
     import IconWidget from '~estarter/components/widgets/IconWidget.vue'
     import Gravatar from '~estarter/components/widgets/Gravatar.vue'
     import ConversationActions from './partials/ConversationActions.vue'
+    import UserWallLink from '~socializer/components/User/WallLink.vue'
 
     export default {
         name: 'ChatContactButton',
+        inject: ["eventBus"],
         emits: [
             'add-contact',
             'quit-chat',
@@ -76,6 +79,7 @@
             Gravatar,
             ModalWidget: defineAsyncComponent(() => import('~estarter/components/widgets/Modal.vue')),
             ConversationActions,
+            UserWallLink,
         },
         props: {
             conversation: {
@@ -86,7 +90,17 @@
         data() {
             return {
                 showModal: false,
+                usersDropdown: null,
             }
+        },
+        mounted() {
+            this.usersDropdown = this.$refs.dropdown
+            this.usersDropdown.addEventListener('show.bs.dropdown', this.disablePointerEvents)
+            this.usersDropdown.addEventListener('hide.bs.dropdown', this.enablePointerEvents)
+        },
+        unmounted() {
+            this.usersDropdown.removeEventListener('show.bs.dropdown', this.disablePointerEvents)
+            this.usersDropdown.removeEventListener('hide.bs.dropdown', this.enablePointerEvents)
         },
         computed: {
             ...mapState(useSocialUserStore, {
@@ -106,6 +120,12 @@
             },
             onQuitChat() {
                 this.$emit('quit-chat')
+            },
+            disablePointerEvents() {
+                this.eventBus.$emit("disable-pointer-event", 'chatContactButton')
+            },
+            enablePointerEvents() {
+                this.eventBus.$emit("enable-pointer-event")
             },
         }
     }

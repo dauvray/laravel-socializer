@@ -25,7 +25,7 @@
                 .conversations-list-wrapper {
                     @extend .border-end;
                     z-index: 1;
-
+                    
                     .conversations-list {
                         position: sticky;
                         top: 0;
@@ -40,19 +40,21 @@
 }
 
 .chat-wrapper {
+
+    @extend .container;
     
     .chat-header {
         @extend .d-flex;
         @extend .border-bottom;
         @extend .p-2;
         @extend .mb-2;
-        @extend .bg-opacity-dark-4;
+        @extend .bg-auto;
         position: sticky;
         top: 0;
         z-index: 3;
 
-        .chat-tools {
-            @extend .d-flex;
+        .room-users-list {
+            @extend .flex-grow-1;
         }
     }
 
@@ -124,13 +126,18 @@
 
             .chat-messages-inner {
                 @extend .card-body;
+                background: url(https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png) top left no-repeat;
+                background-size: cover;
+                background-attachment: fixed;
 
                 .message-wrapper {
                     @extend .d-flex;
                     @extend .align-items-start;
+                    @extend .position-relative;
 
                     .message-outer {
                         max-width: 80%;
+                        @extend .mb-2;
 
                         .message-infos {
                             @extend .d-flex;
@@ -144,7 +151,7 @@
                         .message-inner {
                             @extend .card;
                             @extend .text-bg-secondary;
-                            @extend .mb-3;
+                            @extend .shadow;
                            
                             .message {
                                     @extend .card-body; 
@@ -163,6 +170,7 @@
     .chat-messenger {
         position: sticky;
         bottom: 0;
+        @extend .bg-auto;
 
         .chat-messenger-writting {
             @extend .d-flex;
@@ -180,20 +188,38 @@
             }
         }
 
-        .chat-messenger-inner {
-            @extend .input-group;
-            @extend .mb-2;
-
-            textarea {
-                @extend .form-control;
+        .message-input-container {
+             @extend .d-flex;
+             @extend .align-items-end;
+             @extend .border;
+             @extend .shadow-sm;
+             @extend .rounded;
+     
+            .message-input { 
+                padding: 10px 15px;
+                overflow: hidden;
+            z-index: 5;
             }
 
-            button {
-                @extend .btn;
-                @extend .btn-primary;
-                @extend  .input-group-text;
+            .message-input:focus {
+                border: none !important;
+                outline: none !important;
+                box-shadow: none !important;
             }
+
         }
+    }
+}
+
+.room-users-list {
+    @extend .m-0;
+    @extend .p-0;
+    @extend .d-flex;
+
+    .chatters {
+        @extend .d-flex;
+        @extend .align-items-end;
+        @extend .list-group-item;
     }
 }
 
@@ -293,7 +319,7 @@
             @extend .btn-group;
             @extend .btn-group-sm;
             position: absolute;
-            right: 15px;
+            right: 0px;
         }
     }
 
@@ -309,18 +335,6 @@
             @extend .flex-column;
             @extend .w-100;
             @extend .h-100;
-
-            .room-users-list {
-                @extend .m-0;
-                @extend .p-0;
-                @extend .d-flex;
-    
-                .chatters {
-                    @extend .d-flex;
-                    @extend .align-items-end;
-                    @extend .list-group-item;
-                }
-            }
 
             .room-view-selector-nav {
                 @extend .bg-auto;
@@ -470,4 +484,7 @@
 
 .dropdown-menu {
     @extend .shadow;
+    z-index: 4;
 }
+
+

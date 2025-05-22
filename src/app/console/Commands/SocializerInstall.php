@@ -97,6 +97,7 @@ class SocializerInstall extends EstarterPrepare
         $this->executeProcess(['npm', 'install', '--save', '@excalidraw/excalidraw']);
         $this->executeProcess(['npm', 'install', '--save', 'react@18']);
         $this->executeProcess(['npm', 'install', '--save', 'react-dom@18']);
+        $this->executeProcess(['npm', 'install', '--save', '@floating-ui/dom']);
 
         // add vuejs components
         $this->replaceInfile(

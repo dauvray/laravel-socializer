@@ -110,6 +110,9 @@
                 this.$refs.input.focus()
             }
         },
+        unmounted() {
+            this.eventBus.$off("close-comment-form", this.handleCloseReactFrom)
+        },
         methods: {
             onShowCommentForm() {
                 this.showForm = !this.showForm

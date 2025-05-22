@@ -74,4 +74,57 @@ export default {
     receiveMessage(payload) {
         this.messages.push(payload)
     },
+    sendEmoji(payload) { 
+        AjaxService.load(
+            '/send-chat-emoji', 
+            'post', 
+            { 
+                emoji: payload.emoji,
+                room_id: payload.chatId,
+                message_id: payload.messageId,
+                from: payload.from,
+            },
+            {
+                err: null, msg: null, options: null
+            },
+            {
+                'X-Socket-ID': Echo.socketId()
+            }
+        )
+    },
+    receiveEmoji(payload) {
+       
+       this.messages.forEach(message => {
+            if (message.id === payload.vertexid) {
+                 console.log('receive emoji', payload)
+
+                if(!message.extras.hasOwnProperty('emojis')) {
+                    message.extras.emojis = {}
+                }
+
+                message.extras.emojis = {...payload.emojis}
+            }
+        }) 
+    },
+    deleteMessage(payload) {
+        AjaxService.load(
+            '/delete-chat-message', 
+            'post', 
+            { 
+                room_id: payload.chatId,
+                message_id: payload.messageId,
+            },
+            {
+                err: null, msg: null, options: null
+            },
+            {
+                'X-Socket-ID': Echo.socketId()
+            }
+        )
+    },
+    deletedMessage(payload) {
+        this.messages = this.messages.filter( m => {
+            return m.id !== payload.vertexid
+        })
+    }
 }

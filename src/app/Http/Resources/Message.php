@@ -21,6 +21,8 @@ class Message extends JsonResource
             'message' => $this->message,
             'created_at' => $this->created_at,
             'author' => new UserResource($author),
+            'id' => $this->vertexid,
+            'extras' => $this->extras,
         ];
     }
 }

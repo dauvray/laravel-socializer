@@ -56,6 +56,19 @@ class Chat
             return false;
         }
 
+        // is registered in chat
+        $is_registred = $this->nebula->execute('GO FROM "'.$this->user->vertexid.'" OVER registered_in WHERE id($$) == "'.$room_id.'" YIELD id($$) AS destination');
+
+        if(!$is_registred) {
+           // user / chat relation
+            $this->nebula->insertEdge(
+                config('socializer.nebulagraph.edges.registered_in.name'), 
+                [
+                    $this->user->vertexid.'->'.$room_id => config('socializer.nebulagraph.edges.registered_in.props')
+                ]
+            );
+        }
+        
         // message / chat relation
         $this->nebula->insertEdge(
             config('socializer.nebulagraph.edges.published_in.name'), 
@@ -85,13 +98,92 @@ class Chat
         ->sendNow();
     }
 
+    public function deleteMessage( $request )
+    {
+        $message = config('socializer.models.message')::where('vertexid', $request->get('message_id'))->first();
+        $room_id = $request->get('room_id');
+        $user = $this->user;
+
+        if($message->model_id != $user->id) {
+            return false;
+        }
+
+        // delete message
+        $message->message = '<i>Message supprimé</i>';
+        $message->extra = null;
+        $message->save();
+
+
+        Broadcast::presence("chat.$room_id")
+        ->as('deleteMessage')
+        ->with([
+            'vertexid' => $request->get('message_id'),
+        ])
+        ->sendNow();
+    }
+    
+    public function setEmoji($request )
+    {
+        $message = config('socializer.models.message')::where('vertexid', $request->get('message_id'))->first();
+        $from = $request->get('from');
+        $emoji = $request->get('emoji');
+        $room_id = $request->get('room_id');
+
+        if(!$emoji) {
+            return false;
+        }
+
+        $extras = $message->extras;
+
+        if(!is_array($extras)) {
+            $extras = [];
+        }
+        if(!isset($extras['emojis'])) {
+            $extras['emojis'] = [];
+        }
+        if(!isset($extras['emojis'][$emoji])) {
+            $extras['emojis'][$emoji] = [];
+        }
+
+        // check if the user is already in the list for this emoji
+        foreach ($extras['emojis'] as $emoji => $users) {
+            // Vérifier si l'utilisateur est dans la liste pour cet emoji
+            if (in_array($from, $users)) {
+                
+                // Supprimer l'utilisateur de la liste
+                $extras['emojis'][$emoji] = array_values(array_filter($users, function($user) use ($from) {
+                    return $user !== $from;
+                }));
+                // Si la liste d'utilisateurs est vide, supprimer l'entrée de l'emoji
+                if (empty($extras['emojis'][$emoji])) {
+                    unset($extras['emojis'][$emoji]);
+                }
+            }
+        }
+
+        $extras['emojis'][$emoji][] = $from;
+
+        $message->extras = $extras;
+        $message->save();
+
+        Broadcast::presence("chat.$room_id")
+        ->as('receivedEmoji')
+        ->with([
+            'emojis' => $message->extras['emojis'],
+            'vertexid' => $message->vertexid,
+            'from' => $from,
+        ])
+        ->sendNow();
+    }
+
     public function getConversations()
     {
        return $this->user->conversations();
     }
 
     public function getConversation( $vertex_id = null)
-    {         
+    {    
+        // users = registered users + authors     
         $query =  "
             MATCH (c:chat) WHERE id(c) == '$vertex_id'
             MATCH (c:chat)<-[:registered_in]-(us:user)

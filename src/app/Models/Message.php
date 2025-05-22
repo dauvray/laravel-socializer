@@ -25,6 +25,7 @@ class Message extends Model
         'message',
         'vertexid',
         'created_at',
+        'extras',
     ];
 
 
@@ -33,7 +34,15 @@ class Message extends Model
     | FUNCTIONS
     |--------------------------------------------------------------------------
     */
-
+    /**
+     * Get the attributes that should be cast.
+     */
+    protected function casts(): array
+    {
+        return [
+            'extras' =>'array',
+        ];
+    }
 
 
     /*

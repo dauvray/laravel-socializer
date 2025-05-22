@@ -27,6 +27,8 @@
                         v-for="(item,idx) in messages"
                         :key="idx"
                         :item="item"
+                        @selected-emoji="onSelectedEmoji"
+                        @delete-message="onDeleteMessage"
                     ></MessageWidget>
                 </div>
             </div>
@@ -43,20 +45,11 @@
                         </li>
                     </ul>
                 </div>
-                <div class="chat-messenger-inner">
-                    <textarea 
-                        placeholder="Votre message"
-                        rows="1"
-                        v-model="message"
-                        @focus="onStartWritting"
-                        @blur="onStopWritting"
-                    ></textarea>
-                    <button 
-                        type="button" 
-                        @click="onSendMessage"
-                        >Envoyer
-                    </button>
-                </div>
+                 <TextareaMessage
+                    @start-writting="onStartWritting"
+                    @stop-writting="onStopWritting"
+                    @send-message="onSendMessage"
+                 ></TextareaMessage>
             </div>
         </div>
     </div>
@@ -76,6 +69,7 @@
     import DataUserPeerConnection from '~socializer/components/WebRTC/widgets/DataUserPeerConnection.vue'
     import IntersectionObserver from '~socializer/components/widgets/IntersectionObserver.vue'
     import SpinnerTextWriting from '~estarter/components/widgets/Spinners/SpinnerTextWriting.vue'
+    import TextareaMessage from './widgets/partials/TextareaMessage.vue'
 
     export default {
         name: 'Chat',
@@ -87,6 +81,7 @@
             MessageWidget,
             SpinnerTextWriting,
             RoomUsersList: defineAsyncComponent(() => import('~socializer/components/Server/widgets/RoomUsersList.vue')),
+            TextareaMessage,
         },
         props: {
             vertexId: {
@@ -103,7 +98,6 @@
         data() {
             return {
                 videoContainer: '#videoContainer',
-                message: '',
                 intersectionObserver: false,
                 actors: [],
                 chatters: [],
@@ -163,6 +157,10 @@
                 'receiveMessage',
                 'leaveCurrentConversation',
                 'updateConversationInfos',
+                'sendEmoji',
+                'receiveEmoji',
+                'deleteMessage',
+                'deletedMessage',
             ]),
             ...mapActions(usePeerStore, [
                 'sendData',
@@ -185,27 +183,49 @@
                         .listen('.receivedMsg', (event) => {
                             this.onReceiveMessage(event)
                         })
+                        .listen('.receivedEmoji', (event) => {
+                           this.receiveEmoji(event)
+                        })
                         .listen('.updateChatters', (event) => {
                             this.updateConversationInfos(event)
+                        })
+                        .listen('.deletedMessage', (event) => {
+                            this.onDeletedMessage(event.messageId)
                         })
                         .error((error) => {
                             console.error(error);
                         })
                 }
             },
-            onSendMessage() {
+            onSendMessage(message) {
                 this.sendMessage({
-                    message: this.message,
+                    message: message,
                     chatId: this.currentConversationId,
                 })
-
-                this.message = ''
+            },
+            onSelectedEmoji(emoji, message) {
+                this.sendEmoji({
+                    emoji: emoji,
+                    messageId: message.id,
+                    chatId: this.currentConversationId,
+                    from: this.me.slug,
+                })
+            },
+            onDeleteMessage(messageId) {
+                this.deleteMessage({
+                    messageId: messageId,
+                    chatId: this.currentConversationId,
+                    from: this.me.slug,
+                })
             },
             onReceiveMessage(event) {
                 this.receiveMessage(event)
                 setTimeout(() => {
                     this.scrollView()
                }, 300)
+            },
+            onDeletedMessage(event) {
+                this.deletedMessage(event)
             },
             onAddContact(identifier) {
                 this.addContactToConversation(identifier, this.currentConversationId)

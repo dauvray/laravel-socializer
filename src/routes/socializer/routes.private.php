@@ -98,6 +98,14 @@ Route::post('/send-chat-message',
     config('socializer.controllers_front.chat').'@sendMessage')
     ->name('chat.send');
 
+Route::post('/delete-chat-message',
+    config('socializer.controllers_front.chat').'@deleteMessage')
+    ->name('chat.delete');
+    
+Route::post('/send-chat-emoji',
+    config('socializer.controllers_front.chat').'@setEmoji')
+    ->name('chat.send.emoji');
+
 Route::post('/add-contact-to-conversation',
     config('socializer.controllers_front.chat').'@addContactToConversation')
     ->name('chat.add.contact');
