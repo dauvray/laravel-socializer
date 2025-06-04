@@ -11,7 +11,7 @@
             @selected-emoji="onSelectedEmoji"
         ></EmojBtn>
          <div class="vr"></div>
-        <button v-if="isMe" type="button" class="btn btn-sm" >
+        <button v-if="isMe" type="button" class="btn btn-sm" @click="onEditMessage" >
             <IconWidget icon="pen" />
         </button> 
         <div ref="dropdown" 
@@ -22,7 +22,7 @@
             </button>
             <ul class="dropdown-menu">
                 <li v-if="isMe">
-                    <a class="dropdown-item" @click="handleDeleteMessage">
+                    <a class="dropdown-item" @click="onDeleteMessage">
                         <IconWidget icon="trash" /> Supprimer
                     </a>
                 </li>
@@ -45,6 +45,7 @@
         emits: [
             'selected-emoji',
             'delete-message',
+            'edit-message',
         ],
         components: {
             EmojBtn,
@@ -109,8 +110,11 @@
             handleOpenDropdown() {
                 this.dropDown.show()
             },
-            handleDeleteMessage() {
-                this.$emit('delete-message', this.message.id)
+            onDeleteMessage() {
+                this.$emit('delete-message')
+            },
+            onEditMessage() {
+                this.$emit('edit-message')
             },
         }
     }

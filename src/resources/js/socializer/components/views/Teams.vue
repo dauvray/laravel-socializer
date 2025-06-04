@@ -26,7 +26,7 @@
     import { mapActions, mapState } from 'pinia'
     import { useChatStore } from '~socializer/stores/chat.js'
     import { useConversationsStore } from '~socializer/stores/conversations.js'
-    import resizable from "~socializer/directives/resizable.js"
+    import resizable from "~socializer/directives/resizable_vertical.js"
 
     export default {
         name: 'Teams',

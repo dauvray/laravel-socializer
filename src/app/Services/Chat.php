@@ -28,6 +28,7 @@ class Chat
             "model_id" => $this->user->id,
             "model_type" => get_class($this->user),
             "room_id" => $room_id,
+            "extras" => ['status' => 1],
         ]);
 
         if(!$message) {
@@ -92,8 +93,44 @@ class Chat
         ->as('receivedMsg')
         ->with([
             'message' => $message->message,
+            'id' => $message->vertexid,
             'created_at' => $message->created_at,
             'author' => new UserResource($this->user),
+            "extras" => $message->extras,
+        ])
+        ->sendNow();
+    }
+
+    public function updateMessage( $request)
+    {
+
+        $user = $this->user;
+        $room_id = $request->get('room_id');
+
+        $message = config('socializer.models.message')::where([
+            ['vertexid', $request->get('message_id')],
+            ['room_id', $request->get('room_id')],
+            ['model_id', $user->id],
+        ])->first();
+
+        if(!$message) {
+            return false;
+        }
+
+        $extras = $message->extras;
+        $extras['edited'] = 1;
+        $message->extras = $extras;
+        $message->message = formatTextToContent($request->get('message'))['content'];
+        $message->save();
+
+        Broadcast::presence("chat.$room_id")
+        ->as('updatedMsg')
+        ->with([
+            'message' => $message->message,
+            'id' => $message->vertexid,
+            'created_at' => $message->created_at,
+            'author' => new UserResource($this->user),
+            "extras" => $message->extras
         ])
         ->sendNow();
     }
@@ -108,14 +145,15 @@ class Chat
             return false;
         }
 
-        // delete message
-        $message->message = '<i>Message supprimé</i>';
-        $message->extra = null;
-        $message->save();
-
+        // delete nebula vertex
+        $this->nebula->deleteVertex([$message->vertexid], true);
+        
+        // delete message in mongo
+        $message->delete();
+       
 
         Broadcast::presence("chat.$room_id")
-        ->as('deleteMessage')
+        ->as('deletedMessage')
         ->with([
             'vertexid' => $request->get('message_id'),
         ])

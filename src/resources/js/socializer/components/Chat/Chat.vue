@@ -1,11 +1,5 @@
 <template>
     <div class="chat-wrapper">
-        <DataUserPeerConnection 
-            v-if="chatters && currentConversation"
-            :users="chatters"
-            :roomId="currentConversationId"
-            :callback-connection="connectionDataCallback"
-        ></DataUserPeerConnection>
         <div class="chat-header" v-if="displayHeader">
             <RoomUsersList :users="chatters"></RoomUsersList>
             <ChatContactsButtons
@@ -24,36 +18,55 @@
                         @trigger-intersected="onTriggerObserver"
                     ></IntersectionObserver>
                     <MessageWidget 
-                        v-for="(item,idx) in messages"
+                        v-for="(item, idx) in messages"
                         :key="idx"
                         :item="item"
                         @selected-emoji="onSelectedEmoji"
                         @delete-message="onDeleteMessage"
+                        @update-message="onUpdateMessage"
                     ></MessageWidget>
                 </div>
             </div>
 
-            <div class="chat-messenger">
-                <div v-if="actors.length" 
-                    class="chat-messenger-writting">
-                    <SpinnerTextWriting></SpinnerTextWriting>
-                    <ul>
-                        <li v-for="name in actors" 
-                            :key="name"
-                            class="d-flex align-items-center">
-                            {{ name }} écrit ...
-                        </li>
-                    </ul>
+            <div class="chat-messenger-sticky-wrapper">
+                <div class="chat-messenger-ghost"></div>
+                <div class="chat-messenger" 
+                    ref="messenger"
+                    v-resizable="{
+                        min: initialElHeight,
+                        max: 600,
+                        position: 'top',
+                        cssVarName: cssVarName,
+                        callback: updateElHeight
+                    }">
+                    <div v-if="actors.length" 
+                        class="chat-messenger-writting">
+                        <SpinnerTextWriting></SpinnerTextWriting>
+                        <ul>
+                            <li v-for="name in actors" 
+                                :key="name"
+                                class="d-flex align-items-center">
+                                {{ name }} écrit ...
+                            </li>
+                        </ul>
+                    </div>
+                    <TextareaMessage
+                        @start-writting="onStartWritting"
+                        @stop-writting="onStopWritting"
+                        @send-message="onSendMessage"
+                        @open-wysiwyg="onWysiwyg"
+                    ></TextareaMessage>
                 </div>
-                 <TextareaMessage
-                    @start-writting="onStartWritting"
-                    @stop-writting="onStopWritting"
-                    @send-message="onSendMessage"
-                 ></TextareaMessage>
             </div>
+
         </div>
     </div>
-  
+    <DataUserPeerConnection 
+        v-if="chatters && currentConversation"
+        :users="chatters"
+        :roomId="currentConversationId"
+        :callback-connection="connectionDataCallback"
+    ></DataUserPeerConnection>
 </template>
 
 <script>
@@ -70,6 +83,8 @@
     import IntersectionObserver from '~socializer/components/widgets/IntersectionObserver.vue'
     import SpinnerTextWriting from '~estarter/components/widgets/Spinners/SpinnerTextWriting.vue'
     import TextareaMessage from './widgets/partials/TextareaMessage.vue'
+    import resizable from "~socializer/directives/resizable_horizontal.js"
+import { css } from '@codemirror/lang-css'
 
     export default {
         name: 'Chat',
@@ -82,6 +97,9 @@
             SpinnerTextWriting,
             RoomUsersList: defineAsyncComponent(() => import('~socializer/components/Server/widgets/RoomUsersList.vue')),
             TextareaMessage,
+        },
+        directives: {
+            resizable,
         },
         props: {
             vertexId: {
@@ -101,6 +119,9 @@
                 intersectionObserver: false,
                 actors: [],
                 chatters: [],
+                cssVarName: '--messenger-height',
+                initialElHeight: 50,
+                ElHeight: null,
             }
         },
         computed: {
@@ -133,9 +154,7 @@
             }
         },
         mounted() {
-            setTimeout(() => {
-                this.intersectionObserver = true
-            },1000)
+            this.intersectionObserver = true
         },
         beforeUnmount() {
             Echo.leave(this.channel)
@@ -161,6 +180,8 @@
                 'receiveEmoji',
                 'deleteMessage',
                 'deletedMessage',
+                'updateMessage',
+                'updatedMessage',
             ]),
             ...mapActions(usePeerStore, [
                 'sendData',
@@ -189,8 +210,11 @@
                         .listen('.updateChatters', (event) => {
                             this.updateConversationInfos(event)
                         })
-                        .listen('.deletedMessage', (event) => {
-                            this.onDeletedMessage(event.messageId)
+                        .listen('.deletedMessage', (event) => { 
+                            this.onDeletedMessage(event.vertexid)
+                        })
+                        .listen('.updatedMsg', (event) => {
+                            this.onUpdatedMessage(event)
                         })
                         .error((error) => {
                             console.error(error);
@@ -200,6 +224,14 @@
             onSendMessage(message) {
                 this.sendMessage({
                     message: message,
+                    chatId: this.currentConversationId,
+                })
+                this.$refs.messenger.style.setProperty(this.cssVarName, `${this.initialElHeight}px`);
+            },
+            onUpdateMessage(message, messageId) {
+                this.updateMessage({
+                    message: message,
+                    messageId: messageId,
                     chatId: this.currentConversationId,
                 })
             },
@@ -218,14 +250,17 @@
                     from: this.me.slug,
                 })
             },
+            onUpdatedMessage(payload) {
+                this.updatedMessage(payload)
+            },
             onReceiveMessage(event) {
                 this.receiveMessage(event)
                 setTimeout(() => {
                     this.scrollView()
                }, 300)
             },
-            onDeletedMessage(event) {
-                this.deletedMessage(event)
+            onDeletedMessage(vertexid) {
+                this.deletedMessage(vertexid)
             },
             onAddContact(identifier) {
                 this.addContactToConversation(identifier, this.currentConversationId)
@@ -247,6 +282,14 @@
             onQuitChat() {
                 this.leaveCurrentConversation()
                 this.$router.push({ name: 'Teams'})
+            },
+
+            /*------ RESIZER ----------*/
+            updateElHeight(height) {
+              this.ElHeight = height
+            },
+            onWysiwyg() {
+
             },
 
             /*------  DATA CONNECTION ----------*/

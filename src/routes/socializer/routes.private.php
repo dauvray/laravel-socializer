@@ -101,6 +101,10 @@ Route::post('/send-chat-message',
 Route::post('/delete-chat-message',
     config('socializer.controllers_front.chat').'@deleteMessage')
     ->name('chat.delete');
+
+Route::post('/update-chat-message',
+    config('socializer.controllers_front.chat').'@updateMessage')
+    ->name('chat.update');
     
 Route::post('/send-chat-emoji',
     config('socializer.controllers_front.chat').'@setEmoji')

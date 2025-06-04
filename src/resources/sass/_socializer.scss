@@ -59,6 +59,7 @@
     }
 
     .chat-messages-wrapper {
+        position: relative;
       //  @extend .container;
 
         // todo a reproduire au niveau de la room
@@ -154,10 +155,10 @@
                             @extend .shadow;
                            
                             .message {
-                                    @extend .card-body; 
-                                    @extend .d-flex;
-                                    @extend .align-items-start;
-                                    @extend .p-2;
+                                @extend .card-body; 
+                                @extend .d-flex;
+                                @extend .align-items-start;
+                                @extend .p-2;
                             }
                         }
                     }
@@ -167,10 +168,30 @@
 
     }
 
-    .chat-messenger {
+    .chat-messenger-sticky-wrapper {
         position: sticky;
+        z-index: 10;
+        height: var(--messenger-height, 50px); /* hauteur contrôlée dynamiquement */
+
+    }
+
+    /* invisible mais occupe la place dans le layout */
+    .chat-messenger-ghost {
+        height: var(--messenger-height, 50px);
+        pointer-events: none;
+        visibility: hidden;
+    }
+
+    .chat-messenger {
+        position: absolute;
         bottom: 0;
-        @extend .bg-auto;
+        left: 0;
+        right: 0;
+        height: var(--messenger-height, 50px);
+        @extend .border;
+        @extend .shadow-sm;
+        @extend .rounded;
+        background-color:rgba(0, 0, 0, 0.8);
 
         .chat-messenger-writting {
             @extend .d-flex;
@@ -191,14 +212,12 @@
         .message-input-container {
              @extend .d-flex;
              @extend .align-items-end;
-             @extend .border;
-             @extend .shadow-sm;
-             @extend .rounded;
-     
+             height: 100%;
+            
             .message-input { 
                 padding: 10px 15px;
                 overflow: hidden;
-            z-index: 5;
+                z-index: 5;
             }
 
             .message-input:focus {
@@ -207,6 +226,17 @@
                 box-shadow: none !important;
             }
 
+            .message-input-tools {
+                position: absolute;
+                right: 0;
+                bottom: 0;
+            }
+        }
+
+        .pell,
+        .pell-content {
+            height: 100%;
+             background-color:rgba(0, 0, 0, 0.0);
         }
     }
 }
@@ -297,7 +327,7 @@
                      }
                      &:hover {
                          @extend .bg-auto-secondary;
-                     }
+                    }
                 }
              }
          }
@@ -318,8 +348,6 @@
         #room-stream-btn {
             @extend .btn-group;
             @extend .btn-group-sm;
-            position: absolute;
-            right: 0px;
         }
     }
 

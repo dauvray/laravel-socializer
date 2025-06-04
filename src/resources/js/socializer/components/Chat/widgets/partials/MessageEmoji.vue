@@ -1,7 +1,7 @@
 <template>
     <ul class="list-unstyled">
         <li v-for="(emoji,idx) in emojis" class="d-inline" :key="idx"> 
-            {{ idx }} 
+            {{ idx }}
             <div v-if="emoji.length > 1">
                 {{ emoji.length  }}
             </div>

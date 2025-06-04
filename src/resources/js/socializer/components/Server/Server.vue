@@ -36,11 +36,11 @@
             ></RoomParamsWrapper>
             
         </section>
-        
+          
         <section v-if="!isLoading" id="room-header" :style="setMainContentMargin">
             <RoomHeader id="room-header-inner"></RoomHeader>
             <div id="room-stream-btn" role="group">
-               <StreamUserButton 
+            <StreamUserButton 
                     v-if="showStreamButton"
                     ref="webcamBtn"
                     :users="currentRoomUsers"
@@ -48,7 +48,7 @@
                     @started-stream="onStartedStream"
                     @stoped-stream="onStopedStream"
                 ></StreamUserButton>
-                 <CaptureUserButton
+                <CaptureUserButton
                     v-if="showCaptureButton"
                     ref="screenBtn"
                     :users="currentRoomUsers"
@@ -68,11 +68,12 @@
             ></PageComponent>
 
             <router-view 
-               :key="$route.params.roomId"
+            :key="$route.params.roomId"
                 @update-users-room="onUpdateRoomUsers"
             ></router-view>
         </section>
-
+      
+ 
     </div>
 
     <CreateRoomModal
@@ -101,7 +102,7 @@
     import CaptureUserButton from '~socializer/components/WebRTC/widgets/CaptureUserButton.vue'
     import Gravatar from '~estarter/components/widgets/Gravatar.vue'
     import RoomParamsWrapper from './widgets/RoomParamsWrapper.vue'
-    import resizable from "~socializer/directives/resizable.js"
+    import resizable from "~socializer/directives/resizable_vertical.js"
 
     export default {
         name: 'Server',

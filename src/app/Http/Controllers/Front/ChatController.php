@@ -18,6 +18,17 @@ class ChatController extends Controller
         $service->sendMessage($request);
     }
 
+    public function updateMessage(Request $request, ChatService $service) 
+    {
+        $request->validate([
+            'message' => 'required',
+            'message_id' => 'required',
+            'room_id' => 'required',
+        ]);
+
+        $service->updateMessage($request);
+    }
+
     public function deleteMessage(Request $request, ChatService $service)
     {
         $request->validate([

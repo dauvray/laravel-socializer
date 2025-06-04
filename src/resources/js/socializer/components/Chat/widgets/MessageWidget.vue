@@ -1,6 +1,6 @@
 <template>
     <div class="message-wrapper" 
-        :class="{'justify-content-end': isMe }">
+        :class="{'is-me': isMe }">
         <Gravatar
             v-if="!isMe"
             class="me-2"
@@ -13,26 +13,34 @@
             <div class="message-infos" >
                 <UserWallLink :user="item.author"></UserWallLink>
                 <small>
-                    <DateHelpr
+                    <DateHelper
                         class="fst-italic fw-lighter"
                         :date="item.created_at"
                         format="since"
-                    ></DateHelpr>
+                    ></DateHelper>
                 </small>
             </div>
-            <div class="message-inner">
-
-                <div class="message"  >
-                    <div v-html="item.message"></div>
-                </div>
+            <div v-if="!updating" 
+                class="message-inner" 
+                :class="{'is-me': isMe }">
+                <div class="message" v-html="item.message"></div>
+                <small v-if="isEdited" class="ps-2"><i>Modifié</i></small>
             </div>
+            <MessageEditor v-else 
+                class="rounded"
+                :message="item.message"
+                @cancel="updating = false"
+                @update-message="onUpdateMessage"
+            ></MessageEditor>
             <MessageEmoji :emojis="emojis"></MessageEmoji>
         </div>
+        
         <MessageTools 
             :style="toolsStyle"
             :message="item"
             @selected-emoji="onSelectedEmoji"
             @delete-message="onDeleteMessage"
+            @edit-message="onEditMessage"
         ></MessageTools>
     </div>
 </template>
@@ -45,13 +53,16 @@
     import MessageEmoji from './partials/MessageEmoji.vue'
     import { useMeStore } from '~estarter/stores/me.js'
     import { mapState } from 'pinia'
+    import { defineAsyncComponent } from '@vue/runtime-core'
     import { computePosition, offset, flip, shift } from '@floating-ui/dom'
 
     export default {
         name: "MessageWidget",
+        inject: ["eventBus"],
         emits: [
             'selected-emoji',
             'delete-message',
+            'update-message',
         ],
         components: {
             Gravatar,
@@ -59,6 +70,7 @@
             UserWallLink,
             MessageTools,
             MessageEmoji,
+            MessageEditor: defineAsyncComponent(() => import('./partials/MessageEditor.vue')),
         },
         props: {
             item: {
@@ -69,7 +81,18 @@
         data() {
             return {
                 toolsStyle: {},
+                updating: false,
             }
+        },
+        watch: {
+            updating: function() {
+                if(this.updating) {
+                    this.eventBus.$emit("disable-pointer-event", `chat-message-${this.item.id}`)
+                }
+                else {
+                     this.eventBus.$emit("enable-pointer-event")
+                }
+            },
         },
         computed: {
             ...mapState(useMeStore, {
@@ -84,6 +107,11 @@
                 }
                  return {}
             },
+            isEdited:function() {
+                if(!this.item.extras) return false
+                if(!this.item.extras.edited) return false
+                return this.item.extras.edited === 1
+            }
         },
         mounted() {
             this.$nextTick(() => {
@@ -115,9 +143,16 @@
             onSelectedEmoji(emoji) {
                this.$emit('selected-emoji', emoji, this.item)
             },
-            onDeleteMessage(messageId) {
-                this.$emit('delete-message', messageId)
+            onDeleteMessage() {
+                this.$emit('delete-message', this.item.id)
             },
+            onEditMessage() {
+                this.updating = true
+            },
+            onUpdateMessage(message) {
+                this.updating = false
+                this.$emit('update-message', message, this.item.id)
+            }
         },
     }
 </script>

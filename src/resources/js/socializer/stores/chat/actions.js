@@ -93,15 +93,11 @@ export default {
         )
     },
     receiveEmoji(payload) {
-       
        this.messages.forEach(message => {
             if (message.id === payload.vertexid) {
-                 console.log('receive emoji', payload)
-
                 if(!message.extras.hasOwnProperty('emojis')) {
                     message.extras.emojis = {}
                 }
-
                 message.extras.emojis = {...payload.emojis}
             }
         }) 
@@ -122,9 +118,38 @@ export default {
             }
         )
     },
-    deletedMessage(payload) {
+    deletedMessage(vertexid) { 
         this.messages = this.messages.filter( m => {
-            return m.id !== payload.vertexid
+            return m.id !== vertexid
         })
-    }
+    },
+    updateMessage(payload) {
+        AjaxService.load(
+            '/update-chat-message', 
+            'post', 
+            { 
+                message: payload.message,
+                message_id: payload.messageId,
+                room_id: payload.chatId,
+            },
+            {
+                err: null, msg: null, options: null
+            },
+            {
+                'X-Socket-ID': Echo.socketId()
+            }
+        )
+    },
+    updatedMessage(payload) {
+        let index = null
+
+        this.messages.forEach((message, idx) => {
+            if (message.id === payload.id) {
+                index = idx
+            }
+        })
+        if(index) {
+            this.messages.splice(index, 1, payload)
+        }
+    },
 }
