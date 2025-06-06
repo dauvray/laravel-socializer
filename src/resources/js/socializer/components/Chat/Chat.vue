@@ -55,6 +55,8 @@
                         @stop-writting="onStopWritting"
                         @send-message="onSendMessage"
                         @open-wysiwyg="onWysiwyg"
+                        @update-height="updateElHeight"
+                        @record-result="onRecorded"
                     ></TextareaMessage>
                 </div>
             </div>
@@ -84,7 +86,6 @@
     import SpinnerTextWriting from '~estarter/components/widgets/Spinners/SpinnerTextWriting.vue'
     import TextareaMessage from './widgets/partials/TextareaMessage.vue'
     import resizable from "~socializer/directives/resizable_horizontal.js"
-import { css } from '@codemirror/lang-css'
 
     export default {
         name: 'Chat',
@@ -182,6 +183,7 @@ import { css } from '@codemirror/lang-css'
                 'deletedMessage',
                 'updateMessage',
                 'updatedMessage',
+                'sendAudio',
             ]),
             ...mapActions(usePeerStore, [
                 'sendData',
@@ -235,6 +237,11 @@ import { css } from '@codemirror/lang-css'
                     chatId: this.currentConversationId,
                 })
             },
+            onRecorded(formData) {
+                formData.append('message', '')
+                formData.append('room_id', this.currentConversationId)
+                this.sendAudio( formData )
+            },
             onSelectedEmoji(emoji, message) {
                 this.sendEmoji({
                     emoji: emoji,
@@ -287,6 +294,8 @@ import { css } from '@codemirror/lang-css'
             /*------ RESIZER ----------*/
             updateElHeight(height) {
               this.ElHeight = height
+               // Appliquer dynamiquement via variable CSS
+                this.$refs.messenger.style.setProperty(this.cssVarName, `${this.ElHeight}px`)
             },
             onWysiwyg() {
 

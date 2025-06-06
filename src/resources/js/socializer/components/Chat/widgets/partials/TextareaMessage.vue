@@ -23,6 +23,7 @@
                 icon-color="text-light"
                 @selected-emoji="onSelectedEmoji"
                 @open-wysiwyg="onWysiwyg"
+                @record-result="onRecorded"
             ></MessageToolsButtons>
             <div class="vr"></div>
             <button type="button" 
@@ -42,6 +43,7 @@
     import IconWidget from '~estarter/components/widgets/IconWidget.vue'
     import MessageToolsButtons from '~socializer/components/Chat/widgets/partials/MessageToolsButtons.vue'
     import { defineAsyncComponent } from '@vue/runtime-core'
+    import { debounce } from '~estarter/services/helpers.js'
    
     export default {
         name: 'TextareaMessage',
@@ -56,12 +58,18 @@
             'stop-writting',
             'send-message',
             'open-wysiwyg',
+            'update-height',
+            'record-result',
         ],
         data() {
             return {
                 message: '',
                 wysiwyg: false,
             };
+        },
+        created() {
+            // Initialiser la fonction debounced
+            this.debouncedAction = debounce(this.formatContent, 500);
         },
         mounted() {
             
@@ -96,11 +104,6 @@
                     this.wysiwyg = false
                 }
                 
-                
-                // Réinitialiser la taille après l'envoi
-                // this.$nextTick(() => {
-                //     this.autoResize();
-                // });
             },
             onSelectedEmoji(emoji) {
                 if (!this.wysiwyg) {
@@ -135,15 +138,13 @@
                     this.wysiwyg = false
                     setTimeout(() => {
                          this.$refs.messengerInput.innerHTML = this.message
-                        //  this.$nextTick(() => {
-                        //      this.autoResize();
-                        //  });
                     }, 100)
                     this.eventBus.$emit("enable-pointer-event")
                 }
                  this.$emit('open-wysiwyg', this.wysiwyg)
             },
             onInput(event) {
+               
                 let html
                 if(event) {
                     html = event.target.innerHTML.trim();
@@ -151,34 +152,30 @@
                     html = this.message.trim();
                 }
                
-                
                 // Filtrer les faux contenus vides
                 if (html === '<br>' || html === '&nbsp;' || html === '') {
                     this.message = '';
                 } else {
                     this.message = html;
                 }
-                
-                // Auto-redimensionner après chaque modification
-                // this.$nextTick(() => {
-                //     this.autoResize();
-                // });
-            },
-            updateElHeight(width) {
-              this.ElHeight = width
+
+                this.$emit('update-height', this.$refs.messengerInput.scrollHeight)
+
+                // Partie debounced - s'exécute 500ms après la dernière frappe
+                this.debouncedAction(html);
+
             },
             onKeyDown(event) {
-                if (event.key === 'Enter') {
-                    if (event.shiftKey) {
-                        // Shift + Enter : nouvelle ligne
-                        event.preventDefault();
-                        this.insertLineBreak();
-                    } else {
-                        // Enter seul : envoyer le message
-                        event.preventDefault();
-                        this.onSendMessage();
-                    }
+               
+                if(event.keyCode == 13 && event.shiftKey) {
+                    // Shift + Enter : nouvelle ligne
+                    this.insertLineBreak();
+                } else if(event.key === 'Enter') {
+                    // Enter seul : envoyer le message
+                    event.preventDefault();
+                    this.onSendMessage();
                 }
+
             },
             insertLineBreak() {
                 const selection = window.getSelection();
@@ -197,19 +194,17 @@
                 // Déclencher l'événement input pour mettre à jour la taille
                 this.onInput({ target: this.$refs.messengerInput });
             },
-            // autoResize() {
-            //     const element = this.$refs.messengerInput;
-            //     if (!element) return;
-                
-            //     // Réinitialiser la hauteur pour obtenir la hauteur de contenu réelle
-            //     element.style.height = 'auto';
-                
-            //     // Calculer la nouvelle hauteur basée sur le contenu
-            //     const scrollHeight = element.scrollHeight;
-                
-            //     // Appliquer la nouvelle hauteur
-            //     element.style.height = scrollHeight + 'px';
-            // },
+            formatContent(html) {
+                 // Regex pour détecter les URLs
+                this.urlRegex = /(https?:\/\/[^\s<>"{}|\\^`[\]]+)/gi;
+                const url = html.match(this.urlRegex) || []
+
+                // Ici votre logique debounced
+                console.log('Action debounced avec:', url)
+            },
+            onRecorded(formData) {
+                this.$emit('record-result', formData)
+            },
         }
     }
 </script>

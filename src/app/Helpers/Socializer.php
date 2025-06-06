@@ -8,6 +8,7 @@ if (!function_exists('formatTextToContent')) {
         $helper = new ContentFormater($text);
         $content = str_replace(["\r\n", "\r", "\n"], "", $helper->getContent());
         return [
+            'src' => $text,
             'content' => $content,
             'hashtags' => $helper->getHashtags(),
             'mentions' => $helper->getMentions()

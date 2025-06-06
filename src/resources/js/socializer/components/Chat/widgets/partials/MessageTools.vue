@@ -11,7 +11,7 @@
             @selected-emoji="onSelectedEmoji"
         ></EmojBtn>
          <div class="vr"></div>
-        <button v-if="isMe" type="button" class="btn btn-sm" @click="onEditMessage" >
+        <button v-if="isMe && isEditable" type="button" class="btn btn-sm" @click="onEditMessage" >
             <IconWidget icon="pen" />
         </button> 
         <div ref="dropdown" 
@@ -55,6 +55,11 @@
             message: {
                 type: Object,
                 required: true,
+            },
+            isEditable: {
+                type: Boolean,
+                required: false,
+                default: true,
             },
         },
         data() {

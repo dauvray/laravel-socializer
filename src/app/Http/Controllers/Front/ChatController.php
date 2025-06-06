@@ -29,6 +29,11 @@ class ChatController extends Controller
         $service->updateMessage($request);
     }
 
+    public function editMessage(ChatService $service, $vertex_id = null)
+    {
+        return response($service->editMessage($vertex_id), 200);
+    }
+
     public function deleteMessage(Request $request, ChatService $service)
     {
         $request->validate([
@@ -37,6 +42,23 @@ class ChatController extends Controller
         ]);
 
         $service->deleteMessage($request);
+    }
+
+    public function sendMessageAudio(Request $request, ChatService $service)
+    {
+        $request->validate([
+            'audio' => 'required|file|mimes:webm',
+            'room_id' => 'required',
+        ]);
+
+        $result = $service->sendMessageAudio($request);
+
+        if($result['success']) {
+              $service->sendMessage($request, $result);
+        } else {
+
+            return response()->json(['message' => 'Enregistrement impossible'], 500);
+        }
     }
 
     public function setEmoji(Request $request, ChatService $service)

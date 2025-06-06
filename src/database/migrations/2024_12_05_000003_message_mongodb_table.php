@@ -17,9 +17,11 @@ return new class extends Migration
      */
     public function up()
     {
-        Schema::create('pages', function (Blueprint $collection) {
+        Schema::create('messages', function (Blueprint $collection) {
             $collection->string('model_type', 255);
             $collection->bigInteger('model_id');
+            $collection->text('message')->nullable();
+            $collection->text('message_src')->nullable();
             $collection->string('room_id', 255)->nullable();
             $collection->string('vertexid', 255);
             $collection->text('extras')->nullable();
@@ -38,6 +40,6 @@ return new class extends Migration
      */
     public function down()
     {
-        Schema::drop('pages');
+        Schema::drop('messages');
     }
 };

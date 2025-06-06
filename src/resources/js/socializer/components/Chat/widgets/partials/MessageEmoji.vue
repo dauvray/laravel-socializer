@@ -1,10 +1,10 @@
 <template>
-    <ul class="list-unstyled">
-        <li v-for="(emoji,idx) in emojis" class="d-inline" :key="idx"> 
+    <ul class="emoji-list">
+        <li v-for="(emoji,idx) in emojis" :key="idx"> 
             {{ idx }}
-            <div v-if="emoji.length > 1">
+            <span v-if="emoji.length > 1">
                 {{ emoji.length  }}
-            </div>
+            </span>
         </li>
     </ul>
 </template>

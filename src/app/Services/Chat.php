@@ -6,6 +6,8 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Broadcast;
 use Dauvray\Socializer\app\Http\Resources\MessageCollection;
 use Dauvray\Socializer\app\Http\Resources\User as UserResource;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Http\Request;
 
 class Chat
 {
@@ -18,17 +20,26 @@ class Chat
         $this->nebula = app('nebulaGraph');
     }
 
-    public function sendMessage( $request ) 
-    { 
-        $formated = formatTextToContent($request->get('message'));
+    public function sendMessage( Request $request, $options = [] ) 
+    {
+        $is_audio = isset($options['audio_url']);
         $room_id = $request->get('room_id');
+        $formated = null;
+
+        if(!$is_audio) {
+             $formated = formatTextToContent($request->get('message'));
+        }
 
         $message = config('socializer.models.message')::create([
-            "message" => $formated['content'],
+            "message" => $formated ? $formated['content'] : null,
+            "message_src" => $formated ? $formated['src'] : null,
             "model_id" => $this->user->id,
             "model_type" => get_class($this->user),
             "room_id" => $room_id,
-            "extras" => ['status' => 1],
+            "extras" => [
+                'status' => 1,
+                'audio' => isset($options['audio_url']) ? $options['audio_url'] : null
+            ],
         ]);
 
         if(!$message) {
@@ -101,26 +112,42 @@ class Chat
         ->sendNow();
     }
 
-    public function updateMessage( $request)
+    public function editMessage( $vertex_id )
     {
+        $message = config('socializer.models.message')::where([
+            ['vertexid', $vertex_id],
+            ['model_id', $this->user->id],
+        ])->first();
 
-        $user = $this->user;
+        if(!$message) {
+            abort(404, 'Message not found');
+        }
+
+        return $message->message_src;
+
+    }
+
+    public function updateMessage(Request $request)
+    {
         $room_id = $request->get('room_id');
 
         $message = config('socializer.models.message')::where([
             ['vertexid', $request->get('message_id')],
             ['room_id', $request->get('room_id')],
-            ['model_id', $user->id],
+            ['model_id', $this->user->id],
         ])->first();
 
         if(!$message) {
             return false;
         }
 
+        $formated = formatTextToContent($request->get('message'));
+
         $extras = $message->extras;
         $extras['edited'] = 1;
         $message->extras = $extras;
-        $message->message = formatTextToContent($request->get('message'))['content'];
+        $message->message = $formated['content'];
+        $message->message_src = $formated['src'];
         $message->save();
 
         Broadcast::presence("chat.$room_id")
@@ -135,13 +162,12 @@ class Chat
         ->sendNow();
     }
 
-    public function deleteMessage( $request )
+    public function deleteMessage(Request $request )
     {
         $message = config('socializer.models.message')::where('vertexid', $request->get('message_id'))->first();
         $room_id = $request->get('room_id');
-        $user = $this->user;
 
-        if($message->model_id != $user->id) {
+        if($message->model_id != $this->user->id) {
             return false;
         }
 
@@ -151,7 +177,6 @@ class Chat
         // delete message in mongo
         $message->delete();
        
-
         Broadcast::presence("chat.$room_id")
         ->as('deletedMessage')
         ->with([
@@ -160,7 +185,7 @@ class Chat
         ->sendNow();
     }
     
-    public function setEmoji($request )
+    public function setEmoji(Request $request )
     {
         $message = config('socializer.models.message')::where('vertexid', $request->get('message_id'))->first();
         $from = $request->get('from');
@@ -346,7 +371,7 @@ class Chat
         return true;
     }
 
-    public function addContactToConversation( $request )
+    public function addContactToConversation(Request $request )
     {
         $contact = $request->get('contact');
         $chat_vid = $request->get('chat'); 
@@ -380,5 +405,38 @@ class Chat
         ->sendNow();
 
         return true;
+    }
+
+    public function sendMessageAudio(Request $request)
+    {
+        $room_id = $request->get('room_id');
+
+        // is registered in chat
+        $is_registred = $this->nebula->execute('GO FROM "'.$this->user->vertexid.'" OVER registered_in WHERE id($$) == "'.$room_id.'" YIELD id($$) AS destination');
+
+        if(!$is_registred) {
+           // user / chat relation
+            $this->nebula->insertEdge(
+                config('socializer.nebulagraph.edges.registered_in.name'), 
+                [
+                    $this->user->vertexid.'->'.$room_id => config('socializer.nebulagraph.edges.registered_in.props')
+                ]
+            );
+        }
+
+        if (!$request->hasFile('audio')) {
+            return response()->json(['error' => 'Aucun fichier reçu'], 400);
+        }
+
+        $file = $request->file('audio');
+
+        $path = $file->store('audios', 'public'); // dans storage/app/public/audios
+
+        return[
+            'success' => true,
+            'audio_url' => Storage::url($path), // /storage/audios/...
+            'audio_path' => $path,
+        ];
+
     }
 }

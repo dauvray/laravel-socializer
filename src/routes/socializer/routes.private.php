@@ -98,9 +98,17 @@ Route::post('/send-chat-message',
     config('socializer.controllers_front.chat').'@sendMessage')
     ->name('chat.send');
 
+Route::get('/edit-chat-message/{vertex_id}', 
+    config('socializer.controllers_front.chat').'@editMessage')
+    ->name('chat.edit');
+
 Route::post('/delete-chat-message',
     config('socializer.controllers_front.chat').'@deleteMessage')
     ->name('chat.delete');
+
+Route::post('/send-chat-audio',
+    config('socializer.controllers_front.chat').'@sendMessageAudio')
+    ->name('chat.send.audio');
 
 Route::post('/update-chat-message',
     config('socializer.controllers_front.chat').'@updateMessage')

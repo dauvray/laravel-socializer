@@ -1,3 +1,4 @@
+import { data } from 'autoprefixer'
 import { useAjaxService } from '~estarter/services/AjaxService.js'
 const AjaxService = useAjaxService()
 
@@ -71,8 +72,24 @@ export default {
             }
         )
     },
+    async editMessage(vertexid) {
+        const source = await AjaxService.load(`/edit-chat-message/${vertexid}`)
+        return source
+    },
     receiveMessage(payload) {
         this.messages.push(payload)
+    },
+    sendAudio(formData) {
+        AjaxService.load(
+        '/send-chat-audio', 
+        'post', 
+        formData,
+        {
+            err: null, msg: null, options: null
+        },
+        {
+            'X-Socket-ID': Echo.socketId()
+        })
     },
     sendEmoji(payload) { 
         AjaxService.load(

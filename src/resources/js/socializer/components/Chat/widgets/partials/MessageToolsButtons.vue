@@ -11,21 +11,29 @@
         :btn-class="`btn btn-link ${iconColor}`"
         @selected-emoji="onSelectedEmoji"
     ></EmojBtn>
+    <AudioBtn 
+        :class="iconColor"
+        @record-result="onRecorded"
+        >
+    </AudioBtn>
 </template>
 
 <script>
     import EmojBtn from '~formdesigner/application/formCreator/widgets/Emoji.vue'
+    import AudioBtn from './AudioBtn.vue'
     import IconWidget from '~estarter/components/widgets/IconWidget.vue'
    
     export default {
         name: 'MessageToolsButtons',
         emits: [
             'selected-emoji',
-            'open-wysiwyg'
+            'open-wysiwyg',
+            'record-result',
         ],
         components: {
             EmojBtn,
             IconWidget,
+            AudioBtn,
         },
         props: {
             iconColor: {
@@ -40,6 +48,9 @@
             },
             onWysiwyg() {
                 this.$emit('open-wysiwyg');
+            },
+            onRecorded(formData) {
+                this.$emit('record-result', formData);
             },
         },
     };

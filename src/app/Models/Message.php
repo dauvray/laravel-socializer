@@ -23,6 +23,7 @@ class Message extends Model
         'model_type',
         'room_id',
         'message',
+        'message_src',
         'vertexid',
         'created_at',
         'extras',

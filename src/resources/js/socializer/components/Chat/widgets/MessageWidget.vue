@@ -20,24 +20,32 @@
                     ></DateHelper>
                 </small>
             </div>
-            <div v-if="!updating" 
+
+            <AudioPlayer v-if="isAudio"
+                :src="item.extras.audio"
+            ></AudioPlayer>
+
+            <div v-else-if="!updating" 
                 class="message-inner" 
                 :class="{'is-me': isMe }">
                 <div class="message" v-html="item.message"></div>
                 <small v-if="isEdited" class="ps-2"><i>Modifié</i></small>
             </div>
+
             <MessageEditor v-else 
                 class="rounded"
-                :message="item.message"
+                :message="message_source"
                 @cancel="updating = false"
                 @update-message="onUpdateMessage"
             ></MessageEditor>
+
             <MessageEmoji :emojis="emojis"></MessageEmoji>
         </div>
         
         <MessageTools 
             :style="toolsStyle"
             :message="item"
+            :is-editable="!isAudio"
             @selected-emoji="onSelectedEmoji"
             @delete-message="onDeleteMessage"
             @edit-message="onEditMessage"
@@ -52,7 +60,8 @@
     import MessageTools from './partials/MessageTools.vue'
     import MessageEmoji from './partials/MessageEmoji.vue'
     import { useMeStore } from '~estarter/stores/me.js'
-    import { mapState } from 'pinia'
+    import { useChatStore } from '~socializer/stores/chat.js'
+    import { mapActions, mapState } from 'pinia'
     import { defineAsyncComponent } from '@vue/runtime-core'
     import { computePosition, offset, flip, shift } from '@floating-ui/dom'
 
@@ -71,6 +80,7 @@
             MessageTools,
             MessageEmoji,
             MessageEditor: defineAsyncComponent(() => import('./partials/MessageEditor.vue')),
+            AudioPlayer: defineAsyncComponent(() => import('~estarter/components/widgets/AudioPlayer.vue'))
         },
         props: {
             item: {
@@ -82,6 +92,7 @@
             return {
                 toolsStyle: {},
                 updating: false,
+                message_source: null,
             }
         },
         watch: {
@@ -111,7 +122,11 @@
                 if(!this.item.extras) return false
                 if(!this.item.extras.edited) return false
                 return this.item.extras.edited === 1
-            }
+            },
+            isAudio: function() {
+                if(!this.item.extras) return false
+                return this.item.extras.hasOwnProperty('audio')
+            },
         },
         mounted() {
             this.$nextTick(() => {
@@ -119,6 +134,9 @@
             })
         },
         methods: {
+            ...mapActions(useChatStore, [
+                'editMessage',
+            ]),
             async updatePosition() {
                 await this.$nextTick()
                 if (!this.$refs.message || !this.$refs.tools) return
@@ -146,7 +164,8 @@
             onDeleteMessage() {
                 this.$emit('delete-message', this.item.id)
             },
-            onEditMessage() {
+            async onEditMessage() {
+                this.message_source = await this.editMessage(this.item.id)
                 this.updating = true
             },
             onUpdateMessage(message) {
