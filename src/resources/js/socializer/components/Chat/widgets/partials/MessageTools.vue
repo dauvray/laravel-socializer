@@ -137,6 +137,6 @@
 
     .message-tools:hover {
         opacity: 1;
-        transform: translateY(20px);
+        transform: translateY(0px);
     }
 </style>

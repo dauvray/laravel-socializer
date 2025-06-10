@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\Broadcast;
 use Dauvray\Socializer\app\Http\Resources\MessageCollection;
 use Dauvray\Socializer\app\Http\Resources\User as UserResource;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Response;
 use Illuminate\Http\Request;
 
 class Chat
@@ -20,15 +21,49 @@ class Chat
         $this->nebula = app('nebulaGraph');
     }
 
+    public function checkRegistration($room_id)
+    {
+        // is registered in chat
+        $is_registred = $this->nebula->execute('GO FROM "'.$this->user->vertexid.'" OVER registered_in WHERE id($$) == "'.$room_id.'" YIELD id($$) AS destination');
+
+        if(!$is_registred) {
+           // user / chat relation
+            $this->nebula->insertEdge(
+                config('socializer.nebulagraph.edges.registered_in.name'), 
+                [
+                    $this->user->vertexid.'->'.$room_id => config('socializer.nebulagraph.edges.registered_in.props')
+                ]
+            );
+        }
+
+    }
+
     public function sendMessage( Request $request, $options = [] ) 
     {
-        $is_audio = isset($options['audio_url']);
+        $is_audio = isset($options['audio_file']);
         $room_id = $request->get('room_id');
         $formated = null;
+        $content = $request->get('message');
 
-        if(!$is_audio) {
-             $formated = formatTextToContent($request->get('message'));
+        if(!$is_audio && $content) {
+             $formated = formatTextToContent($content);
         }
+
+        // Sauvegarder les fichiers si présents
+        $files = [];
+        if ($request->hasFile('files')) {
+            foreach ($request->file('files') as $file) {
+                $path = $file->store('chat_uploads/'.$room_id, 'local');
+                $files[] = [
+                    'name' => $file->getClientOriginalName(),
+                    'path' => $path,
+                    'filename' => basename($path),
+                    'mime' => $file->getMimeType(),
+                    'size' => $file->getSize(),
+                ];
+            }
+        }
+
 
         $message = config('socializer.models.message')::create([
             "message" => $formated ? $formated['content'] : null,
@@ -38,7 +73,8 @@ class Chat
             "room_id" => $room_id,
             "extras" => [
                 'status' => 1,
-                'audio' => isset($options['audio_url']) ? $options['audio_url'] : null
+                'audio' => $is_audio ? ['filename' => $options['audio_file'], 'path' => $options['audio_path']] : null,
+                'files' => count($files) ? $files : null,
             ],
         ]);
 
@@ -68,18 +104,7 @@ class Chat
             return false;
         }
 
-        // is registered in chat
-        $is_registred = $this->nebula->execute('GO FROM "'.$this->user->vertexid.'" OVER registered_in WHERE id($$) == "'.$room_id.'" YIELD id($$) AS destination');
-
-        if(!$is_registred) {
-           // user / chat relation
-            $this->nebula->insertEdge(
-                config('socializer.nebulagraph.edges.registered_in.name'), 
-                [
-                    $this->user->vertexid.'->'.$room_id => config('socializer.nebulagraph.edges.registered_in.props')
-                ]
-            );
-        }
+        $this->checkRegistration($room_id);
         
         // message / chat relation
         $this->nebula->insertEdge(
@@ -173,6 +198,18 @@ class Chat
 
         // delete nebula vertex
         $this->nebula->deleteVertex([$message->vertexid], true);
+
+        // delete audios
+        if(isset($message->extras['audio']) && $message->extras['audio']) {
+             Storage::disk('local')->delete($message->extras['audio']['path']);
+        }
+
+        // delete files
+        if(isset($message->extras['files']) && count($message->extras['files'])) {
+            foreach ($message->extras['files'] as $file) {
+                Storage::disk('local')->delete($file['path']);
+            }
+        }
         
         // delete message in mongo
         $message->delete();
@@ -411,18 +448,7 @@ class Chat
     {
         $room_id = $request->get('room_id');
 
-        // is registered in chat
-        $is_registred = $this->nebula->execute('GO FROM "'.$this->user->vertexid.'" OVER registered_in WHERE id($$) == "'.$room_id.'" YIELD id($$) AS destination');
-
-        if(!$is_registred) {
-           // user / chat relation
-            $this->nebula->insertEdge(
-                config('socializer.nebulagraph.edges.registered_in.name'), 
-                [
-                    $this->user->vertexid.'->'.$room_id => config('socializer.nebulagraph.edges.registered_in.props')
-                ]
-            );
-        }
+         $this->checkRegistration($room_id);
 
         if (!$request->hasFile('audio')) {
             return response()->json(['error' => 'Aucun fichier reçu'], 400);
@@ -430,13 +456,29 @@ class Chat
 
         $file = $request->file('audio');
 
-        $path = $file->store('audios', 'public'); // dans storage/app/public/audios
+        $path = $file->store('chat_uploads/'.$room_id, 'local');
 
         return[
             'success' => true,
-            'audio_url' => Storage::url($path), // /storage/audios/...
+            'audio_file' => basename($path),
             'audio_path' => $path,
         ];
 
+    }
+
+    public function getFile($vertex_id, $filename)
+    {
+        $path = "chat_uploads/{$vertex_id}/{$filename}";
+
+        if (!Storage::disk('local')->exists($path)) {
+            abort(404);
+        }
+
+        $mimeType = Storage::disk('local')->mimeType($path);
+
+        return Response::make(Storage::disk('local')->get($path), 200, [
+            'Content-Type' => $mimeType,
+            'Content-Disposition' => 'inline; filename="'.$filename.'"',
+        ]);
     }
 }

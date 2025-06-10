@@ -15,9 +15,9 @@ class ContentFormater {
                                                     </div>
                                                     <div class="col-md-8">
                                                         <div class="card-body">
-                                                            <h5 class="card-title">%s</h5>
-                                                            <h6 class="card-sub-title">%s</h6>
-                                                            <p class="card-text"><small class="text-muted">%s</small></p>
+                                                            <h5 class="card-title text-dark-auto">%s</h5>
+                                                            <h6 class="card-sub-title text-dark-auto">%s</h6>
+                                                            <p class="card-text"><small class="text-muted text-dark-auto">%s</small></p>
                                                         </div>
                                                     </div>
                                                 </div>

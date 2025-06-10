@@ -56,14 +56,11 @@ export default {
             chat: vertexid,
         })
     },
-    sendMessage(payload) {
+    sendMessage(formData) {
         AjaxService.load(
             '/send-chat-message', 
             'post', 
-            { 
-                message: payload.message,
-                room_id: payload.chatId,
-            },
+            formData,
             {
                 err: null, msg: null, options: null
             },

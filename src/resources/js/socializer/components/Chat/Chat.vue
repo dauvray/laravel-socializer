@@ -21,6 +21,7 @@
                         v-for="(item, idx) in messages"
                         :key="idx"
                         :item="item"
+                        :conversationId="currentConversationId"
                         @selected-emoji="onSelectedEmoji"
                         @delete-message="onDeleteMessage"
                         @update-message="onUpdateMessage"
@@ -51,13 +52,27 @@
                         </ul>
                     </div>
                     <TextareaMessage
+                        ref="messengerInput"
                         @start-writting="onStartWritting"
                         @stop-writting="onStopWritting"
                         @send-message="onSendMessage"
                         @open-wysiwyg="onWysiwyg"
                         @update-height="updateElHeight"
                         @record-result="onRecorded"
+                        @file-added="onFileAdded"
+                        @file-removed="onRemovedFile"
                     ></TextareaMessage>
+                    
+                    <table class="table table-sm" v-if="attachedFiles.length">
+                        <tbody>
+                            <tr class="file-item" v-for="file in attachedFiles" :key="file.id">
+                                <th scope="row">1</th>
+                                <td>{{ file.name }}</td>
+                                <td><FilePreview :file="file"></FilePreview></td>
+                                <td><button class="btn" @click="onRemoveFile(file.id)">❌</button></td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
             </div>
 
@@ -86,9 +101,11 @@
     import SpinnerTextWriting from '~estarter/components/widgets/Spinners/SpinnerTextWriting.vue'
     import TextareaMessage from './widgets/partials/TextareaMessage.vue'
     import resizable from "~socializer/directives/resizable_horizontal.js"
+    import FilePreview from "~formdesigner/application/formCreator/widgets/atoms/FilePreview.vue"
 
     export default {
         name: 'Chat',
+        inject: ["eventBus"],
         components: {
             IconWidget,
             ChatContactsButtons,
@@ -98,6 +115,7 @@
             SpinnerTextWriting,
             RoomUsersList: defineAsyncComponent(() => import('~socializer/components/Server/widgets/RoomUsersList.vue')),
             TextareaMessage,
+            FilePreview,
         },
         directives: {
             resizable,
@@ -120,6 +138,7 @@
                 intersectionObserver: false,
                 actors: [],
                 chatters: [],
+                attachedFiles: [],
                 cssVarName: '--messenger-height',
                 initialElHeight: 50,
                 ElHeight: null,
@@ -224,11 +243,20 @@
                 }
             },
             onSendMessage(message) {
-                this.sendMessage({
-                    message: message,
-                    chatId: this.currentConversationId,
+
+                const formData = new FormData()
+                formData.append('message', message)
+                formData.append('room_id', this.currentConversationId)
+                this.attachedFiles.forEach((file, i) => {
+                    formData.append(`files[${i}]`, file.data)
                 })
+
+                this.sendMessage(formData)
+
+                 // Reset
+                this.attachedFiles = []
                 this.$refs.messenger.style.setProperty(this.cssVarName, `${this.initialElHeight}px`);
+                this.eventBus.$emit('sended-messenger-message');
             },
             onUpdateMessage(message, messageId) {
                 this.updateMessage({
@@ -290,15 +318,32 @@
                 this.leaveCurrentConversation()
                 this.$router.push({ name: 'Teams'})
             },
+            onFileAdded(file) {
+                 file.preview = URL.createObjectURL(file.data)
+                 this.attachedFiles.push(file)
+            },
+            onRemoveFile(fileId) {
+               this.$refs.messengerInput.removeFile(fileId)
+            },
+            onRemovedFile(file) {
+                this.attachedFiles = this.attachedFiles.filter(f => f.id !== file.id)
+            },
 
             /*------ RESIZER ----------*/
             updateElHeight(height) {
-              this.ElHeight = height
-               // Appliquer dynamiquement via variable CSS
+                if( height < this.initialElHeight) {
+                    height = this.initialElHeight
+                }
+                this.ElHeight = height
+                // Appliquer dynamiquement via variable CSS
                 this.$refs.messenger.style.setProperty(this.cssVarName, `${this.ElHeight}px`)
             },
-            onWysiwyg() {
-
+            onWysiwyg(opened) {
+                if(opened) {
+                    this.updateElHeight(this.initialElHeight + 300)
+                } else {
+                     this.updateElHeight(this.$refs.messengerInput.scrollHeight)
+                } 
             },
 
             /*------  DATA CONNECTION ----------*/
@@ -310,7 +355,6 @@
                         case 'start_writing':
                             if (!this.actors.includes(data.from)) {
                                 this.actors.push(data.from)
-                                console.log(this.actors)
                             }
                             break
                         case 'stop_writing':
@@ -329,16 +373,29 @@
             },
             onStartWritting() {
                 this.sendData({
-                    action: 'start_writing',
-                    from: this.me.name,
+                    data: {
+                        action: 'start_writing',
+                        from: this.me.name,
+                    }
                 }, this.currentConversationId)
             },
             onStopWritting() {
                 this.sendData({
-                    action: 'stop_writing',
-                    from: this.me.name,
+                    data: {
+                        action: 'stop_writing',
+                        from: this.me.name,
+                    }
                 }, this.currentConversationId)
             },
         }
     }
 </script>
+
+<style>
+    .thumbnail {
+        width: 80px;
+        height: 80px;
+        object-fit: cover;
+        border-radius: 4px;
+    }
+</style>

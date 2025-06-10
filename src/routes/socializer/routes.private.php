@@ -122,6 +122,9 @@ Route::post('/add-contact-to-conversation',
     config('socializer.controllers_front.chat').'@addContactToConversation')
     ->name('chat.add.contact');
 
+Route::get('/chat/file/{vertex_id}/{filename}',
+    config('socializer.controllers_front.chat').'@getFile')
+    ->name('chat.get.file');
 /*----------------------------------------------------------------------
 | Servers
 |----------------------------------------------------------------------*/

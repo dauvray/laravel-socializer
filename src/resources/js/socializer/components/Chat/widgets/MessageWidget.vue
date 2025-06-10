@@ -21,14 +21,19 @@
                 </small>
             </div>
 
-            <AudioPlayer v-if="isAudio"
-                :src="item.extras.audio"
-            ></AudioPlayer>
-
-            <div v-else-if="!updating" 
+            <div v-if="!updating" 
                 class="message-inner" 
                 :class="{'is-me': isMe }">
-                <div class="message" v-html="item.message"></div>
+                <div v-if="hasFiles" class="files">
+                    <JoinedFiles 
+                        v-for="(file, idx) in item.extras.files" 
+                        :key="idx"
+                        :file="file"
+                        :conversationId="conversationId"
+                    ></JoinedFiles>
+                </div>
+                <AudioPlayer v-if="isAudio" :src="`/chat/file/${conversationId}/${item.extras.audio.filename}`"></AudioPlayer>
+                <div v-if="hasMessage" class="message" v-html="item.message"></div>
                 <small v-if="isEdited" class="ps-2"><i>Modifié</i></small>
             </div>
 
@@ -80,13 +85,18 @@
             MessageTools,
             MessageEmoji,
             MessageEditor: defineAsyncComponent(() => import('./partials/MessageEditor.vue')),
-            AudioPlayer: defineAsyncComponent(() => import('~estarter/components/widgets/AudioPlayer.vue'))
+            AudioPlayer: defineAsyncComponent(() => import('~estarter/components/widgets/AudioPlayer.vue')),
+            JoinedFiles: defineAsyncComponent(() => import('./partials/JoinedFiles.vue')),
         },
         props: {
             item: {
                 type: Object,
                 required: true,
-            }
+            },
+            conversationId: {
+                type: [Number, String],
+                required: true,
+            },
         },
         data() {
             return {
@@ -119,13 +129,20 @@
                  return {}
             },
             isEdited:function() {
-                if(!this.item.extras) return false
-                if(!this.item.extras.edited) return false
+                if(!this.item.hasOwnProperty('extras')) return false
+                if(!this.item.extras.hasOwnProperty('edited')) return false
                 return this.item.extras.edited === 1
             },
             isAudio: function() {
-                if(!this.item.extras) return false
-                return this.item.extras.hasOwnProperty('audio')
+                if(!this.item.hasOwnProperty('extras')) return false
+                return this.item.extras.hasOwnProperty('audio') && this.item.extras.audio !== null
+            },
+            hasFiles: function() {
+                if(!this.item.hasOwnProperty('extras')) return false
+                return this.item.extras.hasOwnProperty('files') && this.item.extras.files
+            },
+            hasMessage: function() {
+                return this.item.hasOwnProperty('message') && this.item.message
             },
         },
         mounted() {

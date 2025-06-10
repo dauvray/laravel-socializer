@@ -208,6 +208,10 @@ export default {
 
         this.localPeer.on('connection', async(conn) => {
 
+            conn.on('error', (err) => {
+                console.error('Erreur sur la connexion entrante :', err);
+            });
+
              // execute la callback dynamique passée dans les metadata sinon celle passée en argument
            if(conn.options.metadata.hasOwnProperty('callback')) {
                 const customCallbacks = await import(`~socializer/callbacks/${conn.options.metadata.callback}.js`)

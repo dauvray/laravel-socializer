@@ -11,8 +11,10 @@ class ChatController extends Controller
     public function sendMessage(Request $request, ChatService $service) 
     {
         $request->validate([
-            'message' => 'required',
             'room_id' => 'required',
+            'message' => 'required_without:files|string|nullable|max:1000',
+            'files' => 'array|nullable',
+            'files.*' => 'file|max:10240', // max 10 Mo par fichier
         ]);
 
         $service->sendMessage($request);
@@ -21,8 +23,10 @@ class ChatController extends Controller
     public function updateMessage(Request $request, ChatService $service) 
     {
         $request->validate([
-            'message' => 'required',
+            'message' => 'required_without:files|string|nullable|max:1000',
             'message_id' => 'required',
+            'files' => 'array|nullable',
+            'files.*' => 'file|max:10240', // max 10 Mo par fichier
             'room_id' => 'required',
         ]);
 
@@ -116,5 +120,10 @@ class ChatController extends Controller
         }
 
         return response()->json(['message' => 'Impossible d\'ajouter ce contact'], 500);
+    }
+
+    public function getFile( ChatService $service, $vertex_id, $filename)
+    {
+        return $service->getFile($vertex_id, $filename);
     }
 }

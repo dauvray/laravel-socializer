@@ -246,12 +246,11 @@
                 console.log('nouvelle connexion data chat')
                 conn.on("data", (data) => {
                     data = JSON.parse(data)
-                    console.log('data reçue' , data)
                     this.sendMessageToIframe(data)
                 });
 
                 conn.on("open", () => {
-                    console.log('connection data chat ouverte', conn)
+                    console.log('connection data chat ouverte')
                     this.sendMessageToIframe({
                         event: 'connectionEnabled',
                         payload: { 

@@ -1,12 +1,10 @@
 <template>
     <div class="message-input-container">
         <div class="flex-grow-1 h-100">
-            <Wysiwyg
-                v-if="wysiwyg"
+            <Wysiwyg v-if="wysiwyg"
                 v-model:content="message"
             ></Wysiwyg>
-            <div
-                v-else
+            <div v-else
                 id="auto-growing-textarea" 
                 ref="messengerInput"
                 contenteditable="true" 
@@ -14,17 +12,27 @@
                 @keydown="onKeyDown"
                 @focus="onStartWritting"
                 @blur="onStopWritting"
-                @input="onInput">
-            </div>
+                @paste="onPaste"
+                @input="onInput"
+            ></div>
         </div>
-        
+
         <div class="message-input-tools">
-            <MessageToolsButtons
+            <button v-if="isDirty" type="button" 
+                class="btn btn-link text-light" 
+                title="Effacer" 
+                @click="onDeleteTextearea">
+                <IconWidget icon="times"></IconWidget>
+            </button>
+            <div class="vr"></div>
+            <TextareaToolsButtons
                 icon-color="text-light"
                 @selected-emoji="onSelectedEmoji"
+                @selected-file="onSelectedFile"
                 @open-wysiwyg="onWysiwyg"
                 @record-result="onRecorded"
-            ></MessageToolsButtons>
+                @text-voiced="onTextVoiced"
+            ></TextareaToolsButtons>
             <div class="vr"></div>
             <button type="button" 
                 class="btn btn-link text-light" 
@@ -41,16 +49,19 @@
 <script>
 
     import IconWidget from '~estarter/components/widgets/IconWidget.vue'
-    import MessageToolsButtons from '~socializer/components/Chat/widgets/partials/MessageToolsButtons.vue'
+    import TextareaToolsButtons from '~socializer/components/Chat/widgets/partials/TextareaToolsButtons.vue'
     import { defineAsyncComponent } from '@vue/runtime-core'
     import { debounce } from '~estarter/services/helpers.js'
-   
+    import Uppy from '@uppy/core'
+    import Compressor from '@uppy/compressor';
+    import { uniqueId } from '~estarter/services/helpers.js'
+
     export default {
         name: 'TextareaMessage',
         inject: ["eventBus"],
         components: {
             IconWidget,
-            MessageToolsButtons,
+            TextareaToolsButtons,
             Wysiwyg:  defineAsyncComponent(() => import('~formdesigner/application/formCreator/widgets/atoms/Wysiwyg.vue')),
         },
         emits: [
@@ -60,11 +71,18 @@
             'open-wysiwyg',
             'update-height',
             'record-result',
+            'file-added',
+            'file-removed',
         ],
         data() {
             return {
                 message: '',
                 wysiwyg: false,
+                nb_attachedFiles: 0,
+                uppy: null,
+                uid: uniqueId(),
+                pastedImage: null,
+                pastedImageUrl: null,
             };
         },
         created() {
@@ -72,10 +90,55 @@
             this.debouncedAction = debounce(this.formatContent, 500);
         },
         mounted() {
-            
-        },
-        unmounted() {
+            this.uppy = new Uppy({ 
+                id: `${this.uid}-Uppy`,
+                autoProceed: false 
+            })
+            .use(Compressor, {
+                id: `${this.uid}-Compressor`,
+            })
 
+            const inputEl = this.$refs.messengerInput
+
+            inputEl.addEventListener('dragover', (e) => {
+                e.preventDefault()
+                inputEl.classList.add('drag-over')
+            })
+
+            inputEl.addEventListener('dragleave', () => {
+                inputEl.classList.remove('drag-over')
+            })
+
+            inputEl.addEventListener('drop', (e) => {
+                e.preventDefault()
+                inputEl.classList.remove('drag-over')
+
+                const files = Array.from(e.dataTransfer.files)
+                files.forEach(file => {
+                    this.uppy.addFile({
+                        name: file.name,
+                        type: file.type,
+                        data: file,
+                        source: 'DOM Drop',
+                    })
+                })
+            })
+
+            this.uppy.on('file-added', (file) => {
+                this.$emit('file-added', file)
+                this.nb_attachedFiles += 1
+            })
+
+            this.uppy.on('file-removed', (file) => {
+                this.$emit('file-removed', file)
+                this.nb_attachedFiles -= 1
+            })
+        },
+        beforeUnmount() {
+            if (this.uppy) {
+                this.uppy.destroy()
+                this.uppy = null
+            }
         },
         watch: {
             message: function() {
@@ -84,7 +147,7 @@
         },
         computed: {
             isDirty: function() {
-                return this.message.trim() !== '';
+                return this.message.trim() !== '' || this.nb_attachedFiles > 0;
             },
         },
         methods: {
@@ -103,7 +166,7 @@
                     this.message = ''
                     this.wysiwyg = false
                 }
-                
+                this.uppy.clear() 
             },
             onSelectedEmoji(emoji) {
                 if (!this.wysiwyg) {
@@ -129,6 +192,13 @@
                     this.message = this.message + emoji
                 }
             },
+            onSelectedFile(file) {
+                this.uppy.addFile({
+                    name: file.name,
+                    type: file.type,
+                    data: file,
+                })
+            },
             onWysiwyg() {
                 if (!this.wysiwyg) {
                    this.message = this.$refs.messengerInput.innerHTML
@@ -146,12 +216,9 @@
             onInput(event) {
                
                 let html
-                if(event) {
-                    html = event.target.innerHTML.trim();
-                } else {
-                    html = this.message.trim();
-                }
-               
+
+                html =  event ? event.target.innerHTML.trim() : this.message.trim();
+
                 // Filtrer les faux contenus vides
                 if (html === '<br>' || html === '&nbsp;' || html === '') {
                     this.message = '';
@@ -159,11 +226,32 @@
                     this.message = html;
                 }
 
-                this.$emit('update-height', this.$refs.messengerInput.scrollHeight)
-
+                if(this.$refs.messengerInput) {
+                    this.$emit('update-height', this.$refs.messengerInput.scrollHeight)
+                }
+                
                 // Partie debounced - s'exécute 500ms après la dernière frappe
                 this.debouncedAction(html);
+            },
+            onPaste(event) {
+                let handled = false
+                const items = event.clipboardData.items
 
+                for (const item of items) {
+                    if (item.type.indexOf('image') !== -1) {
+                        const file = item.getAsFile()
+                        this.uppy.addFile({
+                            name: file.name || `pasted-image-${Date.now()}.png`,
+                            type: file.type,
+                            data: file,
+                        })
+                         handled = true
+                    }
+                }
+
+                if (handled) {
+                    event.preventDefault()
+                }
             },
             onKeyDown(event) {
                
@@ -199,11 +287,22 @@
                 this.urlRegex = /(https?:\/\/[^\s<>"{}|\\^`[\]]+)/gi;
                 const url = html.match(this.urlRegex) || []
 
-                // Ici votre logique debounced
+                // TODO Ici votre logique debounced
                 console.log('Action debounced avec:', url)
             },
             onRecorded(formData) {
                 this.$emit('record-result', formData)
+            },
+            removeFile(fileId) {
+                this.uppy.removeFile(fileId);
+            },
+            onTextVoiced(transcript) {
+               this.message = transcript;
+               this.$refs.messengerInput.innerHTML = transcript;
+            },
+            onDeleteTextearea() {
+                this.message = '';
+                this.$refs.messengerInput.innerHTML = '';
             },
         }
     }
