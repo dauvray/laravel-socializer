@@ -30,6 +30,7 @@
                         :key="idx"
                         :file="file"
                         :conversationId="conversationId"
+                        @show-file="onShowFile"
                     ></JoinedFiles>
                 </div>
                 <AudioPlayer v-if="isAudio" :src="`/chat/file/${conversationId}/${item.extras.audio.filename}`"></AudioPlayer>
@@ -77,6 +78,7 @@
             'selected-emoji',
             'delete-message',
             'update-message',
+            'show-file',
         ],
         components: {
             Gravatar,
@@ -164,9 +166,9 @@
                 const { x, y } = await computePosition(this.$refs.message, referenceEl, {
                     placement: 'left',
                     middleware: [
-                    offset(3),
-                    flip(),
-                    shift({ padding: 8 }),
+                        offset(3),
+                        flip(),
+                        shift({ padding: 8 }),
                     ]
                 })
 
@@ -188,7 +190,10 @@
             onUpdateMessage(message) {
                 this.updating = false
                 this.$emit('update-message', message, this.item.id)
-            }
+            },
+            onShowFile(fileUrl) {
+                this.$emit('show-file', fileUrl)
+            },
         },
     }
 </script>

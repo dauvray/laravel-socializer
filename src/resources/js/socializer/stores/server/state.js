@@ -6,6 +6,5 @@ export default () => {
     registeredServers: [],
     currentServer: null,
     currentRoom: null,
-    currentContent: null,
   }
 }

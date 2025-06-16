@@ -72,6 +72,13 @@ class SocializerInstall extends EstarterPrepare
             base_path('resources/views/vendor/.')
         ]);
 
+        // update estarter config
+        $this->replaceInfile(
+            base_path('config/estarter.php'),
+            '$prefix_back.\'\General\UserCrudController\'',
+            "'Dauvray\Socializer\app\Http\Controllers\Admin\UserCrudController'"
+        );
+
         // todo a filtrer
         $this->executeProcess(['cp', '-a',
             base_path('vendor/dauvray/laravel-socializer/src/public/.'),
@@ -289,6 +296,8 @@ class SocializerInstall extends EstarterPrepare
         );
 
         $this->executeArtisanProcess('migrate');
+
+        // create bot here
 
 
         // Clear caches

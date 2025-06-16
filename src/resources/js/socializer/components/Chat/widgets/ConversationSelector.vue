@@ -15,9 +15,9 @@
                 <IconWidget icon="ellipsis-h"></IconWidget>
             </button>
             <ul class="dropdown-menu">
-                <ConversationActions
+                <ConversationActionsList
                     :conversation="conversation"
-                ></ConversationActions>
+                ></ConversationActionsList>
             </ul>
         </div>
         
@@ -28,7 +28,7 @@
 
     import Gravatar from '~estarter/components/widgets/Gravatar.vue'
     import IconWidget from '~estarter/components/widgets/IconWidget.vue'
-    import ConversationActions from './partials/ConversationActions.vue'
+    import ConversationActionsList from './partials/ConversationActionsList.vue'
 
     export default {
         name: 'ConversationButton',
@@ -38,7 +38,7 @@
         components : {
             Gravatar,
             IconWidget,
-            ConversationActions,
+            ConversationActionsList,
         },
         props: {
             conversation: {

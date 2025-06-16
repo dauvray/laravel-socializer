@@ -78,13 +78,13 @@ export default {
             this.currentRoom = result
             this.currentRoom.content.sort( orderBy( ['position'], ['asc'] ) )
             // is locked ?
-            if(result.hasOwnProperty('content')) {
-                this.currentContent = result.content[0]
-            }
-            // sub content ?
-            if(result.subcontent) {
-                this.currentContent['subContent'] = result.subcontent
-            }
+            // if(result.hasOwnProperty('content')) {
+            //     this.currentContent = result.content[0]
+            // }
+            // // sub content ?
+            // if(result.subcontent) {
+            //     this.currentContent['subContent'] = result.subcontent
+            // }
             return result
         } catch(err) {
             return false
@@ -98,7 +98,7 @@ export default {
 
         const cleanModel = helpers.cleanModel({...payload})
 
-        this.currentServer.rooms.forEach((room,idx) => {
+        this.currentServer.rooms.forEach((room, idx) => {
             if(room.id === payload.id) {
                 this.currentServer.rooms[idx] = {...this.currentServer.rooms[idx], ...cleanModel}
             }
@@ -107,13 +107,13 @@ export default {
         if(this.currentRoom && this.currentRoom.id === payload.id) {
             this.currentRoom = {...this.currentRoom, ...cleanModel}
         }
+
     },
     setCurrentContent(payload) {
-        this.currentContent = payload
+        this.currentRoom.content[0] = payload
     },
     resetCurrentRoom() {
         this.currentRoom = null
-        this.currentContent = null
     },
     async deleteRoom(roomId, isEvent = false) {
         let result = null 

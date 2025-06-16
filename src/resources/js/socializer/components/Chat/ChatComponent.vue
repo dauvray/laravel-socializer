@@ -11,6 +11,7 @@
             ></ChatContactsButtons>
         </div>
         <div class="chat-messages-wrapper">
+
             <div class="chat-messages" ref="messageContainer">
                 <div class="chat-messages-inner" ref="messageContainerInner">
                     <IntersectionObserver
@@ -18,17 +19,18 @@
                         @trigger-intersected="onTriggerObserver"
                     ></IntersectionObserver>
                     <MessageWidget 
-                        v-for="(item, idx) in messages"
+                        v-for="(item, idx) in messages" 
+                        :class="idx === messages.length - 1 ? 'lastMessage' : null"
                         :key="idx"
                         :item="item"
                         :conversationId="currentConversationId"
                         @selected-emoji="onSelectedEmoji"
                         @delete-message="onDeleteMessage"
                         @update-message="onUpdateMessage"
+                        @show-file="onShowFileInModal"
                     ></MessageWidget>
                 </div>
             </div>
-
             <div class="chat-messenger-sticky-wrapper">
                 <div class="chat-messenger-ghost"></div>
                 <div class="chat-messenger" 
@@ -75,7 +77,6 @@
                     </table>
                 </div>
             </div>
-
         </div>
     </div>
     <DataUserPeerConnection 
@@ -84,6 +85,19 @@
         :roomId="currentConversationId"
         :callback-connection="connectionDataCallback"
     ></DataUserPeerConnection>
+    <ModalWidget
+        v-if="showModal"
+        target="ModalChat"
+        :trigger="showModal"
+        modalClasses="modal-fullscreen"
+        bodyClasses="d-flex justify-content-center"
+        :showBtn="false"
+        @hidden="onHideModal">
+        <template #header> </template>
+        <template #body>
+            <img :src="fileUrl"  />
+        </template>
+    </ModalWidget>
 </template>
 
 <script>
@@ -104,7 +118,7 @@
     import FilePreview from "~formdesigner/application/formCreator/widgets/atoms/FilePreview.vue"
 
     export default {
-        name: 'Chat',
+        name: 'ChatComponent',
         inject: ["eventBus"],
         components: {
             IconWidget,
@@ -114,6 +128,7 @@
             MessageWidget,
             SpinnerTextWriting,
             RoomUsersList: defineAsyncComponent(() => import('~socializer/components/Server/widgets/RoomUsersList.vue')),
+            ModalWidget: defineAsyncComponent(() => import('~estarter/components/widgets/Modal.vue')),
             TextareaMessage,
             FilePreview,
         },
@@ -142,6 +157,8 @@
                 cssVarName: '--messenger-height',
                 initialElHeight: 50,
                 ElHeight: null,
+                showModal: false,
+                fileUrl: null,
             }
         },
         computed: {
@@ -150,6 +167,7 @@
                 messages:'getCurrentConversationMessages',
                 currentConversation: 'getCurrentConversation',
                 nextPageUrl: 'getCurrentConversationNextUrl',
+                isBot: 'getIsBot',
             }),
             ...mapState(useMeStore, {
                 me: 'getMe',
@@ -164,16 +182,16 @@
         created() {
             if(!this.currentConversation) {
                 this.loadConversation(this.vertexId || this.$route.params.vertexId)
-                .then(() => {
-                    setTimeout(() => {
-                        this.scrollView()
-                    }, 300)
-                })
+               
             } else {
                 this.iniChatEvents()
             }
         },
         mounted() {
+            setTimeout(()=> {
+                this.waitImagesAndScroll()
+            },1000)
+           
             this.intersectionObserver = true
         },
         beforeUnmount() {
@@ -185,6 +203,11 @@
                 if(value) {
                     this.iniChatEvents()
                 }
+            },
+            messages() {
+                setTimeout(()=> {
+                    this.waitImagesAndScroll(true)
+                }, 1000)
             },
         },
         methods: {
@@ -301,7 +324,41 @@
                 this.addContactToConversation(identifier, this.currentConversationId)
             },
             scrollView() {
-                this.$refs.messageContainerInner.scrollIntoView({ behavior: 'smooth', block: 'end' })
+                const el = this.$refs.messageContainerInner
+                if (el) {
+                    el.scrollIntoView({ behavior: 'smooth', block: 'end' })
+                }
+            },
+            waitImagesAndScroll(is_new_message = false) {
+               
+                const el = this.$refs.messageContainerInner
+                if (!el) return
+
+                const images = is_new_message ? el.querySelectorAll('lastMessage') : el.querySelectorAll('img')
+
+                const total = images.length
+                if (total === 0) {
+                    this.scrollView()
+                    return
+                }
+
+                let loaded = 0
+                const checkDone = () => {
+                    loaded++
+
+                    if (loaded === total) {
+                        this.scrollView()
+                    }
+                }
+
+                images.forEach(img => {
+                    if (img.complete) {
+                        checkDone()
+                    } else {
+                        img.addEventListener('load', checkDone, { once: true })
+                        img.addEventListener('error', checkDone, { once: true }) // au cas où une image échoue
+                    }
+                })
             },
             onTriggerObserver() {
                 if(this.nextPageUrl) {
@@ -387,6 +444,17 @@
                     }
                 }, this.currentConversationId)
             },
+            /*------  MODALE ----------*/
+            onShowFileInModal(fileUrl) {
+                this.fileUrl = fileUrl
+                this.onShowModal()
+            },
+            onShowModal() {
+                this.showModal = true
+            },
+            onHideModal() {
+                this.showModal = false
+            }
         }
     }
 </script>

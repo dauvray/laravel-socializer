@@ -3,7 +3,7 @@
         <li v-for="user in users" 
             :key="user.id"
             class="chatters">
-            <span class="d-flex align-items-center badge text-bg-light me-2">
+            <span class="chat-user-badge">
                 <Gravatar
                     class="me-2"
                     size="small"

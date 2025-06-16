@@ -38,15 +38,6 @@ And change config/eblogger
         }
 
 
-Add CanComment trait to model who can comment e.g : /app/User.php
-
-    use Dauvray\Socializer\app\Helpers\ModelTraits\CanComment;
-     
-     class User extends EstarterUser
-     {
-        use CanComment;
-     }
-
 Add SocializerUser trait to /app/user.php
 
     use Dauvray\Socializer\app\Helpers\ModelTraits\Socializable;
@@ -55,6 +46,16 @@ Add SocializerUser trait to /app/user.php
      {
          use Socializable;   <-- here
      }
+
+Add overwrite method in /app/User.php
+
+    public function getConnectedAttribute()
+    {
+        if ($this->is_bot === 0) {
+            return parent::getConnectedAttribute();
+        }
+        return 1;
+    }
 
 Overwrites views with comments components on blades
 

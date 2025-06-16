@@ -5,20 +5,26 @@ namespace Dauvray\Socializer\app\Helpers\ModelTraits;
 use Cviebrock\EloquentSluggable\Sluggable;
 use Cviebrock\EloquentSluggable\SluggableScopeHelpers;
 use Dauvray\Socializer\app\Notifications\CommentReplyOf;
-use Dauvray\Socializer\app\Helpers\ModelTraits\CanComment;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Dauvray\Socializer\app\Models\Post;
 
 trait Socializable
 {
     use Sluggable, SluggableScopeHelpers;
-    use CanComment;
+
+
+    public function initializeSocializable()
+    {
+        $this->fillable = array_merge($this->fillable, ['is_bot']);
+    }
 
     /*
     |--------------------------------------------------------------------------
     | GLOBAL VARIABLES
     |--------------------------------------------------------------------------
     */
+
+
 
     /**
      * Return the sluggable configuration array for this model.
@@ -88,7 +94,7 @@ trait Socializable
     public function canJoinchatRoom($vertex_id)
     {
        $result = app('nebulaGraph')->execute("
-            MATCH (c:chat)<-[:registered_in]-(u:user) 
+            OPTIONAL MATCH (c:chat)<-[:registered_in]-(u:user) 
             WHERE id(c) == '$vertex_id' AND (c.chat.privacy == 0 OR (c.chat.privacy == 1 AND id(u) == '$this->vertexid')) 
             RETURN id(u)
         ");
@@ -248,7 +254,6 @@ trait Socializable
     {
         return getVertexId($this);
     }
-
 
     /*
     |--------------------------------------------------------------------------

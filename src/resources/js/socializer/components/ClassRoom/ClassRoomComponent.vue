@@ -41,7 +41,7 @@
 
 <script>
 
-    import ChatComponent from  '~socializer/components/Chat/Chat.vue'
+    import ChatComponent from  '~socializer/components/Chat/ChatComponent.vue'
     import WhiteboardComponent from '~socializer/components/Whiteboard/WhiteboardComponent.vue'
     import DataUserPeerConnection from '~socializer/components/WebRTC/widgets/DataUserPeerConnection.vue'
     import RoomUsersList from '~socializer/components/Server/widgets/RoomUsersList.vue'
@@ -150,17 +150,21 @@
             handleShowWhiteboard(value) {
                 this.showWhiteboard = value
                 this.sendData({
-                    action: 'whiteboard-toggle',
-                    from: this.me.name,
-                    value: value,
+                    data: {
+                        action: 'whiteboard-toggle',
+                        from: this.me.name,
+                        value: value,
+                    }
                 }, this.room.id)
             },
             handleShowChat(value) {
                 this.showChat = value
                 this.sendData({
-                    action: 'chat-toggle',
-                    from: this.me.name,
-                    value: value,
+                    data: {
+                        action: 'chat-toggle',
+                        from: this.me.name,
+                        value: value,
+                    }
                 }, this.room.id)
             }
         }

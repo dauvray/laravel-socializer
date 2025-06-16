@@ -399,7 +399,8 @@ class Server
 
         // todo 
         // voir plutot a merger $new_room et $values pour ne pas a avoir
-        // a jouter toutes les props à la main quand il y en a des nouvelles
+        // a ajouter toutes les props à la main quand il y en a des nouvelles
+
         $values = [
             'name' => $new_room['name'],
             'image' => isset($new_room['image']) ? $new_room['image'] : null,
@@ -409,6 +410,8 @@ class Server
             'questionnaire_id' => isset($new_room['questionnaire_id']) ? (int)$new_room['questionnaire_id'] : null,
             'module_id' => isset($new_room['module_id']) ? (int)$new_room['module_id'] : null,
             'save_board' => isset($new_room['save_board']) ? (int)$new_room['save_board'] : null,
+            'is_bot' => isset($new_room['is_bot']) ? (int)$new_room['is_bot'] : null,
+            'url_bot' => isset($new_room['url_bot']) ? $new_room['url_bot'] : null,
         ];
 
         $vertex = $this->nebula->insertVertex(
@@ -507,7 +510,7 @@ class Server
 
         switch($new_content['content_type']) {
             case 'chat':
-                $new_vid = $this->serviceChat->createChatVertice($vid, $new_content['privacy']);
+                $new_vid = $this->serviceChat->createChatVertice($vid, $new_content);
                 break;
             case 'data':
             case 'admin':
@@ -542,7 +545,7 @@ class Server
         return $new_vid;
     }
 
-    public function getRoom($vertex_id = null)
+    public function getRoom($vertex_id = null, $with_subcontent = true)
     {
         $user_vertexid = $this->user->vertexid;
 
@@ -572,8 +575,11 @@ class Server
             'privacy' => $result['room'][0]['privacy'],
             'id' => $result['room'][0]['id'],
             'content' => $result['content'],
-            'subcontent' => count($result['subcontent']) ? $result['subcontent'] : null,
         ];
+
+        if($with_subcontent) {
+            $response['subcontent'] = count($result['subcontent']) ? $result['subcontent'] : null;
+        }
 
        return $response;
     }
@@ -640,7 +646,7 @@ class Server
 
         Broadcast::presence("server.$server_id")
         ->as('roomUpdated')
-        ->with(['room' => $this->getRoom($vertexid)])
+        ->with(['room' => $this->getRoom($vertexid, false)])
         ->sendNow();
 
         return response()->json(['status' => 'success', 'message' => 'Modification enregistrées'], 200);

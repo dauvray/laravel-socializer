@@ -13,11 +13,12 @@
 
 <script>
     import IconWidget from '~estarter/components/widgets/IconWidget.vue'
-    import { mapActions } from 'pinia'
+    import { mapActions, mapState } from 'pinia'
+    import { useConversationsStore } from '~socializer/stores/conversations.js'
     import { useChatStore } from '~socializer/stores/chat.js'
 
     export default {
-        name: 'ConversationAction',
+        name: 'ConversationActionsList',
         inject: ['AWN'],
         emits: [
             'quit-chat',
@@ -31,15 +32,27 @@
                 required: true
             }
         },
+        computed: {
+            ...mapState(useChatStore, {
+                currentConversationId: 'getCurrentConversationId',
+            }),
+        },
         methods: {
-            ...mapActions(useChatStore, [
+            ...mapActions(useConversationsStore, [
                 'deleteConversation',
                 'quitConversation',
             ]),
+            ...mapActions(useChatStore, [
+                'leaveCurrentConversation',
+            ]),
             onQuitChat() {
                 let onOk = () => {
-                    this.quitConversation(this.conversation.chat.id)
+                    this.quitConversation(this.conversation.id)
                     .then(() => {
+                        if (this.currentConversationId === this.conversation.id) {
+                            this.leaveCurrentConversation()
+                        }
+                        // Emit an event to notify the parent component
                         this.$emit('quit-chat')
                     })
                 }
@@ -59,7 +72,7 @@
             },
             onDeleteChat() {
                 let onOk = () => {
-                     this.deleteConversation(this.conversation.chat.id)  
+                     this.deleteConversation(this.conversation.id)  
                 }
                 let onCancel = () => {}
                 this.AWN.confirm(

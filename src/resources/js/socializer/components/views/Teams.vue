@@ -21,7 +21,7 @@
 
 <script>
    
-    import ChatWidget from '~socializer/components/Chat/Chat.vue'
+    import ChatWidget from '~socializer/components/Chat/ChatComponent.vue'
     import ConversationList from '~socializer/components/Chat/widgets/ConversationList.vue'
     import { mapActions, mapState } from 'pinia'
     import { useChatStore } from '~socializer/stores/chat.js'
@@ -61,12 +61,12 @@
         },
         methods: {
             ...mapActions(useChatStore, [
-                'createConversation',
                 'loadConversation',
                 'leaveCurrentConversation',
             ]),
             ...mapActions(useConversationsStore, [
                 'loadConversations',
+                'createConversation',
             ]),
             onJoinChat(vertexid) {
                 this.leaveCurrentConversation()

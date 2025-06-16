@@ -72,18 +72,17 @@
                 @update-users-room="onUpdateRoomUsers"
             ></router-view>
         </section>
-      
- 
+
     </div>
 
-    <CreateRoomModal
+    <SettingsModal    
         :questionnaireid="currentQuestionnaire"
         :isNew="isNewQuestionnaire"
         :modelPlaceholder="modelPlaceholder"
         :trigger="showModal"
         @hide-modal="onCancelEditModal"
         @send-data="onQuestionnaireData"
-    ></CreateRoomModal>
+    ></SettingsModal>
 
 </template>
 
@@ -120,7 +119,7 @@
             RoomHeader,
          //   ServerList,
             IconWidget,
-            CreateRoomModal: defineAsyncComponent(() => import('~socializer/components/Server/widgets/CreateRoomModal.vue')),
+            SettingsModal: defineAsyncComponent(() => import('~socializer/components/Server/widgets/SettingsModal.vue')),
             PageComponent: defineAsyncComponent(() => import('~socializer/components/Page/PageComponent.vue')),
             StreamUserButton,
             CaptureUserButton,

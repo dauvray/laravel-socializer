@@ -1,6 +1,8 @@
 import CustomRoomConfig from '~/socializer_custom_elements/rooms/config.js'
 
-// used in Room component and custom field room selector
+const streamableComponents = ['chat', 'classroom']
+
+// used custom field room selector
 const coreComponentMapping = Object.assign({
     locked: {
        component: 'LockedRoom',
@@ -63,8 +65,6 @@ const coreComponentMapping = Object.assign({
          selectable: true
        },
 }, CustomRoomConfig.componentMapping)
-
-const streamableComponents = ['chat', 'classroom']
 
 export {
     coreComponentMapping,

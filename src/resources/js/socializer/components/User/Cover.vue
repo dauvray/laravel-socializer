@@ -42,7 +42,7 @@
         </button>   
 
         <modal-widget
-            v-if="this.showModal"
+            v-if="showModal"
             target="changecover"
             modal-classes="modal-fullscreen"
             :show-btn="false"

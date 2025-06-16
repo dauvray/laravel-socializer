@@ -60,13 +60,14 @@
         <div class="collapse" :id="`collapser-${roomId}`" data-bs-parent="#collapseRoomGroup"></div>
     </div>
 
-    <CreateRoomModal
+    <SettingsModal
         :questionnaireid="currentQuestionnaire"
         :isNew="true"
         :trigger="showModal"
+        modalTitle="Configuration sous salon"
         @hide-modal="onCancelEditModal"
         @send-data="onQuestionnaireData"
-    ></CreateRoomModal>
+    ></SettingsModal>
 
 </template>
 
@@ -77,8 +78,6 @@
     import FormsSettingHelper from '~socializer/services/FormsSetting.js'
     import { useServerStore } from '~socializer/stores/server.js'
     import { mapActions, mapState } from 'pinia'
-    import { useAjaxService } from '~estarter/services/AjaxService.js'
-    const AjaxService = useAjaxService()
 
     export default {
         name: 'RoomParamsButton',
@@ -91,7 +90,7 @@
         ],
         components: {
             IconWidget,
-            CreateRoomModal: defineAsyncComponent(() => import('~socializer/components/Server/widgets/CreateRoomModal.vue')),
+            SettingsModal: defineAsyncComponent(() => import('~socializer/components/Server/widgets/SettingsModal.vue')),
             SortButtons: defineAsyncComponent(() => import('~formdesigner/application/formCreator/widgets/atoms/SortButtons.vue')),
         },
         props: {
@@ -140,8 +139,7 @@
                     return 'unlock'
                 }
                 return 'lock'
-            },
-            
+            },  
         },
         methods: {
             ...mapActions(useServerStore, [
@@ -175,11 +173,11 @@
                 )
             },
             onShowRoomParams() {
-                this.$emit('edit-room',{...this.currentContent, ...this.room})               
+                const { subContent, ...currentContent } = this.currentContent
+                this.$emit('edit-room',{...currentContent, ...this.room})                  
             },
             onSortUpRoom(index) {
                 this.$emit('sort-up-room', index)
-                
             },
             onSortDownRoom(index) {
                 this.$emit('sort-down-room', index)

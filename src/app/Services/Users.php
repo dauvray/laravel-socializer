@@ -74,7 +74,7 @@ class Users
             $user = $res['user'];
             $user_id = $user['id'];
             $user['id'] = null;
-            $user['connected'] = Cache::has('user-is-online-' . str_replace('user','',$user_id)) ? 1 : 0;
+            $user['connected'] = Cache::has('user-is-online-' . str_replace('user','',$user_id)) || $user['is_bot'] == 1 ? 1 : 0;
             $user['follow_status'] = $res['follow_status'];
             $user['nb_followers'] = $res['nb_followers'];
             $formated[] = (object)$user;

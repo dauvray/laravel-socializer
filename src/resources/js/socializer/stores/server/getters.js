@@ -61,14 +61,14 @@ export default {
         return null
     },
     getIsRoomStreamable() {
-        if(this.currentContent) {
-            return streamableComponents.includes(this.currentContent.content_type)
+        if(this.currentRoom) {
+            return streamableComponents.includes(this.currentRoom.content[0].content_type)
         }
         return false
     },
     getCurrentContent() {
-        if(this.currentContent) {
-            return this.currentContent
+        if(this.currentRoom) {
+            return this.currentRoom.content[0]
         }
         return null
     },

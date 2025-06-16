@@ -3,10 +3,12 @@
 namespace Dauvray\Socializer\app\Helpers;
 
 use Dauvray\Socializer\app\Helpers\Formaters\VideoFormaters;
+use Dauvray\Estarter\app\Helpers\ModelTraits\Thumbnails;
 
 class ContentFormater {
 
     use VideoFormaters;
+    use Thumbnails;
 
     private const FULL_LINK_TEMPLATE = '<div class="card slz-post-link" onclick="window.open(\'%s\', \'_blank\')">
                                                 <div class="row g-0">
@@ -35,6 +37,7 @@ class ContentFormater {
     private $links = [];
     private $hashtags = [];
     private $mentions = [];
+    private $thumbnails = [];
 
     public function __construct($content)
     {
@@ -117,6 +120,13 @@ class ContentFormater {
         // Extraction des données OpenGraph (ou fallback)
         $data = $this->getLinkPreviewData($html, $url);
 
+        // creation de la vignette si on a une image
+        if (!empty($data['image'])) {
+            $thumbnail = $this->createThumbnails($data['image']);
+            $data['thumbnail'] = '/serve-thumbnail/' . $thumbnail . '/large';
+            $this->thumbnails[] = $thumbnail;
+        }
+
         // Si on a bien toutes les infos, on génère la carte complète
         if (! empty($data['title']) 
             && ! empty($data['site_name']) 
@@ -125,12 +135,12 @@ class ContentFormater {
         ) {
             return sprintf(
                 self::FULL_LINK_TEMPLATE,
-                htmlspecialchars($url, ENT_QUOTES, 'UTF-8'),
-                htmlspecialchars($data['image'], ENT_QUOTES, 'UTF-8'),
-                htmlspecialchars($data['site_name'], ENT_QUOTES, 'UTF-8'),
-                htmlspecialchars($data['title'], ENT_QUOTES, 'UTF-8'),
-                htmlspecialchars($data['site_name'], ENT_QUOTES, 'UTF-8'),
-                htmlspecialchars($data['description'], ENT_QUOTES, 'UTF-8')
+                html_entity_decode($url, ENT_QUOTES, 'UTF-8'),
+                html_entity_decode($data['thumbnail'], ENT_QUOTES, 'UTF-8'),
+                html_entity_decode($data['site_name'], ENT_QUOTES, 'UTF-8'),
+                html_entity_decode($data['title'], ENT_QUOTES, 'UTF-8'),
+                html_entity_decode($data['site_name'], ENT_QUOTES, 'UTF-8'),
+                html_entity_decode($data['description'], ENT_QUOTES, 'UTF-8')
             );
         }
 
@@ -247,7 +257,6 @@ class ContentFormater {
         return $scheme . '://' . $host . $path . $src;
     }
 
-
     private function formatHashtags() 
     {
         $this->content = preg_replace_callback(
@@ -287,5 +296,10 @@ class ContentFormater {
     public function getMentions()
     {
         return $this->mentions;
+    }
+
+    public function getThumbnails()
+    {
+        return $this->thumbnails;
     }
 }

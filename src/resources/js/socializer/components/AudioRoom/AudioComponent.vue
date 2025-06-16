@@ -9,7 +9,7 @@ AUDIO ROOM
     import { mapState } from 'pinia'
 
     export default {
-        name: 'AudioRoom',
+        name: 'AudioComponent',
         props: {
             room: {
                 type: String,

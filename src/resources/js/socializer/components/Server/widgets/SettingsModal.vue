@@ -10,9 +10,7 @@
         :showBtn="false"
         @hidden="onCancelEditModal"
         @saveModalChanges="onSaveUpdatedModal">
-            <template #header>
-                header
-            </template>
+            <template #header>{{ modalTitle }}</template>
             <template #body>
                 <QuestionnaireComponent
                     ref="serverQuestionnaire"
@@ -35,9 +33,10 @@
 <script>
 
     import { defineAsyncComponent } from '@vue/runtime-core'
+    import FormPlaceholder from '~formdesigner/application/formCreator/widgets/placeholders/FormPlaceholder.vue'
 
     export default {
-        name: 'CreateRoomModal',
+        name: 'SettingsModal',
         emits: [
             'hide-modal',
             'send-data'
@@ -45,6 +44,7 @@
         components: {
             ModalWidget: defineAsyncComponent(() => import('~estarter/components/widgets/Modal.vue')),
             QuestionnaireComponent: defineAsyncComponent(() => import('~formdesigner/application/formCreator/Questionnaire.vue')),
+            FormPlaceholder,
         },
         props: {
             questionnaireid: {
@@ -71,6 +71,11 @@
                 type: Boolean,
                 required: true,
                 default: false, 
+            },
+            modalTitle: {
+                type: String,
+                required: false,
+                default: 'Configuration'
             }
         },
         data() {

@@ -29,7 +29,7 @@
     import { ref } from 'vue'
     import { useMeStore } from '~estarter/stores/me.js'
     import { usePeers } from '~socializer/components/WebRTC/composables/usePeers.js'
-    import { useChatStore } from '~socializer/stores/chat.js'
+    import { useConversationsStore } from '~socializer/stores/conversations.js'
     import { defineAsyncComponent } from 'vue'
     import IconWidget from '~estarter/components/widgets/IconWidget.vue'
 
@@ -127,7 +127,7 @@
             Echo.leave(this.userChannel)
         },
         methods: {
-            ...mapActions(useChatStore, [
+            ...mapActions(useConversationsStore, [
                 'addConversation',
             ]),
             initUserChannel() {

@@ -27,11 +27,10 @@
                     <IconWidget icon="user-plus"></IconWidget> Inviter un contact
                 </a>
             </li>
-            <ConversationActions
+            <ConversationActionsList
                 :conversation="conversation"
                 @quit-chat="onQuitChat"
-            ></ConversationActions>
-        
+            ></ConversationActionsList>
         </ul>
     </div>
 
@@ -64,7 +63,7 @@
     import { mapActions, mapState } from 'pinia'
     import IconWidget from '~estarter/components/widgets/IconWidget.vue'
     import Gravatar from '~estarter/components/widgets/Gravatar.vue'
-    import ConversationActions from './partials/ConversationActions.vue'
+    import ConversationActionsList from './partials/ConversationActionsList.vue'
     import UserWallLink from '~socializer/components/User/WallLink.vue'
 
     export default {
@@ -78,7 +77,7 @@
             IconWidget,
             Gravatar,
             ModalWidget: defineAsyncComponent(() => import('~estarter/components/widgets/Modal.vue')),
-            ConversationActions,
+            ConversationActionsList,
             UserWallLink,
         },
         props: {

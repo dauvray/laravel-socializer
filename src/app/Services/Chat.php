@@ -8,10 +8,14 @@ use Dauvray\Socializer\app\Http\Resources\MessageCollection;
 use Dauvray\Socializer\app\Http\Resources\User as UserResource;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Response;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Http\Request;
+use Dauvray\Estarter\app\Helpers\ModelTraits\Thumbnails;
 
 class Chat
 {
+    use Thumbnails;
+
     public $user = null;
     public $nebula = null;
 
@@ -44,6 +48,7 @@ class Chat
         $room_id = $request->get('room_id');
         $formated = null;
         $content = $request->get('message');
+        $chat =  $this->nebula->execute('match (c) where id(c)=="'. $room_id. '" return c')[0];
 
         if(!$is_audio && $content) {
              $formated = formatTextToContent($content);
@@ -54,16 +59,23 @@ class Chat
         if ($request->hasFile('files')) {
             foreach ($request->file('files') as $file) {
                 $path = $file->store('chat_uploads/'.$room_id, 'local');
-                $files[] = [
+
+                $fileData =  [
                     'name' => $file->getClientOriginalName(),
                     'path' => $path,
                     'filename' => basename($path),
                     'mime' => $file->getMimeType(),
                     'size' => $file->getSize(),
                 ];
+
+                // Si le fichier est une image, générer une vignette
+                if (str_starts_with($file->getMimeType(), 'image/')) {
+                    $fileData['thumbnail'] = '/serve-thumbnail/'. $this->createThumbnails($file) .'/large';
+                }
+
+                $files[] = $fileData;
             }
         }
-
 
         $message = config('socializer.models.message')::create([
             "message" => $formated ? $formated['content'] : null,
@@ -75,6 +87,7 @@ class Chat
                 'status' => 1,
                 'audio' => $is_audio ? ['filename' => $options['audio_file'], 'path' => $options['audio_path']] : null,
                 'files' => count($files) ? $files : null,
+                'thumbnails' => $formated && isset($formated['thumbnails']) ? $formated['thumbnails'] : null,
             ],
         ]);
 
@@ -135,6 +148,20 @@ class Chat
             "extras" => $message->extras,
         ])
         ->sendNow();
+
+        // // si la room est une room bot, on appelle n8n
+        // if(isset($chat['is_bot']) && $chat['is_bot'] == 1) {
+
+        //     $botResponse = Http::get($chat['url_bot'], [
+        //          'message' => $message->message,
+        //         'author' =>[ 'name' => $this->user->name, 'id' => $this->user->id],
+        //         'room_id' => $room_id,
+        //     ]);
+
+        //     $botMessageText = $botResponse->json('message') ?? '...';
+
+
+        // }
     }
 
     public function editMessage( $vertex_id )
@@ -208,6 +235,14 @@ class Chat
         if(isset($message->extras['files']) && count($message->extras['files'])) {
             foreach ($message->extras['files'] as $file) {
                 Storage::disk('local')->delete($file['path']);
+                $this->deleteAllThumbnails($file['thumbnail']);
+            }
+        }
+
+        // delete thumbnails
+        if(isset($message->extras['thumbnails']) && count($message->extras['thumbnails'])) {
+            foreach ($message->extras['thumbnails'] as $thumbnail) {
+                $this->deleteAllThumbnails($thumbnail);
             }
         }
         
@@ -286,7 +321,7 @@ class Chat
         // users = registered users + authors     
         $query =  "
             MATCH (c:chat) WHERE id(c) == '$vertex_id'
-            MATCH (c:chat)<-[:registered_in]-(us:user)
+            OPTIONAL MATCH (c:chat)<-[:registered_in]-(us:user)
             OPTIONAL MATCH (c:chat)<-[:published_in]-(m:message)
             WITH c, collect(distinct us) as users, count(distinct us) as nb_contacts, id(m) as message_id, m.created_at as created_at
             ORDER BY created_at DESC
@@ -308,12 +343,14 @@ class Chat
         ];
     }
 
-    public function createConversation($private = true)
+    public function createConversation($values = [])
     {
         $vertex = $this->nebula->insertVertex(
             config('socializer.nebulagraph.tags.chat.name'),
             [
-                'privacy' => (int)$private,
+                'privacy' => isset($values['privacy']) ? (int)$values['privacy'] : 1,
+                'is_bot' => isset($values['is_bot']) ? (int)$values['is_bot'] : 0,
+                'url_bot' => isset($values['url_bot']) ? $values['url_bot'] : null,
             ]
         );
 
@@ -346,9 +383,9 @@ class Chat
         return $vid;
     }
 
-    public function createChatVertice($room_id = null, $private = true)
+    public function createChatVertice($room_id = null, $values = [])
     {
-        $chat_vid = $this->createConversation($private);
+        $chat_vid = $this->createConversation($values);
 
         // chat / room relation
         $this->nebula->insertEdge(
@@ -388,9 +425,14 @@ class Chat
         $this->nebula->deleteEdge(config('socializer.nebulagraph.edges.registered_in.name'), ["$user_vid->$vertex_id"]);
 
         // check users
-        $nb_users = $this->nebula->execute("MATCH (c:chat)<-[:registered_in]-(u:user) WHERE id(c)=='$vertex_id' RETURN count(u)");
+        $result = $this->nebula->execute("MATCH (c:chat) WHERE id(c)=='$vertex_id' 
+                                        OPTIONAL MATCH (r:room)<-[:published_in]-(c)
+                                        OPTIONAL MATCH (c)<-[:registered_in]-(u:user)
+                                        RETURN count(u) as nb_users, r as room");
 
-        if($nb_users[0] === 0) {
+
+        // no more users in the chat, delete it if is not a chat room
+        if($result[0]['nb_users'] === 0 && count($result[0]['room']) === 0) {
 
             $this->nebula->deleteVertex([$vertex_id], true);
             config('socializer.models.message')::where('room_id', $vertex_id)->delete();
@@ -481,4 +523,5 @@ class Chat
             'Content-Disposition' => 'inline; filename="'.$filename.'"',
         ]);
     }
+
 }

@@ -26,8 +26,14 @@ export default {
     },
     getCurrentConversationMessages() {
         if(this.currentConversation) {
-            return this.messages
+            return [...this.messages]
         }
         return []
     },
+    getIsBot() {
+        if(this.currentConversation) {
+            return this.currentConversation.general.chat.is_bot == 1
+        }
+        return false
+    }
 }

@@ -72,45 +72,16 @@ return new class extends Migration
         sleep(config('socializer.nebulagraph.sleeping_duration'));
 
         /*
-        | VERTEX
+        | USERS
         */
-        $feed_users = [];
-
         foreach(config('estarter.models.user')::all() as $user) {
-
-            $nebula->insertVertex(
-                config('socializer.nebulagraph.tags.user.name'), 
-                array_merge(
-                    $nebula->populatePropsFromPattern(
-                        $user, 
-                        config('socializer.nebulagraph.vertices.user')
-                    ),
-                    [
-                        'identifier' => hideIdentifier($user)
-                    ]
-                )
-            );
-
-            $result = $nebula->insertVertex(
-                config('socializer.nebulagraph.tags.feed.name'), 
-                    []
-            );
-
-            $result2 = $nebula->insertVertex(
-                config('socializer.nebulagraph.tags.wall.name'), 
-                    [
-                        'questionnaire_id' => config('socializer.posts.classic_form'),
-                    ]
-            );
-
-            $feed_users[] = [
-                'user' => $user->vertexid,
-                'feed' => getVertexIdFromInsert($result),
-                'wall' => getVertexIdFromInsert($result2)
-            ];
+            createUserAndNetwork($user);
         }
 
-        
+        /*
+        | VERTEX
+        */
+
         foreach(config('eblogger.models.article')::all() as $article) {
             $nebula->insertVertex(
                 config('socializer.nebulagraph.tags.article.name'), 
@@ -138,34 +109,6 @@ return new class extends Migration
         | RELATIONSHIP
         */
 
-        foreach( $feed_users as $relation) {
-
-            // create user feed
-            $nebula->insertEdge(
-                config('socializer.nebulagraph.edges.owned_by.name'), 
-                [
-                    $relation['feed'].'->'.$relation['user'] => config('socializer.nebulagraph.edges.owned_by.props')
-                ]
-            );
-
-            // create user wall
-            $nebula->insertEdge(
-                config('socializer.nebulagraph.edges.owned_by.name'), 
-                [
-                    $relation['wall'].'->'.$relation['user'] => config('socializer.nebulagraph.edges.owned_by.props')
-                ]
-            );
-
-            // user follow his wall
-            $nebula->insertEdge(
-                config('socializer.nebulagraph.edges.followed_by.name'), 
-                [
-                    $relation['wall'].'->'.$relation['user'] => config('socializer.nebulagraph.edges.followed_by.props')
-                ]
-            );
-        }
-
-       
         foreach(config('eblogger.models.article')::all() as $article) {
             // relie article et auteur
             // Defini le sens de la relation et passe des parametres

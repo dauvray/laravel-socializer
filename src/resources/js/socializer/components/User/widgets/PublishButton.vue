@@ -13,28 +13,32 @@
         :canValidate="canValidate"
         :trigger="showModal"
         @hidden="showModal = false"
-        @saveModalChanges="onValidPost"
-        >
+        @saveModalChanges="onValidPost" >
         <template #body>
-            <questionnaire-component
-                ref="postForm"
-                :questionnaireid="feedFormId"
-                :isstandalone="true"
-                :payload="{
-                'feed_id': feedId, 
-                'history': null,
-                }"
-                :deportSending="true"
-                deportvalidation="true"
-                @deport-sending="onSendPost"
-                @deported-validation="onIsValidPost"
-            ></questionnaire-component>
+            <div v-show="isReady">
+                <questionnaire-component
+                    ref="postForm"
+                    :questionnaireid="feedFormId"
+                    :isstandalone="true"
+                    :payload="{
+                        'feed_id': feedId, 
+                        'history': null,
+                    }"
+                    :deportSending="true"
+                    deportvalidation="true"
+                    @questionnaire-isvalid="onQuestionnaireReady"
+                    @deport-sending="onSendPost"
+                    @deported-validation="onIsValidPost"
+                ></questionnaire-component>
+            </div>
+             <FormPlaceholder v-if="!isReady"></FormPlaceholder>
         </template>
     </ModalWidget>
 </template>
 
 <script>
     import IconWidget from '~estarter/components/widgets/IconWidget.vue'
+    import FormPlaceholder from '~formdesigner/application/formCreator/widgets/placeholders/FormPlaceholder.vue'
     import { useFeedStore } from '~socializer/stores/feed.js'
     import { mapActions } from 'pinia'
     import { defineAsyncComponent } from 'vue'
@@ -44,6 +48,7 @@
         components: {
             IconWidget,
             ModalWidget: defineAsyncComponent(() => import('~estarter/components/widgets/Modal.vue')),
+            FormPlaceholder,
         },
         props: {
             feedFormId: {
@@ -59,6 +64,7 @@
             return {
                 showModal: false,
                 canValidate: false,
+                isReady: false,
             }
         },
         methods: {
@@ -80,6 +86,10 @@
                 this.$refs.postForm.afterValidation(post)
                 this.insertPost(post)
             },
+            onQuestionnaireReady() {
+                this.isReady = true
+                console.log('tototo')
+            }
         }
     }
 </script>

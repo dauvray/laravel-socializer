@@ -101,7 +101,7 @@ export default [
                      {
                         path: `audio/:vertexId`,
                         name: 'audio',
-                        component: () => import('~socializer/components/AudioRoom/AudioRoom.vue'),
+                        component: () => import('~socializer/components/AudioRoom/AudioComponent.vue'),
                         meta: {
                             breadcrumb: [
                                 { name: 'Accueil', link: '/'},
@@ -112,7 +112,7 @@ export default [
                     {
                         path: `chat/:vertexId`,
                         name: 'chat',
-                        component: () => import('~socializer/components/Chat/Chat.vue'),
+                        component: () => import('~socializer/components/Chat/ChatComponent.vue'),
                         meta: {
                             breadcrumb: [
                                 { name: 'Accueil', link: '/'},

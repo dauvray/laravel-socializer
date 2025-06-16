@@ -1,27 +1,25 @@
 <template>
     <div class="conversations-list">
-        <button 
-            class="btn btn-primary btn-sm"
-            @click="onCreateChat"
-            ><IconWidget icon="plus"></IconWidget> Nouvelle conversation
-        </button>
-            <ul class="list-group list-group-flush">
-                <li v-for="conversation in conversations" 
-                    class="list-group-item">
-                    <ConversationButton
-                        :conversation="conversation"
-                        @join-chat="onJoinChat"
-                    ></ConversationButton>
-                </li>
-            </ul>
+        <ConversationCreatorButton
+            @create-chat="onCreateChat"
+        ></ConversationCreatorButton>
+        <ul class="list-group list-group-flush">
+            <li v-for="conversation in conversations" 
+                class="list-group-item">
+                <ConversationSelector
+                    :conversation="conversation"
+                    @join-chat="onJoinChat"
+                ></ConversationSelector>
+            </li>
+        </ul>
     </div>
-
 </template>
 
 <script>
 
     import Gravatar from '~estarter/components/widgets/Gravatar.vue'
-    import ConversationButton from './ConversationButton.vue'
+    import ConversationSelector from './ConversationSelector.vue'
+    import ConversationCreatorButton from './ConversationCreatorButton.vue'
     import IconWidget from '~estarter/components/widgets/IconWidget.vue'
 
     export default {
@@ -32,7 +30,8 @@
         ],
         components: {
             Gravatar,
-            ConversationButton,
+            ConversationSelector,
+            ConversationCreatorButton,
             IconWidget,
         },
         props: {

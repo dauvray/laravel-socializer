@@ -215,6 +215,7 @@ return [
                     'function string NULL',
                     'identifier string NULL',
                     'slug string NULL',
+                    'is_bot int NULL',
                 ]
             ],
             'comment' => [
@@ -294,6 +295,8 @@ return [
                     'privacy int NULL',
                     'content_type string NULL',
                     'position int NULL',
+                    'is_bot int NULL',
+                    'url_bot string NULL',
                 ]
             ],
             'whiteboard' => [
@@ -348,6 +351,7 @@ return [
                 "function" => null,
                 "identifier" => null,
                 "slug" => null,
+                "is_bot" => 0,
             ],
             'comment' => [
                 'content' => null,
@@ -386,6 +390,8 @@ return [
                 "content_type" => 'chat',
                 "privacy" => null,
                 "position" => null,
+                "is_bot" => null,
+                "url_bot" => null,
             ],
             'data' => [
                 "name" => null,
