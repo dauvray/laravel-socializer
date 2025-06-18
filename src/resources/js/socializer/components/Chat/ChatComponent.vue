@@ -11,7 +11,6 @@
             ></ChatContactsButtons>
         </div>
         <div class="chat-messages-wrapper">
-
             <div class="chat-messages" ref="messageContainer">
                 <div class="chat-messages-inner" ref="messageContainerInner">
                     <IntersectionObserver
@@ -30,6 +29,10 @@
                         @show-file="onShowFileInModal"
                     ></MessageWidget>
                 </div>
+                <UploadFilesTable v-if="attachedFiles.length"
+                    :attachedFiles="attachedFiles"
+                    @remove-file="onRemoveFile"
+                ></UploadFilesTable>
             </div>
             <div class="chat-messenger-sticky-wrapper">
                 <div class="chat-messenger-ghost"></div>
@@ -64,17 +67,6 @@
                         @file-added="onFileAdded"
                         @file-removed="onRemovedFile"
                     ></TextareaMessage>
-                    
-                    <table class="table table-sm" v-if="attachedFiles.length">
-                        <tbody>
-                            <tr class="file-item" v-for="file in attachedFiles" :key="file.id">
-                                <th scope="row">1</th>
-                                <td>{{ file.name }}</td>
-                                <td><FilePreview :file="file"></FilePreview></td>
-                                <td><button class="btn" @click="onRemoveFile(file.id)">❌</button></td>
-                            </tr>
-                        </tbody>
-                    </table>
                 </div>
             </div>
         </div>
@@ -95,7 +87,7 @@
         @hidden="onHideModal">
         <template #header> </template>
         <template #body>
-            <img :src="fileUrl"  />
+            <img :src="fileUrl"  /> 
         </template>
     </ModalWidget>
 </template>
@@ -115,7 +107,9 @@
     import SpinnerTextWriting from '~estarter/components/widgets/Spinners/SpinnerTextWriting.vue'
     import TextareaMessage from './widgets/partials/TextareaMessage.vue'
     import resizable from "~socializer/directives/resizable_horizontal.js"
-    import FilePreview from "~formdesigner/application/formCreator/widgets/atoms/FilePreview.vue"
+
+
+   
 
     export default {
         name: 'ChatComponent',
@@ -130,7 +124,7 @@
             RoomUsersList: defineAsyncComponent(() => import('~socializer/components/Server/widgets/RoomUsersList.vue')),
             ModalWidget: defineAsyncComponent(() => import('~estarter/components/widgets/Modal.vue')),
             TextareaMessage,
-            FilePreview,
+            UploadFilesTable: defineAsyncComponent(() => import('~socializer/components/Chat/widgets/partials/UploadFilesTable.vue')),
         },
         directives: {
             resizable,
@@ -196,7 +190,7 @@
         },
         beforeUnmount() {
             Echo.leave(this.channel)
-            this.resetConversation()
+            this.resetConversation(this.currentConversationId)
         },
         watch: {
             currentConversation(value) {
@@ -269,7 +263,7 @@
 
                 const formData = new FormData()
                 formData.append('message', message)
-                formData.append('room_id', this.currentConversationId)
+                formData.append('chat_id', this.currentConversationId)
                 this.attachedFiles.forEach((file, i) => {
                     formData.append(`files[${i}]`, file.data)
                 })
@@ -290,7 +284,7 @@
             },
             onRecorded(formData) {
                 formData.append('message', '')
-                formData.append('room_id', this.currentConversationId)
+                formData.append('chat_id', this.currentConversationId)
                 this.sendAudio( formData )
             },
             onSelectedEmoji(emoji, message) {

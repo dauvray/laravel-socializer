@@ -2,25 +2,20 @@ import { useAjaxService } from '~estarter/services/AjaxService.js'
 const AjaxService = useAjaxService()
 
 export default {
-    async loadConversations() {
-        let result = await AjaxService.load('/load-my-conversations')
+    async loadConversations(type = 'contacts') {
+        let result = await AjaxService.load(`/load-my-conversations/${type}`)
         this.conversations = result
     },
     addConversation(payload) {
         this.conversations.unshift(payload)
     },
-    async createConversation() {
-        let result = await AjaxService.load('/create-new-conversations')
+    async createConversation(payload = {}) {
+        let result = await AjaxService.load('/create-new-conversations', 'post', payload)
 
-        const chat = {
-            id: result.id,
-            image: null,
-            name: null,
-        }
-
+        const chat = {...result.conversation.general.chat}
         this.conversations.push(chat)
 
-        return chat
+        return result.conversation
     },
     async deleteConversation(vertexid) {
         await AjaxService.load(`/delete-conversation/${vertexid}`)

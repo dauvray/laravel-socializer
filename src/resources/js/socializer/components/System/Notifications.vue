@@ -14,13 +14,21 @@
         @stop-call="onStopCall"
     ></CallWebUI>
 
-    <button type="button" class="btn btn-outline-primary position-relative me-4">
+    <ToasterNewMessage 
+        v-if="NewMessageNotification"
+        :message="NewMessageNotification"
+        :duration="5000"
+        :autoShow="true"
+        @closed="NewMessageNotification = null"
+    ></ToasterNewMessage>
+
+    <!-- <button type="button" class="btn btn-outline-primary position-relative me-4">
         <IconWidget icon="comment-dots"></IconWidget>
         <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">
             {{ totalNotification }}
             <span class="visually-hidden">Notification</span>
         </span>
-    </button>
+    </button> -->
 </template>
 
 <script>
@@ -41,6 +49,7 @@
         components: {
             AlertComponent: defineAsyncComponent(() => import('~socializer/components/System/widgets/AlertComponent.vue')),
             CallWebUI: defineAsyncComponent(() => import('~socializer/components/System/widgets/CallWebUI.vue')),
+            ToasterNewMessage: defineAsyncComponent(() => import('~socializer/components/System/widgets/ToasterNewMessage.vue')),
             IconWidget,
         },
         setup() {
@@ -73,6 +82,7 @@
             const totalNotification = ref(0)
             const notificationComponent = ref(null)
             const notificationComponentProps = ref(null)
+            const NewMessageNotification= ref(null)
         
             return {
                 sendLocalPeerId,
@@ -100,6 +110,7 @@
                 callInprogress,
                 setCallInProgress,
                 setCurrentCallRoomId,
+                NewMessageNotification,
             }
         },
         watch: {
@@ -163,6 +174,10 @@
                             this.addConversation(event)
                             AWN.info('Vous avez été invité dans une nouvelle conversation', {durations: {info: 0}})
                         })
+                        .listen('.NewMessageNotification', (event) => {
+                            console.log('NewMessageNotification', event)
+                            this.NewMessageNotification = event
+                        })
                 }
             },
             onResponseAlert(fromUserSlug, options, status) {
@@ -199,3 +214,4 @@
     }
 
 </script>
+

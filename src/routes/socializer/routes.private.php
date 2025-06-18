@@ -74,7 +74,7 @@ Route::post('/feed-subscribe-alert',
 | Chat
 |----------------------------------------------------------------------*/
 
-Route::get('/load-my-conversations', 
+Route::get('/load-my-conversations/{type}', 
     config('socializer.controllers_front.chat').'@getConversations')
     ->name('chat.get.conversations');
 
@@ -82,7 +82,11 @@ Route::get('/load-conversation/{vertex_id}',
     config('socializer.controllers_front.chat').'@getConversation')
     ->name('chat.get.conversation');
 
-Route::get('/create-new-conversations', 
+Route::get('/leave-conversation/{vertex_id}', 
+    config('socializer.controllers_front.chat').'@leaveConversation')
+    ->name('chat.leave.conversation');
+
+Route::post('/create-new-conversations', 
     config('socializer.controllers_front.chat').'@createConversation')
     ->name('chat.create.conversation');
 

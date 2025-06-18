@@ -210,6 +210,7 @@
                     this.wysiwyg = false
                 }
                 this.uppy.clear() 
+                this.$refs.messengerInput.blur()
             },
             onSelectedEmoji(emoji) {
                 if (!this.wysiwyg) {

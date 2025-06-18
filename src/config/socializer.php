@@ -479,5 +479,27 @@ return [
                 'props' => []
             ],
         ],
-    ]
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Agents ia
+    |--------------------------------------------------------------------------
+    */
+
+    'agents_ai' => [
+        'openai' => [
+            'key' => env('SOCIALIZER_OPENAI_KEY', ''),
+            'model' => env('SOCIALIZER_OPENAI_MODEL', 'gpt-3.5-turbo'),
+            'url' => env('SOCIALIZER_OPENAI_URL', ''),
+        ],
+        'anthropic' => [
+            'key' => env('SOCIALIZER_ANTHROPIC_KEY', ''),
+            'model' => env('SOCIALIZER_ANTHROPIC_MODEL', 'claude-2'),
+            'url' => env('SOCIALIZER_ANTHROPIC_URL', ''),
+        ],
+        'chatbot' => [
+            'user_id' => env('SOCIALIZER_CHATBOT_USER_ID', null),
+        ]
+    ],
 ];

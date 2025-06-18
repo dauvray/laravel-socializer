@@ -11,11 +11,15 @@ export default {
         
         this.messages = this.currentConversation.messages.data.slice().reverse().concat(this.messages)
     },
-    resetConversation() {
+    async resetConversation(vertexid) {
+        await AjaxService.load(`/leave-conversation/${vertexid}`)
         this.$reset()
     },
     leaveCurrentConversation() {
         this.currentConversation = null
+    },
+    setCurrentConversation(conversation) {
+        this.currentConversation = {...conversation}
     },
     updateConversationInfos(payload) {
         this.currentConversation.general = {...payload}
@@ -91,7 +95,7 @@ export default {
             '/delete-chat-message', 
             'post', 
             { 
-                room_id: payload.chatId,
+                chat_id: payload.chatId,
                 message_id: payload.messageId,
             },
             {

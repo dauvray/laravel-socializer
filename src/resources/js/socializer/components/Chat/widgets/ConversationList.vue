@@ -1,8 +1,6 @@
 <template>
     <div class="conversations-list">
-        <ConversationCreatorButton
-            @create-chat="onCreateChat"
-        ></ConversationCreatorButton>
+
         <ul class="list-group list-group-flush">
             <li v-for="conversation in conversations" 
                 class="list-group-item">
@@ -19,19 +17,16 @@
 
     import Gravatar from '~estarter/components/widgets/Gravatar.vue'
     import ConversationSelector from './ConversationSelector.vue'
-    import ConversationCreatorButton from './ConversationCreatorButton.vue'
     import IconWidget from '~estarter/components/widgets/IconWidget.vue'
 
     export default {
         name: 'ConversationList',
         emits: [
             'join-chat',
-            'create-chat',
         ],
         components: {
             Gravatar,
             ConversationSelector,
-            ConversationCreatorButton,
             IconWidget,
         },
         props: {
@@ -43,9 +38,6 @@
         methods: {
             onJoinChat(vertexid) {
                 this.$emit('join-chat', vertexid)
-            },
-            onCreateChat() {
-                this.$emit('create-chat')
             },
         }
     }

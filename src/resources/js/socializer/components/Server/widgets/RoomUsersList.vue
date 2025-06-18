@@ -3,7 +3,7 @@
         <li v-for="user in users" 
             :key="user.id"
             class="chatters">
-            <span class="chat-user-badge">
+            <div class="chat-user-badge">
                 <Gravatar
                     class="me-2"
                     size="small"
@@ -12,7 +12,7 @@
                     :showStatus="false"
                 ></Gravatar>
                 <UserWallLink :user="user"></UserWallLink>
-            </span>
+            </div>
         </li>
     </ul>
 </template>

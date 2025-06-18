@@ -9,7 +9,7 @@
 export default {
     mounted(el, binding) {
         const resizer = document.createElement("div");
-        resizer.style.width = "5px";
+        resizer.style.width = "3px";
         resizer.style.cursor = "ew-resize";
         resizer.style.position = "absolute";
         resizer.style.top = "0";

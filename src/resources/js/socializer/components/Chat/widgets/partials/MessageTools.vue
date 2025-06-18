@@ -1,6 +1,6 @@
 <template>
  <div class="message-tools" ref="tools"> 
-    <div class="d-flex align-items-center text-bg-light border rounded shadow">
+    <div class="message-tools-inner">
         <button type="button" class="btn btn-sm" @click="onSelectedEmoji('👍')">👍</button>
         <button type="button" class="btn btn-sm" @click="onSelectedEmoji('❤️')">❤️</button>
         <button type="button" class="btn btn-sm" @click="onSelectedEmoji('😆')">😆</button>
@@ -21,8 +21,8 @@
                 <IconWidget icon="ellipsis-h" />
             </button>
             <ul class="dropdown-menu">
-                <li v-if="isMe">
-                    <a class="dropdown-item" @click="onDeleteMessage">
+                <li v-if="canDelete">
+                    <a class="dropdown-item" href="#" @click="onDeleteMessage">
                         <IconWidget icon="trash" /> Supprimer
                     </a>
                 </li>
@@ -87,6 +87,9 @@
             }),
             isMe: function() {
                 return this.message.author.slug === this.me.slug
+            },
+            canDelete: function() {
+                return this.isMe || this.message.extras.is_bot_answer
             },
         },
         methods: {

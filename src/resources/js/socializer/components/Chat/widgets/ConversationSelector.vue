@@ -1,12 +1,13 @@
 <template>
-    <div class="d-flex align-items-end">
+    <div class="d-flex align-items-end justify-content-start">
         <Gravatar
             :user="user"
             size="small"
             style="width:35px"
             image-class="img-fluid"
         ></Gravatar>
-        <button class="btn" 
+        <button class="btn flex-grow-1" 
+            style="text-align:start;"
             @click="onJoinChat"
             >{{ conversationName }}
         </button>
@@ -31,7 +32,7 @@
     import ConversationActionsList from './partials/ConversationActionsList.vue'
 
     export default {
-        name: 'ConversationButton',
+        name: 'ConversationSelector',
         emits: [
             'join-chat',
         ],

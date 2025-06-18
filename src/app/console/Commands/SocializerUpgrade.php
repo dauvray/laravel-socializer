@@ -5,10 +5,6 @@ namespace Dauvray\Socializer\app\Console\Commands;
 use Dauvray\Estarter\app\Console\Commands\EstarterPrepare;
 
 
-use Illuminate\Support\Facades\Hash;
-use Spatie\Permission\Models\Role;
-use App\Models\User; // Assuming the User model is in App\Models namespace
-
 class SocializerUpgrade extends EstarterPrepare
 {
     /**
@@ -52,25 +48,6 @@ class SocializerUpgrade extends EstarterPrepare
         ');
 
         try {
-            // create bot role
-          //  Role::create(['name' => 'Agent AI']);
-
-            // create bot user
-            $chatbot = User::create([
-                "name" => "ChatBot",
-                "email_verified_at" => "2018-07-11 16:19:10",
-                "email" => "chatbot@estarter.com",
-                "password" => Hash::make('adminpass'),
-                "extras" => [
-                    "private" => "1",
-                    "function" => ""
-                    ],
-                "active" => "1",
-                "is_bot" => "1",
-            ]);
-
-            $chatbot->assignRole('Agent AI');
-
 
 
             /*---------------------------------------*/

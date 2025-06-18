@@ -4,7 +4,10 @@ namespace Dauvray\Socializer\app\Console\Commands;
 
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
+use Spatie\Permission\Models\Role;
+use Illuminate\Support\Facades\Hash;
 use Dauvray\Estarter\app\Console\Commands\EstarterPrepare;
+
 
 class SocializerInstall extends EstarterPrepare
 {
@@ -93,7 +96,6 @@ class SocializerInstall extends EstarterPrepare
         $file=file_get_contents('.env');
         $file.="DB_GRAPH_SPACE=network\n";
         file_put_contents('.env', $file);
-
 
         $fp1 = fopen(base_path('routes/breadcrumbs.php'), 'a+');
         $file2 = file_get_contents(base_path('vendor/dauvray/laravel-socializer/src/routes/breadcrumbs.php'));
@@ -295,10 +297,31 @@ class SocializerInstall extends EstarterPrepare
             ."// -- DO NOT DELETE THIS LINE : new CSS can automatically be inserted here\n"
         );
 
+
+        // create bot role
+        Role::create(['name' => 'Agent AI']);
+
+        // create bot user
+        $chatbot = config('estarter.models.user')::create([
+            "name" => "ChatBot",
+            "email_verified_at" => "2018-07-11 16:19:10",
+            "email" => "chatbot@estarter.com",
+            "password" => Hash::make('adminpass'),
+            "extras" => [
+                "private" => "1",
+                "function" => ""
+                ],
+            "active" => "0",
+            "is_bot" => "1",
+        ]);
+        $chatbot->assignRole('Agent AI');
+        createUserAndNetwork($chatbot);
+        $this->putInFile(base_path('.env'), "
+            SOCIALIZER_CHATBOT_USER_ID=$chatbot->id\n
+            VITE_SOCIALIZER_CHATBOT_USER_ID=\"${SOCIALIZER_CHATBOT_USER_ID}\"\n
+        ");
+
         $this->executeArtisanProcess('migrate');
-
-        // create bot here
-
 
         // Clear caches
         $this->executeArtisanProcess('cache:clear');

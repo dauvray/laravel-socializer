@@ -10,9 +10,9 @@
             :mime-type="file.mime"
             class="m-2"
         ></FileIcon>
-        <a :href="fileUrl" download>{{ file.name }}</a>
+        <a :href="fileUrl" download><IconWidget icon="download"></IconWidget> {{ file.name }}</a>
         <span v-if="file.size">
-            ({{ (file.size / 1024).toFixed(2) }} Ko)
+            ( {{ fileSize }} )
         </span>
     </div> 
 </template>
@@ -20,7 +20,7 @@
 <script>
 
     import { defineAsyncComponent } from '@vue/runtime-core'
-    import { uniqueId } from '~estarter/services/helpers.js'
+    import { uniqueId, formatFileSize } from '~estarter/services/helpers.js'
 
     export default {
         name: 'JoinedFiles',
@@ -39,6 +39,7 @@
         },
         components: {
             FileIcon: defineAsyncComponent(() => import('~formdesigner/application/formCreator/widgets/atoms/FileIcon.vue')),
+            IconWidget: defineAsyncComponent(() => import('~estarter/components/widgets/IconWidget.vue')),
         },
         data() {
             return {
@@ -52,13 +53,16 @@
             fileUrl: function() {
                 return `/chat/file/${this.conversationId}/${this.file.filename}`
             },
+            fileSize: function() {
+                return formatFileSize(this.file.size)
+            },
             thumbnailUrl: function() {
-                return `/serve-thumbnail/${this.file.thumbnail}/large` || this.fileUrl;
+                return this.file.thumbnail || this.fileUrl;
             },
         },
         methods: {
             onShowFile: function() {
-                this.$emit('show-file', this.fileUrl);
+                this.$emit('show-file', this.fileUrl, this.file.mime);
             },
         },
     }

@@ -1,6 +1,6 @@
 <template>
   <div >
-    <div class="card-body">
+    <div class="card-body h-100">
       <iframe
             ref="sandboxFrame"
             style="width: 100%; height: 100%;"

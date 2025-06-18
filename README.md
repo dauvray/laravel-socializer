@@ -1,5 +1,19 @@
 # laravel-socializer
 
+## Requirements
+
+This package needs Redis
+
+    // php-ext
+    pecl install redis
+
+    // server
+    sudo dnf install redis
+    sudo apt install php-redis
+    sudo systemctl enable redis
+    sudo systemctl start redis
+    sudo systemctl restart php-fpm
+
 ## Installation
 
     composer config repositories.dauvray/laravel-socializer vcs https://github.com/dauvray/laravel-socializer.git
