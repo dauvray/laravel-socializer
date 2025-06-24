@@ -10,7 +10,9 @@
             :mime-type="file.mime"
             class="m-2"
         ></FileIcon>
-        <a :href="fileUrl" download><IconWidget icon="download"></IconWidget> {{ file.name }}</a>
+        <a class="color-auto" :href="fileUrl" download>
+            <IconWidget icon="download"></IconWidget> {{ file.name }}
+        </a>
         <span v-if="file.size">
             ( {{ fileSize }} )
         </span>

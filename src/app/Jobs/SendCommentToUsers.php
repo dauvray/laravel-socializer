@@ -7,9 +7,9 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
-use Dauvray\Socializer\app\Events\PostDeletedEvent;
+use Dauvray\Socializer\app\Events\CommentCreated;
  
-class DeletePostToFollowers implements ShouldQueue
+class SendCommentToUsers implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
  
@@ -17,7 +17,7 @@ class DeletePostToFollowers implements ShouldQueue
      * Create a new job instance.
      */
     public function __construct(
-        public $post_id,
+        public $resource,
         public $feed_id,
     ) {}
  
@@ -26,6 +26,6 @@ class DeletePostToFollowers implements ShouldQueue
      */
     public function handle(): void
     {
-        PostDeletedEvent::dispatch($this->post_id, $this->feed_id);
+        CommentCreated::dispatch($this->resource, $this->feed_id);
     }
 }

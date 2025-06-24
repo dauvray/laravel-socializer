@@ -1,6 +1,15 @@
 #system-socializer {
     @extend .d-flex;
     @extend .align-items-center;
+
+    .reponse-rapide {
+        @extend .card;
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        width: 300px;
+        z-index: 20;
+    }
 }
 
 #main-navbar {
@@ -48,12 +57,22 @@ $message_width: 60%;
     .chat-header {
         @extend .d-flex;
         @extend .border-bottom;
-        @extend .p-2;
+        @extend .pt-2;
+        @extend .pb-2;
         @extend .mb-2;
         @extend .bg-auto;
         position: sticky;
         top: 0;
         z-index: 3;
+        min-height: 55px;
+
+        .chat-user-badge {
+            @extend .d-flex;
+            @extend .align-items-center;
+            @extend .badge;
+            @extend .text-bg-light;
+            @extend .me-2;
+        }
 
         .room-users-list {
             @extend .flex-grow-1;
@@ -62,61 +81,7 @@ $message_width: 60%;
 
     .chat-messages-wrapper {
         position: relative;
-      //  @extend .container;
-
-        // todo a reproduire au niveau de la room
-        // display: grid;
-        // grid-template-columns: 1fr 0;
-
-        // &.stream-video {
-        //     grid-template-columns: 1fr 250px;
-
-        //     .chat-videos-btn {
-        //         display: block;
-        //     }
-        // }
-
-        // // hide messages
-        // &.no-chat {
-        //     @extend .container-fluid;
-        //     grid-template-columns: 0 auto;
-
-        //     .chat-videos-btn {
-        //         display: block;
-        //     }
-
-        //     #videoContainer{
-        //         grid-template-columns: 1fr 1fr;
-        //     }
-
-        //     .chat-messenger {
-        //         display: none;
-        //     }
-        // }
-        // // screen capture
-        // &.screen-capture {
-        //     @extend .container-fluid;
-        //     grid-template-columns: 0 100%;
-
-        //     .chat-videos-btn {
-        //         display: none;
-        //     }
-
-        //     #videoContainer{
-        //         video {
-        //             display: none;
-        //         }
-        //         .screen-capture{ 
-        //             display: block;
-        //             width: 100%;
-        //         }
-        //         grid-template-columns: 100%;
-        //     }
-
-        //     .chat-messenger {
-        //         display: none;
-        //     }
-        // }
+        @extend .pe-0;
 
         .chat-messages {
             @extend .card;
@@ -126,12 +91,14 @@ $message_width: 60%;
             min-height: 68vh;
             max-height: 68vh;
             overflow-y: auto;
+            background: url(https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png) top left no-repeat;
+            background-size: contain;
+            background-repeat: repeat;
+            background-attachment: fixed;
 
             .chat-messages-inner {
                 @extend .card-body;
-                background: url(https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png) top left no-repeat;
-                background-size: cover;
-                background-attachment: fixed;
+                background-color: rgba(0, 0, 0, 0.1);
                 -webkit-box-shadow: inset 5px 5px 36px -6px rgba(0,0,0,0.71); 
                 box-shadow: inset 5px 5px 36px -6px rgba(0,0,0,0.71);
 
@@ -145,7 +112,14 @@ $message_width: 60%;
                     }
 
                     .message-outer {
-                        max-width: $message_width;
+                        @include media-breakpoint-up(lg) {
+                            max-width: $message_width;
+                        }
+
+                        @include media-breakpoint-down(lg) {
+                            max-width: 100%;
+                        }
+                        
                         @extend .mb-2;
 
                         .message-infos {
@@ -205,15 +179,27 @@ $message_width: 60%;
                                 @extend .rounded-pill;
                             }
                         }
+
+                        &:has(iframe) {
+                            width: $message_width;
+                        }
                     }
 
-                    .message-outer:has(iframe) {
-                        width: $message_width;
+                    .message-tools-inner {
+                        @extend .d-flex;
+                        @extend .align-items-center;
+                        @extend .text-bg-light;
+                        @extend .border;
+                        @extend .rounded;
+                        @extend .shadow;
+
+                        .dropdown-menu {
+                            margin-top: -2px!important;
+                        }
                     }
                 }
             }
         }
-
     }
 
     .chat-messenger-sticky-wrapper {
@@ -263,27 +249,28 @@ $message_width: 60%;
         .message-input-container {
              @extend .d-flex;
              @extend .align-items-end;
+             @extend .color-auto;
              height: 100%;
             
             .message-input { 
+                @extend .flex-grow-1;
+                color: $white;
                 padding: 10px 15px;
-                overflow: hidden;
-                height: 100%;
                 z-index: 5;
 
                 &.drag-over {
                     outline: 2px dashed #999;
                 }
-            }
 
-            .message-input:focus {
-                border: none !important;
-                outline: none !important;
-                box-shadow: none !important;
+                &:focus {
+                    border: none !important;
+                    outline: none !important;
+                    box-shadow: none !important;
+                }
             }
 
             .message-input-tools {
-                position: absolute;
+                @extend .d-flex;
                 right: 0;
                 bottom: 0;
             }
@@ -335,6 +322,7 @@ $message_width: 60%;
     }
 
     #room-sidebar {
+        height: 100%;
         grid-area: room-sidebar; 
         position: sticky;
         z-index: 10;
@@ -342,9 +330,9 @@ $message_width: 60%;
         align-self: self-start;
         min-width: 150px;
         max-width: 600px;
+        @extend .border-end;
 
         #room-params {
-             @extend .border-end;
              @extend .border-bottom;
              @extend .rounded;
              @extend .d-flex;
@@ -356,11 +344,10 @@ $message_width: 60%;
              .server-name {
                 @extend .flex-grow-1;
              }
-
          }
      
          #room-list {
-             @extend .border-end;
+            
              @extend .rounded;
              @extend .bg-auto-tertiary;
      
@@ -408,10 +395,9 @@ $message_width: 60%;
     }
 
     #main-room {
+        @extend .d-flex;
+        @extend .flex-column;
         grid-area: main-room;  
-     //   background-image: url('https://w0.peakpx.com/wallpaper/818/148/HD-wallpaper-whatsapp-background-cool-dark-green-new-theme-whatsapp.jpg');
-        background-size: contain;
-        background-attachment: fixed;
 
         .room-wrapper {
             position: relative;
@@ -568,6 +554,7 @@ $message_width: 60%;
 
 .dropdown-menu {
     @extend .shadow;
+    @extend .bg-auto;
     z-index: 4;
 }
 

@@ -108,9 +108,6 @@
     import TextareaMessage from './widgets/partials/TextareaMessage.vue'
     import resizable from "~socializer/directives/resizable_horizontal.js"
 
-
-   
-
     export default {
         name: 'ChatComponent',
         inject: ["eventBus"],

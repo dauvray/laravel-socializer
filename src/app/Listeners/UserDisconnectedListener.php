@@ -4,10 +4,11 @@ namespace Dauvray\Socializer\app\Listeners;
 
 use Dauvray\Estarter\app\Events\UserDisconnected;
 use Illuminate\Support\Facades\Broadcast;
-use Illuminate\Support\Facades\Cache;
 
 class UserDisconnectedListener
 {
+     public $service;
+
     /**
      * Create the event listener.
      *
@@ -15,7 +16,7 @@ class UserDisconnectedListener
      */
     public function __construct()
     {
-        //
+
     }
 
     /**
@@ -26,11 +27,13 @@ class UserDisconnectedListener
      */
     public function handle(UserDisconnected $event)
     {
-       app('nebulaGraph')->updateVertex(
+        app('nebulaGraph')->updateVertex(
             config('socializer.nebulagraph.tags.user.name'), 
             $event->user->vertexid, 
             ['connected' => 0]
         );
+
+        app('onlineUsers')->removeUserOnlineStatus();
 
         // broadcast new status
         Broadcast::on('user-status.'. $event->user->slug)
@@ -40,7 +43,5 @@ class UserDisconnectedListener
             'slug' => $event->user->slug,
             ])
         ->send();
-
-        Cache::forget('user-is-online-' . $event->user->id);
     }
 }

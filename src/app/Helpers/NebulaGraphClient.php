@@ -9,6 +9,7 @@ use Thrift\Transport\TBufferedTransport;
 use Thrift\Transport\TSocket;
 use Nebula\Graph\GraphServiceClient;
 use Nebula\Graph\VerifyClientVersionReq;
+use Illuminate\Support\Facades\Cache;
 
 /**
  * GraphClient class used for connecting and executing commands on Nebula.
@@ -80,12 +81,18 @@ class NebulaGraphClient
      */
     public function authenticate(string $username, string $password): bool
     {
-        $sessionId = session('nebulagraph_sessionid', null);
+        $sessionId = Cache::get('nebulagraph_sessionid');
 
         if(!$sessionId) {
+            $last_sessionId = Cache::get('nebulagraph_last_sessionid');
+            if ($last_sessionId) {
+               $this->executeJson('KILL SESSION ' . $last_sessionId);
+            }
+
             $resp = $this->connection->authenticate($username, $password);
             $this->sessionId = $resp->session_id;
-            session(['nebulagraph_sessionid' => $this->sessionId]);
+            Cache::put('nebulagraph_sessionid', $this->sessionId, now()->addMinutes(10));
+            Cache::put('nebulagraph_last_sessionid', $this->sessionId);
         } else {
             $this->sessionId = $sessionId;
         }
@@ -114,5 +121,21 @@ class NebulaGraphClient
     public function executeJson(string $stmt)
     {
         return $resp = $this->connection->executeJson($this->sessionId, $stmt);
+    }
+
+    public function logout( $session_id = null): void
+    {
+        $sessionId = $session_id ?? $this->sessionId;
+
+        if ($sessionId) {
+            try {
+                $this->connection->signOut($sessionId);
+            } catch (\Throwable $e) {
+                logger()->warning('[Nebula] Logout failed: ' . $e->getMessage());
+            }
+
+            Cache::forget('nebulagraph_sessionid');
+            $this->sessionId = null;
+        }
     }
 }

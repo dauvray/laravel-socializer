@@ -3,6 +3,9 @@
 namespace Dauvray\Socializer\app\Providers;
 
 use Illuminate\Foundation\Support\Providers\EventServiceProvider as ServiceProvider;
+use Illuminate\Support\Facades\Event;
+use Laravel\Reverb\Events\MessageReceived;
+use Dauvray\Socializer\app\Listeners\UserOnlineWhisperListener;
 
 class SocializerEventServiceProvider extends ServiceProvider
 {
@@ -66,6 +69,7 @@ class SocializerEventServiceProvider extends ServiceProvider
     {
         parent::boot();
 
-        //
+        // Register the User Reverb ping handler
+        Event::listen(MessageReceived::class, UserOnlineWhisperListener::class);
     }
 }

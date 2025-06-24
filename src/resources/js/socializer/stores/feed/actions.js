@@ -9,31 +9,11 @@ export default {
     async loadFeed(identifier, type='wall') {
         const feed = await AjaxService.load(`/owner-${type}/${identifier}`)
         this.feedId = feed.id
-        this.initListeners()
         return feed
     },
-    async loadFeedPost(feedId) {
-        const feed = await AjaxService.load(`/get-feed-posts/${feedId}`)
+    async loadFeedPost(feedUrl) {
+        const feed = await AjaxService.load(feedUrl)
         this.posts = feed
-    },
-    initListeners() {
-        Echo.channel(`${this.feedId}.feed`)
-        // Feed activity
-        .listen('.Dauvray\\Socializer\\app\\Events\\FeedActivity', (event) => {
-           this.manageFeedActivity(event)
-        })
-        // Submit post
-        .listen('.Dauvray\\Socializer\\app\\Events\\PostCreated', (event) => {
-            this.insertPost(event.post)
-        })
-        // Delete post
-        .listen('.Dauvray\\Socializer\\app\\Events\\PostDeleted', (event) => {
-            this.removePost(event.post_id)
-        })
-        // likes / dislikes
-        .listen('.Dauvray\\Socializer\\app\\Events\\ItemLiked', (event) => {
-            this.updatePostLikes(event.likes, event.vertexid, event.storeid)
-        })
     },
     resetFeed() {
         this.$reset()

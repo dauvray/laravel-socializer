@@ -8,11 +8,11 @@ use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 
-class PostDeleted implements ShouldBroadcast
+class PostCreatedEvent implements ShouldBroadcast
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
-    public $post_id;
+    public $post;
     public $vertexid;
 
     /**
@@ -20,9 +20,9 @@ class PostDeleted implements ShouldBroadcast
      *
      * @return void
      */
-    public function __construct($post_id, $vertexid)
+    public function __construct($post, $vertexid)
     {
-        $this->post_id = $post_id;
+        $this->post = $post;
         $this->vertexid = $vertexid;
 
         $this->dontBroadcastToCurrentUser();

@@ -37,7 +37,6 @@
             CommentListWrapper,
             CommentList: defineAsyncComponent(() => import('~socializer/components/Comment/CommentList.vue')),
             CounterWidget: defineAsyncComponent(() => import('~socializer/components/Comment/widgets/Counter.vue')),
-            CommentsPagination: defineAsyncComponent(() => import('~estarter/components/widgets/Pagination.vue')),
             LikeButtons,
         },
         emits: [

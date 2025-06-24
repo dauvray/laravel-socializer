@@ -88,7 +88,6 @@
             },
             onQuestionnaireReady() {
                 this.isReady = true
-                console.log('tototo')
             }
         }
     }

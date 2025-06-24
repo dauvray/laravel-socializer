@@ -3,6 +3,7 @@
 namespace Dauvray\Socializer\app\Services;
 
 use Dauvray\Socializer\app\Events\CommentCreated;
+use Dauvray\Socializer\app\Jobs\SendCommentToUsers;
 use Dauvray\Socializer\app\Events\CommentDeleted;
 use Dauvray\Socializer\app\Events\CommentCalculated;
 use Illuminate\Support\Facades\Auth;
@@ -133,7 +134,8 @@ class Comments
         ];
 
         // broadcast new comment to listeners
-        CommentCreated::dispatch($resource, $vertexid);
+       // CommentCreated::dispatch($resource, $vertexid);
+        SendCommentToUsers::dispatch($resource, $vertexid);
 
         // updateCounter parent counter
        $this->_notifyCommentCounterUpdate($vertexid);
@@ -172,6 +174,7 @@ class Comments
             return response()->json($res, 500);
         } 
 
+        // todo faire un job comme pour created
         CommentDeleted::dispatch($comment_id, $vertexid);
 
         // updateCounter parent counter
@@ -198,36 +201,4 @@ class Comments
             CommentCalculated::dispatch( $result[0]['total'], $vertexid, $result[0]['parent']);
         }
     }
-
-    /*
-    | LIKES
-    */
-
-    // public function createLike($isLiked, $vertexid, $storeid)
-    // {
-    //     // clear previous
-    //     $this->nebula->deleteEdge(config('socializer.nebulagraph.edges.liked_by.name'), [$vertexid.'->'.$this->user->vertexId]);
-    //     $this->nebula->deleteEdge(config('socializer.nebulagraph.edges.disliked_by.name'), [$vertexid.'->'.$this->user->vertexId]);
-
-    //     // do action
-    //     $action = $isLiked ? 'liked_by' : 'disliked_by';
-    //     $this->nebula->insertEdge(
-    //         config('socializer.nebulagraph.edges.'. $action .'.name'), 
-    //         [
-    //             $vertexid.'->'.$this->user->vertexId => config('socializer.nebulagraph.edges.'. $action .'.props')
-    //         ]
-    //     );
-
-    //     // get new status
-    //     $res = $this->nebula->execute('
-    //         MATCH (c:comment) WHERE id(c) =="'.$vertexid.'" 
-    //         OPTIONAL MATCH (c)-[z:liked_by]->(:user) 
-    //         OPTIONAL MATCH (c)-[x:disliked_by]->(:user) 
-    //         RETURN count(z) as likes, count(x) as dislikes
-    //     ');
-
-    //     CommentLiked::dispatch($res[0], $vertexid, $storeid);
-
-    //     return $res[0];
-    // }
 }

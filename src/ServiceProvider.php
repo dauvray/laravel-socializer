@@ -66,7 +66,7 @@ class ServiceProvider extends \Illuminate\Support\ServiceProvider
      *
      * @return void
      */
-    public function boot()
+    public function boot(\Illuminate\Routing\Router $router)
     {
         \Schema::defaultStringLength(191);
 
@@ -92,7 +92,7 @@ class ServiceProvider extends \Illuminate\Support\ServiceProvider
         */
         // LOAD THE ROUTES
 
-        $this->app->booted(function () {
+        $this->app->booted(function () use ($router) {
 
             $this->loadRoutesFrom(__DIR__ . $this->routeFilePath);
 
@@ -108,6 +108,9 @@ class ServiceProvider extends \Illuminate\Support\ServiceProvider
 //            if (file_exists($customRoutesPath)) {
 //                $this->loadRoutesFrom($customRoutesPath);
 //            }
+
+            //web middlewares
+            $router->pushMiddlewareToGroup('web', \Dauvray\Estarter\app\Http\Middleware\UserActivity::class);
         });
 
         /*
@@ -144,7 +147,6 @@ class ServiceProvider extends \Illuminate\Support\ServiceProvider
         View::composer('*', function ($view) {
             $view->with('adminUser', backpack_auth()->user());
         });
-
         /*
         |--------------------------------------------------------------------------
         | Commands

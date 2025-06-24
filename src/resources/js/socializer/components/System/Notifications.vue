@@ -119,6 +119,11 @@
                     this.initUserChannel()
                 }
             },
+            me(value) {
+                if(value) {
+                    this.setOnlineStatus() 
+                }
+            },
         },
         computed : {
             ...mapState(useMeStore, {
@@ -126,13 +131,17 @@
             }),
             userChannel: function() {
                 if(this.me) {
-                    return `App.Models.User.${this.me.id}`
+                    return this.me.channel
                 }
             }
         },
         mounted() {
             this.setLocalVideoPeer(this, visioCallCallback.default)
             this.setLocalDataPeer(this, visioPlayerDataCallback.default)
+            
+            setInterval(() => { 
+                this.setOnlineStatus() 
+            }, 120000) // every 2 minutes
         },
         unmounted() {
             Echo.leave(this.userChannel)
@@ -209,7 +218,14 @@
             },
             onStopCall() {
                 this.stopAllVisioStream('visio')
-            }
+            },
+            setOnlineStatus() {
+                console.log('setOnlineStatus', this.me.channel)
+                Echo.private(this.me.channel).whisper('ping', {
+                    timestamp: Date.now(),
+                    userId: this.me.id,
+                });
+            },
         }
     }
 

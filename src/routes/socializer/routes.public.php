@@ -13,7 +13,3 @@ Route::post('/get-sub-comments',
 Route::post('/get-total-comments', 
     config('socializer.controllers_front.comment').'@getTotalComments')
     ->name('comments.total');
-
-    Route::get('/titi-toto', 
-    config('socializer.controllers_front.feed').'@testQuery')
-    ->name('comments.total');

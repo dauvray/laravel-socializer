@@ -14,7 +14,7 @@
 </template>
 
 <script>
-    import FeedWidget from '~socializer/components/Post/Feed.vue'
+    import FeedWidget from '~socializer/components/Feed/Feed.vue'
     import { useMeStore } from '~estarter/stores/me.js'
     import { mapState } from 'pinia'
     import { defineAsyncComponent } from 'vue'

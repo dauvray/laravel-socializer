@@ -75,11 +75,24 @@ class SocializerInstall extends EstarterPrepare
             base_path('resources/views/vendor/.')
         ]);
 
+        // set Echo config
+        $this->executeProcess(['cp', '-a',
+            base_path('vendor/dauvray/laravel-socializer/src/resources/js/echo.js'),
+            base_path('resources/js/echo.js')
+        ]);
+
+
         // update estarter config
         $this->replaceInfile(
             base_path('config/estarter.php'),
             '$prefix_back.\'\General\UserCrudController\'',
             "'Dauvray\Socializer\app\Http\Controllers\Admin\UserCrudController'"
+        );
+
+        $this->replaceInfile(
+            base_path('config/estarter.php'),
+            "Dauvray\Estarter\app\Services\OnlineUsersService",
+            "Dauvray\Socializer\app\Services\OnlineUsersService"
         );
 
         // todo a filtrer

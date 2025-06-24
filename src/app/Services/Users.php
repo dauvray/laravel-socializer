@@ -4,18 +4,18 @@ namespace Dauvray\Socializer\app\Services;
 
 use Illuminate\Support\Facades\Auth;
 use Dauvray\Socializer\app\Http\Resources\UserCollection;
-use Illuminate\Support\Facades\Cache;
 
 class Users
 {
-
     public $nebula = null;
     public $user = null;
+    public $onlineService = null;
 
     public function __construct()
     {
         $this->nebula = app('nebulaGraph');
         $this->user = Auth::user();
+        $this->onlineService = app('onlineUsers');
     }
 
     public function getGraphUser($user)
@@ -72,9 +72,7 @@ class Users
 
         foreach( $results as $res) {
             $user = $res['user'];
-            $user_id = $user['id'];
-            $user['id'] = null;
-            $user['connected'] = Cache::has('user-is-online-' . str_replace('user','',$user_id)) || $user['is_bot'] == 1 ? 1 : 0;
+            $user['id'] = getRealIdFromVertexId($user['id']);
             $user['follow_status'] = $res['follow_status'];
             $user['nb_followers'] = $res['nb_followers'];
             $formated[] = (object)$user;

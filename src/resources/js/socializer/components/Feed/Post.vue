@@ -3,22 +3,23 @@
         v-if="item.post.type == 'shared'"
         :user="item.post.shared_by">
     </SharedThumbnail>
-    <div class="card">
-        <div class="card-header p-1">
-            <div class="d-flex align-items-end">
+    
+    <div class="post-wrapper">
+        <div class="post-header">
+            <div class="post-infos-wrapper">
                 <Gravatar
                     class="me-2"
                     :user="item.author"
                     size="small"
                 ></Gravatar>
-                <div class="d-flex flex-column">
+                <div class="user-infos">
                     <UserWallLink
                         :user="item.author"
                     ></UserWallLink>
-                    <small>{{  item.author.function }}</small>
+                    <small>{{ item.author.function }}</small>
                 </div>
                 <DateHelper
-                    class="ms-2 me-2 text-muted fw-light"
+                    class="date-message"
                     :date="item.post.created_at"
                     :format="'since'"
                 ></DateHelper>
@@ -26,23 +27,23 @@
             <button
                 v-if="canDelete"
                 type="button" 
-                class="btn btn-sm btn-link"
+                class="delete-button"
                 @click="onPostDelete"
                 ><IconWidget icon="trash-alt" title="supprimer"></IconWidget>
             </button>
         </div>
 
-        <div class="card-body">
-            <div class="card-text" v-html="item.post.content"></div>
+        <div class="post-body">
+            <div class="post-text" v-html="item.post.content"></div>
         </div>
     </div>
-
-           
+ 
     <LikeButtons
         :likes="item.post.likes"
         :dislikes="item.post.dislikes"
         @like-item="onLikeItem"
     ></LikeButtons>
+
     <ShareButton
         v-if="canShare"
         @share-item="onSharePost"
@@ -69,7 +70,7 @@
     import { mapState } from 'pinia'
     import { defineAsyncComponent } from 'vue'
     import LikeButtons from '~socializer/components/Comment/widgets/Like.vue'
-    import ShareButton from '~socializer/components/Post/widgets/ShareButton.vue'
+    import ShareButton from '~socializer/components/Feed/widgets/ShareButton.vue'
     import Gravatar from '~estarter/components/widgets/Gravatar.vue'
     import UserWallLink from '~socializer/components/User/WallLink.vue'
     import DateHelper from '~estarter/components/widgets/DateHelper.vue'

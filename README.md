@@ -155,6 +155,10 @@ Add to .env
     MIX_FORMDESIGNER_UPDATE_ROOM_ID=__ID__
 
 
+Add to resources/js/bootstrap.js
+
+    import './echo.js';
+
 
 
                 

@@ -26,7 +26,7 @@
 <script>
 
     import CoverUser from './Cover.vue'
-    import FeedWidget from '~socializer/components/Post/Feed.vue'
+    import FeedWidget from '~socializer/components/Feed/Feed.vue'
     import IconWidget from '~estarter/components/widgets/IconWidget.vue'
     import { useWallStore } from '~socializer/stores/wall.js'
     import { useMeStore } from '~estarter/stores/me.js'

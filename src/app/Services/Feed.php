@@ -6,20 +6,21 @@ use Illuminate\Support\Facades\Auth;
 use Dauvray\Socializer\app\Models\Post;
 use Dauvray\Socializer\app\Http\Resources\PostCollection;
 use Dauvray\Socializer\app\Http\Resources\Post as PostResource; 
-use Dauvray\Socializer\app\Events\PostCreated;
+use Dauvray\Socializer\app\Events\PostDeletedEvent;
 use Dauvray\Socializer\app\Jobs\SendPostToFollowers;
-use Dauvray\Socializer\app\Events\PostDeleted;
 use Dauvray\Socializer\app\Jobs\DeletePostToFollowers;
 
 class Feed
 {
     public $nebula = null;
     public $user = null;
+    public $usersOnlineService = null;
 
     public function __construct()
     {
         $this->nebula = app('nebulaGraph');
         $this->user = Auth::user();
+        $this->usersOnlineService = app('onlineUsers');
     }
 
     public function getFeed($vertexid = null, $type = 'wall')
@@ -52,6 +53,9 @@ class Feed
     public function getFeedPosts($feed_id = null)
     {
         $user_vertextid = $this->user->vertexid;
+
+        // set user in online feed connections
+        $this->usersOnlineService->addUserFeed($feed_id);
 
         $posts_nebula = app('nebulaGraph')->execute("
             MATCH (author:user)<-[:has_creator]-(p:post)-[:published_in]->(f) 
@@ -113,7 +117,7 @@ class Feed
         $model = $request->get('model');
         $formated = formatTextToContent($model['POST']);
         $model['POST'] = $formated['content'];
-        $feed_id = $this->user->wall();//$request->get('feed_id');
+        $feed_id = $this->user->wall();
 
         $post = Post::create([
             'feed_id' => $feed_id,
@@ -172,24 +176,10 @@ class Feed
 
         $resource = $this->_formatPostToResource($post, $post_identifier);
 
-        // broadcast new post to wall
-      //  PostCreated::dispatch($resource, $feed_id);
+        // to queue
+        SendPostToFollowers::dispatch($resource, $feed_id);
 
-        // send to followers
-        $feed_followers = getFeedFollowers($feed_id);
-
-        foreach($feed_followers as $feed) {
-            $this->nebula->insertEdge(
-                config('socializer.nebulagraph.edges.published_in.name'), 
-                [
-                    $vid.'->'.$feed['id'] => config('socializer.nebulagraph.edges.published_in.props')
-                ]
-            );
-            // broadcast new post to feed followers
-            SendPostToFollowers::dispatch($resource, $feed['id']);
-        }
-
-        return new PostResource($resource);
+        return $resource;
     }
 
     private function _formatPostToResource( $post, $post_identifier, $author = null)
@@ -226,16 +216,18 @@ class Feed
             $this->nebula->deleteVertex($share_ids, true);
         }
 
-        // get followers
-        $followers = $this->nebula->execute("MATCH (p:post)-[:published_in]->(f:feed) WHERE id(p) == '$vid' RETURN f");
+        // get feed followers
+        $feed_followers = $this->nebula->execute("MATCH (p:post)-[:published_in]->(f:feed) WHERE id(p) == '$vid' RETURN f");
+
+        // delete post in Nebula
         $this->nebula->deleteVertex([$vid], true);
 
+        // broadcast delete to author
+        PostDeletedEvent::dispatch($post_id, $feed_id);
 
-        // broadcast new post to listeners
-        PostDeleted::dispatch($post_id, $feed_id);
-
-        foreach($followers as $follower) {
-            DeletePostToFollowers::dispatch($post_id, $follower['id']);
+        // broadcast delete to followers
+        foreach($feed_followers as $feed) {
+            DeletePostToFollowers::dispatch($post_id, $feed['id']);
         }
 
         return response()->json('success', 200);
@@ -278,36 +270,19 @@ class Feed
         );
 
         // send to followers
-        $followedWall = $this->user->wall();
-        $feed_followers = getFeedFollowers($followedWall, true);
+        $feed_id = $this->user->wall();
 
         $original_post = Post::where('vertexid', $post_vid)->first();
         $original_post_author = $original_post->model_type::find($original_post->model_id);
         $original_post->type = 'shared';
+
         $shared_by = $this->user->vertexid;
         $original_post->shared_by = $this->nebula->execute("Match (u:user) where id(u)== '$shared_by' return u");
         
         $resource = $this->_formatPostToResource($original_post , hideIdentifier($original_post), $original_post_author);
 
-        foreach($feed_followers as $feed) {
-
-            // check if post il already published in feed
-            $result = $this->nebula->execute("
-                MATCH (p:post)-[:published_in]->(f:feed) WHERE id(p) == '$post_vid' AND id(f) == '$feed[id]' RETURN p
-            ");
-
-            if(!count($result)) {
-                $this->nebula->insertEdge(
-                    config('socializer.nebulagraph.edges.shared_in.name'), 
-                    [
-                        $shared_post_vid.'->'.$feed['id'] => config('socializer.nebulagraph.edges.shared_in.props')
-                    ]
-                );
-                
-                // broadcast new post to feed followers
-                SendPostToFollowers::dispatch($resource, $feed['id']);
-            }
-        }
+        // to queue
+        SendPostToFollowers::dispatch($resource, $feed_id);
 
         return $resource;
     }

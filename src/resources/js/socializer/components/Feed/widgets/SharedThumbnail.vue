@@ -1,11 +1,11 @@
 <template>
-    <div class="d-flex align-items-end">
+    <div class="d-flex align-items-end mb-1">
         <Gravatar
             class="me-2"
             size="small"
-            style="width: 45px;"
+            style="width: 35px;"
             :user="user"
-            :showStatus="false"
+            :showStatus="true"
         ></Gravatar>
         <UserWallLink
             :user="user"

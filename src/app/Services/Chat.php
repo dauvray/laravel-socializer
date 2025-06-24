@@ -2,18 +2,18 @@
 
 namespace Dauvray\Socializer\app\Services;
 
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Arr;
-use Dauvray\Socializer\app\Http\Resources\MessageCollection;
-use Dauvray\Socializer\app\Http\Resources\User as UserResource;
-use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Facades\Response;
-use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Redis;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Redis;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Response;
+use Illuminate\Support\Facades\Broadcast;
 use Dauvray\Estarter\app\Helpers\ModelTraits\Thumbnails;
+use Dauvray\Socializer\app\Http\Resources\MessageCollection;
+use Dauvray\Socializer\app\Http\Resources\User as UserResource;
 
 class Chat
 {
@@ -56,7 +56,7 @@ class Chat
         $formated = ['content' => null, 'src' => null];
         $content = $request?->get('message') ?? $options['message'] ?? null;
         $result =  $this->nebula->execute('
-                MATCH (c) WHERE id(c)=="'. $chat_id. '"
+                MATCH (c) WHERE id(c)=="'. $chat_id .'"
                 OPTIONAL MATCH (u:user)-[:registered_in]->(c) 
                 RETURN c as chat, collect(id(u)) as users
         ')[0];
@@ -200,6 +200,10 @@ class Chat
 
     private function notifyBot(array $chat, object $message): void
     {
+
+        // TODO mettre dans une queue job   
+
+
         $botResponse = Http::post($chat['url_bot'], [
             'message' => $message->message_src,
             'author' => ['name' => $this->user->name, 'id' => $this->user->id],

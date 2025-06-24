@@ -120,8 +120,6 @@ class NebulaGraphConnection extends Connection {
 
     /*---------------------------------- HELPERS ----------------------------------------*/
 
-
-
     public function stringFormatArray($values)
     {
         return Arr::map($values, function ( $value, string $key) {
@@ -249,10 +247,16 @@ class NebulaGraphConnection extends Connection {
         return $this->config;
     }
 
-    public function showHost(array $options = [])
+    public function showHost()
     {
         return $this->execute('SHOW HOSTS');
     }
+
+    public function logout($session_id = null)
+    {
+        return $this->nebula->logout($session_id);
+    }
+
 
     /*---------------------------------- SPACE ----------------------------------------*/
 

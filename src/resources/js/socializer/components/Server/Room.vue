@@ -64,7 +64,7 @@
                 if(this.currentRoom) {
                     return `room.${this.currentRoom.id}`
                 }
-               // return null
+                return null
             },
         },
         watch: {

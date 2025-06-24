@@ -1,6 +1,10 @@
 <template>
-  <button v-if="compatibility" @click="toggleListening" class="btn" title="Transcrire la voix" :class="{ 'text-danger': listening}">
-    <IconWidget icon="comment-dots"></IconWidget>
+  <button v-if="compatibility" 
+      class="btn btn-link text-light" 
+      title="Transcrire la voix" 
+      :class="{ 'text-danger': listening}"
+      @click="toggleListening" >
+      <IconWidget icon="comment-dots"></IconWidget>
   </button>
 </template>
 

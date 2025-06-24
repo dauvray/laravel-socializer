@@ -28,7 +28,7 @@ class FeedController extends Controller
         return response()->json($feed, 200);
     }
 
-    // todo voir a quoi ça sert
+    // sert a avertir le feed qu'il y a de l'activité dessus ( nouveau commentaire, like ...)
     public function triggerFeedActivity(Request $request, FeedService $service)
     {
         FeedActivity::dispatch($request->all());
@@ -67,6 +67,7 @@ class FeedController extends Controller
     {
         return $service->feedSubscribeAlert($request);
     }
+
 
 /*-------------------
  WIP alerts

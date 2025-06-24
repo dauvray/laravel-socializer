@@ -47,7 +47,18 @@ if (!function_exists('getVertexIdFromInsert')) {
     {
         $item = explode(':', $result[0]);
         return str_replace('"', '', $item[0]);
+    }
+}
 
+if (!function_exists('getRealIdFromVertexId')) {
+    function getRealIdFromVertexId($vertex_id, $tag ='user')
+    {
+        $tag = config('socializer.nebulagraph.tags.' . $tag . '.name');
+        if(strpos($vertex_id, $tag) === 0) {
+            return str_replace($tag, '', $vertex_id);
+        }
+
+        return null;
     }
 }
 
@@ -56,9 +67,9 @@ if (!function_exists('getFeedFollowers')) {
         if(!$except_me) {
 
             $followers = app('nebulaGraph')->execute("
-                MATCH (feed_dest:feed)-[:owned_by]->(:user)<-[:followed_by]-(w:wall) 
+                MATCH (feed_dest:feed)-[:owned_by]->(u:user)<-[:followed_by]-(w:wall) 
                 WHERE id(w) == '$feedVertexId' 
-                RETURN feed_dest
+                RETURN feed_dest, u as user
             ");
 
         } else {
@@ -66,78 +77,77 @@ if (!function_exists('getFeedFollowers')) {
             $followers = app('nebulaGraph')->execute("
                 MATCH (feed_dest:feed)-[:owned_by]->(u:user)<-[:followed_by]-(w:wall) 
                 WHERE id(w) == '$feedVertexId' AND id(u) != '$user->vertexid'
-                RETURN feed_dest
+                RETURN feed_dest, u as user
             ");
         }
 
         return $followers;
-       
     }
 }
 
-function createUserAndNetwork($user) {
-    $nebula = app('nebulaGraph');
+if (!function_exists('createUserAndNetwork')) {
+    function createUserAndNetwork($user) {
+        $nebula = app('nebulaGraph');
 
-    /*
-    | VERTEX
-    */
+        /*
+        | VERTEX
+        */
 
-    $nebula->insertVertex(
-        config('socializer.nebulagraph.tags.user.name'), 
-        array_merge(
-            $nebula->populatePropsFromPattern(
-                $user, 
-                config('socializer.nebulagraph.vertices.user')
-            ),
+        $nebula->insertVertex(
+            config('socializer.nebulagraph.tags.user.name'), 
+            array_merge(
+                $nebula->populatePropsFromPattern(
+                    $user, 
+                    config('socializer.nebulagraph.vertices.user')
+                ),
+                [
+                    'identifier' => hideIdentifier($user)
+                ]
+            )
+        );
+
+        $result = $nebula->insertVertex(
+            config('socializer.nebulagraph.tags.feed.name'),
+            []
+        );
+
+        $result2 = $nebula->insertVertex(
+            config('socializer.nebulagraph.tags.wall.name'),
+                [
+                    'questionnaire_id' => config('socializer.posts.classic_form'),
+                ]
+        );
+
+        /*
+        | RELATIONSHIP
+        */
+
+        $feedVertexId = getVertexIdFromInsert($result);
+        $wallVertexId = getVertexIdFromInsert($result2);
+        $userVertexId = $user->vertexid;
+
+        // create user feed
+        $nebula->insertEdge(
+            config('socializer.nebulagraph.edges.owned_by.name'), 
             [
-                'identifier' => hideIdentifier($user)
+                $feedVertexId.'->'.$userVertexId => config('socializer.nebulagraph.edges.owned_by.props')
             ]
-        )
-    );
+        );
 
-    $result = $nebula->insertVertex(
-        config('socializer.nebulagraph.tags.feed.name'),
-        []
-    );
-
-    $result2 = $nebula->insertVertex(
-        config('socializer.nebulagraph.tags.wall.name'),
+        // create user wall
+        $nebula->insertEdge(
+            config('socializer.nebulagraph.edges.owned_by.name'), 
             [
-                'questionnaire_id' => config('socializer.posts.classic_form'),
+                $wallVertexId.'->'.$userVertexId => config('socializer.nebulagraph.edges.owned_by.props')
             ]
-    );
+        );
 
-    /*
-    | RELATIONSHIP
-    */
-
-    $feedVertexId = getVertexIdFromInsert($result);
-    $wallVertexId = getVertexIdFromInsert($result2);
-    $userVertexId = $user->vertexid;
-
-    // create user feed
-    $nebula->insertEdge(
-        config('socializer.nebulagraph.edges.owned_by.name'), 
-        [
-            $feedVertexId.'->'.$userVertexId => config('socializer.nebulagraph.edges.owned_by.props')
-        ]
-    );
-
-    // create user wall
-    $nebula->insertEdge(
-        config('socializer.nebulagraph.edges.owned_by.name'), 
-        [
-            $wallVertexId.'->'.$userVertexId => config('socializer.nebulagraph.edges.owned_by.props')
-        ]
-    );
-
-    // user follow his wall
-    $nebula->insertEdge(
-        config('socializer.nebulagraph.edges.followed_by.name'), 
-        [
-           $wallVertexId.'->'.$userVertexId => config('socializer.nebulagraph.edges.followed_by.props')
-        ]
-    );
-
+        // user follow his wall
+        $nebula->insertEdge(
+            config('socializer.nebulagraph.edges.followed_by.name'), 
+            [
+            $wallVertexId.'->'.$userVertexId => config('socializer.nebulagraph.edges.followed_by.props')
+            ]
+        );
+    }
 }
-

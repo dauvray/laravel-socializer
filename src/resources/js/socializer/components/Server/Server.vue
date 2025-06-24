@@ -103,6 +103,10 @@
     import RoomParamsWrapper from './widgets/RoomParamsWrapper.vue'
     import resizable from "~socializer/directives/resizable_vertical.js"
 
+
+    import { useAjaxService } from '~estarter/services/AjaxService.js'
+    const AjaxService = useAjaxService()
+
     export default {
         name: 'Server',
         emits: [
@@ -238,8 +242,7 @@
             onChangeServer(serverId) {
                 this.$router.push({ name: 'server', params: { serverId: serverId }})
             },
-            iniServerEvents() {
-
+            async iniServerEvents() {
                 if(this.channel) {
                     Echo.leave(this.channel)
                     Echo.join(this.channel)
@@ -248,7 +251,7 @@
                             this.$emit('update-users-server', this.users)
                         })
                         .joining((user) => {
-                           this.serverUsers.push(user)
+                            this.serverUsers.push(user)
                             this.$emit('joining-user-server', user)
                             this.$emit('update-users-server', this.serverUsers)
                         })

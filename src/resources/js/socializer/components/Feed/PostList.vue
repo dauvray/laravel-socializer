@@ -26,6 +26,7 @@
     export default {
         name: 'PostList',
         emits: [
+            'load-posts',
             'delete-post',
             'comment-created',
             'comment-deleted',
@@ -57,8 +58,8 @@
             onPostDelete(postId) {
                 this.$emit('delete-post', postId)
             },
-            onLoadPagination() {
-
+            onLoadPagination(url) {
+                this.$emit('load-posts', url)
             },
             onTriggerObserver() {
 

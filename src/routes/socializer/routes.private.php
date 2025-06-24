@@ -68,7 +68,7 @@ Route::post('/trigger-feed-activity',
 
 Route::post('/feed-subscribe-alert',
     config('socializer.controllers_front.feed').'@feedSubscribeAlert')
-    ->name('feed.trigger.alert'); 
+    ->name('feed.trigger.alert');
 
 /*----------------------------------------------------------------------
 | Chat

@@ -9,7 +9,7 @@ use Dauvray\Socializer\app\Http\Resources\User as UserResource;
 | Private channels
 ------------------------------------*/
 Broadcast::channel('App.Models.User.{userId}', function (User $user, int $userId) {
-    return $user->id === $userId;
+    return (int) $user->id === (int)$userId;
 });
 
 // evenements de chat
