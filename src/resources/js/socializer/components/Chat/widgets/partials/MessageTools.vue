@@ -56,11 +56,6 @@
                 type: Object,
                 required: true,
             },
-            isEditable: {
-                type: Boolean,
-                required: false,
-                default: true,
-            },
         },
         data() {
             return {
@@ -90,6 +85,10 @@
             },
             canDelete: function() {
                 return this.isMe || this.message.extras.is_bot_answer
+            },
+            isEditable: function() {
+                 if(!this.message.hasOwnProperty('extras')) return false
+                 return this.message.extras.hasOwnProperty('audio') && this.message.extras.audio === null
             },
         },
         methods: {

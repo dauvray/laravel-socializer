@@ -35,6 +35,9 @@ class UserOnlineWhisperListener
             case 'client-leave-feed':
                 $this->clientLeaveFeed($data);
                 break;
+            case 'client-leave-chat':
+                $this->clientLeaveChat($data);
+                break;
             default:
                 // Handle other events if necessary
                 break;
@@ -63,7 +66,18 @@ class UserOnlineWhisperListener
             return;
         }
 
-        $user = config('estarter.models.user')::find($userId);
         app('onlineUsers')->removeUserFeed($feedId, $userId);
+    }
+
+    private function clientLeaveChat(array $data)
+    {
+        $userId = $data['userId'] ?? null;
+        $chatId = $data['chatId'] ?? null;
+
+        if (!$userId || !$chatId) {
+            return;
+        }
+
+        app('onlineUsers')->removeUserChat($chatId, $userId);
     }
 }

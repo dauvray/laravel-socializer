@@ -5,15 +5,15 @@
         style="max-width: 100%; max-height: 300px; object-fit: cover;"
         @click="onShowFile"
     />
-    <div class="m-2" v-else>
+    <div class="file-infos" v-else>
         <FileIcon 
-            :mime-type="file.mime"
-            class="m-2"
+            :ext="fileExtension"
+            class=""
         ></FileIcon>
         <a class="color-auto" :href="fileUrl" download>
             <IconWidget icon="download"></IconWidget> {{ file.name }}
         </a>
-        <span v-if="file.size">
+        <span v-if="file.size" class="file-size">
             ( {{ fileSize }} )
         </span>
     </div> 
@@ -60,6 +60,9 @@
             },
             thumbnailUrl: function() {
                 return this.file.thumbnail || this.fileUrl;
+            },
+            fileExtension: function() {
+                return this.file.name.split('.').pop().toLowerCase();
             },
         },
         methods: {

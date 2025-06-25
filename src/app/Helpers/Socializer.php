@@ -2,6 +2,7 @@
 
 use Dauvray\Socializer\app\Helpers\ContentFormater;
 use Illuminate\Support\Facades\Auth;
+use Dauvray\Socializer\app\Http\Resources\User as UserResource;
 
 if (!function_exists('formatTextToContent')) {
     function formatTextToContent($text) {
@@ -14,6 +15,22 @@ if (!function_exists('formatTextToContent')) {
             'mentions' => $helper->getMentions(),
             'thumbnails' => $helper->getThumbnails(),
         ];
+    }
+}
+
+if (!function_exists('filterSensibleDataUserRessource')) {
+    function filterSensibleDataUserRessource($user)  {
+        
+        $result = collect(new UserResource($user))->toArray();
+
+        // Remove sensitive data
+        unset($result['email']);
+        unset($result['created_at']);
+        unset($result['roles']);
+        unset($result['permissions']);
+        unset($result['channel']);
+
+        return $result;
     }
 }
 

@@ -12,7 +12,6 @@ export default {
         this.messages = this.currentConversation.messages.data.slice().reverse().concat(this.messages)
     },
     async resetConversation(vertexid) {
-        await AjaxService.load(`/leave-conversation/${vertexid}`)
         this.$reset()
     },
     leaveCurrentConversation() {
@@ -30,7 +29,15 @@ export default {
             chat: vertexid,
         })
     },
-    sendMessage(formData) {
+    sendMessage(message, chat_id, attachedFiles = []) {
+
+        const formData = new FormData()
+        formData.append('message', message)
+        formData.append('chat_id', chat_id)
+        attachedFiles.forEach((file, i) => {
+            formData.append(`files[${i}]`, file.data)
+        })
+
         AjaxService.load(
             '/send-chat-message', 
             'post', 

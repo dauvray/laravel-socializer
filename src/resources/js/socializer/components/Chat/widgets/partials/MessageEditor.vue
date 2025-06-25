@@ -5,13 +5,13 @@
     <button type="button" 
         class="btn btn-primary mt-2"
         @click="onCancel">
-        close
-        </button>
-            <button type="button" 
+        Fermer
+    </button>
+     <button type="button" 
         class="btn btn-primary mt-2"
         @click="onSendMessage">
-        valid
-        </button>
+        Valider
+    </button>
 </template>
 
 <script>

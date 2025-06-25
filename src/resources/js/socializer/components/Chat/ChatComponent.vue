@@ -97,7 +97,7 @@
     import { defineAsyncComponent } from '@vue/runtime-core'
     import IconWidget from '~estarter/components/widgets/IconWidget.vue'
     import ChatContactsButtons from './widgets/ChatContactsButton.vue'
-    import MessageWidget from './widgets/MessageWidget.vue'
+    import MessageWidget from '~socializer/components/Chat/widgets/MessageWidget.vue'
     import { mapActions, mapState } from 'pinia'
     import { usePeerStore } from '~socializer/stores/peers.js'
     import { useChatStore } from '~socializer/stores/chat.js'
@@ -187,6 +187,10 @@
         },
         beforeUnmount() {
             Echo.leave(this.channel)
+            Echo.private(this.me.channel).whisper('leave-chat', {
+                chatId: this.currentConversationId,
+                userId: this.me.id,
+            })
             this.resetConversation(this.currentConversationId)
         },
         watch: {
@@ -258,14 +262,7 @@
             },
             onSendMessage(message) {
 
-                const formData = new FormData()
-                formData.append('message', message)
-                formData.append('chat_id', this.currentConversationId)
-                this.attachedFiles.forEach((file, i) => {
-                    formData.append(`files[${i}]`, file.data)
-                })
-
-                this.sendMessage(formData)
+                this.sendMessage(message, this.currentConversationId, this.attachedFiles)
 
                  // Reset
                 this.attachedFiles = []

@@ -82,10 +82,6 @@ Route::get('/load-conversation/{vertex_id}',
     config('socializer.controllers_front.chat').'@getConversation')
     ->name('chat.get.conversation');
 
-Route::get('/leave-conversation/{vertex_id}', 
-    config('socializer.controllers_front.chat').'@leaveConversation')
-    ->name('chat.leave.conversation');
-
 Route::post('/create-new-conversations', 
     config('socializer.controllers_front.chat').'@createConversation')
     ->name('chat.create.conversation');

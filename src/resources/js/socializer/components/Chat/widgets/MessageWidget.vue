@@ -21,22 +21,13 @@
                 </small>
             </div>
 
-            <div v-if="!updating" 
-                class="message-inner" 
-                :class="{'is-me': isMe }">
-                <div v-if="hasFiles" class="files">
-                    <JoinedFiles 
-                        v-for="(file, idx) in item.extras.files" 
-                        :key="idx"
-                        :file="file"
-                        :conversationId="conversationId"
-                        @show-file="onShowFile"
-                    ></JoinedFiles>
-                </div>
-                <AudioPlayer v-if="isAudio" :src="`/chat/file/${conversationId}/${item.extras.audio.filename}`"></AudioPlayer>
-                <div v-if="hasMessage" class="message" v-html="item.message"></div>
-                <small v-if="isEdited" class="ps-2"><i>Modifié</i></small>
-            </div>
+            <MessageContent
+                v-if="!updating" 
+                :class="{'is-me': isMe }"
+                :item="item"
+                :conversationId="conversationId"
+                @show-file="onShowFile"
+            ></MessageContent>
 
             <MessageEditor v-else 
                 class="rounded"
@@ -51,7 +42,6 @@
         <MessageTools 
             :style="toolsStyle"
             :message="item"
-            :is-editable="!isAudio"
             @selected-emoji="onSelectedEmoji"
             @delete-message="onDeleteMessage"
             @edit-message="onEditMessage"
@@ -65,6 +55,7 @@
     import UserWallLink from '~socializer/components/User/WallLink.vue'
     import MessageTools from './partials/MessageTools.vue'
     import MessageEmoji from './partials/MessageEmoji.vue'
+    import MessageContent from '~socializer/components/Chat/widgets/partials/MessageContent.vue'
     import { useMeStore } from '~estarter/stores/me.js'
     import { useChatStore } from '~socializer/stores/chat.js'
     import { mapActions, mapState } from 'pinia'
@@ -86,9 +77,8 @@
             UserWallLink,
             MessageTools,
             MessageEmoji,
+            MessageContent,
             MessageEditor: defineAsyncComponent(() => import('./partials/MessageEditor.vue')),
-            AudioPlayer: defineAsyncComponent(() => import('~estarter/components/widgets/AudioPlayer.vue')),
-            JoinedFiles: defineAsyncComponent(() => import('./partials/JoinedFiles.vue')),
         },
         props: {
             item: {
@@ -98,6 +88,11 @@
             conversationId: {
                 type: [Number, String],
                 required: true,
+            },
+            showTools: {
+                type: Boolean,
+                required: false,
+                default: true,
             },
         },
         data() {
@@ -129,22 +124,6 @@
                     return this.item.extras.emojis
                 }
                  return {}
-            },
-            isEdited:function() {
-                if(!this.item.hasOwnProperty('extras')) return false
-                if(!this.item.extras.hasOwnProperty('edited')) return false
-                return this.item.extras.edited === 1
-            },
-            isAudio: function() {
-                if(!this.item.hasOwnProperty('extras')) return false
-                return this.item.extras.hasOwnProperty('audio') && this.item.extras.audio !== null
-            },
-            hasFiles: function() {
-                if(!this.item.hasOwnProperty('extras')) return false
-                return this.item.extras.hasOwnProperty('files') && this.item.extras.files
-            },
-            hasMessage: function() {
-                return this.item.hasOwnProperty('message') && this.item.message
             },
         },
         mounted() {

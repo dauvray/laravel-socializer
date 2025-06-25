@@ -1,5 +1,5 @@
 <template>
-    <div class="comment-header">
+    <div class="comment-header p-2">
 
         <div class="d-flex">
             <UserWallLink

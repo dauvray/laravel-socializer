@@ -13,7 +13,6 @@ use Illuminate\Support\Facades\Response;
 use Illuminate\Support\Facades\Broadcast;
 use Dauvray\Estarter\app\Helpers\ModelTraits\Thumbnails;
 use Dauvray\Socializer\app\Http\Resources\MessageCollection;
-use Dauvray\Socializer\app\Http\Resources\User as UserResource;
 
 class Chat
 {
@@ -21,11 +20,13 @@ class Chat
 
     public $user = null;
     public $nebula = null;
+    public $usersOnlineService = null;
 
     public function __construct()
     {
         $this->user = Auth::user();
         $this->nebula = app('nebulaGraph');
+        $this->usersOnlineService = app('onlineUsers');
     }
 
     public function checkRegistration($room_id)
@@ -42,7 +43,6 @@ class Chat
                 ]
             );
         }
-
     }
 
     public function sendMessage( ?Request $request, $options = [], $is_bot_answer = false ) 
@@ -62,12 +62,7 @@ class Chat
         ')[0];
         $chat = $result['chat'];
         $user = $options['user'] ?? $this->user;
-
-        // here we check if the user is registered in the chat
-        // if not but is online, we will send a private message to the user
         $registeredUsers = Arr::flatten($result['users']) ?? [];
-        $chatOnlineUsers = Redis::smembers("presence:chat:{$chat_id}");
-        $chatOfflineUsers = array_diff($registeredUsers, $chatOnlineUsers);
 
         if(!$is_audio && $content) {
              $formated = formatTextToContent($content);
@@ -109,7 +104,7 @@ class Chat
             ],
         ];
 
-        $message = $this->createAndDispatchMessage($data, $user, $chatOfflineUsers);
+        $message = $this->createAndDispatchMessage($data, $user, $registeredUsers);
 
         // si la room est un bot, on appelle l'url d'automation
         if(!$is_bot_answer && isset($chat['is_bot']) && $chat['is_bot'] == 1) {
@@ -117,7 +112,7 @@ class Chat
         }
     }
 
-    private function createAndDispatchMessage(array $data, $author = null, $chatOfflineUsers = [])
+    private function createAndDispatchMessage(array $data, $author = null, $registeredUsers = [])
     {
         $author = $author ?? $this->user;
 
@@ -176,7 +171,7 @@ class Chat
                 'message' => $message->message,
                 'id' => $message->vertexid,
                 'created_at' => $message->created_at,
-                'author' => new UserResource($author),
+                'author' => filterSensibleDataUserRessource($author),
                 "extras" => $message->extras,
                 'chat_id' => $data['chat_id'],
         ];
@@ -186,13 +181,25 @@ class Chat
             ->with($params)
             ->sendNow();
 
-        foreach($chatOfflineUsers as $vertex_id) {
-             $user_id = substr($vertex_id, 4);
-             dump('App.Models.User.'.$user_id);
-            Broadcast::private('App.Models.User.'.$user_id)
-                ->as('NewChatMessageNotification')
-                ->with($params)
-                ->sendNow();
+        // only when there is only two users ( real conversation )
+        // here we check if the user is registered in the chat
+        // if not but is online, we will send a private message to the user
+        $chatOnlineUsers = Redis::smembers("presence:chat:{$data['chat_id']}");
+        $chatOfflineUsers = array_diff($registeredUsers, $chatOnlineUsers);
+
+        if(count($registeredUsers) == 2) {
+            foreach($chatOfflineUsers as $vertex_id) {
+
+                $user_id = getRealIdFromVertexId($vertex_id);
+                $is_online = app('onlineUsers')->isOnlineUser($user_id);
+
+                if ($is_online && $user_id != $this->user->id) {
+                    Broadcast::private('App.Models.User.'.$user_id)
+                    ->as('NewChatMessageNotification')
+                    ->with($params)
+                    ->sendNow();
+                }
+            }
         }
 
         return $message;
@@ -298,7 +305,7 @@ class Chat
             'message' => $message->message,
             'id' => $message->vertexid,
             'created_at' => $message->created_at,
-            'author' => new UserResource($this->user),
+            'author' => filterSensibleDataUserRessource($author),
             "extras" => $message->extras
         ])
         ->sendNow();
@@ -327,7 +334,10 @@ class Chat
         if(isset($message->extras['files']) && count($message->extras['files'])) {
             foreach ($message->extras['files'] as $file) {
                 Storage::disk('local')->delete($file['path']);
-                $this->deleteAllThumbnails($file['thumbnail']);
+                if(isset($file['thumbnail']) && $file['thumbnail']) {
+                    // delete thumbnail if exists
+                    $this->deleteAllThumbnails($file['thumbnail']);
+                }
             }
         }
 
@@ -429,18 +439,13 @@ class Chat
 
         $paginator = makePaginationCollection($messages->reverse(), route('chat.get.conversation', $vertex_id));
 
-        // store user presence to redis
-        Redis::sadd("presence:chat:{$vertex_id}", 'user'.$this->user->id);
+        // set user in online chat connections
+        $this->usersOnlineService->addUserChat($vertex_id);
 
         return [ 
             'general' => $result[0],
             'messages' => new MessageCollection($paginator),
         ];
-    }
-
-    public function leaveConversation($vertex_id = null)
-    {
-        Redis::srem("presence:chat:{$vertex_id}", 'user'.$this->user->id);
     }
 
     public function createConversation($values = [])

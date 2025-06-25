@@ -1,3 +1,5 @@
+$message_width: 60%;
+
 #system-socializer {
     @extend .d-flex;
     @extend .align-items-center;
@@ -15,8 +17,6 @@
 #main-navbar {
     @extend .p-0;
 }
-
-$message_width: 60%;
 
 .conversations-page {
 
@@ -42,8 +42,6 @@ $message_width: 60%;
                         top: 0;
                     }
                 }
-
-
             }
 
         }
@@ -102,105 +100,12 @@ $message_width: 60%;
                 -webkit-box-shadow: inset 5px 5px 36px -6px rgba(0,0,0,0.71); 
                 box-shadow: inset 5px 5px 36px -6px rgba(0,0,0,0.71);
 
-                .message-wrapper {
-                    @extend .d-flex;
-                    @extend .align-items-start;
-                    @extend .position-relative;
 
-                    &.is-me {
-                        @extend .justify-content-end;
-                    }
-
-                    .message-outer {
-                        @include media-breakpoint-up(lg) {
-                            max-width: $message_width;
-                        }
-
-                        @include media-breakpoint-down(lg) {
-                            max-width: 100%;
-                        }
-                        
-                        @extend .mb-2;
-
-                        .message-infos {
-                            @extend .d-flex;
-
-                            .date {
-                                @extend .ms-2;
-                                @extend .color-white;
-                            }
-                        }
-
-                        .message-inner {
-                            @extend .card;
-                            @extend .text-bg-secondary;
-                            @extend .shadow;
-                            @extend .border;
-
-                            &.is-me {
-                                @extend .text-bg-primary;
-                            }
-                           
-                            .message {
-                                @extend .card-body; 
-                                @extend .d-flex;
-                                @extend .flex-column;
-                                @extend .align-items-start;
-                                @extend .p-2;
-
-                               .slz-post-link {
-                                    cursor: pointer;
-                                    transition: box-shadow 0.2s;
-                                }
-                                .slz-post-link:hover {
-                                    box-shadow: 0 0 10px rgba(0,0,0,0.2);
-                                }
-
-                                .video-wrapper {
-                                    @extend .ratio;
-                                    @extend .ratio-16x9;
-                                }
-                            }
-
-                            audio {
-                                @extend .p-2;
-                            }
-                        }
-
-                        .emoji-list {
-                            @extend .list-unstyled;
-
-                            li {
-                                @extend .d-inline;
-                                @extend .badge;
-                                @extend .border; 
-                                @extend .border-light; 
-                                @extend .text-bg-light; 
-                                @extend .rounded-pill;
-                            }
-                        }
-
-                        &:has(iframe) {
-                            width: $message_width;
-                        }
-                    }
-
-                    .message-tools-inner {
-                        @extend .d-flex;
-                        @extend .align-items-center;
-                        @extend .text-bg-light;
-                        @extend .border;
-                        @extend .rounded;
-                        @extend .shadow;
-
-                        .dropdown-menu {
-                            margin-top: -2px!important;
-                        }
-                    }
-                }
             }
         }
     }
+
+
 
     .chat-messenger-sticky-wrapper {
         position: sticky;
@@ -281,6 +186,163 @@ $message_width: 60%;
             height: 100%;
              background-color:rgba(0, 0, 0, 0.0);
         }
+    }
+}
+
+.message-wrapper {
+    @extend .d-flex;
+    @extend .align-items-start;
+    @extend .position-relative;
+
+    &.is-me {
+        @extend .justify-content-end;
+    }
+
+    .message-outer {
+        @include media-breakpoint-up(lg) {
+            max-width: $message_width;
+        }
+
+        @include media-breakpoint-down(lg) {
+            max-width: 100%;
+        }
+        
+        @extend .mb-2;
+
+        .message-infos {
+            @extend .d-flex;
+
+            .date {
+                @extend .ms-2;
+                @extend .color-white;
+            }
+        }
+
+        .message-inner {
+            @extend .card;
+            @extend .bg-secondary;
+            @extend .shadow;
+            @extend .border;
+
+            &.is-me {
+                @extend .bg-primary;
+            }
+            
+            .message {
+                @extend .card-body; 
+                @extend .d-flex;
+                @extend .flex-column;
+                @extend .align-items-start;
+                @extend .p-2;
+
+                .slz-post-link {
+                    cursor: pointer;
+                    transition: box-shadow 0.2s;
+                }
+                .slz-post-link:hover {
+                    box-shadow: 0 0 10px rgba(0,0,0,0.2);
+                }
+
+                .video-wrapper {
+                    @extend .ratio;
+                    @extend .ratio-16x9;
+                }
+            }
+
+            audio {
+                @extend .p-2;
+            }
+
+            .files {
+                .file-infos {
+                    @extend .d-flex;
+                    @extend .m-2;
+
+                    .file-size {
+                        @extend .text-muted;
+                        position: absolute;
+                        right: 5px;
+                        bottom: 5px;
+                    }
+                }
+            }
+        }
+
+        .emoji-list {
+            @extend .list-unstyled;
+
+            li {
+                @extend .d-inline;
+                @extend .badge;
+                @extend .border; 
+                @extend .border-light; 
+                @extend .text-bg-light; 
+                @extend .rounded-pill;
+            }
+        }
+
+        &:has(iframe) {
+            width: $message_width;
+        }
+    }
+
+    .message-tools-inner {
+        @extend .d-flex;
+        @extend .align-items-center;
+        @extend .text-bg-light;
+        @extend .border;
+        @extend .rounded;
+        @extend .shadow;
+
+        .dropdown-menu {
+            margin-top: -2px!important;
+        }
+    }
+}
+
+.post-wrapper {
+    @extend .card;
+
+    .post-header {
+         @extend .card-header;
+         @extend .p-1;
+
+         .post-infos-wrapper {
+            @extend .d-flex;
+            @extend .align-items-end;
+
+            .user-infos {
+                @extend .d-flex; 
+                @extend .flex-column;
+            }
+
+            .date-message {
+                @extend .ms-2;
+                @extend .me-2;
+                @extend .text-muted;
+                @extend .fw-light;
+                position: absolute;
+                right: 0;
+                top: 0;
+            }
+         }
+
+        .delete-button {
+            @extend .btn;
+            @extend .btn-sm;
+            @extend .btn-link;
+            position: absolute;
+            right: 0;
+            bottom: 0;
+        }
+    }
+
+    .post-body {
+          @extend .card-body;
+
+          .post-text {
+            @extend .card-text;
+          }
     }
 }
 
@@ -532,6 +594,30 @@ $message_width: 60%;
     .form-designer-render {
         @extend .container;
         @extend .mt-2;
+    }
+}
+
+.toast-chat-notification {
+    @extend .toast-container;
+    @extend .position-fixed;
+    @extend .bottom-0;
+    @extend .end-0;
+    @extend .p-3;
+
+    .toast-header {
+        @extend .d-flex;
+
+        .toast-author {
+            @extend .d-flex;
+            @extend .align-items-center;
+            @extend .flex-grow-1;
+        }
+        .toast-body {
+            .message-inner {
+                max-height: 300px;
+                overflow-y: auto;
+            }
+        }
     }
 }
 

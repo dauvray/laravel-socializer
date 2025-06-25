@@ -48,7 +48,7 @@
         v-if="canShare"
         @share-item="onSharePost"
     ></ShareButton>
-    <span v-if="item.post.shares">{{ item.post.shares }} republication</span>
+    <span v-if="item.post.shares" class="ms-3">{{ item.post.shares }} republication</span>
      
     <socializer-comments
         :canbecommented="true" 

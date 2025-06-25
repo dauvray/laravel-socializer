@@ -16,9 +16,7 @@
 
     <ToasterNewMessage 
         v-if="NewMessageNotification"
-        :message="NewMessageNotification"
-        :duration="5000"
-        :autoShow="true"
+        :event="NewMessageNotification"
         @closed="NewMessageNotification = null"
     ></ToasterNewMessage>
 
@@ -183,8 +181,7 @@
                             this.addConversation(event)
                             AWN.info('Vous avez été invité dans une nouvelle conversation', {durations: {info: 0}})
                         })
-                        .listen('.NewMessageNotification', (event) => {
-                            console.log('NewMessageNotification', event)
+                        .listen('.NewChatMessageNotification', (event) => {
                             this.NewMessageNotification = event
                         })
                 }
@@ -220,7 +217,6 @@
                 this.stopAllVisioStream('visio')
             },
             setOnlineStatus() {
-                console.log('setOnlineStatus', this.me.channel)
                 Echo.private(this.me.channel).whisper('ping', {
                     timestamp: Date.now(),
                     userId: this.me.id,
@@ -228,6 +224,5 @@
             },
         }
     }
-
 </script>
 
