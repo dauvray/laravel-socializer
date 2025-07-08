@@ -120,7 +120,7 @@
             MessageWidget,
             SpinnerTextWriting,
             RoomUsersList: defineAsyncComponent(() => import('~socializer/components/Server/widgets/RoomUsersList.vue')),
-            ModalWidget: defineAsyncComponent(() => import('~estarter/components/widgets/Modal.vue')),
+            ModalWidget: defineAsyncComponent(() => import('~estarter/components/widgets/ModalLazy.js')),
             TextareaMessage,
             UploadFilesTable: defineAsyncComponent(() => import('~socializer/components/Chat/widgets/partials/UploadFilesTable.vue')),
         },

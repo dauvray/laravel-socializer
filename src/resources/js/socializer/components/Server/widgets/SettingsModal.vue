@@ -42,8 +42,8 @@
             'send-data'
         ],
         components: {
-            ModalWidget: defineAsyncComponent(() => import('~estarter/components/widgets/Modal.vue')),
-            QuestionnaireComponent: defineAsyncComponent(() => import('~formdesigner/application/formCreator/Questionnaire.vue')),
+            ModalWidget: defineAsyncComponent(() => import('~estarter/components/widgets/ModalLazy.js')),
+            QuestionnaireComponent: defineAsyncComponent(() => import('~formdesigner/application/formCreator/QuestionnaireLazy.js')),
             FormPlaceholder,
         },
         props: {

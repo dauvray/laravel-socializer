@@ -44,7 +44,7 @@
         components: {
             AdminPanel: defineAsyncComponent(() => import('~formdesigner/application/formCreator/widgets/adminpanel/AdminPanel.vue')),
             EditorWidget: defineAsyncComponent(() => import('./widgets/EditionMode.vue')),
-            Questionnaire: defineAsyncComponent(() => import('~formdesigner/application/formCreator/Questionnaire.vue')),
+            Questionnaire: defineAsyncComponent(() => import('~formdesigner/application/formCreator/QuestionnaireLazy.js')),
         },
         props: {
             questionnaireid: {

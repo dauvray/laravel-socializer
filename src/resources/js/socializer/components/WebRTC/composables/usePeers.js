@@ -278,7 +278,7 @@ export function usePeers(props, type = 'data', room = 'app') {
         peerStore.startVideoStream()
         onAirRoom.value = currentRoom.value || deepGet(serverStore, 'currentRoom.id', null)
         const newStream = await navigator.mediaDevices.getUserMedia(options)
-        newStream.isLocal = false//isLocal // to mute local sound in player
+        newStream.isLocal = isLocal // to mute local sound in player
         currentStream.value = newStream
         peerStore.saveStream(onAirRoom.value, currentStream.value, currentType.value)
         updateVideoProps({

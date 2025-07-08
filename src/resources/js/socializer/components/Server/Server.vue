@@ -92,6 +92,7 @@
     import { mapActions, mapState } from 'pinia'
     import { useServerStore } from '~socializer/stores/server.js'
     import { usePeerStore } from '~socializer/stores/peers.js'
+    import { useMeStore } from '~estarter/stores/me.js'
     import ServerParamsButton from './widgets/ServerParamsButton.vue'
     import RoomHeader from './RoomHeader.vue'
   //  import ServerList from './widgets/ServerList.vue'
@@ -147,12 +148,15 @@
                 isStreaming: 'getIsStreaming',
                 isCapturing: 'getIsCapturing',
             }),
+            ...mapState(useMeStore, {
+                getMe: 'getMe',
+            }),
             ...mapState(useServerStore, {
                 currentServer: 'getCurrentServer',
                 currentRoom: 'getCurrentRoom',
                 isRoomStreamable: 'getIsRoomStreamable',
                 rooms: 'getServerRooms',
-                isOwner: 'isOwner',
+                ownerId: 'getOwnerId',
                 serverPage: 'getServerPage',
             }),
             channel: function() {
@@ -187,7 +191,10 @@
                     width: `calc(100% - ${margin}px)`, 
                     marginLeft: `${margin}px` 
                 }
-            }
+            },
+            isOwner: function() {
+                return this.ownerId === this.getMe.vertexid
+            },
         },
         created() {
             this.initLoadServer(this.$route.params.serverId)

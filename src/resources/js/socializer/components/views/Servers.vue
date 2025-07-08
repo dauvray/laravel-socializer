@@ -58,7 +58,7 @@
         name: 'Servers',
         components: {
             IconWidget,
-            ModalWidget: defineAsyncComponent(() => import('~estarter/components/widgets/Modal.vue')),
+            ModalWidget: defineAsyncComponent(() => import('~estarter/components/widgets/ModalLazy.js')),
         },
         data() {
             return {

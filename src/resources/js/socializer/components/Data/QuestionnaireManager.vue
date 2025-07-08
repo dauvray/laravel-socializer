@@ -76,7 +76,7 @@
         ],
         components: {
             TableWidget,
-            ModalWidget: defineAsyncComponent(() => import('~estarter/components/widgets/Modal.vue')),
+            ModalWidget: defineAsyncComponent(() => import('~estarter/components/widgets/ModalLazy.js')),
         },
         data() {
             return {

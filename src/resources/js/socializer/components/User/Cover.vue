@@ -80,8 +80,8 @@
         name: 'Cover',
         components: {
             AvatarCropper,
-            IconWidget: defineAsyncComponent(() => import('~estarter/components/widgets/IconWidget.vue')),
-            ModalWidget: defineAsyncComponent(() => import('~estarter/components/widgets/Modal.vue')),
+            IconWidget: defineAsyncComponent(() => import('~estarter/components/widgets/IconWidgetLazy.js')),
+            ModalWidget: defineAsyncComponent(() => import('~estarter/components/widgets/ModalLazy.js')),
             CropperWidget: defineAsyncComponent(() => import('~estarter/components/widgets/CropperWidget.vue')),
             FollowButton,
             CallVideoUserButton,

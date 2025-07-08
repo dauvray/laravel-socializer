@@ -83,7 +83,7 @@
            QuestionnaireTableResults: defineAsyncComponent(() => import('~formdesigner/application/formCreator/widgets/results/QuestionnaireTableResults.vue')),
            QuestionnaireFilters: defineAsyncComponent(() => import('~formdesigner/application/formCreator/widgets/filters/QuestionnaireFilters.vue')),
            OffCanvas: defineAsyncComponent(() => import('~estarter/components/widgets/Offcanvas.vue')),
-           IconWidget: defineAsyncComponent(() => import('~estarter/components/widgets/IconWidget.vue')),
+           IconWidget: defineAsyncComponent(() => import('~estarter/components/widgets/IconWidgetLazy.js')),
        },
        props: {
            searchResultLink: {

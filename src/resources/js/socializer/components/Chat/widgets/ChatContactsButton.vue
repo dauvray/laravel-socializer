@@ -76,7 +76,7 @@
         components: {
             IconWidget,
             Gravatar,
-            ModalWidget: defineAsyncComponent(() => import('~estarter/components/widgets/Modal.vue')),
+            ModalWidget: defineAsyncComponent(() => import('~estarter/components/widgets/ModalLazy.js')),
             ConversationActionsList,
             UserWallLink,
         },

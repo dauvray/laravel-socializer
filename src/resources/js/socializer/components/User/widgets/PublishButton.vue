@@ -47,7 +47,7 @@
         name: 'PublishButton',
         components: {
             IconWidget,
-            ModalWidget: defineAsyncComponent(() => import('~estarter/components/widgets/Modal.vue')),
+            ModalWidget: defineAsyncComponent(() => import('~estarter/components/widgets/ModalLazy.js')),
             FormPlaceholder,
         },
         props: {

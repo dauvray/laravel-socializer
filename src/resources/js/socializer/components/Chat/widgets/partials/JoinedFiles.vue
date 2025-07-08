@@ -41,7 +41,7 @@
         },
         components: {
             FileIcon: defineAsyncComponent(() => import('~formdesigner/application/formCreator/widgets/atoms/FileIcon.vue')),
-            IconWidget: defineAsyncComponent(() => import('~estarter/components/widgets/IconWidget.vue')),
+            IconWidget: defineAsyncComponent(() => import('~estarter/components/widgets/IconWidgetLazy.js')),
         },
         data() {
             return {

@@ -27,6 +27,7 @@
 <script>
     import { mapActions, mapState } from 'pinia'
     import { useServerStore } from '~socializer/stores/server.js'
+    import { useMeStore } from '~estarter/stores/me.js'
     import { defineAsyncComponent } from '@vue/runtime-core'
 
     export default {
@@ -37,7 +38,6 @@
             'leaving-user-room',
         ],
         components: {
-            IconWidget: defineAsyncComponent(() => import('~estarter/components/widgets/IconWidget.vue')),
             LockedRoom: defineAsyncComponent(() => import('./widgets/LockedRoom.vue')),
         },
         data() {
@@ -57,8 +57,11 @@
         computed: {
             ...mapState(useServerStore, {
                 currentRoom: 'getCurrentRoom',
-                isOwner: 'isOwner',
+                ownerId: 'getOwnerId',
                 roomContent: 'getCurrentRoomContent',
+            }),
+            ...mapState(useMeStore, {
+                getMe: 'getMe',
             }),
             channel: function() {
                 if(this.currentRoom) {
@@ -66,6 +69,9 @@
                 }
                 return null
             },
+            isOwner: function() {
+                return this.ownerId === this.getMe.vertexid
+            }
         },
         watch: {
             '$route' (to, from ) {

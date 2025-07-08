@@ -78,8 +78,8 @@
         components: {
             WebBuilder: defineAsyncComponent(() => import('~eblogger/components/WebBuilder.vue')),
             PromptWidget: defineAsyncComponent(() => import('~formdesigner/application/formCreator/widgets/partials/Prompt.vue')),
-            ModalWidget: defineAsyncComponent(() => import('~estarter/components/widgets/Modal.vue')),
-            IconWidget: defineAsyncComponent(() => import('~estarter/components/widgets/IconWidget.vue')),
+            ModalWidget: defineAsyncComponent(() => import('~estarter/components/widgets/ModalLazy.js')),
+            IconWidget: defineAsyncComponent(() => import('~estarter/components/widgets/IconWidgetLazy.js')),
         },
         data() {
             return {
