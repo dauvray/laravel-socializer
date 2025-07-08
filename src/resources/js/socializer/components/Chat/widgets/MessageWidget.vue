@@ -173,6 +173,7 @@
             onShowFile(fileUrl) {
                 this.$emit('show-file', fileUrl)
             },
+
         },
     }
 </script>

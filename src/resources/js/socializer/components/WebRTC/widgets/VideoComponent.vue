@@ -5,7 +5,8 @@
         class="img-thumbnail"
         autoplay
         playsinline
-        controls
+        :controls="!isLocalStream"
+        :style="isLocalStream ? 'pointer-events: none;' : ''"
     ></video>
     <div class="video-tools-wrapper">
         <div class="video-tools">
@@ -27,6 +28,7 @@
 <script>
     import IconWidget from '~estarter/components/widgets/IconWidget.vue'
     import { usePeerStore } from '~socializer/stores/peers.js'
+    import { useServerStore } from '~socializer/stores/server.js'
     import { mapActions, mapState } from 'pinia'
 
     const peerStore = usePeerStore()
@@ -72,6 +74,7 @@
             return {
                 totalViewers : 0,
                 intervalViewers : null,
+                isLocalStream: false,
             }
         },
         mounted() {
@@ -79,6 +82,7 @@
                 this.$refs.video.srcObject = this.stream
 
                 if (this.stream.isLocal) {
+                    this.isLocalStream = true
                     this.$refs.video.muted = true
                      const audioTracks = this.stream.getAudioTracks();
                      audioTracks.forEach(track => track.enabled = false);
@@ -119,6 +123,9 @@
             },
         },
         computed: {
+            ...mapState(useServerStore, {
+                currentRoomId: 'getCurrentRoomId',
+            }),
             nbViewers: function() {
                 if(!this.peer) {
                     return peerStore.getRoomViewers(this.roomId, this.type)
@@ -127,7 +134,7 @@
                 }
             },
             isClosable: function() {
-                return this.type != 'visio' ? true : false
+                return this.type != 'visio' && this.roomId != this.currentRoomId ? true : false
             }
         },
         methods: {

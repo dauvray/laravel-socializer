@@ -40,6 +40,7 @@
         <ChatComponent 
             v-if="currentConversation"
             ref="chatWidget"
+            :display-separator="conversationType != 'agents'"
         ></ChatComponent>
     </div>
 </template>

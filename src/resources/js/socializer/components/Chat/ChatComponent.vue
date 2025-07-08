@@ -17,17 +17,21 @@
                         v-if="intersectionObserver"
                         @trigger-intersected="onTriggerObserver"
                     ></IntersectionObserver>
-                    <MessageWidget 
-                        v-for="(item, idx) in messages" 
-                        :class="idx === messages.length - 1 ? 'lastMessage' : null"
-                        :key="idx"
-                        :item="item"
-                        :conversationId="currentConversationId"
-                        @selected-emoji="onSelectedEmoji"
-                        @delete-message="onDeleteMessage"
-                        @update-message="onUpdateMessage"
-                        @show-file="onShowFileInModal"
-                    ></MessageWidget>
+                    <template v-for="(item, idx) in messages" :key="idx">
+                        <DateSeparator 
+                            v-if="shouldShowDateSeparator(item, idx)"
+                            :date="item.created_at"
+                        />
+                        <MessageWidget 
+                            :class="idx === messages.length - 1 ? 'lastMessage' : null"
+                            :item="item"
+                            :conversationId="currentConversationId"
+                            @selected-emoji="onSelectedEmoji"
+                            @delete-message="onDeleteMessage"
+                            @update-message="onUpdateMessage"
+                            @show-file="onShowFileInModal"
+                        ></MessageWidget>
+                    </template>
                 </div>
                 <UploadFilesTable v-if="attachedFiles.length"
                     :attachedFiles="attachedFiles"
@@ -108,6 +112,7 @@
     import SpinnerTextWriting from '~estarter/components/widgets/Spinners/SpinnerTextWriting.vue'
     import TextareaMessage from './widgets/partials/TextareaMessage.vue'
     import resizable from "~socializer/directives/resizable_horizontal.js"
+    import DateSeparator from './widgets/partials/DateSeparator.vue'
 
     export default {
         name: 'ChatComponent',
@@ -119,6 +124,7 @@
             IntersectionObserver,
             MessageWidget,
             SpinnerTextWriting,
+            DateSeparator,
             RoomUsersList: defineAsyncComponent(() => import('~socializer/components/Server/widgets/RoomUsersList.vue')),
             ModalWidget: defineAsyncComponent(() => import('~estarter/components/widgets/ModalLazy.js')),
             TextareaMessage,
@@ -137,7 +143,12 @@
                 type: Boolean,
                 required: false,
                 default: true,
-            }
+            },
+            displaySeparator: {
+                type: Boolean,
+                required: false,
+                default: true,
+            },
         },
         data() {
             return {
@@ -445,7 +456,21 @@
             },
             onHideModal() {
                 this.showModal = false
-            }
+            },
+            /*********** DATES *******/
+            shouldShowDateSeparator(currentMessage, index) {
+                if(this.displaySeparator === false)  return false
+                 
+                // Toujours afficher le séparateur pour le premier message
+                if (index === 0) return true
+                
+                const previousMessage = this.messages[index - 1]
+                const currentDate = new Date(currentMessage.created_at).toDateString()
+                const previousDate = new Date(previousMessage.created_at).toDateString()
+                
+                // Afficher le séparateur si le jour est différent du message précédent
+                return currentDate !== previousDate
+            },
         }
     }
 </script>
