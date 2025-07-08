@@ -182,7 +182,7 @@ export function usePeers(props, type = 'data', room = 'app') {
 
             const connection = peerStore.openPeerConnection({
                 peerId: payload.peerId, 
-                stream: peerStore.getStream(payload.room),
+                stream: peerStore.getStream(payload.room, payload.type),
                 options: { 
                     metadata: { 
                         slug: payload.userSlug,
@@ -280,7 +280,7 @@ export function usePeers(props, type = 'data', room = 'app') {
         const newStream = await navigator.mediaDevices.getUserMedia(options)
         newStream.isLocal = false//isLocal // to mute local sound in player
         currentStream.value = newStream
-        peerStore.saveStream(onAirRoom.value, currentStream.value)
+        peerStore.saveStream(onAirRoom.value, currentStream.value, currentType.value)
         updateVideoProps({
             isVideoEnabled: options.video,
             isMuted: options.audio
@@ -295,7 +295,8 @@ export function usePeers(props, type = 'data', room = 'app') {
     const startScreenCapture = async () => {
         currentStream.value = await navigator.mediaDevices.getDisplayMedia()
         peerStore.startCaptureStream()
-        onAirRoom.value = currentRoom.value || serverStore.currentRoom.id
+        onAirRoom.value = currentRoom.value || deepGet(serverStore, 'currentRoom.id', null)
+        peerStore.saveStream(onAirRoom.value, currentStream.value, currentType.value)
     }
 
     const stopVideoStream = async (source) => {
@@ -308,6 +309,7 @@ export function usePeers(props, type = 'data', room = 'app') {
         }
 
         await peerStore.stopVideoStream(onAirRoom.value, source)
+        peerStore.removeStream(onAirRoom.value, source)
     }
 
     // stop visio connection with one user

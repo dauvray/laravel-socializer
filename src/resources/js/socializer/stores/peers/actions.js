@@ -349,7 +349,22 @@ export default {
     removePlayer(elementId) {
         this.players = this.players.filter(item => item.videoId !== elementId)
     },
-    saveStream(room = 'default', stream = null) {
-        this.streams[room] = stream
-    }
+    saveStream(room = 'default', stream = null, type = 'stream') {
+        if(!this.streams.hasOwnProperty(room)) {
+            this.streams[room] = []
+        }
+        
+        this.streams[room].push({
+            type: type,
+            stream: stream,
+        })
+    },
+    removeStream(room = 'default', type = 'stream') {
+        if(this.streams.hasOwnProperty(room)) {
+            this.streams[room] = this.streams[room].filter(item => item.type !== type)
+        }
+        if(this.streams[room].length === 0) {
+            delete this.streams[room]
+        }
+    },
 }

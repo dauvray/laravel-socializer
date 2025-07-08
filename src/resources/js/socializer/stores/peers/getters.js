@@ -1,4 +1,4 @@
-import { isEmpty } from '~estarter/services/helpers.js'
+import { isEmpty, findDeepValue } from '~estarter/services/helpers.js'
 
 export default {
     getLocalPeer() {
@@ -42,11 +42,13 @@ export default {
         }
     },
     getStream: (state) => {
-        return (room = 'default') => {
-            if(state.streams.hasOwnProperty(room)) {
-                return state.streams[room]
-            }
-            return null
+        return (room = 'default', type = 'stream') => {
+
+          return findDeepValue(state.streams, {
+              conditions: { type },
+              rootCondition: (key) => key == room
+          }, 'stream')
+
         }
     },
     getPendingRequests() {
