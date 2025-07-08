@@ -6,23 +6,33 @@
     
     <div class="post-wrapper">
         <div class="post-header">
-            <div class="post-infos-wrapper">
-                <Gravatar
-                    class="me-2"
-                    :user="item.author"
-                    size="small"
-                ></Gravatar>
-                <div class="user-infos">
-                    <UserWallLink
+            <div class="post-wrapper-inner">
+
+                <div class="post-user-wrapper">
+                    <Gravatar
+                        class="me-2"
                         :user="item.author"
-                    ></UserWallLink>
-                    <small>{{ item.author.function }}</small>
+                        size="small"
+                    ></Gravatar>
+                    <div class="post-user-infos">
+                        <UserWallLink
+                            :user="item.author"
+                        ></UserWallLink>
+                        <small>{{ item.author.function }}</small>
+                    </div>
                 </div>
-                <DateHelper
-                    class="date-message"
-                    :date="item.post.created_at"
-                    :format="'since'"
-                ></DateHelper>
+
+                <div class="post-infos-wrapper">
+                    <DateHelper
+                        class="date-message"
+                        :date="item.post.created_at"
+                        :format="'since'"
+                    ></DateHelper>
+                    <span v-if="item.post.shares" class="ms-3" title="Republications"><IconWidget icon="retweet"></IconWidget>{{ item.post.shares }}</span>
+                </div>
+
+
+
             </div>
             <button
                 v-if="canDelete"
@@ -48,7 +58,6 @@
         v-if="canShare"
         @share-item="onSharePost"
     ></ShareButton>
-    <span v-if="item.post.shares" class="ms-3">{{ item.post.shares }} republication</span>
      
     <socializer-comments
         :canbecommented="true" 

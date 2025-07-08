@@ -66,47 +66,59 @@
                 type: RTCPeerConnection,
                 required: false,
                 default: null,
-             }
+             },
         },
         data(){
             return {
-                totalViewers : 0
+                totalViewers : 0,
+                intervalViewers : null,
             }
         },
         mounted() {
             if (this.stream) {
                 this.$refs.video.srcObject = this.stream
+
+                if (this.stream.isLocal) {
+                    this.$refs.video.muted = true
+                     const audioTracks = this.stream.getAudioTracks();
+                     audioTracks.forEach(track => track.enabled = false);
+                }
+
                 this.$refs.video.onloadedmetadata = () => {
                     this.$refs.video.play()
-                    .catch((err) => console.error(`Erreur de lecture pour ${videoId} :`, err));
+                    .catch((err) => console.error(`Erreur de lecture pour ${this.videoId} :`, err));
                 }
             }
+
             this.eventBus.$on("videoPlayerEvent", this.onPlayerEvent)
+
+            // viewers counter
+            if(!this.peer) { 
+                this.intervalViewers = setInterval(() => {
+                    this.updateViewersCounter()
+                }, 2000)
+            }
+        },
+        beforeUnmount() {
+            this.eventBus.$off("videoPlayerEvent", this.onPlayerEvent)
+
+            if(this.intervalViewers) {
+                clearInterval(this.intervalViewers)
+            }
+
+            if (this.stream) {
+                this.stream.getTracks().forEach(track => track.stop())
+            }
         },
         watch: {
-             'states.isMuted'(newValue) {
+            'states.isMuted'(newValue) {
                 this.stream.getAudioTracks().forEach(track => track.enabled = !newValue)
             },
             'states.isVideoEnabled'(newValue) {
                 this.stream.getVideoTracks().forEach(track => track.enabled = newValue)
             },
-            nbViewers(newValue) {
-                // emitter only
-                if(!this.peer) {
-                    this.updateViewersCounter(newValue)
-                }
-            },
-            connections:{
-                handler() {
-                    this.updateViewersCounter(this.nbViewers)
-                },
-                deep: true
-            }
         },
         computed: {
-            ...mapState(usePeerStore, {
-                connections: 'getConnections'
-            }),
             nbViewers: function() {
                 if(!this.peer) {
                     return peerStore.getRoomViewers(this.roomId, this.type)
@@ -125,18 +137,17 @@
             closeStream() {
                 this.eventBus.$emit("closeStream", this.type, this.stream, this.peer)
             },
-            updateViewersCounter(newValue) {
-                setTimeout(() => {
-                    this.sendVideoData({
-                        action: 'update-total-viewers',
-                        total: newValue, 
-                        nickname: this.nickname, 
-                        type: this.type
-                    }, this.roomId, this.type)
-                }, 500)
+            updateViewersCounter() {
+                this.sendVideoData({
+                    action: 'update-total-viewers',
+                    total: this.nbViewers, 
+                    nickname: this.nickname, 
+                    type: this.type,
+                    roomId: this.roomId,
+                }, this.roomId, this.type)
             },
             onPlayerEvent(data) {
-                if(data.nickname == this.nickname) {
+                if(data.nickname == this.nickname && data.roomId == this.roomId && data.type == this.type) {
                     switch(data.action) {
                         case 'update-total-viewers':
                             this.totalViewers = data.total

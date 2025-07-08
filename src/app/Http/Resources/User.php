@@ -29,7 +29,7 @@ class User extends JsonResource
             'identifier' => $this->identifier,
             'auth_provider' => Auth::user()->name,
             'is_me' => $is_me,
-            'is_bot' => $this?->is_bot == 1 ? true : false,
+            'is_bot' => $this?->is_bot == 1 ? 1 : 0,
             'followed' => $this->when(isset($this->follow_status), function () {
                 return $this->follow_status == 'followed' ? true : false;
             }),

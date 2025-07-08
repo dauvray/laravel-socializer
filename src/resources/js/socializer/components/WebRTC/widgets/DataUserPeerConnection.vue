@@ -30,23 +30,15 @@
         },
         setup( props ) {
             const {
-                connectToQueuedConnections,
                 isConnected,
                 setLocalDataPeer,
-                queuedConnections,
                 syncUsersConnections,
-                localPeer,
-                storeConnection,
             } = usePeers(props, 'data', props.roomId)
 
             return {
-                connectToQueuedConnections,
                 isConnected,
                 setLocalDataPeer,
-                queuedConnections,
                 syncUsersConnections,
-                localPeer,
-                storeConnection,
             }
         },
         async created() {
@@ -58,22 +50,13 @@
             },
             users: {
                 handler(value) {
-                    setTimeout(() => {
-                        if(value) {
-                            this.syncUsersConnections(value)
-                        }
-                    },2000)
+                    if(value) {
+                        this.syncUsersConnections(value)
+                    }
                 },
                 deep: true,
                 immediate: true
             },
-            queuedConnections: {
-                handler() {
-                    this.connectToQueuedConnections()
-                },
-                deep: true,
-                immediate: true
-            }
         },
     }
 </script>

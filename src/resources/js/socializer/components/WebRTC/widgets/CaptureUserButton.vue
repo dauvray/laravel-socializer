@@ -49,12 +49,10 @@
                 stopVideoStream,
                 currentStream,
                 setLocalVideoPeer,
-                connectToQueuedConnections,
                 syncUsersConnections,
                 syncJoingingUsers,
                 createVideoElement,
                 removeVideoElement,
-                queuedConnections,
             } = usePeers(props, 'screen', props.room)
 
             const localScreenPlayer = `local-screen`
@@ -67,12 +65,10 @@
                 currentStream,
                 setLocalVideoPeer,
                 localScreenPlayer,
-                connectToQueuedConnections,
                 syncUsersConnections,
                 syncJoingingUsers,
                 createVideoElement,
                 removeVideoElement,
-                queuedConnections,
                 previousUsers,
             }
         },

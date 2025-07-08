@@ -127,7 +127,7 @@ class UserController extends Controller
 
         try {
             Broadcast::private('App.Models.User.'.$to->id)
-            ->as('ResponseToAthorizationPeer')
+            ->as('ResponseToAuthorizationPeer')
             ->with([
                 'options' =>  $request->get('options'),
                 'status' => $request->get('status'),

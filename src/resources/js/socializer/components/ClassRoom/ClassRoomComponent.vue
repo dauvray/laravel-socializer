@@ -1,6 +1,6 @@
 <template>
     <div class="classroom-wrapper">
-        <RoomUsersList :users="users"></RoomUsersList>
+        <RoomUsersList :users="users" class="ms-3 mt-2 mb-2"></RoomUsersList>
         <div class="classroom">
             <ChatComponent
                 v-if="chatId && showChat"
@@ -117,6 +117,13 @@
                     })
                 }
                 return whiteboard_room 
+            },
+        },
+        watch: {
+            chatId(newChatId) {
+                if (newChatId && this.$refs.chat) {
+                    console.log(this.$refs.chat.$el)
+                }
             },
         },
         methods: {

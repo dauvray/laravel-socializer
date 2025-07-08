@@ -2,7 +2,7 @@ import EventBus from '~estarter/services/eventBus'
 
 export default (conn, context) => {
 
-    console.log('nouvelle connexion data stream')
+    console.log('nouvelle connexion data stream', conn.connectionId)
 
     conn.on("open", () => {
         console.log('connection data stream ouverte')

@@ -70,26 +70,27 @@
                 </div>
             </div>
         </div>
+    
+        <DataUserPeerConnection 
+            v-if="chatters && currentConversation"
+            :users="chatters"
+            :roomId="currentConversationId"
+            :callback-connection="connectionDataCallback"
+        ></DataUserPeerConnection>
+        <ModalWidget
+            v-if="showModal"
+            target="ModalChat"
+            :trigger="showModal"
+            modalClasses="modal-fullscreen"
+            bodyClasses="d-flex justify-content-center"
+            :showBtn="false"
+            @hidden="onHideModal">
+            <template #header> </template>
+            <template #body>
+                <img :src="fileUrl"  /> 
+            </template>
+        </ModalWidget>
     </div>
-    <DataUserPeerConnection 
-        v-if="chatters && currentConversation"
-        :users="chatters"
-        :roomId="currentConversationId"
-        :callback-connection="connectionDataCallback"
-    ></DataUserPeerConnection>
-    <ModalWidget
-        v-if="showModal"
-        target="ModalChat"
-        :trigger="showModal"
-        modalClasses="modal-fullscreen"
-        bodyClasses="d-flex justify-content-center"
-        :showBtn="false"
-        @hidden="onHideModal">
-        <template #header> </template>
-        <template #body>
-            <img :src="fileUrl"  /> 
-        </template>
-    </ModalWidget>
 </template>
 
 <script>
@@ -393,7 +394,9 @@
 
             /*------  DATA CONNECTION ----------*/
             connectionDataCallback(conn) {
-                console.log('nouvelle connexion data chat')
+
+                console.log('nouvelle connexion data chat', conn.connectionId)
+
                 conn.on("data", (data) => {
                     data = JSON.parse(data)
                     switch(data.action) {
@@ -410,10 +413,10 @@
                     }
                 });
                 conn.on("open", () => {
-                    console.log('connection data chat ouverte')
+                    console.log('connection data chat ouverte', conn.connectionId)
                 });
                 conn.on("close", () => {
-                    console.log('connection data chat fermée')
+                    console.log('connection data chat fermée', conn.connectionId)
                 });
             },
             onStartWritting() {

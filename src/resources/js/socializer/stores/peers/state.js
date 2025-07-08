@@ -3,7 +3,8 @@ export default () => {
     lastLocalPeerId: null,
     localPeer: null,
     connections: {},
-    queuedConnections: {},
+    streams: {}, // stream ouverts
+    remoteOpenedConnections: [], // connections ouvertes
     pendingRequests: {},
     players: [],
     currentCallRoomId: null,

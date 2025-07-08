@@ -1,23 +1,28 @@
 <template>
-    <button 
-        v-if="!startQuestionnaireCreation"
-        type="button" 
-        class="btn btn-primary"
-        @click="onCreateQuestionnaire">Créer un questionnaire
-    </button>
-
+    <Teleport to="#room-header-inner">
+        <h2>Gestion des questionnaires</h2>
+    </Teleport>
+<div class="m-3">
+    <div class="d-grid gap-2 d-md-block">
+        <button 
+            v-if="!startQuestionnaireCreation"
+            type="button" 
+            class="btn btn-primary"
+            @click="onCreateQuestionnaire">Créer un questionnaire
+        </button>
+    </div>
     <TableWidget
-        caption="Gestion des questionnaires"
         :buttons="buttons"
         :columns="columns"
         :dataValues="dataValues"
+        :showCaption="false"
         :sortable="true"
         :payload="{
             server_id: currentServer.id
         }"
         @btn-action="onTableBtnAction"
     ></TableWidget>
-
+</div>
     <ModalWidget
         v-if="showModal"
         modalClasses="modal-fullscreen"

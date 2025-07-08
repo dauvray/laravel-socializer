@@ -1,5 +1,18 @@
 <template>
-AUDIO ROOM
+    <Teleport :to="`#collapser-${room.id}`" >
+        <SpectrumAnalyzer
+            v-if="currentStream"
+            class="border rounded mt-2"
+            :stream="currentStream"
+        ></SpectrumAnalyzer>
+    </Teleport>
+
+    <div class="chat-header m-2">
+        <RoomUsersList :users="users"></RoomUsersList>
+    </div>
+
+
+
 </template>
 
 <script>
@@ -7,12 +20,16 @@ AUDIO ROOM
     import { ref } from 'vue'
     import { useMeStore } from '~estarter/stores/me.js'
     import { mapState } from 'pinia'
+    import SpectrumAnalyzer from './widgets/SpectrumAnalyzer.vue'
+    import RoomUsersList from '~socializer/components/Server/widgets/RoomUsersList.vue'
 
+    const streamPeerCallback = import(`~socializer/callbacks/streamPlayerCallback.js`)
+    
     export default {
         name: 'AudioComponent',
         props: {
             room: {
-                type: String,
+                type: Object,
                 required: false,
                 default: null,
             },
@@ -21,15 +38,23 @@ AUDIO ROOM
                 required: true
             },
         },
+        components: {
+            SpectrumAnalyzer,
+            RoomUsersList,
+        },
         setup( props ) {
 
             const {
                 startWebcamStream,
+                stopVideoStream,
+                removeVideoElement,
                 syncUsersConnections,
                 syncJoingingUsers,
                 createVideoElement,
                 isStreaming,
-            } = usePeers(props, 'stream', props.room)
+                currentStream,
+                setLocalVideoPeer,
+            } = usePeers(props, 'stream', props.room.id)
 
             const isAudioCall = ref(true)
             const previousUsers = ref([])
@@ -37,6 +62,8 @@ AUDIO ROOM
 
             return {
                 startWebcamStream,
+                stopVideoStream,
+                removeVideoElement,
                 isStreaming,
                 syncUsersConnections,
                 syncJoingingUsers,
@@ -44,16 +71,24 @@ AUDIO ROOM
                 isAudioCall,
                 createVideoElement,
                 previousUsers,
+                currentStream,
+                setLocalVideoPeer,
             }
-
+        },
+        created() {
+            this.setLocalVideoPeer(this, streamPeerCallback.default)
         },
         computed: {
             ...mapState(useMeStore, {
                 me: 'getMe',
-            }),
+            }), 
         },
         mounted() {
             this.startAudio()
+        },
+        beforeUnmount() {
+            this.stopVideoStream('stream')
+            this.removeVideoElement(this.audioLocalRoomStream)
         },
         watch: {
             users : {
@@ -70,10 +105,8 @@ AUDIO ROOM
         },
         methods: {
             startAudio() {
-               this.startWebcamStream({
-                    audio: true,
-                    video: false,
-                }).then(async () => {
+               this.startWebcamStream({ audio: true, video: false }, true )
+                .then(async () => {
                     this.syncUsersConnections(this.users)
                     if(!document.getElementById(this.audioLocalRoomStream)) {
                          await this.createVideoElement(
@@ -85,6 +118,11 @@ AUDIO ROOM
                             },
                             this.currentStream
                         )
+
+                        // hide UI elements
+                      //  document.getElementById('videoContainer').style.display = 'none'
+                       // document.getElementById('stop-stream-btn').style.display = 'none'
+
                         this.$emit('started-stream', 'stream', this.audioLocalRoomStream)
                     }
                 })
@@ -92,3 +130,4 @@ AUDIO ROOM
         }
     };
 </script>
+

@@ -1,7 +1,4 @@
-
-import { useMeStore } from '~estarter/stores/me.js'
 import { streamableComponents } from '~socializer/components/Server/roomSettings.js'
-
 
 export default {
     getServers() {
@@ -39,13 +36,6 @@ export default {
             return this.currentServer.owner.id
         }
         return null
-    },
-    isOwner() {
-        if(this.currentServer) {
-            const useMe = useMeStore()
-            return this.currentServer.owner.id === useMe.user.vertexid
-        }
-        return false
     },
     getCurrentRoom() {
         if(this.currentRoom) {

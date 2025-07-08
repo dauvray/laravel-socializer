@@ -6,11 +6,26 @@ use Dauvray\Estarter\app\Http\Controllers\Admin\General\UserCrudController as Es
 
 class UserCrudController extends EstarterUserController
 {
+
+    public function setColumns()
+    {
+        parent::setColumns();
+
+            $this->crud->addColumns([
+            [
+                'name'  => 'extras.fremium',
+                'type' => 'check',
+                'label' => 'Fremium',
+            ],
+        ]);
+    }
+
     public function setFields()
     {
         parent::setFields();
 
-            $this->crud->addFields([
+        // Agent IA fields
+        $this->crud->addFields([
             [
                 'name' => 'is_bot',
                 'label' => 'Bot',
@@ -34,6 +49,18 @@ class UserCrudController extends EstarterUserController
                  'tab' => trans('Agent IA'),
             ]
 
+        ]);
+
+        // Fremium fields
+        $this->crud->addFields([
+            [
+                'name' => 'fremium',
+                'label' => 'Fremium',
+                'type' => 'toggle_switch',
+                'fake'     => true, 
+                'store_in' => 'extras',
+                'tab' => trans('Social plan'),
+            ],
         ]);
 
     }

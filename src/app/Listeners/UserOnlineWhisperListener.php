@@ -2,9 +2,12 @@
 
 namespace Dauvray\Socializer\app\Listeners;
 
+use Illuminate\Support\Facades\Auth;
+
 class UserOnlineWhisperListener
 {
     public $service;
+    public $user;
     
     /**
      * Create the event listener.
@@ -13,7 +16,7 @@ class UserOnlineWhisperListener
      */
     public function __construct()
     {
-
+        $this->user = Auth::user();
     }
 
     /**
@@ -27,7 +30,7 @@ class UserOnlineWhisperListener
         $message = $event->message;
         $payload = json_decode($message, true);
         $data = $payload['data'] ?? [];
-       
+
         switch($payload['event']) {
             case 'client-ping':
                 $this->clientPingOnline($data);
@@ -80,4 +83,5 @@ class UserOnlineWhisperListener
 
         app('onlineUsers')->removeUserChat($chatId, $userId);
     }
+
 }

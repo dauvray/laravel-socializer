@@ -28,6 +28,7 @@
     <div v-if="isStreaming" class="btn-group" role="group" aria-label="Basic example">
         <button 
             type="button" 
+            id="stop-stream-btn"
             class="btn btn-danger"
             @click="onStopBrodcastWebcam">
             <IconWidget icon="window-close"></IconWidget> Terminer stream
@@ -90,15 +91,12 @@
                 startWebcamStream,
                 syncUsersConnections,
                 syncJoingingUsers,
-                connectToQueuedConnections,
                 currentStream,
                 setLocalVideoPeer,
-                queuedConnections,
                 stopVideoStream,
                 createVideoElement,
                 removeVideoElement,
                 updateVideoProps,
-                onResponseCallError,
             } = usePeers(props, 'stream', props.room)
 
             const localVideoPlayer = 'local-stream'
@@ -106,17 +104,15 @@
             const isVideoEnabled = ref(false)
             const isVideoCall = ref(false)
             const isAudioCall = ref(false)
-            const previousUsers = ref([])
+            const previousUsers = []
 
             return {
                 isStreaming,
                 startWebcamStream,
                 syncUsersConnections,
                 syncJoingingUsers,
-                connectToQueuedConnections,
                 currentStream,
                 setLocalVideoPeer,
-                queuedConnections,
                 localVideoPlayer,
                 stopVideoStream,
                 createVideoElement,
@@ -127,7 +123,6 @@
                 isVideoCall,
                 isAudioCall,
                 previousUsers,
-                onResponseCallError,
             }
         },
         created() {
@@ -139,7 +134,7 @@
                     // if on air send stream to new users
                     if(this.isStreaming) {
                         this.syncJoingingUsers(newVal, this.previousUsers)
-                        this.previousUsers = JSON.parse(JSON.stringify(newVal)); // Créer une copie profonde
+                        this.previousUsers = JSON.parse(JSON.stringify(newVal))
                     }
                 },
                 deep: true,
@@ -175,10 +170,8 @@
                 this.updateVideoProps({isVideoEnabled: this.isVideoEnabled})
             },
             startBroadcast() {
-               this.startWebcamStream({
-                    audio: !this.isMuted,
-                    video: this.isVideoEnabled,
-                }).then(async () => {
+               this.startWebcamStream({audio: !this.isMuted, video: this.isVideoEnabled}, true)
+               .then(async () => {
                     this.syncUsersConnections(this.users)
                     if(!document.getElementById(this.localVideoPlayer)) {
                          await this.createVideoElement(

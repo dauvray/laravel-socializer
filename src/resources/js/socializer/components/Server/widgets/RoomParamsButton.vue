@@ -77,6 +77,7 @@
     import IconWidget from '~estarter/components/widgets/IconWidget.vue'
     import FormsSettingHelper from '~socializer/services/FormsSetting.js'
     import { useServerStore } from '~socializer/stores/server.js'
+    import { useMeStore } from '~estarter/stores/me.js'
     import { mapActions, mapState } from 'pinia'
 
     export default {
@@ -121,9 +122,12 @@
         },
         computed: {
             ...mapState(useServerStore, {
-                isOwner: 'isOwner',
+                ownerId: 'getOwnerId',
                 currentContent: 'getCurrentContent',
                 serverRooms: 'getServerRooms',
+            }),
+            ...mapState(useMeStore, {
+                getMe: 'getMe',
             }),
             roomIcon: function() {
                 const mapIcon = {
@@ -139,7 +143,10 @@
                     return 'unlock'
                 }
                 return 'lock'
-            },  
+            },
+            isOwner: function() {
+                return this.ownerId === this.getMe.vertexid
+            },
         },
         methods: {
             ...mapActions(useServerStore, [

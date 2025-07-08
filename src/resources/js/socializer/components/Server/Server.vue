@@ -40,7 +40,7 @@
         <section v-if="!isLoading" id="room-header" :style="setMainContentMargin">
             <RoomHeader id="room-header-inner"></RoomHeader>
             <div id="room-stream-btn" role="group">
-            <StreamUserButton 
+                <StreamUserButton 
                     v-if="showStreamButton"
                     ref="webcamBtn"
                     :users="currentRoomUsers"
@@ -68,7 +68,7 @@
             ></PageComponent>
 
             <router-view 
-            :key="$route.params.roomId"
+                :key="$route.params.roomId"
                 @update-users-room="onUpdateRoomUsers"
             ></router-view>
         </section>
@@ -97,8 +97,6 @@
   //  import ServerList from './widgets/ServerList.vue'
     import FormsSettingHelper from '~socializer/services/FormsSetting.js'
     import IconWidget from '~estarter/components/widgets/IconWidget.vue'
-    import StreamUserButton from '~socializer/components/WebRTC/widgets/StreamUserButton.vue'
-    import CaptureUserButton from '~socializer/components/WebRTC/widgets/CaptureUserButton.vue'
     import Gravatar from '~estarter/components/widgets/Gravatar.vue'
     import RoomParamsWrapper from './widgets/RoomParamsWrapper.vue'
     import resizable from "~socializer/directives/resizable_vertical.js"
@@ -125,8 +123,8 @@
             IconWidget,
             SettingsModal: defineAsyncComponent(() => import('~socializer/components/Server/widgets/SettingsModal.vue')),
             PageComponent: defineAsyncComponent(() => import('~socializer/components/Page/PageComponent.vue')),
-            StreamUserButton,
-            CaptureUserButton,
+            StreamUserButton: defineAsyncComponent(() => import('~socializer/components/WebRTC/widgets/StreamUserButton.vue')),
+            CaptureUserButton: defineAsyncComponent(() => import('~socializer/components/WebRTC/widgets/CaptureUserButton.vue')),
             Gravatar,
         },
         data() {

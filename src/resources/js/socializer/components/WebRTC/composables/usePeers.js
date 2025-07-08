@@ -1,4 +1,4 @@
-import { ref, reactive, computed, onMounted ,onBeforeUnmount, defineAsyncComponent, watch, h, createApp, inject } from 'vue'
+import { ref, toRef, reactive, computed, onMounted ,onBeforeUnmount, defineAsyncComponent, watch, h, createApp, inject } from 'vue'
 import { useAjaxService } from '~estarter/services/AjaxService.js'
 import { usePeerStore } from '~socializer/stores/peers.js'
 import { useServerStore } from '~socializer/stores/server.js'
@@ -6,7 +6,7 @@ import { useMeStore } from '~estarter/stores/me.js'
 import { deepGet, uniqueId } from '~estarter/services/helpers.js'
 import Draggable from '~socializer/directives/draggable.js'
 
-export function usePeers(props, type = 'data', room = null) {
+export function usePeers(props, type = 'data', room = 'app') {
 
     /*******************************
      * INITIALISATION
@@ -23,11 +23,12 @@ export function usePeers(props, type = 'data', room = null) {
         isMuted: false,
         isVideoEnabled: true,
     })
+
     const videoContainer = ref('#videoContainer')
     const currentStream = ref(null) // current stream
     const currentType = ref(type) // current room 
-    const currentRoom = ref(room) // current room 
-    const onAirRoom = ref(null) // room where streaming started
+    const currentRoom = ref(room) // current room  id
+    const onAirRoom = ref(room) // room id where streaming started
 
     /*******************************
      * METHODS
@@ -104,7 +105,12 @@ export function usePeers(props, type = 'data', room = null) {
                     )
                 }
                 setCallInProgress(true)
-                putToQueuedConnections(data.options.peerId, data.fromUserSlug, data.options.type, data.options.room )
+                connectToQueuedConnections({
+                    peerId: data.options.peerId, 
+                    userSlug: data.fromUserSlug, 
+                    type: data.options.type, 
+                    room: data.options.room 
+                })
             })
         }
     }
@@ -122,111 +128,100 @@ export function usePeers(props, type = 'data', room = null) {
     // envoi le peerId a l'utilisateur distant et attent le sien en retour
     const getRemotePeerId = (toUserSlug) => {
 
+        const room = currentRoom.value || deepGet(serverStore, 'currentRoom.id', null)
+        const peerId = peerStore.localPeer._id
+        const payload = {
+                peerId: peerStore.localPeer._id,
+                toUserSlug: toUserSlug,
+                room: onAirRoom.value,
+                type: currentType.value
+            }
+
+        if(room && peerId && toUserSlug) {
+            AjaxService.load('/ask-to-peer-id', 'post', payload) 
+        }
+
         isConnecting.value = true
-   
-        AjaxService.load('/ask-to-peer-id', 'post', {
-            peerId: peerStore.localPeer._id,
-            toUserSlug: toUserSlug,
-            room: onAirRoom.value,
-            type: currentType.value
-        }) 
     }
 
     // repond a une demande de peer id
     const sendLocalPeerId = (fromUserSlug, custom_type= null, custom_room = null) => {
 
         isConnecting.value = false
-
-        AjaxService.load('/response-to-peer-id', 'post', {
+        const payload = {
             peerId: peerStore.localPeer._id,
             type: custom_type || currentType.value,
             room: custom_room || onAirRoom.value,
             toUserSlug: fromUserSlug,
-        })
+        }
+
+        AjaxService.load('/response-to-peer-id', 'post', payload)
     }
 
     /*------  Synchronization ----------*/
 
-    const putToQueuedConnections = (peerId , userSlug, custom_type= null, custom_room = null) => {
-        if(peerId) {
-             peerStore.addToQueuedConnections(
-                 peerId, 
-                 userSlug, 
-                 custom_room || onAirRoom.value,
-                 custom_type || currentType.value, 
-             )
-        }
-     }
+    const connectToQueuedConnections = async (payload) => {
+        if(payload.type === 'data') {
 
-    const connectToQueuedConnections = async (stream = null, source = null) => {
+            peerStore.openPeerConnection({
+                peerId: payload.peerId,
+                options: { 
+                    reliable: true,
+                    metadata: { 
+                        slug: payload.userSlug,
+                        from: meStore.getMe.slug,
+                        source: payload.type,
+                        room: payload.room,
+                    }, 
+                },
+                room: payload.room,
+                type: payload.type,
+            })
 
-        const sourceType = source || currentType.value
+        } else {
 
-        for (const slug in peerStore.queuedConnections) {
+            const connection = peerStore.openPeerConnection({
+                peerId: payload.peerId, 
+                stream: peerStore.getStream(payload.room),
+                options: { 
+                    metadata: { 
+                        slug: payload.userSlug,
+                        from: meStore.getMe.slug,
+                        source: payload.type,
+                        room: payload.room,
+                    }, 
+                },
+                room: payload.room,
+                type: payload.type,
+            })
 
-            if(peerStore.queuedConnections[slug].room === onAirRoom.value && peerStore.queuedConnections[slug].type === sourceType) {
+            if(connection && connection.call) {
 
-                if(peerStore.queuedConnections[slug].type === 'data') {
+                // Recevoir et afficher le flux vidéo distant
+                connection.call.on('stream', (remoteStream) => {
+                    createVideoElement({
+                        videoId: connection.call.connectionId, 
+                        nickname: connection.call.metadata.slug,
+                        // peer needed only for one-way diffusion
+                        peer: payload.room == 'visio' ? null : connection.call,
+                    }, remoteStream)
 
-                    peerStore.openPeerConnection({
-                        peerId: peerStore.queuedConnections[slug].peerId,
-                        options: { 
-                            reliable: true,
-                            metadata: { 
-                                slug: slug,
-                                from: meStore.user.slug,
-                                source: sourceType,
-                                room: onAirRoom.value,
-                            }, 
-                        },
-                        room: peerStore.queuedConnections[slug].room,
-                        type: peerStore.queuedConnections[slug].type,
+                    remoteStream.getVideoTracks()[0].addEventListener('ended', () => {
+                        console.log('ended stream remote')
+
+                        removeVideoElement(connection.call.connectionId)
+                        if(!connections.value.hasOwnProperty(onAirRoom.value)) {
+                            console.log('le salon est vide')
+                        }
+
                     })
-
-                } else {
-
-                   const connection = peerStore.openPeerConnection({
-                        peerId: peerStore.queuedConnections[slug].peerId, 
-                        stream,
-                        options: { 
-                            metadata: { 
-                                slug: slug,
-                                from: meStore.user.slug,
-                                source: sourceType,
-                                room: onAirRoom.value,
-                            }, 
-                        },
-                        room: peerStore.queuedConnections[slug].room,
-                        type: peerStore.queuedConnections[slug].type,
-                    })
-
-                   // Recevoir et afficher le flux vidéo distant
-                    connection.call.on('stream', (remoteStream) => {
-                        createVideoElement({
-                            videoId: connection.call.connectionId, 
-                            nickname: connection.call.metadata.slug,
-                            // peer needed only for one-way diffusion
-                            peer: sourceType == 'visio' ? null : connection.call,
-                        }, remoteStream)
-
-                        remoteStream.getVideoTracks()[0].addEventListener('ended', () => {
-                            console.log('ended stream remote')
-
-                            removeVideoElement(connection.call.connectionId)
-                            if(!connections.value.hasOwnProperty(onAirRoom.value)) {
-                                console.log('le salon est vide')
-                            }
-
-
-                        })
-                    })
-                }
-                peerStore.removeToQueuedConnections(slug)
+                })
             }
         }
     }
 
     // store remote calling connection
+    
     const storeConnection = (call, options) => {
         peerStore.setRemoteConnection(call, options)
     }
@@ -242,16 +237,15 @@ export function usePeers(props, type = 'data', room = null) {
 
     const syncUsersConnections = (users) => {
         users.forEach( user => {
-            if(user.slug !== meStore.getMe.slug 
-                    && !queuedConnections.hasOwnProperty(user.slug)
-                    && !deepGet(connections, `${onAirRoom.value}.${user.slug}.${currentType.value}`, false)
-                ) {
+            if(user.slug !== meStore.getMe.slug && !deepGet(connections, `${onAirRoom.value}.${user.slug}.${currentType.value}`, false)) {
+            console.log('getRemotePeerId', user.slug, currentType.value, onAirRoom.value)
                 getRemotePeerId(user.slug)
             }
         })
     }
 
     const syncJoingingUsers = (users, previousUsers) => {
+
         // Comparer avec la copie précédente
         const previousIds = previousUsers.map(user => user.id)
 
@@ -280,10 +274,17 @@ export function usePeers(props, type = 'data', room = null) {
         peerStore.setLocalVideoPeer(context, callback)
     } 
 
-    const startWebcamStream = async (options) => {
+    const startWebcamStream = async (options, isLocal = false) => {
         peerStore.startVideoStream()
         onAirRoom.value = currentRoom.value || deepGet(serverStore, 'currentRoom.id', null)
-        currentStream.value = await navigator.mediaDevices.getUserMedia(options)
+        const newStream = await navigator.mediaDevices.getUserMedia(options)
+        newStream.isLocal = false//isLocal // to mute local sound in player
+        currentStream.value = newStream
+        peerStore.saveStream(onAirRoom.value, currentStream.value)
+        updateVideoProps({
+            isVideoEnabled: options.video,
+            isMuted: options.audio
+        })
     }
 
     const startVisioStream = async options => {
@@ -381,9 +382,7 @@ export function usePeers(props, type = 'data', room = null) {
             return
         }
 
-        const VideoComponent = defineAsyncComponent(() =>
-            import('~socializer/components/WebRTC/widgets/VideoComponent.vue')
-        )
+        const VideoComponent = await import('~socializer/components/WebRTC/widgets/VideoComponent.vue')
         
         // Créer un élément wrapper unique pour chaque vidéo
         const wrapper = document.createElement('div')
@@ -400,18 +399,19 @@ export function usePeers(props, type = 'data', room = null) {
 
         const app = createApp({
             render: () =>
-                h(VideoComponent, {
+                h(VideoComponent.default, {
                     videoId: options.videoId,
                     stream: stream,
                     nickname: options.nickname,
-                    type: source,
+                    type: options?.source || source,
                     peer: options.peer,
-                    roomId: onAirRoom.value,
+                    roomId: options?.roomId || onAirRoom.value,
                 }),
         });
 
         app.provide('states', videoStates)
         app.provide('eventBus', eventBus)
+
         app.mount(wrapper)
         
          // Stocker l'application avec ses métadonnées
@@ -465,8 +465,8 @@ export function usePeers(props, type = 'data', room = null) {
         }
     }
 
-    const updateCurrentRoom = (room) => {
-        currentRoom.value = room
+    const updateCurrentRoom = (roomId) => {
+        currentRoom.value = roomId
     }
 
     const updateCurrentType = (type) => {
@@ -504,10 +504,6 @@ export function usePeers(props, type = 'data', room = null) {
         return peerStore.isCapturingScreen
     })
 
-    const queuedConnections = computed(() => {
-        return peerStore.getQueuedConnections
-    })
-
     const connections = computed(() => {
         return peerStore.getConnections
     })
@@ -532,18 +528,7 @@ export function usePeers(props, type = 'data', room = null) {
      * WATCHERS
      * *****************************/
 
-    watch(queuedConnections, () => {
 
-        if(currentType.value === 'data') {
-            connectToQueuedConnections()
-        } else {
-            connectToQueuedConnections(currentStream.value, currentType.value)
-        }   
-
-      }, { 
-        deep: true,
-        immediate: true
-    })
 
     /*******************************
      * LIFE CYCLE
@@ -555,6 +540,8 @@ export function usePeers(props, type = 'data', room = null) {
                 closeRemotePeerId(userSlug, currentType.value, onAirRoom.value, true)
             })
         }
+
+         eventBus.$off("closeStream", closeEventBusStream)
 
         // const players = peerStore.getPlayers
         // players.forEach(player => {
@@ -568,7 +555,7 @@ export function usePeers(props, type = 'data', room = null) {
 
     onMounted(() => {
         eventBus.$on("closeStream", closeEventBusStream)
-      })
+    })
 
     return {
         getAuthorizationRemotePeerId,
@@ -581,7 +568,6 @@ export function usePeers(props, type = 'data', room = null) {
         getRemotePeerId,
         sendLocalPeerId,
         closeRemotePeerId,
-        putToQueuedConnections,
         storeConnection,
         connectToQueuedConnections,
         syncUsersConnections,
@@ -604,7 +590,6 @@ export function usePeers(props, type = 'data', room = null) {
         localPeerId,
         isConnecting,
         currentStream,
-        queuedConnections,
         connections,
         peerConnections,
         pendingRequests,

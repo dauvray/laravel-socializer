@@ -3,10 +3,10 @@ import { useAjaxService } from '~estarter/services/AjaxService.js'
 import { useMeStore } from '~estarter/stores/me.js'
 import { isEmpty } from '~estarter/services/helpers.js'
 
-
 const AjaxService = useAjaxService()
 
 export default {
+   
     /*******************************
      * PEERS
      * *****************************/
@@ -60,7 +60,6 @@ export default {
     },
     // add when you call
     openPeerConnection(payload) {
-
         const slug = payload.options.metadata.slug
         const peerID = payload.peerId
         const room = payload.room
@@ -68,13 +67,9 @@ export default {
         const ignoredDataConnections = [] // put here video types without dataPeerConnection
 
         this.initConnection(payload)
-    
+
         // create connection
-        if(!this.connections[room][slug][type].some(item => {
-            if(item) {
-                return item.peer === peerID
-            }
-        })) {
+        if (!this.hasActiveConnection(room, slug, type, peerID)) {
 
             let call = null
             let conn = null
@@ -83,25 +78,47 @@ export default {
                 call = this.localPeer.connect(peerID, payload.options )
                 this.connections[room][slug][type].push(call) 
             } else {
-            
+
                 let streamOptions = { ...payload.options, metadata: { ...payload.options.metadata } }
 
                 // custom callbacks
                 streamOptions.metadata.callback = `${type}PlayerCallback`
+
                 call = this.localPeer.call(peerID, payload.stream, streamOptions)
                 this.connections[room][slug][type].push(call) 
 
                 // join data connection
                 if(!ignoredDataConnections.includes(type)) {
+                    console.log('add data connection', type)
                     delete payload.options.stream
                     payload.options.metadata.callback = `${type}PlayerDataCallback` // custom callback
                     conn = this.localPeer.connect(peerID, payload.options )
-                    this.connections[room][slug][type].push(conn) 
+                    this.connections[room][slug][type].push(conn)  
                 }
 
                 return {call , conn}
             }
         }
+    },
+    hasActiveConnection(room, slug, type, peerID = null) {
+        if (!this.connections[room] || !this.connections[room][slug] || !this.connections[room][slug][type]) {
+            return false
+        }
+
+        if( peerID) {
+            return this.connections[room][slug][type].some(conn => {
+                // Pour DataConnection
+                if (conn.peer && conn.peer === peerID && !conn.open) return false
+                if (conn.peer && conn.peer === peerID && conn.open) return true
+
+                // Pour MediaConnection
+                if (conn.connectionId && conn.peer === peerID && conn.open) return true
+
+                return false
+            })
+        }
+
+        return true
     },
     // add when you are called
     setRemoteConnection(call, payload) {
@@ -141,12 +158,10 @@ export default {
 
             // alert others
             if(notify) {
-                const meStore = useMeStore()
-                AjaxService.load('/close-connection-to-peer-id', 'post', {
-                    toUserSlug: toUserSlug,
-                    fromUserSlug: meStore.user.slug,
+                this.signalRemoteToClosePeer({
+                    from: toUserSlug,
                     room,
-                    type,
+                    source: type,
                 })
             }
         })
@@ -155,16 +170,6 @@ export default {
 
         // clear rooms
         this.clearRoom(room, toUserSlug, type)
-    },
-    addToQueuedConnections(peerId, userSlug, room = 'default', type = 'data',) {
-        this.queuedConnections[userSlug] = { 
-            peerId, 
-            room, 
-            type 
-        }
-    },
-    removeToQueuedConnections(userSlug) {
-        delete this.queuedConnections[userSlug]
     },
     clearRoom(room, toUserSlug, type) {
         if(this.connections[room][toUserSlug].hasOwnProperty(type) 
@@ -184,7 +189,7 @@ export default {
         const meStore = useMeStore()
         AjaxService.load('/close-connection-to-peer-id', 'post', {
             toUserSlug: metadata.from,
-            fromUserSlug: meStore.user.slug,
+            fromUserSlug: meStore.getMe.slug,
             room: metadata.room,
             type: metadata.source,
         })
@@ -212,20 +217,32 @@ export default {
                 console.error('Erreur sur la connexion entrante :', err);
             });
 
-             // execute la callback dynamique passée dans les metadata sinon celle passée en argument
+            conn.on("close", () => {
+                this.remoteOpenedConnections = this.remoteOpenedConnections.filter(id => id !== conn.connectionId)
+            });
+
+            // execute la callback dynamique passée dans les metadata sinon celle passée en argument
            if(conn.options.metadata.hasOwnProperty('callback')) {
                 const customCallbacks = await import(`~socializer/callbacks/${conn.options.metadata.callback}.js`)
+
                 if (typeof customCallbacks.default === 'function') {
-                    await customCallbacks.default(conn, context)
+                     if(!this.remoteOpenedConnections.includes(conn.connectionId)) {
+                        this.remoteOpenedConnections.push(conn.connectionId)
+                        await customCallbacks.default(conn, context)
+                    }
                 } else {
                     console.error(`Le module ${conn.options.metadata.callback}.js n'a pas d'exportation par défaut valide.`);
                 }
+
            } else {
                 if (callback instanceof Function) {
-                    callback(conn)
+                    if(!this.remoteOpenedConnections.includes(conn.connectionId)) {
+                        this.remoteOpenedConnections.push(conn.connectionId)
+                        callback(conn)
+                    }
+                 
                 }
            }
-           
         })
     },
     sendData(message, room = 'default') {
@@ -331,5 +348,8 @@ export default {
     },
     removePlayer(elementId) {
         this.players = this.players.filter(item => item.videoId !== elementId)
+    },
+    saveStream(room = 'default', stream = null) {
+        this.streams[room] = stream
     }
 }

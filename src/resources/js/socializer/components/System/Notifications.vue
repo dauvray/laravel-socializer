@@ -54,12 +54,12 @@
             const {
                 sendLocalPeerId,
                 closeRemotePeerId,
-                putToQueuedConnections,
                 sendAuthorizationRemotePeerId,
                 receiveAuthorizationRemotePeerId,
                 setLocalVideoPeer,
                 setLocalDataPeer,
                 createVideoElement,
+                connectToQueuedConnections,
                 removeVideoElement,
                 startVisioStream,
                 stopUserVisioStream,
@@ -68,7 +68,6 @@
                 updateCurrentRoom,
                 updateCurrentType,
                 localPeerId,
-                storeConnection,
                 connections,
                 onResponseCallError,
                 callInprogress,
@@ -81,11 +80,11 @@
             const notificationComponent = ref(null)
             const notificationComponentProps = ref(null)
             const NewMessageNotification= ref(null)
+            const queueProcesing = ref(false)
         
             return {
                 sendLocalPeerId,
                 closeRemotePeerId,
-                putToQueuedConnections,
                 sendAuthorizationRemotePeerId,
                 receiveAuthorizationRemotePeerId,
                 totalNotification,
@@ -102,13 +101,14 @@
                 updateCurrentRoom,
                 updateCurrentType,
                 localPeerId,
-                storeConnection,
                 connections,
                 onResponseCallError,
                 callInprogress,
                 setCallInProgress,
                 setCurrentCallRoomId,
                 NewMessageNotification,
+                connectToQueuedConnections,
+                queueProcesing,
             }
         },
         watch: {
@@ -165,10 +165,15 @@
                         // receive remotePeerId and connect to called user
                         .listen('.ResponseToPeerID', (event) => {
                             // store response connection
-                            this.putToQueuedConnections(event.peerId, event.fromUserSlug, event.type, event.room )
+                            this.connectToQueuedConnections({
+                                peerId: event.peerId, 
+                                userSlug: event.fromUserSlug, 
+                                type: event.type, 
+                                room: event.room 
+                            })
                         })
                         // receive authorization to peer connection
-                        .listen('.ResponseToAthorizationPeer', (event) => {
+                        .listen('.ResponseToAuthorizationPeer', (event) => {
                             // store response connection
                             this.updateCurrentRoom(event.options.room)
                             this.updateCurrentType(event.options.type)

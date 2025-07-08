@@ -1,9 +1,9 @@
 <template>
-    <ul class="room-users-list">
+    <ul class="chatters-list">
         <li v-for="user in users" 
             :key="user.id"
-            class="chatters">
-            <div class="chat-user-badge">
+            class="chatter">
+            <div class="chatter-badge">
                 <Gravatar
                     class="me-2"
                     size="small"

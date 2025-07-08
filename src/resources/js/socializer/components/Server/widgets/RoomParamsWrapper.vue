@@ -20,9 +20,9 @@
                 <div class="accordion-body p-0">
                     <ul class="list-group list-group-flush">
                         <li v-for="(room, roomIndex) in moduleGroup.rooms"
-                            class="list-group-item list-group-item-action ps-0 pe-0"
-                            :key="roomIndex">
+                            class="list-group-item list-group-item-action ps-0 pe-0">
                             <RoomParamsButton
+                                :key="roomIndex"
                                 :server="currentServer"
                                 :room="room"
                                 @delete-room="onDeleteRoom"

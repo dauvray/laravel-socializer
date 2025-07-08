@@ -212,4 +212,5 @@
       transition: transform 0.1s linear;
       z-index: 1000;
     }
+
   </style>

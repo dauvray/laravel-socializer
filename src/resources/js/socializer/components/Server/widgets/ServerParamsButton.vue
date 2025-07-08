@@ -48,6 +48,7 @@
 <script>
     import IconWidget from '~estarter/components/widgets/IconWidget.vue'
     import { useServerStore } from '~socializer/stores/server.js'
+    import { useMeStore } from '~estarter/stores/me.js'
     import { mapState } from 'pinia'
 
     export default {
@@ -75,8 +76,14 @@
         },
         computed: {
             ...mapState(useServerStore, {
-                isOwner: 'isOwner',
+                ownerId: 'getOwnerId',
             }),
+            ...mapState(useMeStore, {
+                getMe: 'getMe',
+            }),
+            isOwner: function() {
+                return this.ownerId === this.getMe.vertexid
+            },
         },
         methods: {
             onCreateRoom(event) {

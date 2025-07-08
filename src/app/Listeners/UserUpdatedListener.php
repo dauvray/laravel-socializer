@@ -27,7 +27,7 @@ class UserUpdatedListener
         $nebula = app('nebulaGraph');
 
         $nebula->updateVertex(
-            config('socializer.nebulagraph.tags.user.name'), 
+            config('socializer.nebulagraph.tags.user.name'),
             $event->user->vertexid,
             array_merge(
                 $nebula->populatePropsFromPattern(
@@ -35,7 +35,6 @@ class UserUpdatedListener
                     config('socializer.nebulagraph.vertices.user')
                 ),
                 [
-                'identifier' => hideIdentifier($event->user),
                 'active' => (int)$event->user->active,
                 ]
             )

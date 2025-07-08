@@ -20,9 +20,6 @@ export default {
     getIsCapturing() {
         return this.isCapturingScreen ? true : false
     },
-    getQueuedConnections() {
-        return this.queuedConnections
-    },
     getConnections() {
         return this.connections
     },
@@ -42,6 +39,14 @@ export default {
                 }
             }
             return total
+        }
+    },
+    getStream: (state) => {
+        return (room = 'default') => {
+            if(state.streams.hasOwnProperty(room)) {
+                return state.streams[room]
+            }
+            return null
         }
     },
     getPendingRequests() {

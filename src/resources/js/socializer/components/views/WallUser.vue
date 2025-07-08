@@ -16,7 +16,7 @@
         components: {
             WallWidget,
         },
-        created() {
+        mounted() {
             const slug = this.$route.params.slug || this.me.slug
             this.loadOwner(slug)
         },

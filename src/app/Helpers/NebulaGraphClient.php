@@ -86,7 +86,8 @@ class NebulaGraphClient
         if(!$sessionId) {
             $last_sessionId = Cache::get('nebulagraph_last_sessionid');
             if ($last_sessionId) {
-               $this->executeJson('KILL SESSION ' . $last_sessionId);
+                $this->logout($last_sessionId);
+                $this->executeJson('KILL SESSION ' . $last_sessionId);
             }
 
             $resp = $this->connection->authenticate($username, $password);

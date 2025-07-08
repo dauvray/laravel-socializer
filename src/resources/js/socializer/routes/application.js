@@ -205,7 +205,7 @@ export default [
             {
                 path: `questionnaires`,
                 name: 'questionnaire-manager',
-                component: () => import('~socializer/components/Server/QuestionnaireManager.vue'),
+                component: () => import('~socializer/components/Data/QuestionnaireManager.vue'),
                 meta: {
                     breadcrumb: [
                         {name: 'Accueil', link: '/'},
