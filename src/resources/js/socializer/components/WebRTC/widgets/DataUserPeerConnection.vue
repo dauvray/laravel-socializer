@@ -1,4 +1,6 @@
-<template></template>
+<template>
+    {{ users.length }}
+</template>
 
 <script>
 
@@ -49,13 +51,13 @@
                 this.$emit('connected', val)
             },
             users: {
-                handler(value) {
-                    if(value) {
-                        this.syncUsersConnections(value)
+                handler(newVal, oldVal) {
+                    if(newVal) {
+                        this.syncUsersConnections(newVal, oldVal)
                     }
                 },
-                deep: true,
-                immediate: true
+                immediate: true,
+                deep: true, // keep this
             },
         },
     }

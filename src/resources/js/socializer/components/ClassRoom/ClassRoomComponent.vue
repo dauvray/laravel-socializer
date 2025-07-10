@@ -2,7 +2,7 @@
     <div class="classroom-wrapper">
         <RoomUsersList :users="users" class="ms-3 mt-2 mb-2"></RoomUsersList>
         <div class="classroom">
-            <ChatComponent
+             <ChatComponent
                 v-if="chatId && showChat"
                 ref="chat"
                 v-resizable="{
@@ -13,7 +13,7 @@
                 :vertexId="chatId"
                 :displayHeader="false"
             ></ChatComponent>
-            <WhiteboardComponent
+           <WhiteboardComponent
                 v-if="showWhiteboard && whiteboardRoom"
                 ref="whiteboard"
                 :room="whiteboardRoom"
@@ -31,6 +31,7 @@
             @show-chat="handleShowChat"
         ></ConfigPanel>
     </Teleport>
+    {{ room.id }}
     <DataUserPeerConnection 
         v-if="users && room.id"
         :users="users"
@@ -122,7 +123,7 @@
         watch: {
             chatId(newChatId) {
                 if (newChatId && this.$refs.chat) {
-                    console.log(this.$refs.chat.$el)
+                   // console.log(this.$refs.chat.$el)
                 }
             },
         },
@@ -135,7 +136,7 @@
             },
             /*------  DATA CONNECTION ----------*/
             connectionDataCallback(conn) {
-                console.log('nouvelle connexion data classroom')
+                console.log('nouvelle connexion data classroom', conn.connectionId)
                 conn.on("data", (data) => {
                     data = JSON.parse(data)
                     switch(data.action) {

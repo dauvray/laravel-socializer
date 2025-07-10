@@ -63,18 +63,6 @@ $message_width: 60%;
         top: 0;
         z-index: 3;
         min-height: 55px;
-
-        .chat-user-badge {
-            @extend .d-flex;
-            @extend .align-items-center;
-            @extend .badge;
-            @extend .text-bg-light;
-            @extend .me-2;
-        }
-
-        .room-users-list {
-            @extend .flex-grow-1;
-        }
     }
 
     .chat-messages-wrapper {
@@ -100,12 +88,31 @@ $message_width: 60%;
                 -webkit-box-shadow: inset 5px 5px 36px -6px rgba(0,0,0,0.71); 
                 box-shadow: inset 5px 5px 36px -6px rgba(0,0,0,0.71);
 
+                .date-separator {
+                    display: flex;
+                    align-items: center;
+                    margin: 20px 0;
+                    padding: 0 20px;
+                    }
 
+                    .date-separator-line {
+                    flex: 1;
+                    height: 1px;
+                    background-color: #e0e0e0;
+                    }
+
+                    .date-separator-text {
+                    padding: 0 15px;
+                    font-size: 12px;
+                    color: #666;
+                    background-color: #f5f5f5;
+                    border-radius: 12px;
+                    font-weight: 500;
+                    white-space: nowrap;
+                }
             }
         }
     }
-
-
 
     .chat-messenger-sticky-wrapper {
         position: sticky;
@@ -211,10 +218,13 @@ $message_width: 60%;
 
         .message-infos {
             @extend .d-flex;
+            @extend .justify-content-between;
 
             .date {
                 @extend .ms-2;
                 @extend .color-white;
+                @extend .fst-italic;
+                @extend .fw-lighter;
             }
         }
 
@@ -306,24 +316,29 @@ $message_width: 60%;
     .post-header {
          @extend .card-header;
          @extend .p-1;
+         width: 100%;
 
-         .post-infos-wrapper {
+         .post-wrapper-inner {
             @extend .d-flex;
-            @extend .align-items-end;
+            width: 100%;
 
-            .user-infos {
-                @extend .d-flex; 
-                @extend .flex-column;
+            .post-user-wrapper {
+                @extend .d-flex;
+                @extend .flex-grow-1;
+
+                .post-user-infos {
+                    @extend .d-flex; 
+                    @extend .flex-column;
+                }
             }
 
-            .date-message {
-                @extend .ms-2;
-                @extend .me-2;
-                @extend .text-muted;
-                @extend .fw-light;
-                position: absolute;
-                right: 0;
-                top: 0;
+            .post-infos-wrapper {
+                @extend .d-flex; 
+                text-align: right;
+                @extend .flex-column;
+                .date {
+                    @extend .flex-grow-1;
+                }
             }
          }
 
@@ -346,15 +361,24 @@ $message_width: 60%;
     }
 }
 
-.room-users-list {
+.chatters-list {
     @extend .m-0;
     @extend .p-0;
     @extend .d-flex;
+    @extend .flex-grow-1;
 
-    .chatters {
+    .chatter {
         @extend .d-flex;
         @extend .align-items-end;
         @extend .list-group-item;
+
+        .chatter-badge {
+            @extend .d-flex;
+            @extend .align-items-center;
+            @extend .badge;
+            @extend .text-bg-light;
+            @extend .me-2;
+        }
     }
 }
 
@@ -502,7 +526,7 @@ $message_width: 60%;
     display: flex;
     flex-wrap: wrap-reverse; /* Les nouvelles vidéos apparaissent en bas */
     gap: 5px;
-    width: 100%;
+    width: auto;
     
     .draggable-video {
         position: relative;
@@ -510,17 +534,6 @@ $message_width: 60%;
         flex: 1 1 calc(20% - 10px); 
         max-width: calc(20% - 10px);
         user-select: none;
-
-        &:hover,
-        &.dragging {
-            &:after {
-                @extend .btn;
-                @extend .btn-primary;
-                content: 'Déplacer';
-                width: 100%;
-                cursor: grabbing;
-            }
-        }
 
         .video-tools-wrapper {
              @extend .position-absolute;
@@ -641,7 +654,7 @@ $message_width: 60%;
 .dropdown-menu {
     @extend .shadow;
     @extend .bg-auto;
-    z-index: 4;
+    z-index: 5;
 }
 
 /*--------------------------

@@ -125,7 +125,6 @@
         },
         created() {
             this.setLocalVideoPeer(this, streamPeerCallback.default)
-            
         },
         watch: {
             users : {

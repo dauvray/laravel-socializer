@@ -111,7 +111,7 @@
 
           /*------  DATA CONNECTION ----------*/
           connectionDataCallback(conn) {
-              console.log('nouvelle connexion data board')
+              console.log('nouvelle connexion data board', conn.connectionId)
                 conn.on("data", (data) => {
                   data = JSON.parse(data)
                     switch(data.action) {

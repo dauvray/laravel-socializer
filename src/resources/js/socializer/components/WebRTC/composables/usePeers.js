@@ -265,6 +265,10 @@ export function usePeers(props, type = 'data', room = 'app') {
         await peerStore.setLocalDataPeer(context, callback)
     } 
 
+    const setDynamicCallbackDataConnection = (name, callbackFn) => {
+
+    }
+
     const sendData = (data) => {
         peerStore.sendData(data, onAirRoom.value)
     }

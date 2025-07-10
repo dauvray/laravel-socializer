@@ -1,12 +1,14 @@
 export default () => {
   return {
-    lastLocalPeerId: null,
-    localPeer: null,
-    connections: {},
-    streams: {}, // stream ouverts
-    remoteOpenedConnections: [], // connections ouvertes
+    lastLocalPeerId: null, // last peer id local
+    localPeer: null, // peer local
+    _connectionHandlerRegistered : false,
+    _dynamicConnectionCallbacks: {},
+    connections: {}, // connections ouvertes aux autres pairs
+    streams: {}, // stream ouverts aux autres pairs
+    remoteOpenedConnections: new Set(), // connections ouvertes provenant des autres pairs
     pendingRequests: {},
-    players: [],
+    players: [], // liste des players actifs
     currentCallRoomId: null,
     videoPeerActivated: false,
     isStreamingWebcam: false,

@@ -217,32 +217,92 @@ export default {
             });
 
             conn.on("close", () => {
-                this.remoteOpenedConnections = this.remoteOpenedConnections.filter(id => id !== conn.connectionId)
+                this.remoteOpenedConnections.delete(conn.connectionId)
             });
+
+           
+           console.log('Nouvelle connexion entrante', this.remoteOpenedConnections);
 
             // execute la callback dynamique passée dans les metadata sinon celle passée en argument
            if(conn.options.metadata.hasOwnProperty('callback')) {
                 const customCallbacks = await import(`~socializer/callbacks/${conn.options.metadata.callback}.js`)
 
                 if (typeof customCallbacks.default === 'function') {
-                     if(!this.remoteOpenedConnections.includes(conn.connectionId)) {
-                        this.remoteOpenedConnections.push(conn.connectionId)
+                    // if (!this.remoteOpenedConnections.has(conn.connectionId)){
+                         this.remoteOpenedConnections.add(conn.connectionId)
                         await customCallbacks.default(conn, context)
-                    }
+                  //  }  
                 } else {
                     console.error(`Le module ${conn.options.metadata.callback}.js n'a pas d'exportation par défaut valide.`);
                 }
 
            } else {
                 if (callback instanceof Function) {
-                    if(!this.remoteOpenedConnections.includes(conn.connectionId)) {
-                        this.remoteOpenedConnections.push(conn.connectionId)
+                    // if (!this.remoteOpenedConnections.has(conn.connectionId)){
+                         this.remoteOpenedConnections.add(conn.connectionId)
                         callback(conn)
-                    }
-                 
+                  //  }
                 }
            }
         })
+    },
+    // setLocalDataPeer(context, defaultCallback = null) {
+    //     if (!this.localPeer) {
+    //         this.createLocalPeer()
+    //     }
+
+    //     // Ne pas enregistrer plusieurs fois le handler principal
+    //     if (!this._connectionHandlerRegistered) {
+    //         this.localPeer.on('connection', async (conn) => {
+    //             conn.on('error', (err) => {
+    //                 console.error('Erreur sur la connexion entrante :', err)
+    //             })
+
+    //             conn.on('close', () => {
+    //                 this.remoteOpenedConnections = this.remoteOpenedConnections.filter(id => id !== conn.connectionId)
+    //             })
+
+    //             // Si la connexion a déjà été ouverte, ne pas la traiter à nouveau
+    //             if (this.remoteOpenedConnections.includes(conn.connectionId)) return
+    //             this.remoteOpenedConnections.push(conn.connectionId)
+
+    //             const callbackKey = conn.options?.metadata?.callback
+
+    //             // Si une route a été pré-enregistrée
+    //             if (callbackKey && this._dynamicConnectionCallbacks[callbackKey]) {
+    //                 this._dynamicConnectionCallbacks[callbackKey](conn, context)
+    //                 return
+    //             }
+
+    //             // Sinon, essayer de charger dynamiquement
+    //             if (callbackKey) {
+    //                 try {
+    //                     const customCallback = await import(`~socializer/callbacks/${callbackKey}.js`)
+    //                     if (typeof customCallback.default === 'function') {
+    //                         return customCallback.default(conn, context)
+    //                     } else {
+    //                         console.error(`Le module ${callbackKey}.js n'a pas d'export par défaut valide.`)
+    //                     }
+    //                 } catch (e) {
+    //                     console.error(`Erreur de chargement dynamique du callback ${callbackKey}:`, e)
+    //                 }
+    //             }
+
+    //             // Sinon fallback
+    //             if (typeof defaultCallback === 'function') {
+    //                 defaultCallback(conn)
+    //             }
+    //         })
+
+    //         this._connectionHandlerRegistered = true
+    //     }
+    // },
+    // Enregistrement des callbacks dynamiques
+    registerDataConnectionRoute(name, callbackFn) {
+        if (!this._dynamicConnectionCallbacks) {
+            this._dynamicConnectionCallbacks = {}
+        }
+        this._dynamicConnectionCallbacks[name] = callbackFn
     },
     sendData(message, room = 'default') {
 

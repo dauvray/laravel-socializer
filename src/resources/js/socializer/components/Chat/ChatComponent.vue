@@ -410,6 +410,7 @@
 
                 conn.on("data", (data) => {
                     data = JSON.parse(data)
+                    console.log('data chat reçu', data)
                     switch(data.action) {
                         case 'start_writing':
                             if (!this.actors.includes(data.from)) {
