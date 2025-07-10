@@ -75,6 +75,7 @@ export default {
             let conn = null
 
             if(type === 'data') {
+                payload.options.metadata.callbackKey = `${type}-${room}`
                 call = this.localPeer.connect(peerID, payload.options )
                 this.connections[room][slug][type].push(call) 
             } else {
@@ -83,7 +84,6 @@ export default {
 
                 // custom callbacks
                 streamOptions.metadata.callback = `${type}PlayerCallback`
-
                 call = this.localPeer.call(peerID, payload.stream, streamOptions)
                 this.connections[room][slug][type].push(call) 
 
@@ -204,7 +204,15 @@ export default {
      * DATA
      * *****************************/
 
-    setLocalDataPeer(context, callback = null) {
+    registerIncomingPeerCallback(callbackKey, callbackFn) {
+        if (typeof callbackFn === 'function') {
+            this.incomingConnectionCallbacks.set(callbackKey, callbackFn)
+        }
+    },
+    unregisterIncomingPeerCallback(callbackKey) {
+        this.incomingConnectionCallbacks.delete(callbackKey)
+    },
+    setLocalDataPeer_backup(context, callback = null) {
 
         if(!this.localPeer) {
              this.createLocalPeer()
@@ -220,89 +228,87 @@ export default {
                 this.remoteOpenedConnections.delete(conn.connectionId)
             });
 
-           
-           console.log('Nouvelle connexion entrante', this.remoteOpenedConnections);
-
             // execute la callback dynamique passée dans les metadata sinon celle passée en argument
            if(conn.options.metadata.hasOwnProperty('callback')) {
+
+                // TODO voir a proteger pour eviter les injections de code
+                // const allowedCallbacks = {
+                //   'chatCallback': () => import('~/socializer/callbacks/chatCallback.js'),
+                //   'visioCallback': () => import('~/socializer/callbacks/visioCallback.js'),
+                //   ...
+                // }
+
+                // if (conn.options.metadata?.callback && allowedCallbacks[conn.options.metadata.callback]) {
+                //     const module = await allowedCallbacks[conn.options.metadata.callback]()
+                //     if (typeof module.default === 'function') {
+                //         await module.default(conn, context)
+                //     }
+                // }
+                /// end todo
+
+
                 const customCallbacks = await import(`~socializer/callbacks/${conn.options.metadata.callback}.js`)
 
                 if (typeof customCallbacks.default === 'function') {
-                    // if (!this.remoteOpenedConnections.has(conn.connectionId)){
+                   
+                     if (!this.remoteOpenedConnections.has(conn.connectionId)){
                          this.remoteOpenedConnections.add(conn.connectionId)
                         await customCallbacks.default(conn, context)
-                  //  }  
+                    }  
                 } else {
                     console.error(`Le module ${conn.options.metadata.callback}.js n'a pas d'exportation par défaut valide.`);
                 }
 
            } else {
                 if (callback instanceof Function) {
-                    // if (!this.remoteOpenedConnections.has(conn.connectionId)){
+                    
+                     if (!this.remoteOpenedConnections.has(conn.connectionId)){
                          this.remoteOpenedConnections.add(conn.connectionId)
                         callback(conn)
-                  //  }
+                    }
                 }
            }
         })
     },
-    // setLocalDataPeer(context, defaultCallback = null) {
-    //     if (!this.localPeer) {
-    //         this.createLocalPeer()
-    //     }
-
-    //     // Ne pas enregistrer plusieurs fois le handler principal
-    //     if (!this._connectionHandlerRegistered) {
-    //         this.localPeer.on('connection', async (conn) => {
-    //             conn.on('error', (err) => {
-    //                 console.error('Erreur sur la connexion entrante :', err)
-    //             })
-
-    //             conn.on('close', () => {
-    //                 this.remoteOpenedConnections = this.remoteOpenedConnections.filter(id => id !== conn.connectionId)
-    //             })
-
-    //             // Si la connexion a déjà été ouverte, ne pas la traiter à nouveau
-    //             if (this.remoteOpenedConnections.includes(conn.connectionId)) return
-    //             this.remoteOpenedConnections.push(conn.connectionId)
-
-    //             const callbackKey = conn.options?.metadata?.callback
-
-    //             // Si une route a été pré-enregistrée
-    //             if (callbackKey && this._dynamicConnectionCallbacks[callbackKey]) {
-    //                 this._dynamicConnectionCallbacks[callbackKey](conn, context)
-    //                 return
-    //             }
-
-    //             // Sinon, essayer de charger dynamiquement
-    //             if (callbackKey) {
-    //                 try {
-    //                     const customCallback = await import(`~socializer/callbacks/${callbackKey}.js`)
-    //                     if (typeof customCallback.default === 'function') {
-    //                         return customCallback.default(conn, context)
-    //                     } else {
-    //                         console.error(`Le module ${callbackKey}.js n'a pas d'export par défaut valide.`)
-    //                     }
-    //                 } catch (e) {
-    //                     console.error(`Erreur de chargement dynamique du callback ${callbackKey}:`, e)
-    //                 }
-    //             }
-
-    //             // Sinon fallback
-    //             if (typeof defaultCallback === 'function') {
-    //                 defaultCallback(conn)
-    //             }
-    //         })
-
-    //         this._connectionHandlerRegistered = true
-    //     }
-    // },
-    // Enregistrement des callbacks dynamiques
-    registerDataConnectionRoute(name, callbackFn) {
-        if (!this._dynamicConnectionCallbacks) {
-            this._dynamicConnectionCallbacks = {}
+    async setLocalDataPeer(context) {
+        if (!this.localPeer) {
+            this.createLocalPeer()
         }
-        this._dynamicConnectionCallbacks[name] = callbackFn
+
+        if (this.connectionListenerSet) return
+
+        this.localPeer.on('connection', async(conn) => {
+            conn.on('error', (err) => {
+                console.error('Erreur sur la connexion entrante :', err);
+            });
+
+            conn.on('close', () => {
+                this.remoteOpenedConnections.delete(conn.connectionId)
+            });
+
+            const meta = conn.options?.metadata || {}
+            const callbackKey = meta.callbackKey
+            const dynamicCallback = this.incomingConnectionCallbacks.get(callbackKey)
+
+            if (callbackKey && dynamicCallback && !this.remoteOpenedConnections.has(conn.connectionId)) {
+                this.remoteOpenedConnections.add(conn.connectionId)
+                dynamicCallback(conn)
+            } else if (meta.callback) {
+                try {
+                    const module = await import(`~socializer/callbacks/${meta.callback}.js`)
+                    if (typeof module.default === 'function' && !this.remoteOpenedConnections.has(conn.connectionId)) {
+                        this.remoteOpenedConnections.add(conn.connectionId)
+                        await module.default(conn, context)
+                    }
+                } catch (e) {
+                    console.error(`Callback dynamique ${meta.callback} invalide`, e)
+                }
+            } else {
+                console.warn('Aucun callback trouvé pour cette connexion', meta)
+            }
+        })
+
+        this.connectionListenerSet = true
     },
     sendData(message, room = 'default') {
 

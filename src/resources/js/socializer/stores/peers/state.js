@@ -2,8 +2,8 @@ export default () => {
   return {
     lastLocalPeerId: null, // last peer id local
     localPeer: null, // peer local
-    _connectionHandlerRegistered : false,
-    _dynamicConnectionCallbacks: {},
+    connectionListenerSet : false,
+    incomingConnectionCallbacks : new Map(), // callbacks pour les connexions entrantes
     connections: {}, // connections ouvertes aux autres pairs
     streams: {}, // stream ouverts aux autres pairs
     remoteOpenedConnections: new Set(), // connections ouvertes provenant des autres pairs

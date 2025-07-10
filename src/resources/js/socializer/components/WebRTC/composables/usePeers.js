@@ -260,13 +260,13 @@ export function usePeers(props, type = 'data', room = 'app') {
 
     /*------  DATA CONNECTION ----------*/
 
-    const setLocalDataPeer = async (context, callback) => {
+    const setLocalDataPeer = async (context) => {
         onAirRoom.value = currentRoom.value || deepGet(serverStore, 'currentRoom.id', null)
-        await peerStore.setLocalDataPeer(context, callback)
+        await peerStore.setLocalDataPeer(context)
     } 
 
-    const setDynamicCallbackDataConnection = (name, callbackFn) => {
-
+    const registerIncomingPeerCallback = (roomId, callback) => {
+        peerStore.registerIncomingPeerCallback(`${currentType.value}-${roomId}`, callback)
     }
 
     const sendData = (data) => {
@@ -595,6 +595,7 @@ export function usePeers(props, type = 'data', room = 'app') {
         ConnectionsHasTypeInRoom,
         setCallInProgress,
         setCurrentCallRoomId,
+        registerIncomingPeerCallback,
         localPeer,
         localPeerId,
         isConnecting,

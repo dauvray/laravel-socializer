@@ -1,6 +1,4 @@
-<template>
-    {{ users.length }}
-</template>
+<template></template>
 
 <script>
 
@@ -35,16 +33,19 @@
                 isConnected,
                 setLocalDataPeer,
                 syncUsersConnections,
+                registerIncomingPeerCallback,
             } = usePeers(props, 'data', props.roomId)
 
             return {
                 isConnected,
                 setLocalDataPeer,
                 syncUsersConnections,
+                registerIncomingPeerCallback,
             }
         },
-        async created() {
-            await this.setLocalDataPeer(this, this.callbackConnection)
+        async mounted() {
+            this.registerIncomingPeerCallback(this.roomId, this.callbackConnection)
+            await this.setLocalDataPeer(this)
         },
         watch: {
             isConnected(val) {
