@@ -104,7 +104,6 @@
             const isVideoEnabled = ref(false)
             const isVideoCall = ref(false)
             const isAudioCall = ref(false)
-            const previousUsers = []
 
             return {
                 isStreaming,
@@ -122,22 +121,20 @@
                 updateVideoProps,
                 isVideoCall,
                 isAudioCall,
-                previousUsers,
             }
         },
         created() {
             this.setLocalVideoPeer(this, streamPeerCallback.default)
+            
         },
         watch: {
             users : {
-                handler(newVal) {
+                handler(newVal, oldVal) {
                     // if on air send stream to new users
                     if(this.isStreaming) {
-                        this.syncJoingingUsers(newVal, this.previousUsers)
-                        this.previousUsers = JSON.parse(JSON.stringify(newVal))
+                        this.syncJoingingUsers(newVal, oldVal)
                     }
                 },
-                deep: true,
                 immediate: true
             }
         },
@@ -174,7 +171,7 @@
                .then(async () => {
                     this.syncUsersConnections(this.users)
                     if(!document.getElementById(this.localVideoPlayer)) {
-                         await this.createVideoElement(
+                        await this.createVideoElement(
                             {
                                 videoId: this.localVideoPlayer,
                                 nickname: this.me.slug,

@@ -58,7 +58,7 @@
                 receiveAuthorizationRemotePeerId,
                 setLocalVideoPeer,
                 setLocalDataPeer,
-                createVideoElement,
+                createVideoElement, // important for creating video elements
                 connectToQueuedConnections,
                 removeVideoElement,
                 startVisioStream,

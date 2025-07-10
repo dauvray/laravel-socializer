@@ -1,6 +1,6 @@
 <template>
     <video
-        :id="videoId"
+        v-resize="options"
         ref="video"
         class="img-thumbnail"
         autoplay
@@ -13,7 +13,7 @@
             <div class="user-info-wrapper">
                 <span class="user-info">
                     {{ nickname }}
-                    <IconWidget  icon="eye"></IconWidget> {{ nbViewers }}
+                    <IconWidget icon="eye"></IconWidget> {{ nbViewers }}
                 </span>
             </div>
             <div v-if="isClosable" class="video-btns" role="group">
@@ -23,6 +23,8 @@
             </div>
         </div>
     </div>
+
+    <div class="video-cache" ref="video-cache"></div>
 </template>
 
 <script>
@@ -30,6 +32,8 @@
     import { usePeerStore } from '~socializer/stores/peers.js'
     import { useServerStore } from '~socializer/stores/server.js'
     import { mapActions, mapState } from 'pinia'
+    import resizeDirective from '~socializer/directives/resizable.js';    
+
 
     const peerStore = usePeerStore()
 
@@ -41,6 +45,9 @@
         ],
         components: {
             IconWidget
+        },
+        directives: {
+            resize: resizeDirective
         },
         props: {
             videoId: {
@@ -75,6 +82,18 @@
                 totalViewers : 0,
                 intervalViewers : null,
                 isLocalStream: false,
+                options: {
+                    corner: 'top-right',
+                    wrapperId: this.videoId,
+                    minSize: {
+                        width: 200,
+                        height: 112
+                    },
+                    maxSize: {
+                        width: 800, 
+                        height: 450
+                    },
+                },
             }
         },
         mounted() {
@@ -161,7 +180,31 @@
                             break
                     }
                 }
+            },
+            handleVideoResize() {
+                this.$nextTick(() => {
+                    const videoElement = this.$refs.video;
+                    if (videoElement) {
+                        const cacheElement = this.$refs['video-cache'];
+                        if (cacheElement) {
+                            cacheElement.style.width = `${videoElement.offsetWidth}px`;
+                            cacheElement.style.height = `${videoElement.offsetHeight}px`;
+                        }
+                    }
+                });
             }
         }
     }
 </script>
+
+<style scoped>
+    .video-cache {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: transparent;
+        z-index: 1;
+    }
+</style>

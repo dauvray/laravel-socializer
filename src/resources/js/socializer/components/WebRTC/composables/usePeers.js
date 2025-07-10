@@ -238,15 +238,16 @@ export function usePeers(props, type = 'data', room = 'app') {
     const syncUsersConnections = (users) => {
         users.forEach( user => {
             if(user.slug !== meStore.getMe.slug && !deepGet(connections, `${onAirRoom.value}.${user.slug}.${currentType.value}`, false)) {
-            console.log('getRemotePeerId', user.slug, currentType.value, onAirRoom.value)
                 getRemotePeerId(user.slug)
             }
         })
     }
 
     const syncJoingingUsers = (users, previousUsers) => {
-
         // Comparer avec la copie précédente
+        if(!previousUsers) {
+            previousUsers = [];
+        }
         const previousIds = previousUsers.map(user => user.id)
 
          // Identifier les nouveaux utilisateurs
@@ -392,6 +393,7 @@ export function usePeers(props, type = 'data', room = 'app') {
         wrapper.classList.add('draggable-video')
 
         const containerElement = document.querySelector(videoContainer.value)
+
         if (containerElement) {
           containerElement.appendChild(wrapper)
         } else {
@@ -432,6 +434,7 @@ export function usePeers(props, type = 'data', room = 'app') {
         if (index !== -1) {
             const { app } = players[index];
             const el = document.getElementById(elementId)
+
             if(el) {
                 el.parentNode.remove()
             }

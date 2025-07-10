@@ -89,7 +89,6 @@ export default {
 
                 // join data connection
                 if(!ignoredDataConnections.includes(type)) {
-                    console.log('add data connection', type)
                     delete payload.options.stream
                     payload.options.metadata.callback = `${type}PlayerDataCallback` // custom callback
                     conn = this.localPeer.connect(peerID, payload.options )

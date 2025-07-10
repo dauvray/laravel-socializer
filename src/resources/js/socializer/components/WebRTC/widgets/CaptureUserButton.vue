@@ -56,7 +56,6 @@
             } = usePeers(props, 'screen', props.room)
 
             const localScreenPlayer = `local-screen`
-            const previousUsers = ref([])
 
             return {
                 isCapturing,
@@ -69,7 +68,6 @@
                 syncJoingingUsers,
                 createVideoElement,
                 removeVideoElement,
-                previousUsers,
             }
         },
         created() {
@@ -79,11 +77,9 @@
             users : {
                 handler(newVal) {
                     if(this.isCapturing) {
-                        this.syncJoingingUsers(newVal, this.previousUsers)
-                        this.previousUsers = JSON.parse(JSON.stringify(newVal)); // Créer une copie profonde
+                        this.syncJoingingUsers(newVal, oldVal)
                     }
                 },
-                deep: true,
                 immediate: true
             }
         },

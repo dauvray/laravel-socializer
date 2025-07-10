@@ -369,7 +369,7 @@
                 }
             },
             onUpdateRoomUsers(users) {
-                this.currentRoomUsers = users
+                this.currentRoomUsers = [...users]
             },
             onStartedStream(source) {
                 const roomWrapper = document.querySelector('#main-room')
