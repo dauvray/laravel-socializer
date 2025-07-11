@@ -55,7 +55,7 @@ class Feed
         $user_vertextid = $this->user->vertexid;
 
         // set user in online feed connections
-        $this->usersOnlineService->addUserFeed($feed_id);
+        $this->usersOnlineService->addUserItem('feed', $feed_id);
 
         $posts_nebula = app('nebulaGraph')->execute("
             MATCH (author:user)<-[:has_creator]-(p:post)-[:published_in]->(f) 

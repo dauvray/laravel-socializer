@@ -47,7 +47,7 @@ class SendPostToFollowers implements ShouldQueue
                 $follower_id = str_replace('user', '', $feed['user']['id']);
                 $is_connected = app('onlineUsers')->isOnlineUser($follower_id);
                 if($is_connected) {
-                    $is_feed_active = app('onlineUsers')->hasUserFeed($feed_destination, $follower_id); 
+                    $is_feed_active = app('onlineUsers')->hasUserItem('feed', $feed_destination, $follower_id); 
                     if($is_feed_active) {
                           event(new PostCreatedEvent($this->resource, $feed_destination));
                     }

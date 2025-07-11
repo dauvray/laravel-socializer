@@ -41,6 +41,12 @@ class UserOnlineWhisperListener
             case 'client-leave-chat':
                 $this->clientLeaveChat($data);
                 break;
+            case 'client-leave-server':
+                $this->clientLeaveServer($data);
+                break;
+            case 'client-leave-room':
+                $this->clientLeaveRoom($data);
+                break;
             default:
                 // Handle other events if necessary
                 break;
@@ -69,7 +75,7 @@ class UserOnlineWhisperListener
             return;
         }
 
-        app('onlineUsers')->removeUserFeed($feedId, $userId);
+        app('onlineUsers')->removeUserItem('feed', $feedId, $userId);
     }
 
     private function clientLeaveChat(array $data)
@@ -81,7 +87,31 @@ class UserOnlineWhisperListener
             return;
         }
 
-        app('onlineUsers')->removeUserChat($chatId, $userId);
+        app('onlineUsers')->removeUserItem('chat', $chatId, $userId);
+    }
+
+    private function clientLeaveServer(array $data)
+    {
+        $userId = $data['userId'] ?? null;
+        $serverId = $data['serverId'] ?? null;
+
+        if (!$userId || !$serverId) {
+            return;
+        }
+
+        app('onlineUsers')->removeUserItem('server', $serverId, $userId);
+    }
+
+    private function clientLeaveRoom(array $data)
+    {
+        $userId = $data['userId'] ?? null;
+        $roomId = $data['roomId'] ?? null;
+
+        if (!$userId || !$roomId) {
+            return;
+        }
+
+        app('onlineUsers')->removeUserItem('room', $roomId, $userId);
     }
 
 }

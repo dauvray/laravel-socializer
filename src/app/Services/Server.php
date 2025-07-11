@@ -28,6 +28,7 @@ class Server
     public $serviceChat = null;
     public $servicePage = null;
     public $serviceApplication = null;
+    public $usersOnlineService = null;
 
     public function __construct()
     {
@@ -36,6 +37,7 @@ class Server
         $this->serviceChat = new Chat();
         $this->servicePage = new Page();
         $this->serviceApplication = new ApplicationIA();
+        $this->usersOnlineService = app('onlineUsers');
     }
     /*-----------------------------------
     | SERVER
@@ -252,6 +254,9 @@ class Server
         $result[0]['rooms'] = $this->decodeImageRooms($result[0]['rooms']);
         // check rooms permissions
         $result[0]['rooms'] = $this->setRoomPrivacyPermissions($result[0]['rooms']);
+
+        // set user in online server connections
+        $this->usersOnlineService->addUserItem('server', $vertex_id);
 
         return response()->json($result[0], 200);
     }
@@ -581,7 +586,10 @@ class Server
             $response['subcontent'] = count($result['subcontent']) ? $result['subcontent'] : null;
         }
 
-       return $response;
+         // set user in online server connections
+        $this->usersOnlineService->addUserItem('room', $vertex_id);
+
+        return $response;
     }
 
     public function updateRoomServer(Request $request)
@@ -710,6 +718,10 @@ class Server
             'code_error' => 200,
         ];
     }
+
+    /*------------------------------------------
+    | Room content
+    |------------------------------------------*/ 
 
     public function createDataVertice($vid, $new_content)
     {

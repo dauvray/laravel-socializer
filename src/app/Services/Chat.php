@@ -440,7 +440,7 @@ class Chat
         $paginator = makePaginationCollection($messages->reverse(), route('chat.get.conversation', $vertex_id));
 
         // set user in online chat connections
-        $this->usersOnlineService->addUserChat($vertex_id);
+        $this->usersOnlineService->addUserItem('chat', $vertex_id);
 
         return [ 
             'general' => $result[0],

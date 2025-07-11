@@ -50,9 +50,13 @@
             await this.loadRoom(this.$route.params.roomId)
             this.loadDefaultContent()
         },
-        unmounted() {
-            this.resetCurrentRoom()
+        beforeUnmount() {
             Echo.leave(this.channel)
+            Echo.private(this.getMe.channel).whisper('leave-room', {
+                userId: this.getMe.id,
+                roomId: this.currentRoom.id,
+            })
+            this.resetCurrentRoom()
         },
         computed: {
             ...mapState(useServerStore, {

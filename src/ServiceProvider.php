@@ -4,6 +4,7 @@ use Illuminate\Support\Facades\View;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Blade;
 use Dauvray\Socializer\app\Helpers\NebulaGraphConnection;
+use Dauvray\Socializer\app\Services\RedisService;
 use Dauvray\Socializer\app\Providers\SocializerEventServiceProvider;
 
 class ServiceProvider extends \Illuminate\Support\ServiceProvider
@@ -56,8 +57,11 @@ class ServiceProvider extends \Illuminate\Support\ServiceProvider
         $this->app->register(SocializerEventServiceProvider::class);
 
         $this->app->singleton('nebulaGraph', function() {
-            $conn = new NebulaGraphConnection(config('database.connections.nebula'));
-            return $conn;
+            return new NebulaGraphConnection(config('database.connections.nebula'));
+        });
+
+        $this->app->singleton('redisService', function() {
+            return new RedisService();
         });
     }
 

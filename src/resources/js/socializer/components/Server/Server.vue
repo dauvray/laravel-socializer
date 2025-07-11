@@ -202,8 +202,12 @@
         mounted() {
             this.sidebarWidth = this.initialSidebarWidth
         },
-        unmounted() {
+        beforeUnmount() {
             Echo.leave(this.channel)
+            Echo.private(this.getMe.channel).whisper('leave-server', {
+                userId: this.getMe.id,
+                serverId: this.currentServer.id,
+            })
             this.resetServer()
         },
         watch: {

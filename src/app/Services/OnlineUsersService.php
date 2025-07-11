@@ -4,7 +4,7 @@ namespace Dauvray\Socializer\app\Services;
 
 use Illuminate\Support\Facades\Auth;
 use App\Models\User;
-use Dauvray\Socializer\app\Services\RedisService;
+
 
 class OnlineUsersService implements \Dauvray\Estarter\app\Contracts\OnlineUsersServiceInterface
 {
@@ -16,7 +16,7 @@ class OnlineUsersService implements \Dauvray\Estarter\app\Contracts\OnlineUsersS
     public function __construct()
     {
         $this->nebula = app('nebulaGraph');
-        $this->redisService = new RedisService();
+        $this->redisService = app('redisService');
         $this->user = Auth::user();
     }
 
@@ -79,196 +79,77 @@ class OnlineUsersService implements \Dauvray\Estarter\app\Contracts\OnlineUsersS
         User::where('id', $user_id)->update(['last_seen' => now()]);
     }
 
-    /*************************************
-     * GESTION DES FILS D'ACTUALITÉS
-     */
+    /************ REDIS ONLINE USERS ****************** */
 
-    /**
-     * Définit la liste des feeds de l'utilisateur.
-     * @param array $feedIds
-     * @param int|string|null $userId
-     * @return void
-     */
-    public function setUserFeeds(array $feedIds, int|string|null $userId = null): void
+    public function addUserItem(string|null $type = null, int|string $itemId, int|string|null $userId = null)
     {
-        if (!$userId) {
-            $userId = $this->user->id;
-        }
+        if($type) {
 
-        $this->redisService->hSet("user:$userId:presence", 'feeds', json_encode($feedIds));
-    }
+            if (!$userId) {
+                $userId = $this->user->id;
+            }
 
-    /**
-     * Récupère la liste des feeds de l'utilisateur.
-     *
-     * @param int|string|null $userId
-     * @return array
-     * @return array<string>
-     */
-    public function getUserFeeds(int|string|null $userId = null): array
-    {
-        if (!$userId) {
-            $userId = $this->user->id;
-        }
+            $items = $this->getUserItems($type, $userId);
 
-        $feeds = $this->redisService->hGet("user:$userId:presence", 'feeds', true);
-
-        return is_array($feeds) ? $feeds : [];
-    }
-
-    /**
-     * Ajoute un feed_id à la liste des feeds de l'utilisateur.
-     *
-     * @param int|string $feedId
-     * @param int|string $userId
-     * @return void
-     */
-    public function addUserFeed(int|string $feedId, int|string|null $userId = null): void
-    {
-        if (!$userId) {
-            $userId = $this->user->id;
-        }
-
-        $feeds = $this->getUserFeeds($userId);
-        if (!in_array($feedId, $feeds)) {
-            $feeds[] = $feedId;
-            $this->setUserFeeds($feeds, $userId);
-            $this->redisService->sadd("presence:feed:$feedId", $userId);
+            if (!in_array($itemId, $items)) {
+                $items[] = $itemId;
+                $this->setUserItems($type, $items, $userId);
+                $this->redisService->sadd("presence:$type:$itemId", $userId);
+            }
         }
     }
 
-    /**
-     * Vérifie si un utilisateur a un feed_id dans sa liste de feeds.
-     *
-     * @param int|string $feedId
-     * @param int|string $userId
-     * @return bool
-     */
-    public function hasUserFeed(int|string $feedId, int|string|null $userId = null): bool
+    public function getUserItems(string|null $type = null, int|string|null $userId = null)
     {
-        if (!$userId) {
-            $userId = $this->user->id;
-        }
+        if($type) {
 
-        return in_array((string)$feedId, array_map('strval', $this->getUserFeeds($userId)), true);
-    }
+            if (!$userId) {
+                $userId = $this->user->id;
+            }
 
-    /**
-     * Supprime un feed_id de la liste des feeds de l'utilisateur.
-     *
-     * @param int|string $userId
-     * @param int|string $feedId
-     * @return void
-     */
-    public function removeUserFeed(int|string $feedId, int|string|null $userId = null): void
-    {
-        if (!$userId) {
-            $userId = $this->user->id;
-        }
+            $items = $this->redisService->hGet("user:$userId:presence", $type, true);
 
-        $feeds = array_filter(
-            $this->getUserFeeds($userId),
-            fn($id) => (string)$id !== (string)$feedId
-        );
+            return is_array($items) ? $items : [];
 
-        $this->setUserFeeds(array_values($feeds), $userId);
-        $this->redisService->srem("presence:feed:$feedId", $userId);
-    }
-
-    /*************************************
-     * GESTION DES CHATS
-     */
-
-     /**
-     * Ajoute un chat_id à la liste des chats de l'utilisateur.
-     *
-     * @param int|string $userId
-     * @param int|string $chatId
-     * @return void
-     */
-    public function addUserChat(int|string $chatId, int|string|null $userId = null): void
-    {
-        if (!$userId) {
-            $userId = $this->user->id;
-        }
-
-        $chats = $this->getUserChats($userId);
-        if (!in_array($chatId, $chats)) {
-            $chats[] = $chatId;
-            $this->setUserChats($chats, $userId);
-            $this->redisService->sadd("presence:chat:$chatId", $userId);
         }
     }
 
-     /**
-     * Récupère la liste des chats de l'utilisateur.
-     *
-     * @param int|string|null $userId
-     * @return array
-     * @return array<string>
-     */
-    public function getUserChats(int|string|null $userId = null): array
+    public function setUserItems(string|null $type = null, array $itemIds = [], int|string|null $userId = null)
     {
-        if (!$userId) {
-            $userId = $this->user->id;
+        if($type) {
+            if (!$userId) {
+                $userId = $this->user->id;
+            }
+
+            $this->redisService->hSet("user:$userId:presence", $type, json_encode($itemIds));
         }
-
-        $chats = $this->redisService->hGet("user:$userId:presence", 'chats', true);
-
-        return is_array($chats) ? $chats : [];
     }
 
-    /**
-     * Définit la liste des feeds de l'utilisateur.
-     * @param array $feedIds
-     * @param int|string|null $userId
-     * @return void
-     */
-    public function setUserChats(array $chatIds, int|string|null $userId = null): void
+    public function hasUserItem(string|null $type = null, int|string $itemId, int|string|null $userId = null) 
     {
-        if (!$userId) {
-            $userId = $this->user->id;
-        }
+        if($type) {
+            if (!$userId) {
+                $userId = $this->user->id;
+            }
 
-        $this->redisService->hSet("user:$userId:presence", 'chats', json_encode($chatIds));
+            return in_array((string)$itemId, array_map('strval', $this->getUserItems($type, $userId)), true);
+        }
     }
 
-    /**
-     * Supprime un chat_id de la liste des chats de l'utilisateur.
-     * 
-     * @param int|string $chatId
-     * @param int|string $userId
-     * @return void
-     */
-    public function removeUserChat(int|string $chatId, int|string|null $userId = null): void
+    public function removeUserItem(string|null $type = null, int|string $itemId, int|string|null $userId = null) 
     {
-        if (!$userId) {
-            $userId = $this->user->id;
+        if($type) {
+            if (!$userId) {
+                $userId = $this->user->id;
+            }
+
+            $items = array_filter(
+                $this->getUserItems($type, $userId),
+                fn($id) => (string)$id !== (string)$itemId
+            );
+
+            $this->setUserItems($type , array_values($items), $userId);
+            $this->redisService->srem("presence:$type:$itemId", $userId);
         }
-
-        $chats = array_filter(
-            $this->getUserChats($userId),
-            fn($id) => (string)$id !== (string)$chatId
-        );
-
-        $this->setUserChats(array_values($chats), $userId);
-        $this->redisService->srem("presence:chat:$chatId", $userId);
     }
-
-    /**
-     * Vérifie si un utilisateur a un feed_id dans sa liste de feeds.
-     *
-     * @param int|string $chatId
-     * @param int|string $userId
-     * @return bool
-     */
-    public function hasUserChat(int|string $chatId, int|string|null $userId = null): bool
-    {
-        if (!$userId) {
-            $userId = $this->user->id;
-        }
-
-        return $this->redisService->sIsMember("presence:chat:$chatId", $userId);
-    }
-
 }
