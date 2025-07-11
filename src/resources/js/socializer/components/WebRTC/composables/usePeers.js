@@ -260,8 +260,9 @@ export function usePeers(props, type = 'data', room = 'app') {
 
     /*------  DATA CONNECTION ----------*/
 
-    const setLocalDataPeer = async (context) => {
+    const setLocalDataPeer = async (context, callback) => {
         onAirRoom.value = currentRoom.value || deepGet(serverStore, 'currentRoom.id', null)
+        registerIncomingPeerCallback(onAirRoom.value, callback)
         await peerStore.setLocalDataPeer(context)
     } 
 

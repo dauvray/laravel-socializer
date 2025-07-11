@@ -33,19 +33,16 @@
                 isConnected,
                 setLocalDataPeer,
                 syncUsersConnections,
-                registerIncomingPeerCallback,
             } = usePeers(props, 'data', props.roomId)
 
             return {
                 isConnected,
                 setLocalDataPeer,
                 syncUsersConnections,
-                registerIncomingPeerCallback,
             }
         },
         async mounted() {
-            this.registerIncomingPeerCallback(this.roomId, this.callbackConnection)
-            await this.setLocalDataPeer(this)
+            await this.setLocalDataPeer(this, this.callbackConnection)
         },
         watch: {
             isConnected(val) {
