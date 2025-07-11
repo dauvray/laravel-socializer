@@ -270,6 +270,10 @@ export function usePeers(props, type = 'data', room = 'app') {
         peerStore.registerIncomingPeerCallback(`${currentType.value}-${roomId}`, callback)
     }
 
+    const unregisterIncomingPeerCallback = () => {
+        peerStore.unregisterIncomingPeerCallback(`${currentType.value}-${onAirRoom.value}`)
+    }
+
     const sendData = (data) => {
         peerStore.sendData(data, onAirRoom.value)
     }
@@ -597,6 +601,7 @@ export function usePeers(props, type = 'data', room = 'app') {
         setCallInProgress,
         setCurrentCallRoomId,
         registerIncomingPeerCallback,
+        unregisterIncomingPeerCallback,
         localPeer,
         localPeerId,
         isConnecting,
