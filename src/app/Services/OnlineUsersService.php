@@ -36,7 +36,21 @@ class OnlineUsersService implements \Dauvray\Estarter\app\Contracts\OnlineUsersS
     {
         $userId = $user?->id ?? $user_id ?? $this->user?->id;
 
+        // delete in online users
         $this->redisService->zRem($this->online_key, $userId);
+
+        // delete in all presence items
+        $presences = $this->redisService->hGetAll("user:$userId:presence");
+        foreach ($presences as $type => $itemIds) {
+            $itemIds = json_decode($itemIds, true);
+            if (is_array($itemIds)) {
+                foreach ($itemIds as $itemId) {
+                    $this->redisService->srem("presence:$type:$itemId", $userId);
+                }
+            }
+        }   
+
+        // delete user presence
         $this->redisService->del("user:$userId:presence");
         $this->nebula->updateVertex(config('socializer.nebulagraph.tags.user.name'), 'user' . $userId, ['connected' => 0]);
     }
