@@ -1,5 +1,5 @@
 <template>
-    <div class="message-input-container">
+    <div class="message-input-container" ref="messengerInputContainer">
         <Wysiwyg v-if="wysiwyg"
             class="message-input"
             v-model:content="message"
@@ -27,7 +27,7 @@
 
             <!-- Affichage normal des boutons sur lg+ -->
             <TextareaToolsButtons
-                v-if="isLgUp"
+                v-if="breakpoints.up.md"
                 icon-color="text-light"
                 @selected-emoji="onSelectedEmoji"
                 @selected-file="onSelectedFile"
@@ -83,7 +83,7 @@
     import Compressor from '@uppy/compressor';
     import { uniqueId } from '~estarter/services/helpers.js'
     import { useBreakpoints } from '~socializer/composables/useBreakpoints'
-    import { computed } from 'vue'
+    import { ref } from 'vue'
 
     export default {
         name: 'TextareaMessage',
@@ -104,10 +104,12 @@
             'file-removed',
         ],
           setup() {
-            const { up } = useBreakpoints()
-            const isLgUp = computed(() => up.lg.value)
+            const messengerInputContainer = ref(null)
+            const breakpoints = useBreakpoints(messengerInputContainer)
+
             return {
-                isLgUp
+                breakpoints,
+                messengerInputContainer,
             }
         },
         data() {

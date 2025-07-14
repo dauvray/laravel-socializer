@@ -1,22 +1,12 @@
-import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
+/**
+ * 
+  Par défaut, observe la largeur de l’écran (window.innerWidth).
+  Si on lui passe un HTMLElement (le conteneur parent), observe sa largeur (element.clientWidth) à la place.
+ */
+import { ref, onMounted, onBeforeUnmount, computed, watch, reactive } from 'vue'
 
-export function useBreakpoints() {
-  const width = ref(window.innerWidth)
-
-  const updateWidth = () => {
-    width.value = window.innerWidth
-  }
-
-  onMounted(() => {
-    window.addEventListener('resize', updateWidth)
-    updateWidth()
-  })
-
-  onBeforeUnmount(() => {
-    window.removeEventListener('resize', updateWidth)
-  })
-
-  // Bootstrap breakpoints (https://getbootstrap.com/docs/5.3/layout/breakpoints/)
+export function useBreakpoints(elementRef = null) {
+  const width = ref(0)
   const breakpoints = {
     xs: 0,
     sm: 576,
@@ -26,10 +16,67 @@ export function useBreakpoints() {
     xxl: 1400
   }
 
+  let resizeObserver = null
+  let currentElement = null
+
+  const updateWidth = () => {
+    if (currentElement instanceof HTMLElement) {
+      width.value = currentElement.clientWidth
+    } else {
+      width.value = window.innerWidth
+    }
+  }
+
+  const observeElement = (el) => {
+    if (!el) return
+    unobserveElement()
+    resizeObserver = new ResizeObserver(updateWidth)
+    resizeObserver.observe(el)
+    currentElement = el
+    updateWidth()
+  }
+
+  const unobserveElement = () => {
+    if (resizeObserver && currentElement) {
+      resizeObserver.unobserve(currentElement)
+      resizeObserver.disconnect()
+      resizeObserver = null
+      currentElement = null
+    }
+  }
+
+  onMounted(() => {
+    if (elementRef && typeof elementRef === 'object') {
+      watch(
+        () => elementRef.value,
+        (newEl, oldEl) => {
+          if (newEl instanceof HTMLElement) {
+            observeElement(newEl)
+          } else {
+            unobserveElement()
+            window.addEventListener('resize', updateWidth)
+            updateWidth()
+          }
+        },
+        { immediate: true, flush: 'post' } // pour capter dès que ref devient dispo
+      )
+    } else {
+      window.addEventListener('resize', updateWidth)
+      updateWidth()
+    }
+  })
+
+  onBeforeUnmount(() => {
+    if (resizeObserver) {
+      unobserveElement()
+    } else {
+      window.removeEventListener('resize', updateWidth)
+    }
+  })
+
   return {
     width,
 
-    // Exact match
     isXs: computed(() => width.value < breakpoints.sm),
     isSm: computed(() => width.value >= breakpoints.sm && width.value < breakpoints.md),
     isMd: computed(() => width.value >= breakpoints.md && width.value < breakpoints.lg),
@@ -37,22 +84,20 @@ export function useBreakpoints() {
     isXl: computed(() => width.value >= breakpoints.xl && width.value < breakpoints.xxl),
     isXxl: computed(() => width.value >= breakpoints.xxl),
 
-    // Minimum width (e.g., like Bootstrap's `d-lg-*`)
-    up: {
+    up: reactive({
       sm: computed(() => width.value >= breakpoints.sm),
       md: computed(() => width.value >= breakpoints.md),
       lg: computed(() => width.value >= breakpoints.lg),
       xl: computed(() => width.value >= breakpoints.xl),
       xxl: computed(() => width.value >= breakpoints.xxl),
-    },
+    }),
 
-    // Maximum width (opposite)
-    down: {
+    down: reactive({
       sm: computed(() => width.value < breakpoints.sm),
       md: computed(() => width.value < breakpoints.md),
       lg: computed(() => width.value < breakpoints.lg),
       xl: computed(() => width.value < breakpoints.xl),
       xxl: computed(() => width.value < breakpoints.xxl),
-    }
+    })
   }
 }

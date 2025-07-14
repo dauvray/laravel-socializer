@@ -31,7 +31,7 @@
             @show-chat="handleShowChat"
         ></ConfigPanel>
     </Teleport>
-    {{ room.id }}
+
     <DataUserPeerConnection 
         v-if="users && room.id"
         :users="users"

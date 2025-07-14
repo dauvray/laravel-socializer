@@ -75,12 +75,13 @@
         },
         watch: {
             users : {
-                handler(newVal) {
+                handler(newVal, oldVal) {
                     if(this.isCapturing) {
                         this.syncJoingingUsers(newVal, oldVal)
                     }
                 },
-                immediate: true
+                immediate: true,
+                deep: true, // keep this
             }
         },
         computed: {

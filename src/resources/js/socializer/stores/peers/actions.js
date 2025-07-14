@@ -66,7 +66,11 @@ export default {
         const type = payload.type
         const ignoredDataConnections = [] // put here video types without dataPeerConnection
 
+console.log('initPeerConnection', payload)
+
         this.initConnection(payload)
+
+console.log('hasActiveConnection', this.hasActiveConnection(room, slug, type, peerID))
 
         // create connection
         if (!this.hasActiveConnection(room, slug, type, peerID)) {
@@ -79,7 +83,7 @@ export default {
                 call = this.localPeer.connect(peerID, payload.options )
                 this.connections[room][slug][type].push(call) 
             } else {
-
+console.log('openPeerConnection', payload.stream, payload.options)
                 let streamOptions = { ...payload.options, metadata: { ...payload.options.metadata } }
 
                 // custom callbacks
@@ -212,64 +216,6 @@ export default {
     unregisterIncomingPeerCallback(callbackKey) {
         this.incomingConnectionCallbacks.delete(callbackKey)
     },
-    setLocalDataPeer_backup(context, callback = null) {
-
-        if(!this.localPeer) {
-             this.createLocalPeer()
-        }
-
-        this.localPeer.on('connection', async(conn) => {
-
-            conn.on('error', (err) => {
-                console.error('Erreur sur la connexion entrante :', err);
-            });
-
-            conn.on("close", () => {
-                this.remoteOpenedConnections.delete(conn.connectionId)
-            });
-
-            // execute la callback dynamique passée dans les metadata sinon celle passée en argument
-           if(conn.options.metadata.hasOwnProperty('callback')) {
-
-                // TODO voir a proteger pour eviter les injections de code
-                // const allowedCallbacks = {
-                //   'chatCallback': () => import('~/socializer/callbacks/chatCallback.js'),
-                //   'visioCallback': () => import('~/socializer/callbacks/visioCallback.js'),
-                //   ...
-                // }
-
-                // if (conn.options.metadata?.callback && allowedCallbacks[conn.options.metadata.callback]) {
-                //     const module = await allowedCallbacks[conn.options.metadata.callback]()
-                //     if (typeof module.default === 'function') {
-                //         await module.default(conn, context)
-                //     }
-                // }
-                /// end todo
-
-
-                const customCallbacks = await import(`~socializer/callbacks/${conn.options.metadata.callback}.js`)
-
-                if (typeof customCallbacks.default === 'function') {
-                   
-                     if (!this.remoteOpenedConnections.has(conn.connectionId)){
-                         this.remoteOpenedConnections.add(conn.connectionId)
-                        await customCallbacks.default(conn, context)
-                    }  
-                } else {
-                    console.error(`Le module ${conn.options.metadata.callback}.js n'a pas d'exportation par défaut valide.`);
-                }
-
-           } else {
-                if (callback instanceof Function) {
-                    
-                     if (!this.remoteOpenedConnections.has(conn.connectionId)){
-                         this.remoteOpenedConnections.add(conn.connectionId)
-                        callback(conn)
-                    }
-                }
-           }
-        })
-    },
     async setLocalDataPeer(context) {
         if (!this.localPeer) {
             this.createLocalPeer()
@@ -349,6 +295,14 @@ export default {
 
         this.localPeer.on('call', async(call) => {
 
+            call.on('error', (err) => {
+                console.error('Erreur sur la connexion entrante :', err);
+            });
+
+            call.on('close', () => {
+                this.remoteOpenedConnections.delete(call.connectionId)
+            });
+
             if(call.options.metadata.hasOwnProperty('callback')) {
                 const customCallbacks = await import(`~socializer/callbacks/${call.options.metadata.callback}.js`)
                 if (typeof customCallbacks.default === 'function') {
@@ -427,9 +381,10 @@ export default {
     removeStream(room = 'default', type = 'stream') {
         if(this.streams.hasOwnProperty(room)) {
             this.streams[room] = this.streams[room].filter(item => item.type !== type)
-        }
-        if(this.streams[room].length === 0) {
-            delete this.streams[room]
+
+            if(this.streams[room].length === 0) {
+                delete this.streams[room]
+            }
         }
     },
 }

@@ -162,7 +162,6 @@ export function usePeers(props, type = 'data', room = 'app') {
 
     const connectToQueuedConnections = async (payload) => {
         if(payload.type === 'data') {
-
             peerStore.openPeerConnection({
                 peerId: payload.peerId,
                 options: { 
@@ -177,9 +176,8 @@ export function usePeers(props, type = 'data', room = 'app') {
                 room: payload.room,
                 type: payload.type,
             })
-
         } else {
-
+console.log('receive peer id and connect to stream')
             const connection = peerStore.openPeerConnection({
                 peerId: payload.peerId, 
                 stream: peerStore.getStream(payload.room, payload.type),
@@ -194,9 +192,9 @@ export function usePeers(props, type = 'data', room = 'app') {
                 room: payload.room,
                 type: payload.type,
             })
-
+console.log('connection', connection)
             if(connection && connection.call) {
-
+console.log('connection call', connection.call)
                 // Recevoir et afficher le flux vidéo distant
                 connection.call.on('stream', (remoteStream) => {
                     createVideoElement({
@@ -235,7 +233,7 @@ export function usePeers(props, type = 'data', room = 'app') {
         )
     }
 
-    const syncUsersConnections = (users) => {
+    const syncUsersConnections = ([...users]) => {
         users.forEach( user => {
             if(user.slug !== meStore.getMe.slug && !deepGet(connections, `${onAirRoom.value}.${user.slug}.${currentType.value}`, false)) {
                 getRemotePeerId(user.slug)
@@ -243,7 +241,7 @@ export function usePeers(props, type = 'data', room = 'app') {
         })
     }
 
-    const syncJoingingUsers = (users, previousUsers) => {
+    const syncJoingingUsers = ([...users], [...previousUsers]) => {
         // Comparer avec la copie précédente
         if(!previousUsers) {
             previousUsers = [];
@@ -549,13 +547,15 @@ export function usePeers(props, type = 'data', room = 'app') {
      * *****************************/
 
     onBeforeUnmount(() => {
-        for (const userSlug in connections.value[onAirRoom.value]) {
-            connections.value[onAirRoom.value][userSlug][currentType.value].forEach (conn => {
-                closeRemotePeerId(userSlug, currentType.value, onAirRoom.value, true)
-            })
-        }
 
-         eventBus.$off("closeStream", closeEventBusStream)
+        // for (const userSlug in connections.value[onAirRoom.value]) {
+        //     connections.value[onAirRoom.value][userSlug][currentType.value].forEach (conn => {
+        //         closeRemotePeerId(userSlug, currentType.value, onAirRoom.value, true)
+        //     })
+        // }
+        
+
+        //  eventBus.$off("closeStream", closeEventBusStream)
 
         // const players = peerStore.getPlayers
         // players.forEach(player => {

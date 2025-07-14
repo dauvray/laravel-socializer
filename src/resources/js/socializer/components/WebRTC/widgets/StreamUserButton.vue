@@ -89,11 +89,11 @@
             const {
                 isStreaming,
                 startWebcamStream,
-                syncUsersConnections,
-                syncJoingingUsers,
+                stopVideoStream,
                 currentStream,
                 setLocalVideoPeer,
-                stopVideoStream,
+                syncUsersConnections,
+                syncJoingingUsers,
                 createVideoElement,
                 removeVideoElement,
                 updateVideoProps,
@@ -123,18 +123,20 @@
                 isAudioCall,
             }
         },
-        created() {
+        mounted() {
             this.setLocalVideoPeer(this, streamPeerCallback.default)
         },
         watch: {
             users : {
                 handler(newVal, oldVal) {
+                    console.log('users changed', newVal, oldVal)
                     // if on air send stream to new users
                     if(this.isStreaming) {
                         this.syncJoingingUsers(newVal, oldVal)
                     }
                 },
-                immediate: true
+                immediate: true,
+                deep: true, // keep this
             }
         },
         computed: {

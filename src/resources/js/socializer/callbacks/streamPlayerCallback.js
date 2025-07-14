@@ -48,4 +48,8 @@ export default (call, context) => {
         console.log("Connexion stream fermée")
         context.removeVideoElement(call.connectionId)
     })
+
+    call.on('error', (err) => {
+        console.error('Erreur sur la connexion entrante :', err);
+    });
 }

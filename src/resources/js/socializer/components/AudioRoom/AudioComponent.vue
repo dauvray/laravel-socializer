@@ -57,7 +57,6 @@
             } = usePeers(props, 'stream', props.room.id)
 
             const isAudioCall = ref(true)
-            const previousUsers = ref([])
             const audioLocalRoomStream = 'audio-local-Room-stream'
 
             return {
@@ -70,12 +69,11 @@
                 audioLocalRoomStream,
                 isAudioCall,
                 createVideoElement,
-                previousUsers,
                 currentStream,
                 setLocalVideoPeer,
             }
         },
-        created() {
+        mounted() {
             this.setLocalVideoPeer(this, streamPeerCallback.default)
         },
         computed: {
@@ -92,11 +90,10 @@
         },
         watch: {
             users : {
-                handler(newVal) {
+                handler(newVal, oldVal) {
                     // if on air send stream to new users
                     if(this.isStreaming) {
-                        this.syncJoingingUsers(newVal, this.previousUsers)
-                        this.previousUsers = JSON.parse(JSON.stringify(newVal)); // Créer une copie profonde
+                        this.syncJoingingUsers(newVal, oldVal)
                     }
                 },
                 deep: true,
