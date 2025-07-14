@@ -1,4 +1,5 @@
 <template>
+    
     <div class="message-input-container" ref="messengerInputContainer">
         <Wysiwyg v-if="wysiwyg"
             class="message-input"
@@ -37,27 +38,23 @@
             ></TextareaToolsButtons>
            
             <!-- Dropdown sur sm/md -->
-            <div v-else class="dropdown">
+            <div v-else class="dropup">
                 <button class="btn btn-link dropdown-toggle" 
                     type="button" 
                     data-bs-toggle="dropdown" 
                     aria-expanded="false">
                     <IconWidget icon="tools"></IconWidget>
                 </button>
-                <ul class="dropdown-menu">
-                    <li>
-                        <a class="dropdown-item" href="#">
-                            <TextareaToolsButtons
-                                icon-color="text-light"
-                                @selected-emoji="onSelectedEmoji"
-                                @selected-file="onSelectedFile"
-                                @open-wysiwyg="onWysiwyg"
-                                @record-result="onRecorded"
-                                @text-voiced="onTextVoiced"
-                            ></TextareaToolsButtons>
-                        </a>
-                    </li>
-                </ul>
+                <div class="dropdown-menu">
+                    <TextareaToolsButtons
+                        icon-color="text-light"
+                        @selected-emoji="onSelectedEmoji"
+                        @selected-file="onSelectedFile"
+                        @open-wysiwyg="onWysiwyg"
+                        @record-result="onRecorded"
+                        @text-voiced="onTextVoiced"
+                    ></TextareaToolsButtons>
+                </div>
             </div>
 
             <div class="vr"></div>
