@@ -129,7 +129,9 @@
         watch: {
             users : {
                 handler(newVal, oldVal) {
-                    console.log('users changed', newVal, oldVal)
+                    if(!oldVal) {
+                        oldVal = []
+                    }
                     // if on air send stream to new users
                     if(this.isStreaming) {
                         this.syncJoingingUsers(newVal, oldVal)

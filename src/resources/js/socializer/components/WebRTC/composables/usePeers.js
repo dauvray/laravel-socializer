@@ -177,7 +177,7 @@ export function usePeers(props, type = 'data', room = 'app') {
                 type: payload.type,
             })
         } else {
-console.log('receive peer id and connect to stream')
+
             const connection = peerStore.openPeerConnection({
                 peerId: payload.peerId, 
                 stream: peerStore.getStream(payload.room, payload.type),
@@ -192,9 +192,9 @@ console.log('receive peer id and connect to stream')
                 room: payload.room,
                 type: payload.type,
             })
-console.log('connection', connection)
+
             if(connection && connection.call) {
-console.log('connection call', connection.call)
+
                 // Recevoir et afficher le flux vidéo distant
                 connection.call.on('stream', (remoteStream) => {
                     createVideoElement({
@@ -352,11 +352,10 @@ console.log('connection call', connection.call)
         if (connections[currentCallRoomId]) {
 
             Object.keys(connections[currentCallRoomId]).forEach (userSlug => {
-                console.log(userSlug)
+
                 if(connections[currentCallRoomId][userSlug].hasOwnProperty(type)) {
                     connections[currentCallRoomId][userSlug][type].forEach(peer => {
                         if(peer.hasOwnProperty('_remoteStream')) {
-                            console.log('close stream')
                             closeEventBusStream(type, peer._remoteStream, peer)
                             peerStore.closePeerConnection(userSlug, type, currentCallRoomId)
                         }

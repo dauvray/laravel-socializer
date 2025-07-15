@@ -76,6 +76,9 @@
         watch: {
             users : {
                 handler(newVal, oldVal) {
+                    if(!oldVal) {
+                        oldVal = []
+                    }
                     if(this.isCapturing) {
                         this.syncJoingingUsers(newVal, oldVal)
                     }

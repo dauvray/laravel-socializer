@@ -66,11 +66,7 @@ export default {
         const type = payload.type
         const ignoredDataConnections = [] // put here video types without dataPeerConnection
 
-console.log('initPeerConnection', payload)
-
         this.initConnection(payload)
-
-console.log('hasActiveConnection', this.hasActiveConnection(room, slug, type, peerID))
 
         // create connection
         if (!this.hasActiveConnection(room, slug, type, peerID)) {
@@ -79,11 +75,13 @@ console.log('hasActiveConnection', this.hasActiveConnection(room, slug, type, pe
             let conn = null
 
             if(type === 'data') {
+
                 payload.options.metadata.callbackKey = `${type}-${room}`
                 call = this.localPeer.connect(peerID, payload.options )
                 this.connections[room][slug][type].push(call) 
+                
             } else {
-console.log('openPeerConnection', payload.stream, payload.options)
+
                 let streamOptions = { ...payload.options, metadata: { ...payload.options.metadata } }
 
                 // custom callbacks

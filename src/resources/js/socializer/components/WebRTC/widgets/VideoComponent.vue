@@ -2,10 +2,9 @@
     <video
         v-resize="options"
         ref="video"
-        class="img-thumbnail"
         autoplay
         playsinline
-        :controls="!isLocalStream"
+        :controls="false"
         :style="isLocalStream ? 'pointer-events: none;' : ''"
     ></video>
     <div class="video-tools-wrapper">
@@ -25,6 +24,15 @@
     </div>
 
     <div class="video-cache" ref="video-cache"></div>
+
+    <div
+        class="video-controls">
+        <button v-if="showStartButton" type="button" class="btn btn-primary" @click="startVideo">Play</button>
+        <button type="button" class="btn btn-primary" @click="toggleMute">{{ muted ? 'Unmute' : 'Mute' }}</button>
+        <button type="button" class="btn btn-primary" @click="toggleFullscreen">Fullscreen</button>
+        <button type="button" class="btn btn-primary" @click="togglePIP">PIP</button>
+    </div>
+    
 </template>
 
 <script>
@@ -79,9 +87,12 @@
         },
         data(){
             return {
+                video: null,
                 totalViewers : 0,
                 intervalViewers : null,
                 isLocalStream: false,
+                showStartButton: false,
+                muted: false,
                 options: {
                     corner: 'top-right',
                     wrapperId: this.videoId,
@@ -97,19 +108,23 @@
             }
         },
         mounted() {
+            this.video = this.$refs.video
             if (this.stream) {
-                this.$refs.video.srcObject = this.stream
+                this.video.srcObject = this.stream
 
                 if (this.stream.isLocal) {
                     this.isLocalStream = true
-                    this.$refs.video.muted = true
+                    this.video.muted = true
                      const audioTracks = this.stream.getAudioTracks();
                      audioTracks.forEach(track => track.enabled = false);
                 }
 
-                this.$refs.video.onloadedmetadata = () => {
-                    this.$refs.video.play()
-                    .catch((err) => console.error(`Erreur de lecture pour ${this.videoId} :`, err));
+                this.video.onloadedmetadata = () => {
+                    this.video.play()
+                    .catch((err) => {
+                         console.error(`Erreur de lecture pour ${this.videoId} :`, err);
+                        this.showStartButton = true;
+                    })
                 }
             }
 
@@ -183,15 +198,45 @@
             },
             handleVideoResize() {
                 this.$nextTick(() => {
-                    const videoElement = this.$refs.video;
-                    if (videoElement) {
+                    if (this.video) {
                         const cacheElement = this.$refs['video-cache'];
                         if (cacheElement) {
-                            cacheElement.style.width = `${videoElement.offsetWidth}px`;
-                            cacheElement.style.height = `${videoElement.offsetHeight}px`;
+                            cacheElement.style.width = `${this.video.offsetWidth}px`;
+                            cacheElement.style.height = `${this.video.offsetHeight}px`;
                         }
                     }
                 });
+            },
+            startVideo() {
+                this.video.play()
+                    .then(() => {
+                        this.showStartButton = false
+                    })
+                    .catch((err) => {
+                        console.error(`Erreur de lecture pour ${this.videoId} :`, err);
+                    });
+            },
+            toggleMute() {
+                this.muted = !this.muted;
+                this.stream.getAudioTracks().forEach(track => track.enabled = !this.muted);
+            },
+            toggleFullscreen() {
+                 if (document.fullscreenElement) {
+                    document.exitFullscreen()
+                } else {
+                    this.video.requestFullscreen()
+                }
+            },
+            async togglePIP() {
+                try {
+                    if (document.pictureInPictureElement) {
+                    await document.exitPictureInPicture()
+                    } else {
+                    await this.video.requestPictureInPicture()
+                    }
+                } catch (err) {
+                    console.warn('PIP non disponible :', err)
+                }
             }
         }
     }

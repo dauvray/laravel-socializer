@@ -163,12 +163,14 @@ $message_width: 60%;
              @extend .align-items-end;
              @extend .color-auto;
              height: 100%;
+            overflow: hidden;
             
             .message-input { 
                 @extend .flex-grow-1;
                 color: $white;
                 padding: 10px 15px;
                 z-index: 5;
+                overflow: hidden;
 
                 &.drag-over {
                     outline: 2px dashed #999;
@@ -179,12 +181,19 @@ $message_width: 60%;
                     outline: none !important;
                     box-shadow: none !important;
                 }
+
+                &.pell{
+                    position: absolute;
+                    width: 100%;
+                }
             }
 
             .message-input-tools {
                 @extend .d-flex;
                 right: 0;
                 bottom: 0;
+                position: absolute;
+                z-index: 10;
             }
         }
 
