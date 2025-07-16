@@ -8,27 +8,10 @@
             }">
 
             <ConversationCreatorButton
+                :conversation-type="conversationType"
                 @create-chat="onCreateChat"
+                @set-conversation-type="conversationType = $event"
             ></ConversationCreatorButton>
-
-            <ul class="nav nav-underline mb-3">
-                <li class="nav-item">
-                    <a class="nav-link" 
-                        :class="{active : isContactList }"
-                        :aria-current="isContactList ? true : false" 
-                        href="#"
-                        @click="conversationType = 'contacts'"
-                        >Contacts</a>
-                </li>
-                <li v-if="hasAgents" class="nav-item">
-                    <a class="nav-link" 
-                    :class="{active : isAgentList }"
-                    :aria-current="isAgentList ? true : false" 
-                    href="#"
-                    @click="conversationType = 'agents'"
-                    >Agent</a>
-                </li>
-            </ul>
 
             <ConversationList
                 :conversations="conversations"
@@ -54,7 +37,6 @@
     import { useConversationsStore } from '~socializer/stores/conversations.js'
     import resizable from "~socializer/directives/resizable_vertical.js"
     import ConversationCreatorButton from '~socializer/components/Chat/widgets/ConversationCreatorButton.vue'
-    import { coreAgentSettings } from '~socializer/components/Chat/agentSettings.js'
 
     export default {
         name: 'Teams',
@@ -71,7 +53,6 @@
                 initialSidebarWidth: 300,
                 sidebarWidth : null,
                 conversationType: 'contacts', // 'agents'
-                availableAgents: coreAgentSettings.agents || [],
             }
         },
         created() {
@@ -87,16 +68,7 @@
             }),
             ...mapState(useConversationsStore, {
                 conversations: 'getConversations',
-            }),
-            isContactList: function() {
-                return this.conversationType === 'contacts'
-            },
-            isAgentList: function() {
-                return this.conversationType === 'agents'
-            },
-            hasAgents: function() {
-                return this.availableAgents.length > 0
-            }   
+            }),  
         },
         watch: {
             conversationType(newVal) {
@@ -127,7 +99,7 @@
                     this.$refs.chatWidget.scrollView()
                }, 700)
             },
-            onCreateChat() {
+            onCreateChat(botId = null) {
                 if( this.conversationType === 'contacts' ) {
                     this.createConversation()
                     .then(res => {
@@ -137,7 +109,7 @@
                      this.createConversation({
                         privacy: 1,
                         is_bot: 1,
-                        url_bot: coreAgentSettings.agents[0].url,
+                        bot_id: botId,
                      })
                     .then(res => {
                         this.setCurrentConversation(res)

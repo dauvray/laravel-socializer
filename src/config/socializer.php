@@ -296,7 +296,7 @@ return [
                     'content_type string NULL',
                     'position int NULL',
                     'is_bot int NULL',
-                    'url_bot string NULL',
+                    'bot_id int NULL',
                 ]
             ],
             'whiteboard' => [
@@ -391,7 +391,7 @@ return [
                 "privacy" => null,
                 "position" => null,
                 "is_bot" => null,
-                "url_bot" => null,
+                "bot_id" => null,
             ],
             'data' => [
                 "name" => null,

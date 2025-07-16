@@ -21,22 +21,22 @@ class User extends JsonResource
         $baseData = (new EstarterUserResource($this->resource))->toArray($request);
 
         // Ensuite, on définit les données spécifiques à cette ressource (Socializer)
-        $user_id = revealIdentifier($this->identifier)->id;
-        $is_me = $user_id === Auth::user()->id;
+        $user_id = revealIdentifier($this->resource->identifier)->id;
+        $is_me = $user_id === Auth::user()?->id;
         $currentData = [
-            'id' => $this->id,
-            'slug' => $this->slug,
-            'identifier' => $this->identifier,
-            'auth_provider' => Auth::user()->name,
+            'id' => $this->resource->id,
+            'slug' => $this->resource->slug,
+            'identifier' => $this->resource->identifier,
+            'auth_provider' => Auth::user()?->name,
             'is_me' => $is_me,
-            'is_bot' => $this?->is_bot == 1 ? 1 : 0,
-            'followed' => $this->when(isset($this->follow_status), function () {
-                return $this->follow_status == 'followed' ? true : false;
+            'is_bot' => $this->resource?->is_bot == 1 ? 1 : 0,
+            'followed' => $this->resource->when(isset($this->resource->follow_status), function () {
+                return $this->resource->follow_status == 'followed' ? true : false;
             }),
-            'nb_followers' => $this->nb_followers,
-            'cover' => isset($this->extras) && isset($this->extras['cover']) ? $this->extras['cover'] : null,
-            'vertexid' => isset($this->vertexid) ? $this->vertexid : null,
-            'channel' => $this->when($is_me, function () use ($user_id) {
+            'nb_followers' => $this->resource->nb_followers,
+            'cover' => isset($this->resource->extras) && isset($this->resource->extras['cover']) ? $this->resource->extras['cover'] : null,
+            'vertexid' => isset($this->resource->vertexid) ? $this->resource->vertexid : null,
+            'channel' => $this->resource->when($is_me, function () use ($user_id) {
                 return 'App.Models.User.' . $user_id;
             }),
         ];

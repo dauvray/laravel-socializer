@@ -6,7 +6,11 @@ use Illuminate\Support\Arr;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Http;
+
+use Dauvray\Socializer\app\Jobs\SendMessageToBot;
+
+
+
 use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Response;
@@ -48,6 +52,7 @@ class Chat
     public function sendMessage( ?Request $request, $options = [], $is_bot_answer = false ) 
     {
         $chat_id = $request?->get('chat_id') ?? $options['chat_id'] ?? null;
+
         if (!$chat_id) {
             throw new \InvalidArgumentException("Chat ID est requis.");
         }
@@ -55,13 +60,15 @@ class Chat
         $is_audio = isset($options['audio_file']);
         $formated = ['content' => null, 'src' => null];
         $content = $request?->get('message') ?? $options['message'] ?? null;
+
         $result =  $this->nebula->execute('
                 MATCH (c) WHERE id(c)=="'. $chat_id .'"
                 OPTIONAL MATCH (u:user)-[:registered_in]->(c) 
                 RETURN c as chat, collect(id(u)) as users
         ')[0];
+
         $chat = $result['chat'];
-        $user = $options['user'] ?? $this->user;
+        $user = isset($options['user']) ? config('estarter.models.user')::find($options['user']) : $this->user;
         $registeredUsers = Arr::flatten($result['users']) ?? [];
 
         if(!$is_audio && $content) {
@@ -108,7 +115,11 @@ class Chat
 
         // si la room est un bot, on appelle l'url d'automation
         if(!$is_bot_answer && isset($chat['is_bot']) && $chat['is_bot'] == 1) {
-            $this-> notifyBot($chat, $message);
+            SendMessageToBot::dispatch(
+                message: $message,
+                chat: $chat,
+                user: $this->user
+            );
         }
     }
 
@@ -165,8 +176,10 @@ class Chat
         $message->save();
 
         // register user in chat if not already registered
-        $this->checkRegistration($data['chat_id']);
-
+        if(!$data['extras']['is_bot_answer']) {
+            $this->checkRegistration($data['chat_id']);
+        }
+       
         $params = [
                 'message' => $message->message,
                 'id' => $message->vertexid,
@@ -203,31 +216,6 @@ class Chat
         }
 
         return $message;
-    }
-
-    private function notifyBot(array $chat, object $message): void
-    {
-
-        // TODO mettre dans une queue job   
-
-
-        $botResponse = Http::post($chat['url_bot'], [
-            'message' => $message->message_src,
-            'author' => ['name' => $this->user->name, 'id' => $this->user->id],
-            'room_id' => $chat['id'],
-        ]);
-
-        $response = $botResponse->json('message') ?? '...';
-
-        $botMessage = [
-            'chat_id' =>  $chat['id'],
-            'message' => $response,
-            'user' => config('estarter.models.user')::find(
-                config('socializer.agents_ai.chatbot.user_id')
-            ),
-        ];
-      
-        $this->sendMessage(null, $botMessage, true);
     }
 
     private function getNormalizedFiles(?Request $request, array $options): array
@@ -455,7 +443,7 @@ class Chat
             [
                 'privacy' => isset($values['privacy']) ? (int)$values['privacy'] : 1,
                 'is_bot' => isset($values['is_bot']) ? (int)$values['is_bot'] : 0,
-                'url_bot' => isset($values['url_bot']) ? $values['url_bot'] : null,
+                'bot_id' => isset($values['bot_id']) ? $values['bot_id'] : null,
             ]
         );
 
