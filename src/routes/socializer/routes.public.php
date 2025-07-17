@@ -13,3 +13,7 @@ Route::post('/get-sub-comments',
 Route::post('/get-total-comments', 
     config('socializer.controllers_front.comment').'@getTotalComments')
     ->name('comments.total');
+
+Route::post('/bot-response-answer', function () {
+   \Log::info('Bot response answer received');
+});

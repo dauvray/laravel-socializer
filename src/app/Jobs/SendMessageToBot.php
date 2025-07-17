@@ -19,6 +19,7 @@ class SendMessageToBot implements ShouldQueue
     public $message;
     public $chat;
     public User $user;
+
  
     /**
      * Create a new job instance.
@@ -32,27 +33,26 @@ class SendMessageToBot implements ShouldQueue
     /**
      * Execute the job.
      */
-    public function handle(): void
+    public function handle(ChatService $service): void
     {     
         $chatbot = config('estarter.models.user')::find($this->chat['bot_id']); 
 
         $botResponse = Http::post($chatbot->extras['webhook_url'], [
-            'message' => $this->message->message_src,
+            'chatInput' => $this->message->message_src,
             'author' => ['name' => $this->user->name, 'id' => $this->user->id],
-            'room_id' => $this->chat['id'],
+            'sessionId' => $this->chat['id'],
         ]);
 
-        $response = $botResponse->json('message') ?? '...';
+        // $responseJson = $botResponse->body(); // chaîne JSON brute
+        // $responseArray = json_decode($responseJson, true); // tableau PHP
+        // $message = $responseArray['output'] ?? '...';
 
+        // $botMessage = [
+        //     'chat_id' =>  $this->chat['id'],
+        //     'message' => $message,
+        //     'user' => $this->chat['bot_id'],
+        //  ];
 
-        $botMessage = [
-            'chat_id' =>  $this->chat['id'],
-            'message' => $response,
-            'user' => $this->chat['bot_id'],
-         ];
-
-         $service = new ChatService();
-
-         $service->sendMessage(null, $botMessage, true);
+        //  $service->sendMessage(null, $botMessage, true);
     }
 }

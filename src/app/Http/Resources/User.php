@@ -30,13 +30,13 @@ class User extends JsonResource
             'auth_provider' => Auth::user()?->name,
             'is_me' => $is_me,
             'is_bot' => $this->resource?->is_bot == 1 ? 1 : 0,
-            'followed' => $this->resource->when(isset($this->resource->follow_status), function () {
+            'followed' => $this->when(isset($this->resource->follow_status), function () {
                 return $this->resource->follow_status == 'followed' ? true : false;
             }),
             'nb_followers' => $this->resource->nb_followers,
             'cover' => isset($this->resource->extras) && isset($this->resource->extras['cover']) ? $this->resource->extras['cover'] : null,
             'vertexid' => isset($this->resource->vertexid) ? $this->resource->vertexid : null,
-            'channel' => $this->resource->when($is_me, function () use ($user_id) {
+            'channel' => $this->when($is_me, function () use ($user_id) {
                 return 'App.Models.User.' . $user_id;
             }),
         ];

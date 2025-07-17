@@ -24,7 +24,7 @@
         <button class="btn btn-primary btn-sm" 
             :class="{dropdownToggle: hasMultiAgents }"
             type="button" 
-            data-bs-toggle="dropdown" 
+            :data-bs-toggle="hasMultiAgents ? 'dropdown' : false " 
             aria-expanded="false"
             @click="onSelectAgent(availableAgents[0].bot_id)">
             <IconWidget icon="plus"></IconWidget> Nouvelle conversation
@@ -96,7 +96,7 @@
             },
             onSelectAgent(agent) {
                 this.selectedAgent = agent
-                this.onCreateChat
+                this.onCreateChat()
             }
         },
     }

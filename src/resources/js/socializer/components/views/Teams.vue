@@ -1,5 +1,26 @@
 <template>
     <div class="conversations-wrapper">
+        <Teleport to="#app-header-tools">
+            <div v-if="isStreamable" 
+                id="room-stream-btn" 
+                class="d-flex align-items-center me-3" 
+                role="group">
+                <StreamUserButton 
+                    ref="webcamBtn"
+                    :users="chatters"
+                    :room="currentConversationId"
+                    @started-stream="onStartedStream"
+                    @stoped-stream="onStopedStream"
+                ></StreamUserButton>
+                <CaptureUserButton
+                    ref="screenBtn"
+                    :users="chatters"
+                    :room="currentConversationId"
+                    @started-stream="onStartedStream"
+                    @stoped-stream="onStopedStream"
+                ></CaptureUserButton>
+            </div>
+            </Teleport> 
         <div class="conversations-list-wrapper"
             v-resizable="{
                 min: initialSidebarWidth,
@@ -16,20 +37,22 @@
             <ConversationList
                 :conversations="conversations"
                 @join-chat="onJoinChat"
-                @create-chat="onCreateChat"
             ></ConversationList>
 
         </div>
+
         <ChatComponent 
             v-if="currentConversation"
             ref="chatWidget"
             :display-separator="conversationType != 'agents'"
+            @update-chatters="onUpdateChatters"
         ></ChatComponent>
     </div>
 </template>
 
 <script>
-   
+
+    import { defineAsyncComponent } from '@vue/runtime-core'
     import ChatComponent from '~socializer/components/Chat/ChatComponent.vue'
     import ConversationList from '~socializer/components/Chat/widgets/ConversationList.vue'
     import { mapActions, mapState } from 'pinia'
@@ -44,6 +67,8 @@
             ConversationList,
             ConversationCreatorButton,
             ChatComponent,
+            StreamUserButton: defineAsyncComponent(() => import('~socializer/components/WebRTC/widgets/StreamUserButton.vue')),
+            CaptureUserButton: defineAsyncComponent(() => import('~socializer/components/WebRTC/widgets/CaptureUserButton.vue')),
         },
         directives: {
             resizable,
@@ -53,6 +78,7 @@
                 initialSidebarWidth: 300,
                 sidebarWidth : null,
                 conversationType: 'contacts', // 'agents'
+                chatters: [],
             }
         },
         created() {
@@ -65,10 +91,14 @@
         computed: {
             ...mapState(useChatStore, {
                 currentConversation: 'getCurrentConversation',
+                currentConversationId: 'getCurrentConversationId',
             }),
             ...mapState(useConversationsStore, {
                 conversations: 'getConversations',
-            }),  
+            }),
+            isStreamable: function() {
+                return this.currentConversationId && this.conversationType === 'contacts'
+            },
         },
         watch: {
             conversationType(newVal) {
@@ -115,6 +145,9 @@
                         this.setCurrentConversation(res)
                     })
                 }
+            },
+            onUpdateChatters(chatters) {
+                this.chatters = chatters
             },
         }
     }

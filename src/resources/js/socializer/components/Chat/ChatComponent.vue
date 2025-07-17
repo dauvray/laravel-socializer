@@ -117,6 +117,9 @@
     export default {
         name: 'ChatComponent',
         inject: ["eventBus"],
+        emits: [
+            'update-chatters',
+        ],
         components: {
             IconWidget,
             ChatContactsButtons,
@@ -152,8 +155,11 @@
         },
         data() {
             return {
+                currentConversationIdBackup: null,
+                channelBackup: null,
                 videoContainer: '#videoContainer',
                 intersectionObserver: false,
+                agentBot: null,
                 actors: [],
                 chatters: [],
                 attachedFiles: [],
@@ -182,7 +188,13 @@
                 return null
             },
         },
-        created() {
+        async created() {
+
+            if(this.isBot){
+                const settings = await import('~socializer/components/Chat/agentSettings.js')
+                this.agentBot = settings.coreAgentSettings.agents.find(agent => agent.bot_id == this.currentConversation.general.chat.bot_id)
+            }
+
             if(!this.currentConversation) {
                 this.loadConversation(this.vertexId || this.$route.params.vertexId)
                
@@ -194,28 +206,40 @@
             setTimeout(()=> {
                 this.waitImagesAndScroll()
             },1000)
-           
+
             this.intersectionObserver = true
         },
         beforeUnmount() {
-            Echo.leave(this.channel)
+            Echo.leave(this.channelBackup)
+
             Echo.private(this.me.channel).whisper('leave-chat', {
-                chatId: this.currentConversationId,
+                chatId: this.currentConversationIdBackup,
                 userId: this.me.id,
-            })
-            this.resetConversation(this.currentConversationId)
+            }) 
+        },
+        unmounted() {
+            this.resetConversation(this.currentConversationIdBackup)
         },
         watch: {
-            currentConversation(value) {
-                if(value) {
-                    this.iniChatEvents()
-                }
+            currentConversation: {
+                handler(value) {
+                    if(value) {
+                        // backup pour unmount
+                        this.currentConversationIdBackup = this.currentConversationId
+                        this.channelBackup = this.channel
+                        this.iniChatEvents()
+                    }
+                },
+                immediate: true,
             },
             messages() {
                 setTimeout(()=> {
                     this.waitImagesAndScroll(true)
                 }, 1000)
             },
+            chatters(newVal) {
+                this.$emit('update-chatters', newVal)
+            }
         },
         methods: {
             ...mapActions(useChatStore, [
@@ -243,9 +267,16 @@
                     Echo.join(this.channel)
                         .here((users) => {
                             this.chatters = users
+
+                            if(this.isBot){
+                                this.chatters.push(this.agentBot)
+                            }
                         })
                         .joining((user) => {
-                            this.chatters.push(user)
+                            let index = this.chatters.findIndex((item) => item.id === user.id)
+                            if (index === -1) {
+                                this.chatters.push(user)
+                            }
                         })
                         .leaving((user) => {
                             this.chatters = this.chatters.filter( chatter => {
@@ -253,6 +284,9 @@
                             })
                         })
                         .listen('.receivedMsg', (event) => {
+                            if(event.is_bot_answer) {
+                                this.removeActorWriting('Agent Bot')
+                            }
                             this.onReceiveMessage(event)
                         })
                         .listen('.receivedEmoji', (event) => {
@@ -266,6 +300,9 @@
                         })
                         .listen('.updatedMsg', (event) => {
                             this.onUpdatedMessage(event)
+                        })
+                        .listen('.botWriting', () => {
+                           this.addActorWriting('Agent Bot')
                         })
                         .error((error) => {
                             console.error(error);
@@ -413,14 +450,10 @@
                     console.log('data chat reçu', data)
                     switch(data.action) {
                         case 'start_writing':
-                            if (!this.actors.includes(data.from)) {
-                                this.actors.push(data.from)
-                            }
+                            this.addActorWriting(data.from)
                             break
                         case 'stop_writing':
-                        this.actors = this.actors.filter( item => {
-                                return item !== data.from
-                            })
+                            this.removeActorWriting(data.from)
                             break
                     }
                 });
@@ -446,6 +479,16 @@
                         from: this.me.name,
                     }
                 }, this.currentConversationId)
+            },
+            addActorWriting(name) {
+                if (!this.actors.includes(name)) {
+                    this.actors.push(name)
+                }
+            },
+            removeActorWriting(name) {
+                this.actors = this.actors.filter( item => {
+                    return item !== name
+                })
             },
             /*------  MODALE ----------*/
             onShowFileInModal(fileUrl) {

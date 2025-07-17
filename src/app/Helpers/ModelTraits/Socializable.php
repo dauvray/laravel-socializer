@@ -219,9 +219,14 @@ trait Socializable
     public function conversations($type = 'contacts')
     {
         $is_bot = $type == 'contacts' ? 0 : 1;
-
+        
         $conversations = app('nebulaGraph')->execute("
-            MATCH (c:chat)<-[:registered_in]-(u:user) WHERE id(u)=='$this->vertexid' AND c.chat.is_bot == $is_bot  RETURN c
+            MATCH (u:user)-[:registered_in]->(c:chat)
+            WHERE id(u) == '$this->vertexid' AND c.chat.is_bot == $is_bot
+            OPTIONAL MATCH (c)-[:published_in]->(v)
+            WITH c, collect(v) AS other_targets
+            WHERE size(other_targets) == 0
+            RETURN c
         ");
 
         return $conversations;

@@ -11,7 +11,7 @@ export default {
         
         this.messages = this.currentConversation.messages.data.slice().reverse().concat(this.messages)
     },
-    async resetConversation(vertexid) {
+    async resetConversation() {
         this.$reset()
     },
     leaveCurrentConversation() {

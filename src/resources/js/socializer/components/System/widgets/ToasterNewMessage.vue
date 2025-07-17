@@ -21,9 +21,10 @@
                     :conversationId="event.chat_id"
                     @show-file="onShowFile"
                 ></MessageContent>
-                <form class="row g-3">
+              
                     <div class="input-group input-group-sm">
                         <input type="text" 
+                            ref="messageInput"
                             class="form-control" 
                             v-model="message"
                             placeholder="Réponse rapide" 
@@ -37,7 +38,7 @@
                             <span class="visually-hidden">Envoyer</span>
                         </button>
                     </div>
-                </form>
+              
             </div>
         </div>
     </div>
@@ -79,11 +80,22 @@
             this.toastBootstrap = bootstrap.Toast.getOrCreateInstance(this.$refs.liveToast)
             this.$refs.liveToast.addEventListener('hidden.bs.toast', this.onClose)
             this.toastBootstrap.show()
+            this.$refs.messageInput.addEventListener('keyup', this.onKeyEnter)
+        },
+        beforeUnmount() {
+            this.$refs.liveToast.removeEventListener('hidden.bs.toast', this.onClose)
+            this.$refs.messageInput.removeEventListener('keyup', this.onKeyEnter)
         },
         methods: {
             ...mapActions(useChatStore, [
                 'sendMessage',
             ]),
+            onKeyEnter(e) {
+                e.preventDefault()
+                if (e.key === 'Enter') {
+                    this.onSendMessage()
+                }
+            },
             onSendMessage() {
                 this.sendMessage(this.message, this.event.chat_id)
                 this.toastBootstrap.hide()

@@ -6,11 +6,7 @@ use Illuminate\Support\Arr;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Auth;
-
 use Dauvray\Socializer\app\Jobs\SendMessageToBot;
-
-
-
 use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Response;
@@ -61,15 +57,21 @@ class Chat
         $formated = ['content' => null, 'src' => null];
         $content = $request?->get('message') ?? $options['message'] ?? null;
 
-        $result =  $this->nebula->execute('
+        $result = $this->nebula->execute('
                 MATCH (c) WHERE id(c)=="'. $chat_id .'"
                 OPTIONAL MATCH (u:user)-[:registered_in]->(c) 
                 RETURN c as chat, collect(id(u)) as users
-        ')[0];
+        ');
+
+        $result = $result[0];
 
         $chat = $result['chat'];
         $user = isset($options['user']) ? config('estarter.models.user')::find($options['user']) : $this->user;
+       
         $registeredUsers = Arr::flatten($result['users']) ?? [];
+        foreach ($registeredUsers as $idx => $registeredUser) {
+            $registeredUsers[$idx] = getRealIdFromVertexId($registeredUser);
+        }
 
         if(!$is_audio && $content) {
              $formated = formatTextToContent($content);
@@ -115,6 +117,11 @@ class Chat
 
         // si la room est un bot, on appelle l'url d'automation
         if(!$is_bot_answer && isset($chat['is_bot']) && $chat['is_bot'] == 1) {
+
+            Broadcast::presence("chat.{$chat_id}")
+                ->as('botWriting')
+                ->sendNow();
+
             SendMessageToBot::dispatch(
                 message: $message,
                 chat: $chat,
@@ -181,13 +188,15 @@ class Chat
         }
        
         $params = [
-                'message' => $message->message,
-                'id' => $message->vertexid,
-                'created_at' => $message->created_at,
-                'author' => filterSensibleDataUserRessource($author),
-                "extras" => $message->extras,
-                'chat_id' => $data['chat_id'],
+            'message' => $message->message,
+            'id' => $message->vertexid,
+            'created_at' => $message->created_at,
+            'author' => filterSensibleDataUserRessource($author),
+            "extras" => $message->extras,
+            'chat_id' => $data['chat_id'],
+            'is_bot_answer' => $data['extras']['is_bot_answer'] ?? false,
         ];
+
 
         Broadcast::presence("chat.{$data['chat_id']}")
             ->as('receivedMsg')
@@ -201,9 +210,8 @@ class Chat
         $chatOfflineUsers = array_diff($registeredUsers, $chatOnlineUsers);
 
         if(count($registeredUsers) == 2) {
-            foreach($chatOfflineUsers as $vertex_id) {
-
-                $user_id = getRealIdFromVertexId($vertex_id);
+            foreach($chatOfflineUsers as $user_id) {
+                // check if the user is online
                 $is_online = app('onlineUsers')->isOnlineUser($user_id);
 
                 if ($is_online && $user_id != $this->user->id) {
@@ -293,7 +301,7 @@ class Chat
             'message' => $message->message,
             'id' => $message->vertexid,
             'created_at' => $message->created_at,
-            'author' => filterSensibleDataUserRessource($author),
+            'author' => filterSensibleDataUserRessource($this->user),
             "extras" => $message->extras
         ])
         ->sendNow();
