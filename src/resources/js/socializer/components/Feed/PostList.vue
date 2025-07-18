@@ -1,4 +1,7 @@
 <template>
+    <div  v-if="posts.length === 0" class="alert alert-light" role="alert">
+        Votre fil d'actualité est vide
+    </div>
     <PostWidget
         v-for="item in posts"
         :key="item.post.id"
