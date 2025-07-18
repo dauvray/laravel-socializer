@@ -112,6 +112,14 @@ Add to vite.config.js
 
      }
 
+Add to bootstrap/app.php ( n8n )
+
+    ->withMiddleware(function (Middleware $middleware) {
+        $middleware->validateCsrfTokens(except: [
+            '/bot-response-answer',
+        ]);
+    })
+
 
 Build the component
      
@@ -146,6 +154,8 @@ Add navbar to App.vue
 
     <NavBarWidget id="main-navbar" menuName="Menu Socializer"/>
     import NavBarWidget from '~estarter/components/widgets/NavBar.vue'
+
+Add routes/api.php    
 
 ## Configuration
 

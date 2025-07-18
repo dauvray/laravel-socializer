@@ -3,7 +3,6 @@
         <Teleport to="#app-header-tools">
             <div v-if="isStreamable" 
                 id="room-stream-btn" 
-                class="d-flex align-items-center me-3" 
                 role="group">
                 <StreamUserButton 
                     ref="webcamBtn"

@@ -1,7 +1,6 @@
 <template>
-    <div class="dropdown" 
-        v-if="!isStreaming">
-        <button class="btn btn-primary dropdown-toggle" 
+    <template v-if="!isStreaming">
+        <button class="btn btn-primary dropdown dropdown-toggle" 
             type="button" 
             data-bs-toggle="dropdown" 
             aria-expanded="false">
@@ -23,9 +22,9 @@
                 </a>
             </li>
         </ul>
-    </div>
+    </template>
 
-    <div v-if="isStreaming" class="btn-group" role="group" aria-label="Basic example">
+    <template v-else >
         <button 
             type="button" 
             id="stop-stream-btn"
@@ -33,7 +32,6 @@
             @click="onStopBrodcastWebcam">
             <IconWidget icon="window-close"></IconWidget> Terminer stream
         </button>
-
         <button 
             type="button" 
             class="btn"
@@ -51,7 +49,7 @@
             <IconWidget v-if="!isVideoEnabled" icon="video" title="activer la caméra" @click="onManageVideo"></IconWidget>
             <IconWidget v-else icon="video-slash" title="couper la caméra" @click="onManageVideo"></IconWidget>
         </button>
-    </div>
+    </template>
 
 </template>
 

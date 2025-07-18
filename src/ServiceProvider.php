@@ -25,6 +25,7 @@ class ServiceProvider extends \Illuminate\Support\ServiceProvider
     public $routeChannelsFilePath = '/routes/socializer/channels.php';
     public $routeFilePathAdmin = '/routes/socializer/admin.php';
 
+
     /**
      * Register the service provider.
      *
@@ -101,6 +102,7 @@ class ServiceProvider extends \Illuminate\Support\ServiceProvider
             $this->loadRoutesFrom(__DIR__ . $this->routeFilePath);
 
             $this->loadRoutesFrom(__DIR__ . $this->routeChannelsFilePath);
+
 
             // load admin routes
             Route::middleware(['web', 'admin'])

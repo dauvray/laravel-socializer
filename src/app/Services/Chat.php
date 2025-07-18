@@ -197,7 +197,6 @@ class Chat
             'is_bot_answer' => $data['extras']['is_bot_answer'] ?? false,
         ];
 
-
         Broadcast::presence("chat.{$data['chat_id']}")
             ->as('receivedMsg')
             ->with($params)

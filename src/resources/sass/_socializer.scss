@@ -1,5 +1,19 @@
 $message_width: 60%;
 
+ .app-body {
+
+    header {
+        #room-stream-btn {
+            @extend .btn-group;
+            @extend .btn-group-sm;
+            @extend .d-flex;
+            @extend .align-items-center;
+            @extend .me-3;
+        }
+    }
+    
+ }
+
 #system-socializer {
     @extend .d-flex;
     @extend .align-items-center;
@@ -482,11 +496,6 @@ $message_width: 60%;
             @extend .ps-2;
             height: 100%;;
         }
-
-        #room-stream-btn {
-            @extend .btn-group;
-            @extend .btn-group-sm;
-        }
     }
 
     #main-room {
@@ -540,8 +549,6 @@ $message_width: 60%;
     .draggable-video {
         position: relative;
         cursor: grab;
-        flex: 1 1 calc(20% - 10px); 
-        max-width: calc(20% - 10px);
         user-select: none;
 
         .video-tools-wrapper {
@@ -577,8 +584,18 @@ $message_width: 60%;
             }
         }
 
+        .video-controls {
+            @extend .btn-group;
+            @extend .btn-group-sm;
+            display: none;
+            position: absolute;
+            bottom: 10px;
+            right: 5px;
+            z-index: 2;
+        }
+
         &:hover {
-            .video-btns {
+            .video-controls {
                 display: block!important;
             }
         }
@@ -587,6 +604,7 @@ $message_width: 60%;
             width: 100%;
             height: auto;
             @extend .shadow; 
+            @extend .rounded;
             cursor: pointer;
         }
     }

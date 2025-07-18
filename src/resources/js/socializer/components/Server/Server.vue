@@ -39,24 +39,26 @@
           
         <section v-if="!isLoading" id="room-header" :style="setMainContentMargin">
             <RoomHeader id="room-header-inner"></RoomHeader>
-            <div id="room-stream-btn" role="group">
-                <StreamUserButton 
-                    v-if="showStreamButton"
-                    ref="webcamBtn"
-                    :users="currentRoomUsers"
-                    :room="currentRoomId"
-                    @started-stream="onStartedStream"
-                    @stoped-stream="onStopedStream"
-                ></StreamUserButton>
-                <CaptureUserButton
-                    v-if="showCaptureButton"
-                    ref="screenBtn"
-                    :users="currentRoomUsers"
-                    :room="currentRoomId"
-                    @started-stream="onStartedStream"
-                    @stoped-stream="onStopedStream"
-                ></CaptureUserButton>
-            </div>
+            <Teleport to="#app-header-tools">
+                <div id="room-stream-btn" role="group">
+                    <StreamUserButton 
+                        v-if="showStreamButton"
+                        ref="webcamBtn"
+                        :users="currentRoomUsers"
+                        :room="currentRoomId"
+                        @started-stream="onStartedStream"
+                        @stoped-stream="onStopedStream"
+                    ></StreamUserButton>
+                    <CaptureUserButton
+                        v-if="showCaptureButton"
+                        ref="screenBtn"
+                        :users="currentRoomUsers"
+                        :room="currentRoomId"
+                        @started-stream="onStartedStream"
+                        @stoped-stream="onStopedStream"
+                    ></CaptureUserButton>
+                </div>
+            </Teleport>
         </section>
 
         <section v-if="!isLoading" id="main-room" :style="setMainContentMargin">

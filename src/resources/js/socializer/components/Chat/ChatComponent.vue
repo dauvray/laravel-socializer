@@ -197,10 +197,7 @@
 
             if(!this.currentConversation) {
                 this.loadConversation(this.vertexId || this.$route.params.vertexId)
-               
-            } else {
-                this.iniChatEvents()
-            }
+            } 
         },
         mounted() {
             setTimeout(()=> {
@@ -224,6 +221,7 @@
             currentConversation: {
                 handler(value) {
                     if(value) {
+                        Echo.leave(this.channelBackup)
                         // backup pour unmount
                         this.currentConversationIdBackup = this.currentConversationId
                         this.channelBackup = this.channel
@@ -287,6 +285,7 @@
                             if(event.is_bot_answer) {
                                 this.removeActorWriting('Agent Bot')
                             }
+console.log(event)
                             this.onReceiveMessage(event)
                         })
                         .listen('.receivedEmoji', (event) => {
