@@ -39,26 +39,6 @@
           
         <section v-if="!isLoading" id="room-header" :style="setMainContentMargin">
             <RoomHeader id="room-header-inner"></RoomHeader>
-            <Teleport to="#app-header-tools">
-                <div id="room-stream-btn" role="group">
-                    <StreamUserButton 
-                        v-if="showStreamButton"
-                        ref="webcamBtn"
-                        :users="currentRoomUsers"
-                        :room="currentRoomId"
-                        @started-stream="onStartedStream"
-                        @stoped-stream="onStopedStream"
-                    ></StreamUserButton>
-                    <CaptureUserButton
-                        v-if="showCaptureButton"
-                        ref="screenBtn"
-                        :users="currentRoomUsers"
-                        :room="currentRoomId"
-                        @started-stream="onStartedStream"
-                        @stoped-stream="onStopedStream"
-                    ></CaptureUserButton>
-                </div>
-            </Teleport>
         </section>
 
         <section v-if="!isLoading" id="main-room" :style="setMainContentMargin">
@@ -126,8 +106,6 @@
             IconWidget,
             SettingsModal: defineAsyncComponent(() => import('~socializer/components/Server/widgets/SettingsModal.vue')),
             PageComponent: defineAsyncComponent(() => import('~socializer/components/Page/PageComponent.vue')),
-            StreamUserButton: defineAsyncComponent(() => import('~socializer/components/WebRTC/widgets/StreamUserButton.vue')),
-            CaptureUserButton: defineAsyncComponent(() => import('~socializer/components/WebRTC/widgets/CaptureUserButton.vue')),
             Gravatar,
         },
         data() {
@@ -175,12 +153,6 @@
                     return this.currentRoom.id
                 }
                 return null
-            },
-            showStreamButton: function() {
-                return this.isRoomStreamable || this.isStreaming
-            },
-            showCaptureButton: function() {
-                return this.isRoomStreamable || this.isCapturing
             },
             setMainContentMargin: function() {
                 let margin = 0
@@ -376,38 +348,6 @@
             },
             onUpdateRoomUsers(users) {
                 this.currentRoomUsers = [...users]
-            },
-            onStartedStream(source) {
-                const roomWrapper = document.querySelector('#main-room')
-                
-                if(source == 'stream') {
-                    if(!roomWrapper.classList.contains('stream-video')) {
-                        roomWrapper.classList.add('stream-video')
-                    }
-                }
-
-                if(source == 'screen') {
-                    if(!roomWrapper.classList.contains('screen-capture')) {
-                        roomWrapper.classList.add('screen-capture')
-                    }
-                }
-            },
-            onStopedStream(source) {
-                const roomWrapper = document.querySelector('#main-room')
-                const videoWrapper = document.querySelector('#videoContainer')
-
-                switch(source) {
-                    case 'stream':
-                        roomWrapper.classList.remove('stream-video')
-                        break
-                    case 'screen':
-                        roomWrapper.classList.remove('screen-capture')
-                        break
-                }
-
-                if(!videoWrapper.hasChildNodes()) {
-                    roomWrapper.classList.remove('stream-video','screen-capture')
-                }    
             },
             onSortUpRoom(index) {
                 this.sortUpRoom(index)

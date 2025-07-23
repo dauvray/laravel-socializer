@@ -1,5 +1,6 @@
 <template>
-    <li>
+
+    <li v-if="conversation.is_bot !== 1">
         <a class="dropdown-item" href="#" @click="onQuitChat">
             <IconWidget icon="user-times"></IconWidget> Quitter
         </a>

@@ -53,6 +53,7 @@
                 syncJoingingUsers,
                 createVideoElement,
                 removeVideoElement,
+                deleteRemoteOpenedConnections,
             } = usePeers(props, 'screen', props.room)
 
             const localScreenPlayer = `local-screen`
@@ -68,17 +69,20 @@
                 syncJoingingUsers,
                 createVideoElement,
                 removeVideoElement,
+                deleteRemoteOpenedConnections,
             }
         },
         created() {
            this.setLocalVideoPeer(this, screenPeerCallback.default)
         },
+
+        // todo voir si on peut garder un watch que sur les users du StreamUserButton
+        // pour ne pas avoir de doublon
         watch: {
             users : {
                 handler(newVal, oldVal) {
-                    if(!oldVal) {
-                        oldVal = []
-                    }
+                    if(!oldVal)  oldVal = []
+                    
                     if(this.isCapturing) {
                         this.syncJoingingUsers(newVal, oldVal)
                     }

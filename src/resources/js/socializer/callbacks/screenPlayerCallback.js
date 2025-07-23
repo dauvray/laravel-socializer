@@ -32,5 +32,7 @@ export default (call, context) => {
     call.on('close', () => {
         console.log("Connexion capture fermée")
         context.removeVideoElement(call.connectionId)
+        context.deleteRemoteOpenedConnections(call.connectionId)
+
     })
 }

@@ -14,15 +14,11 @@
                 @mouseleave="hideDropdown">
                 <div class="dropdown-content">
 
-        <CoverUser
-            class="mb-5"
-            :user="user"
-        ></CoverUser>
-                    <!-- <div class="user-avatar">
-                        <img v-if="user.avatar" :src="user.avatar" :alt="user.name" />
-                        <div v-else class="avatar-placeholder">{{ user.name.charAt(0).toUpperCase() }}</div>
-                    </div> -->
-                    
+                    <CoverUser
+                        class="mb-5"
+                        :user="user"
+                    ></CoverUser>
+
                     <div class="user-info">
                         <h4 class="user-name">{{ user.name }}</h4>
                         <p v-if="user.email" class="user-email">{{ user.email }}</p>
@@ -46,7 +42,9 @@
                     </div>
                 </div>
             </div>
-    </div>
+
+        </div>
+
 </template>
 
 <script>

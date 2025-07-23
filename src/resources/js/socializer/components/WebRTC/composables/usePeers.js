@@ -24,6 +24,9 @@ export function usePeers(props, type = 'data', room = 'app') {
         isVideoEnabled: true,
     })
 
+
+    const previousIds = ref([]) // store previous ids to compare with new users
+
     const videoContainer = ref('#videoContainer')
     const currentStream = ref(null) // current stream
     const currentType = ref(type) // current room 
@@ -161,7 +164,10 @@ export function usePeers(props, type = 'data', room = 'app') {
     /*------  Synchronization ----------*/
 
     const connectToQueuedConnections = async (payload) => {
-        if(payload.type === 'data') {
+
+
+        if(payload.type === 'data') {           
+
             peerStore.openPeerConnection({
                 peerId: payload.peerId,
                 options: { 
@@ -242,19 +248,27 @@ export function usePeers(props, type = 'data', room = 'app') {
     }
 
     const syncJoingingUsers = ([...users], [...previousUsers]) => {
-        // Comparer avec la copie précédente
-        if(!previousUsers) {
-            previousUsers = [];
-        }
-        const previousIds = previousUsers.map(user => user.id)
 
-         // Identifier les nouveaux utilisateurs
-         const newUsers = users.filter(user => !previousIds.includes(user.id))
+
+    if(users && users.length > 0) {
+
+        // Identifier les nouveaux utilisateurs
+        const newUsers = users.filter(user => !previousIds.value.includes(user.id))
+
 
         if (newUsers.length > 0) {
             syncUsersConnections(newUsers)
         }
     }
+
+        previousIds.value = users.map(user => user.id)
+
+    }
+
+    const deleteRemoteOpenedConnections = (connectionId) => {
+        peerStore.deleteRemoteOpenedConnections(connectionId)
+    }
+
 
     /*------  DATA CONNECTION ----------*/
 
@@ -317,6 +331,7 @@ export function usePeers(props, type = 'data', room = 'app') {
         }
 
         await peerStore.stopVideoStream(onAirRoom.value, source)
+
         peerStore.removeStream(onAirRoom.value, source)
     }
 
@@ -442,7 +457,7 @@ export function usePeers(props, type = 'data', room = 'app') {
             const el = document.getElementById(elementId)
 
             if(el) {
-                el.parentNode.remove()
+                el.parentNode.parentNode.remove()
             }
             app.unmount() // Démonter l'application Vue
             peerStore.removePlayer(elementId)
@@ -547,6 +562,11 @@ export function usePeers(props, type = 'data', room = 'app') {
 
     onBeforeUnmount(() => {
 
+
+        /***********************************************************
+          coupe tous les flux et connections quand on quitte le salon */
+
+
         // for (const userSlug in connections.value[onAirRoom.value]) {
         //     connections.value[onAirRoom.value][userSlug][currentType.value].forEach (conn => {
         //         closeRemotePeerId(userSlug, currentType.value, onAirRoom.value, true)
@@ -554,7 +574,8 @@ export function usePeers(props, type = 'data', room = 'app') {
         // }
         
 
-        //  eventBus.$off("closeStream", closeEventBusStream)
+        // eventBus.$off("closeStream", closeEventBusStream)
+
 
         // const players = peerStore.getPlayers
         // players.forEach(player => {
@@ -564,6 +585,7 @@ export function usePeers(props, type = 'data', room = 'app') {
         // })
 
         // stopVideoStream(currentType.value)
+
     })
 
     onMounted(() => {
@@ -601,6 +623,7 @@ export function usePeers(props, type = 'data', room = 'app') {
         setCurrentCallRoomId,
         registerIncomingPeerCallback,
         unregisterIncomingPeerCallback,
+        deleteRemoteOpenedConnections,
         localPeer,
         localPeerId,
         isConnecting,

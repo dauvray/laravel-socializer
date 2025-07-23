@@ -11,8 +11,11 @@
         <RoomUsersList :users="users"></RoomUsersList>
     </div>
 
+<<<<<<< HEAD
 
 
+=======
+>>>>>>> 23a58c2 (Reconnexion au dépôt, préservation des modifs locales)
 </template>
 
 <script>
@@ -91,6 +94,9 @@
         watch: {
             users : {
                 handler(newVal, oldVal) {
+           
+                    if(!oldVal) oldVal = []
+                    
                     // if on air send stream to new users
                     if(this.isStreaming) {
                         this.syncJoingingUsers(newVal, oldVal)
@@ -104,7 +110,8 @@
             startAudio() {
                this.startWebcamStream({ audio: true, video: false }, true )
                 .then(async () => {
-                    this.syncUsersConnections(this.users)
+                  //  this.syncUsersConnections(this.users)
+
                     if(!document.getElementById(this.audioLocalRoomStream)) {
                          await this.createVideoElement(
                             {

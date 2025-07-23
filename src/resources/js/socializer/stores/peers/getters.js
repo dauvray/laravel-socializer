@@ -33,6 +33,7 @@ export default {
 
             if(!isEmpty(state.connections) && state.connections.hasOwnProperty(room)) {
                 for (const slug in state.connections[room]) {
+
                    if(state.connections[room][slug].hasOwnProperty(type)) {
                         total++
                    }

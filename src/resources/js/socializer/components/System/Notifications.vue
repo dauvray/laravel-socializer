@@ -51,6 +51,9 @@
             IconWidget,
         },
         setup() {
+
+            // ne rien supprimer ici, le context est utilisé dans les callbacks de certains composants
+
             const {
                 sendLocalPeerId,
                 closeRemotePeerId,
@@ -58,9 +61,10 @@
                 receiveAuthorizationRemotePeerId,
                 setLocalVideoPeer,
                 setLocalDataPeer,
-                createVideoElement, // important for creating video elements
+                createVideoElement,
                 connectToQueuedConnections,
                 removeVideoElement,
+                deleteRemoteOpenedConnections,
                 startVisioStream,
                 stopUserVisioStream,
                 stopAllVisioStream,
@@ -94,6 +98,7 @@
                 setLocalDataPeer,
                 createVideoElement,
                 removeVideoElement,
+                deleteRemoteOpenedConnections,
                 startVisioStream,
                 stopUserVisioStream,
                 stopAllVisioStream,

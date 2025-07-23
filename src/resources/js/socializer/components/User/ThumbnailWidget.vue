@@ -4,13 +4,13 @@
             <div class="row d-flex justify-content-center align-items-center h-100">
             
                     <div class="card" style="border-radius: 15px;">
-                        <div class="card-body p-4">
+
+                        <div class="card-body p-2">
                             <div class="d-flex">
                             <div class="flex-shrink-0">
                                 <Gravatar
                                     :user="user"
                                     size="medium"
-                                    image-class="img-fluid img-thumbnail"
                                 ></Gravatar>
                             </div>
                             <div class="flex-grow-1 ms-3">
@@ -24,9 +24,9 @@
 
                                     <div class="px-3">
                                         <p class="small text-muted mb-1">
-                                        Followers
+                                            Followers {{  user.nb_followers - 1 }}
                                         </p>
-                                        <p class="mb-0">{{  user.nb_followers - 1 }}</p>
+
                                     </div>
 
                                 </div>

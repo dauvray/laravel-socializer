@@ -95,6 +95,7 @@
                 createVideoElement,
                 removeVideoElement,
                 updateVideoProps,
+                deleteRemoteOpenedConnections,
             } = usePeers(props, 'stream', props.room)
 
             const localVideoPlayer = 'local-stream'
@@ -114,6 +115,7 @@
                 stopVideoStream,
                 createVideoElement,
                 removeVideoElement,
+                deleteRemoteOpenedConnections,
                 isMuted,
                 isVideoEnabled,
                 updateVideoProps,
@@ -127,10 +129,9 @@
         watch: {
             users : {
                 handler(newVal, oldVal) {
-                    if(!oldVal) {
-                        oldVal = []
-                    }
-                    // if on air send stream to new users
+
+                    if(!oldVal) oldVal = []
+
                     if(this.isStreaming) {
                         this.syncJoingingUsers(newVal, oldVal)
                     }

@@ -1,38 +1,42 @@
 <template>
-    <video
-        v-resize="options"
-        ref="video"
-        autoplay
-        playsinline
-        :controls="false"
-        :style="isLocalStream ? 'pointer-events: none;' : ''"
-    ></video>
-    <div class="video-tools-wrapper">
-        <div class="video-tools">
-            <div class="user-info-wrapper">
-                <span class="user-info">
-                    {{ nickname }}
-                    <IconWidget icon="eye"></IconWidget> {{ nbViewers }}
-                </span>
+
+    <div>
+        <video
+            v-resize="options"
+            ref="video"
+            autoplay
+            playsinline
+            :controls="false"
+            :style="isLocalStream ? 'pointer-events: none;' : ''"
+        ></video>
+        <div class="video-tools-wrapper">
+            <div class="video-tools">
+                <div class="user-info-wrapper">
+                    <span class="user-info">
+                        {{ nickname }}
+                        <IconWidget icon="eye"></IconWidget> {{ nbViewers }}
+                    </span>
+                </div>
+                <div v-if="isClosable" class="video-btns" role="group">
+                    <button type="button" @click="closeStream">
+                        <IconWidget icon="window-close"></IconWidget>
+                    </button>
+                </div>
             </div>
-            <div v-if="isClosable" class="video-btns" role="group">
-                <button type="button" @click="closeStream">
-                    <IconWidget icon="window-close"></IconWidget>
-                </button>
-            </div>
+        </div>
+
+        <div class="video-cache" ref="video-cache"></div>
+
+        <div
+            class="video-controls">
+            <button v-if="showStartButton" type="button" class="btn btn-primary" @click="startVideo">Play</button>
+            <button type="button" class="btn btn-primary" @click="toggleMute">{{ muted ? 'Unmute' : 'Mute' }}</button>
+            <button type="button" class="btn btn-primary" @click="toggleFullscreen">Fullscreen</button>
+            <button type="button" class="btn btn-primary" @click="togglePIP">PIP</button>
         </div>
     </div>
 
-    <div class="video-cache" ref="video-cache"></div>
 
-    <div
-        class="video-controls">
-        <button v-if="showStartButton" type="button" class="btn btn-primary" @click="startVideo">Play</button>
-        <button type="button" class="btn btn-primary" @click="toggleMute">{{ muted ? 'Unmute' : 'Mute' }}</button>
-        <button type="button" class="btn btn-primary" @click="toggleFullscreen">Fullscreen</button>
-        <button type="button" class="btn btn-primary" @click="togglePIP">PIP</button>
-    </div>
-    
 </template>
 
 <script>
@@ -112,12 +116,14 @@
             if (this.stream) {
                 this.video.srcObject = this.stream
 
-                if (this.stream.isLocal) {
-                    this.isLocalStream = true
-                    this.video.muted = true
-                     const audioTracks = this.stream.getAudioTracks();
-                     audioTracks.forEach(track => track.enabled = false);
-                }
+
+                // if (this.stream.isLocal) {
+                //     this.isLocalStream = true
+                //     this.video.muted = true
+                //      const audioTracks = this.stream.getAudioTracks();
+                //      audioTracks.forEach(track => track.enabled = false);
+                // }
+
 
                 this.video.onloadedmetadata = () => {
                     this.video.play()

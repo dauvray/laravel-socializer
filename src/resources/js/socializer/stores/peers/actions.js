@@ -3,6 +3,9 @@ import { useAjaxService } from '~estarter/services/AjaxService.js'
 import { useMeStore } from '~estarter/stores/me.js'
 import { isEmpty } from '~estarter/services/helpers.js'
 
+import { markRaw, isReactive, isReadonly  } from 'vue'
+
+
 const AjaxService = useAjaxService()
 
 export default {
@@ -49,10 +52,14 @@ export default {
         if(!this.connections.hasOwnProperty(room)) {
             this.connections[room] = {}
         }
+
+
         // init user
         if(!this.connections[room].hasOwnProperty(userSlug)) {
-            this.connections[room][userSlug] = {}
+            this.connections[room][userSlug] ={}
         }
+
+
         // init type
         if(!this.connections[room][userSlug].hasOwnProperty(type)) {
             this.connections[room][userSlug][type] = []
@@ -78,6 +85,7 @@ export default {
 
                 payload.options.metadata.callbackKey = `${type}-${room}`
                 call = this.localPeer.connect(peerID, payload.options )
+
                 this.connections[room][slug][type].push(call) 
                 
             } else {
@@ -87,6 +95,7 @@ export default {
                 // custom callbacks
                 streamOptions.metadata.callback = `${type}PlayerCallback`
                 call = this.localPeer.call(peerID, payload.stream, streamOptions)
+
                 this.connections[room][slug][type].push(call) 
 
                 // join data connection
@@ -94,6 +103,7 @@ export default {
                     delete payload.options.stream
                     payload.options.metadata.callback = `${type}PlayerDataCallback` // custom callback
                     conn = this.localPeer.connect(peerID, payload.options )
+
                     this.connections[room][slug][type].push(conn)  
                 }
 
@@ -128,7 +138,11 @@ export default {
        const room = payload.room
 
        this.initConnection(payload)
+
+
+       const rawCall = markRaw(call)
        this.connections[room][slug][type].push(call) 
+
     },
     closePeerConnection(toUserSlug, type = 'data', room = 'default', notify = false) {
         if(!this.connections.hasOwnProperty(room) 
@@ -173,6 +187,7 @@ export default {
         this.clearRoom(room, toUserSlug, type)
     },
     clearRoom(room, toUserSlug, type) {
+
         if(this.connections[room][toUserSlug].hasOwnProperty(type) 
             && this.connections[room][toUserSlug][type].length === 0) {
             delete this.connections[room][toUserSlug][type]
@@ -202,6 +217,11 @@ export default {
         delete this.pendingRequests[toUserSlug]
     },
 
+    deleteRemoteOpenedConnections(connectionId) {
+        this.remoteOpenedConnections.delete(connectionId)
+    },
+
+
      /*******************************
      * DATA
      * *****************************/
@@ -222,6 +242,7 @@ export default {
         if (this.connectionListenerSet) return
 
         this.localPeer.on('connection', async(conn) => {
+
             conn.on('error', (err) => {
                 console.error('Erreur sur la connexion entrante :', err);
             });
@@ -293,13 +314,14 @@ export default {
 
         this.localPeer.on('call', async(call) => {
 
-            call.on('error', (err) => {
-                console.error('Erreur sur la connexion entrante :', err);
-            });
 
-            call.on('close', () => {
-                this.remoteOpenedConnections.delete(call.connectionId)
-            });
+            // call.on('error', (err) => {
+            //     console.error('Erreur sur la connexion entrante :', err);
+            // });
+
+            // call.on('close', () => {
+            //     this.remoteOpenedConnections.delete(call.connectionId)
+            // });
 
             if(call.options.metadata.hasOwnProperty('callback')) {
                 const customCallbacks = await import(`~socializer/callbacks/${call.options.metadata.callback}.js`)
@@ -342,7 +364,7 @@ export default {
 
         for (const slug in this.connections[room]) {
             if(this.connections[room][slug].hasOwnProperty(source)) {
-               
+
                 for (let i = 0; i < this.connections[room][slug][source].length; i++) {
                     this.connections[room][slug][source][i].close()
                 }
@@ -377,7 +399,9 @@ export default {
         })
     },
     removeStream(room = 'default', type = 'stream') {
+
         if(this.streams.hasOwnProperty(room)) {
+
             this.streams[room] = this.streams[room].filter(item => item.type !== type)
 
             if(this.streams[room].length === 0) {

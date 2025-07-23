@@ -1,5 +1,6 @@
 <template>
-    <div class="m-3">
+
+    <div class="m-3 px-3">
         <ThumbnailUserWidget v-for="user in users"
             :user="user"
         ></ThumbnailUserWidget>

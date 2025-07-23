@@ -1,9 +1,23 @@
 <template>
     <div class="chat-wrapper">
+            <Teleport to="#app-header-tools">
+                <div id="room-stream-btn" role="group">
+                    <StreamUserButton 
+                        ref="webcamBtn"
+                        :users="chatters"
+                        :room="currentConversationId"
+                    ></StreamUserButton>
+                    <CaptureUserButton
+                        ref="screenBtn"
+                        :users="chatters"
+                        :room="currentConversationId"
+                    ></CaptureUserButton>
+                </div>
+            </Teleport>
         <div class="chat-header" v-if="displayHeader">
             <RoomUsersList :users="chatters"></RoomUsersList>
             <ChatContactsButtons
-                v-if="currentConversation"
+                v-if="isContactBtnVisible"
                 class="chat-tools"
                 :conversation="currentConversation.general"
                 @add-contact="onAddContact"
@@ -74,7 +88,7 @@
                 </div>
             </div>
         </div>
-    
+
         <DataUserPeerConnection 
             v-if="chatters && currentConversation"
             :users="chatters"
@@ -124,6 +138,8 @@
             IconWidget,
             ChatContactsButtons,
             DataUserPeerConnection,
+            StreamUserButton: defineAsyncComponent(() => import('~socializer/components/WebRTC/widgets/StreamUserButton.vue')),
+            CaptureUserButton: defineAsyncComponent(() => import('~socializer/components/WebRTC/widgets/CaptureUserButton.vue')),
             IntersectionObserver,
             MessageWidget,
             SpinnerTextWriting,
@@ -187,6 +203,11 @@
                 }
                 return null
             },
+
+            isContactBtnVisible: function() {
+                return this.currentConversation && !this.currentConversation.general.chat.is_bot
+            }
+
         },
         async created() {
 
@@ -285,7 +306,6 @@
                             if(event.is_bot_answer) {
                                 this.removeActorWriting('Agent Bot')
                             }
-console.log(event)
                             this.onReceiveMessage(event)
                         })
                         .listen('.receivedEmoji', (event) => {
@@ -442,11 +462,9 @@ console.log(event)
             /*------  DATA CONNECTION ----------*/
             connectionDataCallback(conn) {
 
-                console.log('nouvelle connexion data chat', conn.connectionId)
-
                 conn.on("data", (data) => {
                     data = JSON.parse(data)
-                    console.log('data chat reçu', data)
+
                     switch(data.action) {
                         case 'start_writing':
                             this.addActorWriting(data.from)
@@ -456,12 +474,14 @@ console.log(event)
                             break
                     }
                 });
-                conn.on("open", () => {
-                    console.log('connection data chat ouverte', conn.connectionId)
-                });
-                conn.on("close", () => {
-                    console.log('connection data chat fermée', conn.connectionId)
-                });
+
+                // conn.on("open", () => {
+                //     console.log('connection data chat ouverte', conn.connectionId)
+                // });
+                // conn.on("close", () => {
+                //     console.log('connection data chat fermée', conn.connectionId)
+                // });
+
             },
             onStartWritting() {
                 this.sendData({

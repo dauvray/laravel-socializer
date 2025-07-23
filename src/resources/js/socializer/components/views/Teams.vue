@@ -19,7 +19,10 @@
                     @stoped-stream="onStopedStream"
                 ></CaptureUserButton>
             </div>
-            </Teleport> 
+
+        </Teleport> 
+
+
         <div class="conversations-list-wrapper"
             v-resizable="{
                 min: initialSidebarWidth,
@@ -46,6 +49,11 @@
             :display-separator="conversationType != 'agents'"
             @update-chatters="onUpdateChatters"
         ></ChatComponent>
+
+        <template v-else>
+           No con
+        </template>
+
     </div>
 </template>
 

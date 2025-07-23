@@ -55,12 +55,10 @@
             },
             users: {
                 handler(newVal, oldVal) {
-                    if(!oldVal) {
-                        oldVal = []
-                    }
-                    if(newVal) {
-                        this.syncUsersConnections(newVal, oldVal)
-                    }
+
+                    if(!oldVal)  oldVal = []
+                    this.syncUsersConnections(newVal, oldVal)
+
                 },
                 immediate: true,
                 deep: true, // keep this

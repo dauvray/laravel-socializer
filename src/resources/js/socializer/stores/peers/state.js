@@ -1,3 +1,7 @@
+
+import { shallowReactive, markRaw } from 'vue'
+
+
 export default () => {
   return {
     lastLocalPeerId: null, // last peer id local

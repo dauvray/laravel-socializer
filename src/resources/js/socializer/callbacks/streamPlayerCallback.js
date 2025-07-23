@@ -47,6 +47,8 @@ export default (call, context) => {
     call.on('close', () => {
         console.log("Connexion stream fermée")
         context.removeVideoElement(call.connectionId)
+        context.deleteRemoteOpenedConnections(call.connectionId)
+
     })
 
     call.on('error', (err) => {

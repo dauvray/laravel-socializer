@@ -51,11 +51,12 @@
             this.loadDefaultContent()
         },
         beforeUnmount() {
-            Echo.leave(this.channel)
-            Echo.private(this.getMe.channel).whisper('leave-room', {
-                userId: this.getMe.id,
-                roomId: this.currentRoom.id,
-            })
+            // Echo.leave(this.channel)
+            // Echo.private(this.getMe.channel).whisper('leave-room', {
+            //     userId: this.getMe.id,
+            //     roomId: this.currentRoom.id,
+            // })
+
             this.resetCurrentRoom()
         },
         computed: {
@@ -90,10 +91,14 @@
                     Echo.leave(oldVal)
                 }
                 if(newVal) {
-                    this.initRoomEvents()
+
+                    // voir si utile ( room dans les composants)
+                 //   this.initRoomEvents()
                 }
             },
             currentRoom(newRoom) {
+                this.resetRoomUsers()
+
                 if(newRoom && newRoom.hasOwnProperty('content_type') && newRoom.content_type === "locked") {
                     this.roomLocked = true
                 }
@@ -135,6 +140,12 @@
                     this.$router.push({ name: defaultContent.content_type, params: { vertexId: defaultContent.id } })
                 }
             },
+
+            resetRoomUsers() {
+                this.users = []
+                this.$emit('update-users-room', this.users)
+            }
+
         },
     }
 </script>
