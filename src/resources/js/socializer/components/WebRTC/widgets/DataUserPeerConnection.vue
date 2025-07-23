@@ -4,7 +4,8 @@
 
     import IconWidget from '~estarter/components/widgets/IconWidget.vue'
     import { usePeers } from '~socializer/components/WebRTC/composables/usePeers.js'
-   
+    import { setContext, logError } from '~estarter/services/logger.js'
+
     export default {
         name: 'DataUserPeerConnection',
         emits: [
@@ -44,6 +45,7 @@
             }
         },
         async mounted() {
+            setContext({ users: this.users, room: this.roomId, component: 'DataUserPeerConnection' });
             await this.setLocalDataPeer(this, this.callbackConnection)
         },
         beforeUnmount() {
@@ -55,10 +57,12 @@
             },
             users: {
                 handler(newVal) {
-
-
-
-                    this.syncUsersConnections(newVal)
+                    try {
+                        this.syncUsersConnections(newVal)
+                    } catch (e) {
+                       logError(e);
+                    }
+                   
                 },
                 immediate: true,
                 deep: true, // keep this

@@ -60,6 +60,7 @@
     import { useMeStore } from '~estarter/stores/me.js'
     import { mapState } from 'pinia'
     import { ref } from 'vue'
+    import { setContext, logError } from '~estarter/services/logger.js'
 
     const streamPeerCallback = import(`~socializer/callbacks/streamPlayerCallback.js`)
 
@@ -124,13 +125,18 @@
             }
         },
         mounted() {
+             setContext({ users: this.users, room: this.room, component: 'StreamUserButton' });
             this.setLocalVideoPeer(this, streamPeerCallback.default)
         },
         watch: {
             users : {
                 handler(newVal) {
-                    if(this.isStreaming) {
-                        this.syncJoingingUsers(newVal)
+                    try {
+                        if(this.isStreaming) {
+                            this.syncJoingingUsers(newVal)
+                        }
+                    } catch (e) {
+                       logError(e);
                     }
                 },
                 immediate: true,

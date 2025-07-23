@@ -105,6 +105,7 @@ export default {
                     conn = this.localPeer.connect(peerID, payload.options )
 
                     this.connections[room][slug][type].push(conn)  
+
                 }
 
                 return {call , conn}
@@ -166,6 +167,7 @@ export default {
         }
 
         this.connections[room][toUserSlug][type].forEach((conn, idx) => {
+
             // is emitter ?
             if(conn.hasOwnProperty('peer')) {
                 switch(type) {
@@ -320,7 +322,7 @@ export default {
 
         this.localPeer.on('call', async(call) => {
 
-
+            // a placer dans la callback
             // call.on('error', (err) => {
             //     console.error('Erreur sur la connexion entrante :', err);
             // });
