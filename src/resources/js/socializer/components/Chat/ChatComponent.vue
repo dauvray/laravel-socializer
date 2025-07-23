@@ -1,19 +1,19 @@
 <template>
     <div class="chat-wrapper">
-            <Teleport to="#app-header-tools">
-                <div id="room-stream-btn" role="group">
-                    <StreamUserButton 
-                        ref="webcamBtn"
-                        :users="chatters"
-                        :room="currentConversationId"
-                    ></StreamUserButton>
-                    <CaptureUserButton
-                        ref="screenBtn"
-                        :users="chatters"
-                        :room="currentConversationId"
-                    ></CaptureUserButton>
-                </div>
-            </Teleport>
+        <Teleport to="#app-header-tools">
+            <div id="room-stream-btn" role="group">
+                <StreamUserButton 
+                    ref="webcamBtn"
+                    :users="chatters"
+                    :room="currentConversationId"
+                ></StreamUserButton>
+                <CaptureUserButton
+                    ref="screenBtn"
+                    :users="chatters"
+                    :room="currentConversationId"
+                ></CaptureUserButton>
+            </div>
+        </Teleport>
         <div class="chat-header" v-if="displayHeader">
             <RoomUsersList :users="chatters"></RoomUsersList>
             <ChatContactsButtons

@@ -128,12 +128,9 @@
         },
         watch: {
             users : {
-                handler(newVal, oldVal) {
-
-                    if(!oldVal) oldVal = []
-
+                handler(newVal) {
                     if(this.isStreaming) {
-                        this.syncJoingingUsers(newVal, oldVal)
+                        this.syncJoingingUsers(newVal)
                     }
                 },
                 immediate: true,

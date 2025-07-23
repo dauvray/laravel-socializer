@@ -247,19 +247,18 @@ export function usePeers(props, type = 'data', room = 'app') {
         })
     }
 
-    const syncJoingingUsers = ([...users], [...previousUsers]) => {
+    const syncJoingingUsers = ([...users]) => {
+
+        if(users && users.length > 0) {
+
+            // Identifier les nouveaux utilisateurs
+            const newUsers = users.filter(user => !previousIds.value.includes(user.id))
 
 
-    if(users && users.length > 0) {
-
-        // Identifier les nouveaux utilisateurs
-        const newUsers = users.filter(user => !previousIds.value.includes(user.id))
-
-
-        if (newUsers.length > 0) {
-            syncUsersConnections(newUsers)
+            if (newUsers.length > 0) {
+                syncUsersConnections(newUsers)
+            }
         }
-    }
 
         previousIds.value = users.map(user => user.id)
 

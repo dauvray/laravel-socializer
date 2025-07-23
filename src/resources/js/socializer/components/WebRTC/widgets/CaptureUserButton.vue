@@ -80,11 +80,9 @@
         // pour ne pas avoir de doublon
         watch: {
             users : {
-                handler(newVal, oldVal) {
-                    if(!oldVal)  oldVal = []
-                    
+                handler(newVal) {
                     if(this.isCapturing) {
-                        this.syncJoingingUsers(newVal, oldVal)
+                        this.syncJoingingUsers(newVal)
                     }
                 },
                 immediate: true,

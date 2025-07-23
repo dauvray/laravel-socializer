@@ -54,11 +54,8 @@
                 this.$emit('connected', val)
             },
             users: {
-                handler(newVal, oldVal) {
-
-                    if(!oldVal)  oldVal = []
-                    this.syncUsersConnections(newVal, oldVal)
-
+                handler(newVal) {
+                    this.syncUsersConnections(newVal)
                 },
                 immediate: true,
                 deep: true, // keep this
