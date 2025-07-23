@@ -153,6 +153,10 @@
             if (this.stream) {
                 this.stream.getTracks().forEach(track => track.stop())
             }
+
+            if(this.peer) {
+                this.peer.close()
+            }
         },
         watch: {
             'states.isMuted'(newValue) {

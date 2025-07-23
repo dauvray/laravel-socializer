@@ -118,6 +118,9 @@ export default {
 
         if( peerID) {
             return this.connections[room][slug][type].some(conn => {
+
+                if (!conn) return false
+
                 // Pour DataConnection
                 if (conn.peer && conn.peer === peerID && !conn.open) return false
                 if (conn.peer && conn.peer === peerID && conn.open) return true
@@ -145,6 +148,16 @@ export default {
 
     },
     closePeerConnection(toUserSlug, type = 'data', room = 'default', notify = false) {
+
+        // alert others
+        if(notify) {
+            this.signalRemoteToClosePeer({
+                from: toUserSlug,
+                room,
+                source: type,
+            })
+        }
+
         if(!this.connections.hasOwnProperty(room) 
             || !this.connections[room].hasOwnProperty(toUserSlug)
             || !this.connections[room][toUserSlug].hasOwnProperty(type)
@@ -171,14 +184,6 @@ export default {
                 }
             }
 
-            // alert others
-            if(notify) {
-                this.signalRemoteToClosePeer({
-                    from: toUserSlug,
-                    room,
-                    source: type,
-                })
-            }
         })
 
         this.connections[room][toUserSlug][type] = []
@@ -248,6 +253,7 @@ export default {
             });
 
             conn.on('close', () => {
+                console.log('Connexion fermée dans actions :', conn.connectionId);
                 this.remoteOpenedConnections.delete(conn.connectionId)
             });
 
@@ -320,6 +326,7 @@ export default {
             // });
 
             // call.on('close', () => {
+            //     console.log('Connexion call fermée dans actions :', call.connectionId);
             //     this.remoteOpenedConnections.delete(call.connectionId)
             // });
 

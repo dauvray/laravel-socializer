@@ -185,6 +185,7 @@
                             this.receiveAuthorizationRemotePeerId(event)
                         })
                         .listen('.CloseConnectionToPeerID', (event) => {
+                            console.log('CloseConnectionToPeerID', event)
                             this.closeRemotePeerId(event.fromUserSlug, event.type, event.room)
                         })
                         .listen('.ChatInvitation', (event) => {

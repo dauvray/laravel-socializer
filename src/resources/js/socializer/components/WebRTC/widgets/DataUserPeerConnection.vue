@@ -55,6 +55,9 @@
             },
             users: {
                 handler(newVal) {
+
+
+
                     this.syncUsersConnections(newVal)
                 },
                 immediate: true,

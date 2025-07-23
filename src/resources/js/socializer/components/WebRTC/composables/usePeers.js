@@ -220,6 +220,7 @@ export function usePeers(props, type = 'data', room = 'app') {
 
                     })
                 })
+
             }
         }
     }
@@ -231,6 +232,7 @@ export function usePeers(props, type = 'data', room = 'app') {
     }
 
     const closeRemotePeerId = (toUserSlug, custom_type = null, custom_room = null, notify = false) => {
+        console.log('usePeer.js - Fermeture de la connexion avec', toUserSlug, custom_type, custom_room)
         peerStore.closePeerConnection(
             toUserSlug, 
             custom_type || currentType.value, 
@@ -560,29 +562,26 @@ export function usePeers(props, type = 'data', room = 'app') {
 
     onBeforeUnmount(() => {
 
-
         /***********************************************************
           coupe tous les flux et connections quand on quitte le salon */
 
-
-        // for (const userSlug in connections.value[onAirRoom.value]) {
-        //     connections.value[onAirRoom.value][userSlug][currentType.value].forEach (conn => {
-        //         closeRemotePeerId(userSlug, currentType.value, onAirRoom.value, true)
-        //     })
-        // }
+        for (const userSlug in connections.value[onAirRoom.value]) {
+            connections.value[onAirRoom.value][userSlug][currentType.value].forEach (conn => {
+                console.log(' beforInmount Fermeture de la connexion :', userSlug, currentType.value, onAirRoom.value)
+                closeRemotePeerId(userSlug, currentType.value, onAirRoom.value, true)
+            })
+        }
         
+        eventBus.$off("closeStream", closeEventBusStream)
 
-        // eventBus.$off("closeStream", closeEventBusStream)
+        const players = peerStore.getPlayers
+        players.forEach(player => {
+            if(player.type === currentType.value) {
+                removeVideoElement(player.videoId)
+            } 
+        })
 
-
-        // const players = peerStore.getPlayers
-        // players.forEach(player => {
-        //     if(player.type === currentType.value) {
-        //         removeVideoElement(player.videoId)
-        //     } 
-        // })
-
-        // stopVideoStream(currentType.value)
+        stopVideoStream(currentType.value)
 
     })
 
