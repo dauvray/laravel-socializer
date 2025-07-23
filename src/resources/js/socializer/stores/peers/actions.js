@@ -374,10 +374,22 @@ export default {
         }
     },
     sendVideoData(data, room = 'default', type = 'stream') {
-        if(!isEmpty(this.connections)) {
-            for (const slug in this.connections[room]) {
-                if(typeof this.connections[room][slug][type][1] !== 'undefined') {
-                    this.connections[room][slug][type][1].send(data)
+        const roomConnections = this.connections?.[room];
+
+        if (!roomConnections) return;
+
+        for (const slug in roomConnections) {
+            const peers = roomConnections[slug]?.[type];
+
+            if (!Array.isArray(peers)) continue;
+
+            for (const conn of peers) {
+                if (conn && typeof conn.send === 'function') {
+                    try {
+                        conn.send(data);
+                    } catch (err) {
+                        console.warn(`Erreur lors de l'envoi de données à ${slug}`, err);
+                    }
                 }
             }
         }

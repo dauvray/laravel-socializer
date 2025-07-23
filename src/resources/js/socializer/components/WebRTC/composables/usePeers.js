@@ -254,7 +254,6 @@ export function usePeers(props, type = 'data', room = 'app') {
             // Identifier les nouveaux utilisateurs
             const newUsers = users.filter(user => !previousIds.value.includes(user.id))
 
-
             if (newUsers.length > 0) {
                 syncUsersConnections(newUsers)
             }
