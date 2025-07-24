@@ -95,7 +95,7 @@ export default {
 
                 payload.options.metadata.callbackKey = `${type}-${room}`
                 call = this.localPeer.connect(peerID, payload.options )
-console.log('is connected to peer', call)
+
                 this.connections[room][slug][type].push(call) 
                 
             } else {
@@ -104,7 +104,7 @@ console.log('is connected to peer', call)
 
                 // custom callbacks
                 streamOptions.metadata.callback = `${type}PlayerCallback`
-console.log('send call', payload.stream)
+
                 call = this.localPeer.call(peerID, payload.stream, streamOptions)
 
                 this.connections[room][slug][type].push(call) 
@@ -235,8 +235,13 @@ console.log('send call', payload.stream)
         delete this.pendingRequests[toUserSlug]
     },
 
-    deleteRemoteOpenedConnections(connectionId) {
-        this.remoteOpenedConnections.delete(connectionId)
+    deleteRemoteOpenedConnections(conn) {
+        this.remoteOpenedConnections.delete(conn.connectionId)
+        this.signalRemoteToClosePeer({
+            from: conn.metadata.from,
+            room: conn.metadata.room,
+            source: conn.metadata.source,
+        })
     },
 
 
@@ -260,20 +265,18 @@ console.log('send call', payload.stream)
         if (this.connectionListenerSet) return
 
         this.localPeer.on('connection', async(conn) => {
- console.log('Nouvelle connexion entrante', conn.connectionId, conn.metadata)
 
             conn.on('error', (err) => {
                 console.error('Erreur sur la connexion entrante :', err);
             });
 
             conn.on('close', () => {
-                console.log('Connexion fermée dans actions :', conn.connectionId);
                 this.remoteOpenedConnections.delete(conn.connectionId)
             });
 
             const meta = conn.options?.metadata || {}
             const callbackKey = meta.callbackKey
-console.log('callbackKey', callbackKey, this.incomingConnectionCallbacks)
+
             const dynamicCallback = this.incomingConnectionCallbacks.get(callbackKey)
 
             if (callbackKey && dynamicCallback && !this.remoteOpenedConnections.has(conn.connectionId)) {

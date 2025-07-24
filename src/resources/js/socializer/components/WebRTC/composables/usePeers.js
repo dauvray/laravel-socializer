@@ -3,7 +3,7 @@ import { useAjaxService } from '~estarter/services/AjaxService.js'
 import { usePeerStore } from '~socializer/stores/peers.js'
 import { useServerStore } from '~socializer/stores/server.js'
 import { useMeStore } from '~estarter/stores/me.js'
-import { deepGet, uniqueId } from '~estarter/services/helpers.js'
+import { deepGet, uniqueId, cloneDeep } from '~estarter/services/helpers.js'
 import Draggable from '~socializer/directives/draggable.js'
 
 export function usePeers(props, type = 'data', room = 'app') {
@@ -232,7 +232,6 @@ export function usePeers(props, type = 'data', room = 'app') {
     }
 
     const closeRemotePeerId = (toUserSlug, custom_type = null, custom_room = null, notify = false) => {
-        console.log('usePeer.js - Fermeture de la connexion avec', toUserSlug, custom_type, custom_room)
         peerStore.closePeerConnection(
             toUserSlug, 
             custom_type || currentType.value, 
@@ -240,6 +239,7 @@ export function usePeers(props, type = 'data', room = 'app') {
             notify
         )
     }
+
 
     const syncUsersConnections = ([...users]) => {
         users.forEach( user => {
@@ -567,7 +567,6 @@ export function usePeers(props, type = 'data', room = 'app') {
 
         for (const userSlug in connections.value[onAirRoom.value]) {
             connections.value[onAirRoom.value][userSlug][currentType.value].forEach (conn => {
-                console.log(' beforInmount Fermeture de la connexion :', userSlug, currentType.value, onAirRoom.value)
                 closeRemotePeerId(userSlug, currentType.value, onAirRoom.value, true)
             })
         }

@@ -1,12 +1,10 @@
 export default (call, context) => {
-    console.log('nouvelle connexion stream ( streamPlayerCallback )', call.connectionId)
     const receivedStreams = new Set()
 
     // ici ne renvoi rien car sens unique
     call.answer()
 
     call.on('stream', async(stream) => {
-console.log("Flux reçu pour la connexion stream", call.connectionId, stream)
         if (receivedStreams.has(stream.id)) {
             return
         }
@@ -45,10 +43,9 @@ console.log("Flux reçu pour la connexion stream", call.connectionId, stream)
     })
 
     call.on('close', () => {
-        console.log("Connexion stream fermée dans callback stream",call.connectionId, call.metadata)
         context.removeVideoElement(call.connectionId)
-        context.deleteRemoteOpenedConnections(call.connectionId)
-        context.closeRemotePeerId(call.metadata.from, call.metadata.source, call.metadata.room, true)
+        context.deleteRemoteOpenedConnections(call)
+       
 
     })
 
