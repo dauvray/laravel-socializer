@@ -10,12 +10,6 @@
     <div class="chat-header m-2">
         <RoomUsersList :users="users"></RoomUsersList>
     </div>
-
-<<<<<<< HEAD
-
-
-=======
->>>>>>> 23a58c2 (Reconnexion au dépôt, préservation des modifs locales)
 </template>
 
 <script>

@@ -9,6 +9,7 @@ export default (call, context) => {
     call.answer()
 
     call.on('stream', async(stream) => {
+        console.log("Flux reçu pour la connexion capture", call.connectionId, stream)
         if (stream instanceof MediaStream) {
             await context.createVideoElement(
                 {

@@ -4,7 +4,6 @@
         @mouseenter="showDropdown" 
         @mouseleave="hideDropdown">
             <span class="user-link" @click="viewProfile">{{ user.name }}</span>
-
             <!-- Dropdown -->
             <div v-if="isDropdownVisible" 
                 ref="userCover" 
@@ -42,9 +41,7 @@
                     </div>
                 </div>
             </div>
-
         </div>
-
 </template>
 
 <script>

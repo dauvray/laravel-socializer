@@ -6,7 +6,7 @@ export default (call, context) => {
     call.answer()
 
     call.on('stream', async(stream) => {
-
+console.log("Flux reçu pour la connexion stream", call.connectionId, stream)
         if (receivedStreams.has(stream.id)) {
             return
         }

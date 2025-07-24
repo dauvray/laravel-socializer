@@ -169,6 +169,52 @@ Add to resources/js/bootstrap.js
 
     import './echo.js';
 
+## NGINX & Turn server
+
+1. Créer le fichier turn.conf
+
+    sudo nano /etc/nginx/streams-enabled/turn.conf
+
+Ajoute ceci :
+
+    stream {
+        upstream turn_server_tcp {
+            server 127.0.0.1:3478;
+        }
+
+        server {
+            listen 3478;
+            proxy_pass turn_server_tcp;
+        }
+    }
+
+2. Inclure ce fichier dans nginx.conf global
+Ouvre /etc/nginx/nginx.conf (ou /usr/local/nginx/conf/nginx.conf selon ta distro).
+
+Dans le bloc de niveau supérieur (pas dans http), ajoute :
+
+    include /etc/nginx/streams-enabled/*.conf;
+
+Cela doit être hors du bloc http {} :
+
+
+# nginx.conf
+
+worker_processes auto;
+events { worker_connections 1024; }
+
+# Inclure les streams TURN ici
+include /etc/nginx/streams-enabled/*.conf;
+
+http {
+    ...
+}
+
+3. Tester et redémarrer Nginx
+
+sudo nginx -t
+sudo systemctl reload nginx
+
 
 
                 

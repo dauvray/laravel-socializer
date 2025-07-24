@@ -20,7 +20,17 @@ export default {
             path: import.meta.env.VITE_PEERS_SERVER_PATH,
             key: import.meta.env.VITE_PEERS_SERVER_KEY,
             secure: true,
-            })
+            config: {
+                iceServers: [
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    {
+                        urls: 'turn:eblog-dev:3478',
+                        username: 'david',
+                        credential: 'secret'
+                    }
+                ]
+            }
+        })
 
         this.localPeer.on('open', id => {
             // Workaround for peer.reconnect deleting previous id
@@ -85,7 +95,7 @@ export default {
 
                 payload.options.metadata.callbackKey = `${type}-${room}`
                 call = this.localPeer.connect(peerID, payload.options )
-
+console.log('is connected to peer', call)
                 this.connections[room][slug][type].push(call) 
                 
             } else {
@@ -94,6 +104,7 @@ export default {
 
                 // custom callbacks
                 streamOptions.metadata.callback = `${type}PlayerCallback`
+console.log('send call', payload.stream)
                 call = this.localPeer.call(peerID, payload.stream, streamOptions)
 
                 this.connections[room][slug][type].push(call) 
@@ -249,6 +260,7 @@ export default {
         if (this.connectionListenerSet) return
 
         this.localPeer.on('connection', async(conn) => {
+ console.log('Nouvelle connexion entrante', conn.connectionId, conn.metadata)
 
             conn.on('error', (err) => {
                 console.error('Erreur sur la connexion entrante :', err);
@@ -261,6 +273,7 @@ export default {
 
             const meta = conn.options?.metadata || {}
             const callbackKey = meta.callbackKey
+console.log('callbackKey', callbackKey, this.incomingConnectionCallbacks)
             const dynamicCallback = this.incomingConnectionCallbacks.get(callbackKey)
 
             if (callbackKey && dynamicCallback && !this.remoteOpenedConnections.has(conn.connectionId)) {

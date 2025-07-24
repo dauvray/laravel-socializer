@@ -58,11 +58,13 @@
             users: {
                 handler(newVal) {
                     try {
+                        if(newVal && newVal.length === 0) {
+                            return
+                        }
                         this.syncUsersConnections(newVal)
                     } catch (e) {
                        logError(e);
                     }
-                   
                 },
                 immediate: true,
                 deep: true, // keep this
