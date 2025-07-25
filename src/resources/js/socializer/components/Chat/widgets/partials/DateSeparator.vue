@@ -1,7 +1,7 @@
 <template>
   <div class="date-separator">
     <div class="date-separator-line"></div>
-    <div class="date-separator-text">
+    <div class="date-separator-text shadow">
       {{ formattedDate }}
     </div>
     <div class="date-separator-line"></div>

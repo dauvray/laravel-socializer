@@ -165,7 +165,6 @@ export function usePeers(props, type = 'data', room = 'app') {
 
     const connectToQueuedConnections = async (payload) => {
 
-
         if(payload.type === 'data') {           
 
             peerStore.openPeerConnection({
@@ -182,6 +181,7 @@ export function usePeers(props, type = 'data', room = 'app') {
                 room: payload.room,
                 type: payload.type,
             })
+
         } else {
 
             const connection = peerStore.openPeerConnection({
@@ -299,8 +299,10 @@ export function usePeers(props, type = 'data', room = 'app') {
         peerStore.startVideoStream()
         onAirRoom.value = currentRoom.value || deepGet(serverStore, 'currentRoom.id', null)
         const newStream = await navigator.mediaDevices.getUserMedia(options)
+
         newStream.isLocal = isLocal // to mute local sound in player
         currentStream.value = newStream
+
         peerStore.saveStream(onAirRoom.value, currentStream.value, currentType.value)
         updateVideoProps({
             isVideoEnabled: options.video,

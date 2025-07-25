@@ -258,7 +258,7 @@ export default {
         if (this.connectionListenerSet) return
 
         this.localPeer.on('connection', async(conn) => {
-console.log(conn.options)
+
             conn.on('error', (err) => {
                 console.error('Erreur sur la connexion entrante :', err);
             });

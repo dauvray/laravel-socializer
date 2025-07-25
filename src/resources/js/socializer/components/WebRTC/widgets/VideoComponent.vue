@@ -95,6 +95,7 @@
                 totalViewers : 0,
                 intervalViewers : null,
                 isLocalStream: false,
+                localStream: null,
                 showStartButton: false,
                 muted: false,
                 options: {
@@ -112,17 +113,28 @@
             }
         },
         mounted() {
+
             this.video = this.$refs.video
+
             if (this.stream) {
-                this.video.srcObject = this.stream
+               
+                if (this.stream.isLocal) {
+console.log('Local stream detected')
+                    this.isLocalStream = true
+                    this.localStream = this.stream.clone()
+
+                     // Supprime les pistes audio du stream local pour ne pas s'entendre
+                    this.localStream.getAudioTracks().forEach(track => this.localStream.removeTrack(track))
+
+                    this.video.srcObject = this.localStream
+                    this.video.muted = true;
 
 
-                // if (this.stream.isLocal) {
-                //     this.isLocalStream = true
-                //     this.video.muted = true
-                //      const audioTracks = this.stream.getAudioTracks();
-                //      audioTracks.forEach(track => track.enabled = false);
-                // }
+                } else {
+console.log('Remote stream detected')
+                    this.video.srcObject = this.stream
+
+                }
 
 
                 this.video.onloadedmetadata = () => {
@@ -146,12 +158,19 @@
         beforeUnmount() {
             this.eventBus.$off("videoPlayerEvent", this.onPlayerEvent)
 
+            this.video.srcObject = null
+
             if(this.intervalViewers) {
                 clearInterval(this.intervalViewers)
             }
 
             if (this.stream) {
                 this.stream.getTracks().forEach(track => track.stop())
+            }
+
+            if(this.localStream) {
+                this.localStream.getTracks().forEach(track => track.stop())
+                this.localStream = null
             }
 
             if(this.peer) {

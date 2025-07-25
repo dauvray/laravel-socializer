@@ -176,12 +176,16 @@
                .then(async () => {
                     this.syncUsersConnections(this.users)
                     if(!document.getElementById(this.localVideoPlayer)) {
+                        
                         await this.createVideoElement(
                             {
                                 videoId: this.localVideoPlayer,
                                 nickname: this.me.slug,
                                 isMuted: this.isMuted,
-                                isVideoEnabled: this.isVideoEnabled
+                                isVideoEnabled: this.isVideoEnabled,
+                                // echoCancellation: true,
+                                // noiseSuppression: true,
+                                // autoGainControl: true
                             },
                             this.currentStream
                         )

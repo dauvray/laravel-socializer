@@ -1,10 +1,10 @@
 <template>
     <Teleport :to="`#collapser-${room.id}`" >
-        <SpectrumAnalyzer
+        <!-- <SpectrumAnalyzer
             v-if="currentStream"
             class="border rounded mt-2"
             :stream="currentStream"
-        ></SpectrumAnalyzer>
+        ></SpectrumAnalyzer> -->
     </Teleport>
 
     <div class="chat-header m-2">
@@ -113,6 +113,9 @@
                                 nickname: this.me.slug,
                                 isMuted: false,
                                 isVideoEnabled: false,
+                                echoCancellation: true,
+                                noiseSuppression: true,
+                                autoGainControl: true
                             },
                             this.currentStream
                         )
