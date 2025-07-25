@@ -3,9 +3,6 @@ import { useAjaxService } from '~estarter/services/AjaxService.js'
 import { useMeStore } from '~estarter/stores/me.js'
 import { isEmpty } from '~estarter/services/helpers.js'
 
-import { markRaw, isReactive, isReadonly  } from 'vue'
-
-
 const AjaxService = useAjaxService()
 
 export default {
@@ -24,9 +21,9 @@ export default {
                 iceServers: [
                     { urls: 'stun:stun.l.google.com:19302' },
                     {
-                        urls: 'turn:eblog-dev:3478',
-                        username: 'david',
-                        credential: 'secret'
+                        urls: `turn:${import.meta.env.VITE_PEERS_SERVER_HOST}:3478`,
+                        username: import.meta.env.VITE_COTURN_USERNAME,
+                        credential: import.meta.env.VITE_COTURN_CREDENTIAL
                     }
                 ]
             }
@@ -41,9 +38,9 @@ export default {
             }
         })
 
-        this.localPeer.on('error', (err) => {
-            console.error('Erreur PeerJS :', err);
-        })
+        // this.localPeer.on('error', (err) => {
+        //     console.error('Erreur PeerJS :', err);
+        // })
 
         this.localPeer.on('disconnected', () => {
             // Workaround for peer.reconnect deleting previous id
@@ -154,8 +151,6 @@ export default {
 
        this.initConnection(payload)
 
-
-       const rawCall = markRaw(call)
        this.connections[room][slug][type].push(call) 
 
     },
@@ -234,7 +229,6 @@ export default {
     removeToPendingRequests(toUserSlug) {
         delete this.pendingRequests[toUserSlug]
     },
-
     deleteRemoteOpenedConnections(conn) {
         this.remoteOpenedConnections.delete(conn.connectionId)
         this.signalRemoteToClosePeer({
@@ -243,7 +237,6 @@ export default {
             source: conn.metadata.source,
         })
     },
-
 
      /*******************************
      * DATA
@@ -265,7 +258,7 @@ export default {
         if (this.connectionListenerSet) return
 
         this.localPeer.on('connection', async(conn) => {
-
+console.log(conn.options)
             conn.on('error', (err) => {
                 console.error('Erreur sur la connexion entrante :', err);
             });
@@ -276,7 +269,6 @@ export default {
 
             const meta = conn.options?.metadata || {}
             const callbackKey = meta.callbackKey
-
             const dynamicCallback = this.incomingConnectionCallbacks.get(callbackKey)
 
             if (callbackKey && dynamicCallback && !this.remoteOpenedConnections.has(conn.connectionId)) {

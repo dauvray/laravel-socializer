@@ -51,11 +51,11 @@
             this.loadDefaultContent()
         },
         beforeUnmount() {
-            // Echo.leave(this.channel)
-            // Echo.private(this.getMe.channel).whisper('leave-room', {
-            //     userId: this.getMe.id,
-            //     roomId: this.currentRoom.id,
-            // })
+            Echo.leave(this.channel)
+            Echo.private(this.getMe.channel).whisper('leave-room', {
+                userId: this.getMe.id,
+                roomId: this.currentRoom.id,
+            })
 
             this.resetCurrentRoom()
         },
@@ -93,7 +93,7 @@
                 if(newVal) {
 
                     // voir si utile ( room dans les composants)
-                 //   this.initRoomEvents()
+                    this.initRoomEvents()
                 }
             },
             currentRoom(newRoom) {

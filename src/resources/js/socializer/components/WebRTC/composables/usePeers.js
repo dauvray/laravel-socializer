@@ -240,7 +240,6 @@ export function usePeers(props, type = 'data', room = 'app') {
         )
     }
 
-
     const syncUsersConnections = ([...users]) => {
         users.forEach( user => {
             if(user.slug !== meStore.getMe.slug && !deepGet(connections, `${onAirRoom.value}.${user.slug}.${currentType.value}`, false)) {
@@ -274,12 +273,12 @@ export function usePeers(props, type = 'data', room = 'app') {
 
     const setLocalDataPeer = async (context, callback) => {
         onAirRoom.value = currentRoom.value || deepGet(serverStore, 'currentRoom.id', null)
-        registerIncomingPeerCallback(onAirRoom.value, callback)
+        registerIncomingPeerCallback(callback)
         await peerStore.setLocalDataPeer(context)
     } 
 
-    const registerIncomingPeerCallback = (roomId, callback) => {
-        peerStore.registerIncomingPeerCallback(`${currentType.value}-${roomId}`, callback)
+    const registerIncomingPeerCallback = (callback) => {
+        peerStore.registerIncomingPeerCallback(`${currentType.value}-${onAirRoom.value}`, callback)
     }
 
     const unregisterIncomingPeerCallback = () => {

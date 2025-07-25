@@ -57,6 +57,7 @@
             },
             users: {
                 handler(newVal) {
+                    console.log('users changed',this.roomId, newVal)
                     try {
                         if(newVal && newVal.length === 0) {
                             return
