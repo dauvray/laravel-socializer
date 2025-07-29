@@ -1,9 +1,12 @@
 <template>
     <div ref="userLink" 
-        class="user-link-container" 
-        @mouseenter="showDropdown" 
-        @mouseleave="hideDropdown">
-            <span class="user-link" @click="viewProfile">{{ user.name }}</span>
+        class="user-link-container" >
+            <IconWidget icon="user-circle"  
+                @mouseenter="showDropdown" 
+                @touch="showDropdown"
+            ></IconWidget>
+           
+            
             <!-- Dropdown -->
             <div v-if="isDropdownVisible" 
                 ref="userCover" 
@@ -41,7 +44,10 @@
                     </div>
                 </div>
             </div>
+
+            
         </div>
+         <span class="user-link" @click="viewProfile">{{ user.name }}</span>
 </template>
 
 <script>
@@ -49,6 +55,7 @@ import { mapState } from 'pinia'
 import { useApplicationStore } from '~estarter/stores/application.js'
 import { computePosition, offset, flip, shift } from '@floating-ui/dom'
 import CoverUser from '~socializer/components/User/Cover.vue'
+import IconWidget from '~estarter/components/widgets/IconWidget.vue'
 
 export default {
     name: 'WallLink',
@@ -63,7 +70,8 @@ export default {
         }
     },
     components: {
-       CoverUser
+       CoverUser,
+       IconWidget,
     },
     data() {
         return {
