@@ -3,16 +3,16 @@
         type="button" 
         class="btn btn-primary btn-sm" 
         :disabled="isCalling"
-        title="Appel visio"
+        :title="`Appel ${type}`"
         @click="onCallUser">
-        <IconWidget icon="video"></IconWidget>
+        <IconWidget :icon="callIcon"></IconWidget>
     </button>
     <button v-else 
         type="button"
         class="btn btn-danger btn-sm"
-        title="Terminer appel visio"
+        :title="`Terminer appel ${type}`"
         @click="onCloseCall">
-        <IconWidget icon="video-slash"></IconWidget>
+        <IconWidget :icon="callIcon"></IconWidget>
     </button>
 </template>
 
@@ -29,7 +29,7 @@
 
 
     export default {
-        name: 'CallVideoUserButton',
+        name: 'CallUserButton',
         inject: [
             "AWN",
         ],
@@ -41,6 +41,10 @@
                 type: Object,
                 required: true
             },
+            type: {
+                type: String,
+                default: 'visio'
+            }
         },
         setup( props ) {
             const {
@@ -73,6 +77,12 @@
             isCalling: function() {
                 return this.pendingRequests.hasOwnProperty(this.user.slug)
             },
+            callIcon: function() {
+                if(this.type === 'vocal') {
+                    return this.isCalling ? 'phone-slash' : 'phone'
+                }
+                return this.isCalling ? 'video-slash' : 'video'
+            },
         },
         watch: {
             connections: {
@@ -84,14 +94,14 @@
         },
         methods: {
             onCallUser() {
-                this.getAuthorizationRemotePeerId(this.user.slug, 'visio')
+                this.getAuthorizationRemotePeerId(this.user.slug, this.type)
                 this.AWN.info(`Appel ${this.user.slug}`)
             },
             onCloseCall() {
-                this.stopAllVisioStream('visio')
+                this.stopAllVisioStream(this.type)
             },
             checkIsInCall() {
-                this.isInCall = this.ConnectionsHasTypeInRoom(this.user.slug, 'visio')
+                this.isInCall = this.ConnectionsHasTypeInRoom(this.user.slug, this.type)
             }
         }
     }

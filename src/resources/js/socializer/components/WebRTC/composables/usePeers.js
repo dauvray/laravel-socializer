@@ -3,7 +3,7 @@ import { useAjaxService } from '~estarter/services/AjaxService.js'
 import { usePeerStore } from '~socializer/stores/peers.js'
 import { useServerStore } from '~socializer/stores/server.js'
 import { useMeStore } from '~estarter/stores/me.js'
-import { deepGet, uniqueId } from '~estarter/services/helpers.js'
+import { deepGet } from '~estarter/services/helpers.js'
 import Draggable from '~socializer/directives/draggable.js'
 
 export function usePeers(props, type = 'data', room = 'app') {
@@ -23,6 +23,8 @@ export function usePeers(props, type = 'data', room = 'app') {
         isMuted: false,
         isVideoEnabled: true,
     })
+
+    const unmountPlayersOnNavigation = props.unmount === false ? false : true
 
     const previousIds = ref([]) // store previous ids to compare with new users
 
@@ -44,7 +46,6 @@ export function usePeers(props, type = 'data', room = 'app') {
     const getAuthorizationRemotePeerId = (toUserSlug = '', type = 'vocal') => {
 
         if(!currentCallRoomId.value) {
-          //  setCurrentCallRoomId(uniqueId('room'))
              setCurrentCallRoomId('data-app') // default room for data connections
         }
 
@@ -90,7 +91,7 @@ export function usePeers(props, type = 'data', room = 'app') {
 
         } else {
 
-            startVisioStream({ audio: false, video: true}, true)
+            startVisioStream({ audio: true, video: true}, true)
             .then(() => {
 
                 // ne devrait peut etre pas faire ça mais uitliser le currentCallRoomId
@@ -194,11 +195,17 @@ export function usePeers(props, type = 'data', room = 'app') {
         const connection = peerStore.openPeerConnection(defaultConf)
 
         if(payload.type !== 'data' && connection && connection.call) { 
+
+            const receivedStreams = new Set()
         
             // Recevoir et afficher le flux vidéo distant
             connection.call.on('stream', (remoteStream) => {
 
-                console.log('Remote stream detected', remoteStream)
+                if (receivedStreams.has(remoteStream.id)) {
+                    return
+                }
+
+                receivedStreams.add(remoteStream.id)
 
                 createVideoElement({
                     videoId: connection.call.connectionId, 
@@ -573,27 +580,30 @@ export function usePeers(props, type = 'data', room = 'app') {
 
     onBeforeUnmount(() => {
 
-        unregisterIncomingPeerCallback()
+        if(unmountPlayersOnNavigation) {
 
-        /***********************************************************
-          coupe tous les flux et connections quand on quitte le salon */
+            unregisterIncomingPeerCallback()
 
-        for (const userSlug in connections.value[onAirRoom.value]) {
-            connections.value[onAirRoom.value][userSlug][currentType.value].forEach (conn => {
-                closeRemotePeerId(userSlug, currentType.value, onAirRoom.value, true)
+            /***********************************************************
+             coupe tous les flux et connections quand on quitte le salon */
+
+            for (const userSlug in connections.value[onAirRoom.value]) {
+                connections.value[onAirRoom.value][userSlug][currentType.value].forEach (conn => {
+                    closeRemotePeerId(userSlug, currentType.value, onAirRoom.value, true)
+                })
+            }
+            
+            eventBus.$off("closeStream", closeEventBusStream)
+
+            const players = peerStore.getPlayers
+            players.forEach(player => {
+                if(player.type === currentType.value) {
+                    removeVideoElement(player.videoId)
+                } 
             })
-        }
-        
-        eventBus.$off("closeStream", closeEventBusStream)
 
-        const players = peerStore.getPlayers
-        players.forEach(player => {
-            if(player.type === currentType.value) {
-                removeVideoElement(player.videoId)
-            } 
-        })
-
-        stopVideoStream(currentType.value)
+            stopVideoStream(currentType.value)
+       }
 
     })
 

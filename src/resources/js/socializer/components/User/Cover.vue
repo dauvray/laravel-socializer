@@ -28,9 +28,9 @@
                     style="--bs-btn-padding-y: .25rem; --bs-btn-padding-x: .5rem; --bs-btn-font-size: .70rem;"
                     :user="element"
                 ></FollowButton>
-                <CallVideoUserButton
+                <CallUserButton
                     :user="element"
-                ></CallVideoUserButton>
+                ></CallUserButton>
             </div>
         </div>
 
@@ -74,7 +74,7 @@
     import { useWallStore } from '~socializer/stores/wall.js'
     import AvatarCropper from '~estarter/components/widgets/AvatarCropper.vue'
     import FollowButton from '~socializer/components/User/widgets/FollowButton.vue'
-    import CallVideoUserButton from '~socializer/components/WebRTC/widgets/CallVideoUserButton.vue'
+    import CallUserButton from '~socializer/components/WebRTC/widgets/CallUserButton.vue'
 
     export default {
         name: 'Cover',
@@ -84,7 +84,7 @@
             ModalWidget: defineAsyncComponent(() => import('~estarter/components/widgets/ModalLazy.js')),
             CropperWidget: defineAsyncComponent(() => import('~estarter/components/widgets/CropperWidget.vue')),
             FollowButton,
-            CallVideoUserButton,
+            CallUserButton,
         },
         props: {
             user: {

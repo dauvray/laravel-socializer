@@ -4,7 +4,7 @@ export default async (call, context) => {
     const receivedStreams = new Set()
 
     context.startVisioStream({
-        audio: false,
+        audio: true,
         video: true,
     }, true).then(() => {
 

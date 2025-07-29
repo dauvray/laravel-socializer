@@ -77,7 +77,7 @@
                 setCallInProgress,
                 setCurrentCallRoomId,
 
-            } = usePeers()
+            } = usePeers({unmount: false})
 
             const totalNotification = ref(0)
             const notificationComponent = ref(null)
