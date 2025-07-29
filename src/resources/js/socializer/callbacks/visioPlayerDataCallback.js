@@ -2,7 +2,7 @@ import EventBus from '~estarter/services/eventBus'
 
 export default (conn, context) => {
 
-    console.log('nouvelle connexion data Video', conn)
+    console.log('nouvelle connexion data Visio', conn)
 
     // added coz two-way diffusion
     context.storeConnection(conn, {
@@ -12,6 +12,7 @@ export default (conn, context) => {
                 from: conn.metadata.slug,
                 source: conn.metadata.source,
                 room: conn.metadata.room,
+                callback: conn.metadata.callback
             }, 
         },
         room: conn.metadata.room,
@@ -19,12 +20,13 @@ export default (conn, context) => {
     })
 
     conn.on("open", () => {
-        console.log('connection data player ouverte')
+        console.log('connection data visio ouverte')
     })
     conn.on("close", () => {
-        console.log('connection data player fermée')
+        console.log('connection data visio fermée')
     })
     conn.on("data", (data) => {
+        console.log('data visio reçue', data)
         EventBus.$emit('videoPlayerEvent', data)
 
     })

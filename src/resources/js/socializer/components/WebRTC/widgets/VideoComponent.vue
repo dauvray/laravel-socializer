@@ -14,7 +14,9 @@
                 <div class="user-info-wrapper">
                     <span class="user-info">
                         {{ nickname }}
-                        <IconWidget icon="eye"></IconWidget> {{ nbViewers }}
+                        <template v-if="!isVisio">
+                            <IconWidget  icon="eye"></IconWidget> {{ nbViewers }}
+                        </template>
                     </span>
                 </div>
                 <div v-if="isClosable" class="video-btns" role="group">
@@ -119,7 +121,7 @@
             if (this.stream) {
                
                 if (this.stream.isLocal) {
-console.log('Local stream detected')
+
                     this.isLocalStream = true
                     this.localStream = this.stream.clone()
 
@@ -129,13 +131,11 @@ console.log('Local stream detected')
                     this.video.srcObject = this.localStream
                     this.video.muted = true;
 
-
                 } else {
-console.log('Remote stream detected')
+
                     this.video.srcObject = this.stream
 
                 }
-
 
                 this.video.onloadedmetadata = () => {
                     this.video.play()
@@ -197,8 +197,11 @@ console.log('Remote stream detected')
                 }
             },
             isClosable: function() {
-                return this.type != 'visio' && this.roomId != this.currentRoomId ? true : false
-            }
+                return !this.isVisio && this.roomId != this.currentRoomId ? true : false
+            },
+            isVisio: function() {
+                return this.type == 'visio'
+            },
         },
         methods: {
             ...mapActions(usePeerStore, [
@@ -259,9 +262,9 @@ console.log('Remote stream detected')
             async togglePIP() {
                 try {
                     if (document.pictureInPictureElement) {
-                    await document.exitPictureInPicture()
+                        await document.exitPictureInPicture()
                     } else {
-                    await this.video.requestPictureInPicture()
+                        await this.video.requestPictureInPicture()
                     }
                 } catch (err) {
                     console.warn('PIP non disponible :', err)

@@ -479,7 +479,7 @@
                     console.log('connection data chat ouverte', conn.connectionId)
                 });
                 conn.on("close", () => {
-                    console.log('connection data chat fermée', conn.connectionId)
+                    console.log('connection data chat fermée dans chat', conn.connectionId)
                 });
 
             },

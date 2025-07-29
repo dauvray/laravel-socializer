@@ -34,22 +34,17 @@
                 isConnected,
                 setLocalDataPeer,
                 syncUsersConnections,
-                unregisterIncomingPeerCallback,
             } = usePeers(props, 'data', props.roomId)
 
             return {
                 isConnected,
                 setLocalDataPeer,
                 syncUsersConnections,
-                unregisterIncomingPeerCallback,
             }
         },
         async mounted() {
             setContext({ users: this.users, room: this.roomId, component: 'DataUserPeerConnection' });
             await this.setLocalDataPeer(this, this.callbackConnection)
-        },
-        beforeUnmount() {
-            this.unregisterIncomingPeerCallback()
         },
         watch: {
             isConnected(val) {

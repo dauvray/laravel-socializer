@@ -43,13 +43,18 @@ $message_width: 60%;
 
             .conversations-wrapper {
                 @extend .h-100;
-                @extend .m-3;
                 display: grid!important;
                 grid-template-columns: 1fr 5fr;
     
                 .conversations-list-wrapper {
                     @extend .border-end;
                     z-index: 1;
+
+                    .conversation-creator-button {
+                        @extend .d-flex;
+                        @extend .align-items-center;
+                        @extend .px-2;
+                    }
                     
                     .conversations-list {
                         position: sticky;
@@ -68,15 +73,14 @@ $message_width: 60%;
     
     .chat-header {
         @extend .d-flex;
+        @extend .rounded;
         @extend .border-bottom;
-        @extend .pt-2;
-        @extend .pb-2;
-        @extend .mb-2;
         @extend .bg-auto;
+        @extend .my-2;
+        @extend .p-2;
         position: sticky;
         top: 0;
         z-index: 3;
-        min-height: 55px;
     }
 
     .chat-messages-wrapper {
@@ -129,6 +133,7 @@ $message_width: 60%;
     }
 
     .chat-messenger-sticky-wrapper {
+        @extend .mb-2;
         position: sticky;
         z-index: 10;
         height: var(--messenger-height, 50px); /* hauteur contrôlée dynamiquement */
@@ -550,6 +555,9 @@ $message_width: 60%;
         position: relative;
         cursor: grab;
         user-select: none;
+        @extend .bg-auto;
+        @extend .shadow; 
+        @extend .rounded;
 
         .video-tools-wrapper {
              @extend .position-absolute;
@@ -603,7 +611,6 @@ $message_width: 60%;
         video {
             width: 100%;
             height: auto;
-            @extend .shadow; 
             @extend .rounded;
             cursor: pointer;
         }
@@ -621,11 +628,21 @@ $message_width: 60%;
 
 #call-web-ui {
     @extend .shadow;
-    position: fixed;
+    @extend .me-3;
+    position: sticky;
     z-index: 10;
     width: auto;
-    left: 50%;
-    transform: translateX(-50%);
+
+    button {
+        @extend .btn;
+        @extend .btn-secondary;
+        @extend .btn-sm;
+        @extend .rounded-circle;
+    }
+
+    .btn-stop-call {
+        @extend .btn-danger;
+    }
 }
 
 .form-designer {
@@ -665,23 +682,10 @@ $message_width: 60%;
 | Bootstrap
 ---------------------------*/
 
-.dropdown {
-
-    .dropdown-toggle {
-       &:hover {
-           border: solid 1px black;
-       }
-       // &::after {
-       //     // border: none;
-       //     // content: '*';
-       // }
-    }
-}
-
 .dropdown-menu {
     @extend .shadow;
     @extend .bg-auto;
-    z-index: 5;
+    z-index: 11;
 }
 
 /*--------------------------

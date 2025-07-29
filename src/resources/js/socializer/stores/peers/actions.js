@@ -74,6 +74,7 @@ export default {
     },
     // add when you call
     openPeerConnection(payload) {
+
         const slug = payload.options.metadata.slug
         const peerID = payload.peerId
         const room = payload.room
@@ -110,6 +111,7 @@ export default {
                 if(!ignoredDataConnections.includes(type)) {
                     delete payload.options.stream
                     payload.options.metadata.callback = `${type}PlayerDataCallback` // custom callback
+console.log('Creating data connection for', type, payload.options.metadata.callback)
                     conn = this.localPeer.connect(peerID, payload.options )
 
                     this.connections[room][slug][type].push(conn)  
@@ -145,6 +147,7 @@ export default {
     },
     // add when you are called
     setRemoteConnection(call, payload) {
+        
        const slug = payload.options.metadata.slug
        const type = payload.type
        const room = payload.room
@@ -152,7 +155,6 @@ export default {
        this.initConnection(payload)
 
        this.connections[room][slug][type].push(call) 
-
     },
     closePeerConnection(toUserSlug, type = 'data', room = 'default', notify = false) {
 
@@ -251,6 +253,7 @@ export default {
         this.incomingConnectionCallbacks.delete(callbackKey)
     },
     async setLocalDataPeer(context) {
+
         if (!this.localPeer) {
             this.createLocalPeer()
         }
@@ -264,21 +267,27 @@ export default {
             });
 
             conn.on('close', () => {
+                console.log('Connexion call fermée dans actions :', conn.connectionId);
                 this.remoteOpenedConnections.delete(conn.connectionId)
             });
 
             const meta = conn.options?.metadata || {}
+
             const callbackKey = meta.callbackKey
+
             const dynamicCallback = this.incomingConnectionCallbacks.get(callbackKey)
 
             if (callbackKey && dynamicCallback && !this.remoteOpenedConnections.has(conn.connectionId)) {
                 this.remoteOpenedConnections.add(conn.connectionId)
                 dynamicCallback(conn)
-            } else if (meta.callback) {
+            } 
+            // En prevision car actuellement les dataChannels sont gérés par la callbackKey
+            else if (meta.callback) {
                 try {
                     const module = await import(`~socializer/callbacks/${meta.callback}.js`)
                     if (typeof module.default === 'function' && !this.remoteOpenedConnections.has(conn.connectionId)) {
                         this.remoteOpenedConnections.add(conn.connectionId)
+                        console.log('Appel du callback dynamique', meta.callback)
                         await module.default(conn, context)
                     }
                 } catch (e) {
@@ -342,7 +351,8 @@ export default {
 
             if(call.options.metadata.hasOwnProperty('callback')) {
                 const customCallbacks = await import(`~socializer/callbacks/${call.options.metadata.callback}.js`)
-                if (typeof customCallbacks.default === 'function') {
+                if (typeof customCallbacks.default === 'function' && !this.remoteOpenedConnections.has(call.connectionId)) {
+                    this.remoteOpenedConnections.add(call.connectionId)
                     customCallbacks.default(call, context)
                 } else {
                     console.error(`Le module ${call.options.metadata.callback}.js n'a pas d'exportation par défaut valide.`);
@@ -378,6 +388,8 @@ export default {
                 this.isCapturingScreen = false
                 break;
         }
+
+        this.removeStream(room, source)
 
         for (const slug in this.connections[room]) {
             if(this.connections[room][slug].hasOwnProperty(source)) {

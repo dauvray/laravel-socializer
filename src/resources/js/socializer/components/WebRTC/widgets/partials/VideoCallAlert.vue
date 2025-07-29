@@ -44,7 +44,7 @@
                 if(!this.pickedUp) {
                     this.onRefuseCall()
                 }
-            }, 20000)
+            }, 10000)
             
         },
         beforeUnmount() {

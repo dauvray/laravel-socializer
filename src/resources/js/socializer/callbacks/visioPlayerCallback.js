@@ -1,12 +1,12 @@
-import EventBus from '~estarter/services/eventBus'
-
 export default async (call, context) => {
-    console.log('nouvelle connexion Visio')
+    console.log('nouvelle connexion Visio', call)
+
+    const receivedStreams = new Set()
 
     context.startVisioStream({
         audio: false,
         video: true,
-    }).then(() => {
+    }, true).then(() => {
 
         call.answer(context.currentStream)
 
@@ -26,6 +26,7 @@ export default async (call, context) => {
         context.setCurrentCallRoomId(call.metadata.room)
 
         if(!document.getElementById('local-visio')) {
+            console.log('Creating local video element for visio', context.currentStream)
              context.createVideoElement(
                 {
                     videoId: 'local-visio',
@@ -37,8 +38,15 @@ export default async (call, context) => {
 
         call.on('stream', async(stream) => {
 
+            if (receivedStreams.has(stream.id)) {
+                return
+            }
+
+            receivedStreams.add(stream.id)
+
             if (stream instanceof MediaStream) {
-                 context.createVideoElement(
+
+                await context.createVideoElement(
                     {
                         videoId: call.connectionId, 
                         nickname: call.metadata.from,
@@ -47,11 +55,18 @@ export default async (call, context) => {
                     stream
                 )
 
-                stream.getVideoTracks()[0].addEventListener('ended', () => {
-                    context.$emit('stoped-stream', call.metadata.source, call.connectionId)
-                })
+                if(stream.getVideoTracks().length > 0) {
+                    stream.getVideoTracks()[0].addEventListener('ended', () => {
+                            context.$emit('stoped-stream', call.metadata.source, call.connectionId)
+                        })
+                    } else if( stream.getAudioTracks().length > 0) {
+                        stream.getAudioTracks()[0].addEventListener('ended', () => {
+                            context.$emit('stoped-stream', call.metadata.source, call.connectionId)
+                    })
+                }
 
                 context.setCallInProgress(true)
+
                 context.$emit('started-stream', call.metadata.source, call.connectionId, true)
             
             } else {
@@ -63,7 +78,9 @@ export default async (call, context) => {
 
         call.on('close', () => {
             console.log("Connexion visio fermée")
+            context.removeVideoElement(call.connectionId)
             context.stopUserVisioStream(call.metadata.from, 'visio')
+            context.deleteRemoteOpenedConnections(call)
         })
 
         call.on('error', (err) => console.error('Erreur d’appel :', err))

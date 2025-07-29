@@ -3,7 +3,7 @@ import { useAjaxService } from '~estarter/services/AjaxService.js'
 import { usePeerStore } from '~socializer/stores/peers.js'
 import { useServerStore } from '~socializer/stores/server.js'
 import { useMeStore } from '~estarter/stores/me.js'
-import { deepGet, uniqueId, cloneDeep } from '~estarter/services/helpers.js'
+import { deepGet, uniqueId } from '~estarter/services/helpers.js'
 import Draggable from '~socializer/directives/draggable.js'
 
 export function usePeers(props, type = 'data', room = 'app') {
@@ -23,7 +23,6 @@ export function usePeers(props, type = 'data', room = 'app') {
         isMuted: false,
         isVideoEnabled: true,
     })
-
 
     const previousIds = ref([]) // store previous ids to compare with new users
 
@@ -45,7 +44,8 @@ export function usePeers(props, type = 'data', room = 'app') {
     const getAuthorizationRemotePeerId = (toUserSlug = '', type = 'vocal') => {
 
         if(!currentCallRoomId.value) {
-            setCurrentCallRoomId(uniqueId('room'))
+          //  setCurrentCallRoomId(uniqueId('room'))
+             setCurrentCallRoomId('data-app') // default room for data connections
         }
 
         const data = {
@@ -75,6 +75,7 @@ export function usePeers(props, type = 'data', room = 'app') {
             options: data,
             status
         }) 
+
     }
 
     // receive remote authorization to peer connect
@@ -86,28 +87,30 @@ export function usePeers(props, type = 'data', room = 'app') {
 
             const type = data.options.type
             window.AWN.alert(`${data.fromUserSlug} est injoignable`)
-            // stopVideoStream(type)
-            // removeVideoElement(`local-${type}`)
 
         } else {
 
-            startVisioStream({
-                audio: false,
-                video: true,
-            }).then(() => {
+            startVisioStream({ audio: false, video: true}, true)
+            .then(() => {
 
-                updateCurrentRoom(data.options.room)
+                // ne devrait peut etre pas faire ça mais uitliser le currentCallRoomId
+              //  updateCurrentRoom(data.options.room)
 
                 if(!document.getElementById('local-webcam')) {
                     createVideoElement(
                         {
                             videoId: `local-${data.options.type}`,
-                            nickname: meStore.getMe.slug
+                            nickname: meStore.getMe.slug,
+                            echoCancellation: true,
+                            noiseSuppression: true,
+                            autoGainControl: true
                         },
                         currentStream.value
                     )
                 }
+
                 setCallInProgress(true)
+
                 connectToQueuedConnections({
                     peerId: data.options.peerId, 
                     userSlug: data.fromUserSlug, 
@@ -165,68 +168,59 @@ export function usePeers(props, type = 'data', room = 'app') {
 
     const connectToQueuedConnections = async (payload) => {
 
-        if(payload.type === 'data') {           
+        const defaultConf = {
+            peerId: payload.peerId,
+            options: { 
+                metadata: { 
+                    slug: payload.userSlug,
+                    from: meStore.getMe.slug,
+                    source: payload.type,
+                    room: payload.room,
+                }, 
+            },
+            room: payload.room,
+            type: payload.type,
+        }
 
-            peerStore.openPeerConnection({
-                peerId: payload.peerId,
-                options: { 
-                    reliable: true,
-                    metadata: { 
-                        slug: payload.userSlug,
-                        from: meStore.getMe.slug,
-                        source: payload.type,
-                        room: payload.room,
-                    }, 
-                },
-                room: payload.room,
-                type: payload.type,
-            })
-
+        if(payload.type === 'data') {
+            // Whether the underlying data channels should be reliable (e.g. for large file transfers) 
+            // or not (e.g. for gaming or streaming).
+            defaultConf.options.reliable = true
         } else {
+            // add local stream to connection
+            defaultConf.stream = peerStore.getStream(payload.room, payload.type)
+        }
 
-            const connection = peerStore.openPeerConnection({
-                peerId: payload.peerId, 
-                stream: peerStore.getStream(payload.room, payload.type),
-                options: { 
-                    metadata: { 
-                        slug: payload.userSlug,
-                        from: meStore.getMe.slug,
-                        source: payload.type,
-                        room: payload.room,
-                    }, 
-                },
-                room: payload.room,
-                type: payload.type,
-            })
+        const connection = peerStore.openPeerConnection(defaultConf)
 
-            if(connection && connection.call) {
+        if(payload.type !== 'data' && connection && connection.call) { 
+        
+            // Recevoir et afficher le flux vidéo distant
+            connection.call.on('stream', (remoteStream) => {
 
-                // Recevoir et afficher le flux vidéo distant
-                connection.call.on('stream', (remoteStream) => {
-                    createVideoElement({
-                        videoId: connection.call.connectionId, 
-                        nickname: connection.call.metadata.slug,
-                        // peer needed only for one-way diffusion
-                        peer: payload.room == 'visio' ? null : connection.call,
-                    }, remoteStream)
+                console.log('Remote stream detected', remoteStream)
 
-                    remoteStream.getVideoTracks()[0].addEventListener('ended', () => {
-                        console.log('ended stream remote')
+                createVideoElement({
+                    videoId: connection.call.connectionId, 
+                    nickname: connection.call.metadata.slug,
+                    // peer needed only for one-way diffusion
+                    peer: payload.room == 'visio' ? null : connection.call,
+                }, remoteStream)
 
-                        removeVideoElement(connection.call.connectionId)
-                        if(!connections.value.hasOwnProperty(onAirRoom.value)) {
-                            console.log('le salon est vide')
-                        }
+                remoteStream.getVideoTracks()[0].addEventListener('ended', () => {
+                    console.log('ended stream remote')
 
-                    })
+                    removeVideoElement(connection.call.connectionId)
+                    if(!connections.value.hasOwnProperty(onAirRoom.value)) {
+                        console.log('le salon est vide')
+                    }
+
                 })
-
-            }
+            })            
         }
     }
 
     // store remote calling connection
-    
     const storeConnection = (call, options) => {
         peerStore.setRemoteConnection(call, options)
     }
@@ -268,11 +262,10 @@ export function usePeers(props, type = 'data', room = 'app') {
         peerStore.deleteRemoteOpenedConnections(connectionId)
     }
 
-
     /*------  DATA CONNECTION ----------*/
 
-    const setLocalDataPeer = async (context, callback) => {
-        onAirRoom.value = currentRoom.value || deepGet(serverStore, 'currentRoom.id', null)
+    const setLocalDataPeer = async (context, callback, room = null) => {
+        onAirRoom.value = room || currentRoom.value || deepGet(serverStore, 'currentRoom.id', null)
         registerIncomingPeerCallback(callback)
         await peerStore.setLocalDataPeer(context)
     } 
@@ -299,10 +292,8 @@ export function usePeers(props, type = 'data', room = 'app') {
         peerStore.startVideoStream()
         onAirRoom.value = currentRoom.value || deepGet(serverStore, 'currentRoom.id', null)
         const newStream = await navigator.mediaDevices.getUserMedia(options)
-
         newStream.isLocal = isLocal // to mute local sound in player
         currentStream.value = newStream
-
         peerStore.saveStream(onAirRoom.value, currentStream.value, currentType.value)
         updateVideoProps({
             isVideoEnabled: options.video,
@@ -310,57 +301,57 @@ export function usePeers(props, type = 'data', room = 'app') {
         })
     }
 
-    const startVisioStream = async options => {
-        currentStream.value = await navigator.mediaDevices.getUserMedia(options)
-        onAirRoom.value = currentCallRoomId.value
-    }
-
-    const startScreenCapture = async () => {
-        currentStream.value = await navigator.mediaDevices.getDisplayMedia()
-        peerStore.startCaptureStream()
-        onAirRoom.value = currentRoom.value || deepGet(serverStore, 'currentRoom.id', null)
-        peerStore.saveStream(onAirRoom.value, currentStream.value, currentType.value)
-    }
-
     const stopVideoStream = async (source) => {
-
-        if(currentStream.value) {
-            currentStream.value.getTracks().forEach((track) => {
-                track.stop()
-            })
-            currentStream.value = null
-        }
-
+        stopCurrentStream()
         await peerStore.stopVideoStream(onAirRoom.value, source)
+    }
 
-        peerStore.removeStream(onAirRoom.value, source)
+    const startVisioStream = async (options, isLocal = false) => {
+        onAirRoom.value = currentCallRoomId.value
+        const newStream = await navigator.mediaDevices.getUserMedia(options)
+        newStream.isLocal = isLocal // to mute local sound in player
+        currentStream.value = newStream
+        peerStore.saveStream(onAirRoom.value, currentStream.value, currentType.value)
+        updateVideoProps({
+            isVideoEnabled: options.video,
+            isMuted: options.audio
+        })
     }
 
     // stop visio connection with one user
-    const stopUserVisioStream = async (userSlug, type) => {   
-
+    const stopUserVisioStream = async (userSlug, type) => {  
+        
+        stopCurrentStream()
+       
         const connections = peerStore.getConnections
         const currentCallRoomId = peerStore.getCurrenCallRoomId
 
         if (connections[currentCallRoomId][userSlug] && connections[currentCallRoomId][userSlug].hasOwnProperty(type)) {
 
             connections[currentCallRoomId][userSlug][type].forEach (peer => {
+                console.log('stopUserVisioStream', peer, type, userSlug, currentCallRoomId)
+                // close remote stream
                 if(peer.hasOwnProperty('_remoteStream')) {
                     closeEventBusStream(type, peer._remoteStream, peer)
                     peerStore.closePeerConnection(userSlug, type, currentCallRoomId)
                 }
             })
         }
+
+        await peerStore.stopVideoStream(currentCallRoomId, type)
         
-        // if no one in room stop my stream
+        // // if no one in room stop my stream
         if(!connections.hasOwnProperty(currentCallRoomId)) {
             removeVideoElement(`local-${type}`)
-            peerStore.setCallInProgress(false)
         }
+
+        peerStore.setCallInProgress(false)
     }
 
     // stop all visio connections in room
     const stopAllVisioStream = async (type) => {   
+
+        stopCurrentStream()
 
         const connections = peerStore.getConnections
         const currentCallRoomId = peerStore.getCurrenCallRoomId
@@ -378,13 +369,23 @@ export function usePeers(props, type = 'data', room = 'app') {
                     })
                 }
             })
+
+            await peerStore.stopVideoStream(currentCallRoomId, type)
+
         }
-        
+
         // if no one in room stop my stream
-        if(!connections.hasOwnProperty(currentCallRoomId)) {
+      // if(!connections.hasOwnProperty(currentCallRoomId)) {
             removeVideoElement(`local-${type}`)
             peerStore.setCallInProgress(false)
-        }
+       // }
+    }
+
+    const startScreenCapture = async () => {
+        currentStream.value = await navigator.mediaDevices.getDisplayMedia()
+        peerStore.startCaptureStream()
+        onAirRoom.value = currentRoom.value || deepGet(serverStore, 'currentRoom.id', null)
+        peerStore.saveStream(onAirRoom.value, currentStream.value, currentType.value)
     }
 
     const setCallInProgress = (status) => {
@@ -395,7 +396,7 @@ export function usePeers(props, type = 'data', room = 'app') {
         peerStore.setCurrentCallRoomId(roomId)
     }
 
-     /*------  Utils ----------*/
+    /*------  Utils ----------*/
 
     const createVideoElement = async (options = {}, stream = null) => {
 
@@ -462,6 +463,15 @@ export function usePeers(props, type = 'data', room = 'app') {
             }
             app.unmount() // Démonter l'application Vue
             peerStore.removePlayer(elementId)
+        }
+    }
+
+    const stopCurrentStream = () => {
+        if(currentStream.value) {
+            currentStream.value.getTracks().forEach((track) => {
+                track.stop()
+            })
+            currentStream.value = null
         }
     }
 
@@ -562,6 +572,8 @@ export function usePeers(props, type = 'data', room = 'app') {
      * *****************************/
 
     onBeforeUnmount(() => {
+
+        unregisterIncomingPeerCallback()
 
         /***********************************************************
           coupe tous les flux et connections quand on quitte le salon */

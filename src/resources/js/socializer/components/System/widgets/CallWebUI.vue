@@ -1,14 +1,14 @@
 <template>
     <div id="call-web-ui" class="card-body">
-        <button type="button" class="btn btn-secondary rounded-circle">
+        <button type="button" >
             <IconWidget icon="microphone-slash"></IconWidget>
         </button>
-        <button type="button" class="btn btn-secondary rounded-circle">
+        <button type="button">
             <IconWidget icon="video-slash"></IconWidget>
         </button>
         <button 
             type="button" 
-            class="btn btn-danger rounded-circle"
+            class="btn-stop-call"
             @click="onStopCall">
             <IconWidget icon="phone-slash"></IconWidget>
         </button>

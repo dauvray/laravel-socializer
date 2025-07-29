@@ -17,13 +17,16 @@
 </template>
 
 <script>
+    /**
+     * Use the global notification component system
+     */
+
     import IconWidget from '~estarter/components/widgets/IconWidget.vue'
     import { usePeers } from '~socializer/components/WebRTC/composables/usePeers.js'
     import { useMeStore } from '~estarter/stores/me.js'
-    import { mapState } from 'pinia'
+    import { mapActions, mapState } from 'pinia'
     import { ref } from 'vue'
 
-    const videoCallCallback = import(`~socializer/callbacks/vocalPlayerCallback.js`)
 
     export default {
         name: 'CallVideoUserButton',
@@ -41,38 +44,26 @@
         },
         setup( props ) {
             const {
-                setLocalVideoPeer,
-                syncUsersConnections,
                 getAuthorizationRemotePeerId,
                 pendingRequests,
-                startWebcamStream,
-                stopUserVisioStream,
+                stopAllVisioStream,
                 connections,
                 ConnectionsHasTypeInRoom,
-                removeVideoElement,
-                currentStream,
             } = usePeers(props, 'visio', null)
 
             const isInCall= ref(false)
 
             return {
-                setLocalVideoPeer,
-                syncUsersConnections,
                 getAuthorizationRemotePeerId,
                 pendingRequests,
-                startWebcamStream,
-                stopUserVisioStream,
+                stopAllVisioStream,
                 connections,
-                removeVideoElement,
-                currentStream,
                 ConnectionsHasTypeInRoom,
                 isInCall,
             }
         },
-        created() {
-            this.setLocalVideoPeer(this, videoCallCallback.default)
-        },
-        mounted() {
+        async mounted() {
+          
             this.checkIsInCall()
         },
         computed: {
@@ -97,7 +88,7 @@
                 this.AWN.info(`Appel ${this.user.slug}`)
             },
             onCloseCall() {
-                this.stopUserVisioStream(this.user.slug, 'visio')
+                this.stopAllVisioStream('visio')
             },
             checkIsInCall() {
                 this.isInCall = this.ConnectionsHasTypeInRoom(this.user.slug, 'visio')

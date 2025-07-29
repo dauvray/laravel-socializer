@@ -1,56 +1,57 @@
 <template>
-    <template v-if="!isStreaming">
-        <button class="btn btn-primary dropdown dropdown-toggle" 
-            type="button" 
-            data-bs-toggle="dropdown" 
-            aria-expanded="false">
-            <IconWidget icon="broadcast-tower"></IconWidget> Streaming
-        </button>
-        <ul class="dropdown-menu">
-            <li>
-                <a class="dropdown-item" 
-                    href="#" 
-                    @click="onVideoCall">
-                    <IconWidget icon="video"></IconWidget> Stream vidéo
-                </a>
-            </li>
-            <li>
-                <a class="dropdown-item" 
-                    href="#" 
-                    @click="onAudioCall">
-                    <IconWidget icon="phone"></IconWidget> Stream audio
-                </a>
-            </li>
-        </ul>
-    </template>
+    <template v-if="!callInprogress">
+        <template v-if="!isStreaming">
+            <button class="btn btn-primary dropdown dropdown-toggle" 
+                type="button" 
+                data-bs-toggle="dropdown" 
+                aria-expanded="false">
+                <IconWidget icon="broadcast-tower"></IconWidget> Streaming
+            </button>
+            <ul class="dropdown-menu">
+                <li>
+                    <a class="dropdown-item" 
+                        href="#" 
+                        @click="onVideoCall">
+                        <IconWidget icon="video"></IconWidget> Stream vidéo
+                    </a>
+                </li>
+                <li>
+                    <a class="dropdown-item" 
+                        href="#" 
+                        @click="onAudioCall">
+                        <IconWidget icon="phone"></IconWidget> Stream audio
+                    </a>
+                </li>
+            </ul>
+        </template>
 
-    <template v-else >
-        <button 
-            type="button" 
-            id="stop-stream-btn"
-            class="btn btn-danger"
-            @click="onStopBrodcastWebcam">
-            <IconWidget icon="window-close"></IconWidget> Terminer stream
-        </button>
-        <button 
-            type="button" 
-            class="btn"
-            :class="[isMuted ? 'btn-secondary' : 'btn-primary']"
-            >
-            <IconWidget v-if="isMuted" icon="microphone" title="activer le son" @click="onManageAudio"></IconWidget>
-            <IconWidget v-else icon="microphone-slash" title="couper le son" @click="onManageAudio"></IconWidget>
-        </button>
-        <button 
-            v-if="isVideoCall"
-            type="button" 
-            class="btn"
-            :class="[isVideoEnabled ? 'btn-primary' : 'btn-secondary']"
-            >
-            <IconWidget v-if="!isVideoEnabled" icon="video" title="activer la caméra" @click="onManageVideo"></IconWidget>
-            <IconWidget v-else icon="video-slash" title="couper la caméra" @click="onManageVideo"></IconWidget>
-        </button>
+        <template v-else >
+            <button 
+                type="button" 
+                id="stop-stream-btn"
+                class="btn btn-danger"
+                @click="onStopBrodcastWebcam">
+                <IconWidget icon="window-close"></IconWidget> Terminer stream
+            </button>
+            <button 
+                type="button" 
+                class="btn"
+                :class="[isMuted ? 'btn-secondary' : 'btn-primary']"
+                >
+                <IconWidget v-if="isMuted" icon="microphone" title="activer le son" @click="onManageAudio"></IconWidget>
+                <IconWidget v-else icon="microphone-slash" title="couper le son" @click="onManageAudio"></IconWidget>
+            </button>
+            <button 
+                v-if="isVideoCall"
+                type="button" 
+                class="btn"
+                :class="[isVideoEnabled ? 'btn-primary' : 'btn-secondary']"
+                >
+                <IconWidget v-if="!isVideoEnabled" icon="video" title="activer la caméra" @click="onManageVideo"></IconWidget>
+                <IconWidget v-else icon="video-slash" title="couper la caméra" @click="onManageVideo"></IconWidget>
+            </button>
+        </template>
     </template>
-
 </template>
 
 <script>
@@ -87,6 +88,7 @@
         setup( props ) {
             const {
                 isStreaming,
+                callInprogress,
                 startWebcamStream,
                 stopVideoStream,
                 currentStream,
@@ -107,6 +109,7 @@
 
             return {
                 isStreaming,
+                callInprogress,
                 startWebcamStream,
                 syncUsersConnections,
                 syncJoingingUsers,
@@ -125,7 +128,7 @@
             }
         },
         mounted() {
-             setContext({ users: this.users, room: this.room, component: 'StreamUserButton' });
+            setContext({ users: this.users, room: this.room, component: 'StreamUserButton' });
             this.setLocalVideoPeer(this, streamPeerCallback.default)
         },
         watch: {
@@ -183,9 +186,9 @@
                                 nickname: this.me.slug,
                                 isMuted: this.isMuted,
                                 isVideoEnabled: this.isVideoEnabled,
-                                // echoCancellation: true,
-                                // noiseSuppression: true,
-                                // autoGainControl: true
+                                echoCancellation: true,
+                                noiseSuppression: true,
+                                autoGainControl: true
                             },
                             this.currentStream
                         )

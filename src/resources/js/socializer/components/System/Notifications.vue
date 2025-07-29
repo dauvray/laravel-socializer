@@ -39,9 +39,6 @@
     import { defineAsyncComponent } from 'vue'
     import IconWidget from '~estarter/components/widgets/IconWidget.vue'
 
-    const visioCallCallback = import(`~socializer/callbacks/visioPlayerCallback.js`)
-    const visioPlayerDataCallback = import(`~socializer/callbacks/visioPlayerDataCallback.js`)
-
     export default {
         name: 'Notifications',
         components: {
@@ -61,6 +58,7 @@
                 receiveAuthorizationRemotePeerId,
                 setLocalVideoPeer,
                 setLocalDataPeer,
+                storeConnection,
                 createVideoElement,
                 connectToQueuedConnections,
                 removeVideoElement,
@@ -72,6 +70,7 @@
                 updateCurrentRoom,
                 updateCurrentType,
                 localPeerId,
+                localPeer,
                 connections,
                 onResponseCallError,
                 callInprogress,
@@ -96,6 +95,7 @@
                 notificationComponentProps,
                 setLocalVideoPeer,
                 setLocalDataPeer,
+                storeConnection,
                 createVideoElement,
                 removeVideoElement,
                 deleteRemoteOpenedConnections,
@@ -106,6 +106,7 @@
                 updateCurrentRoom,
                 updateCurrentType,
                 localPeerId,
+                localPeer,
                 connections,
                 onResponseCallError,
                 callInprogress,
@@ -138,7 +139,9 @@
                 }
             }
         },
-        mounted() {
+        async mounted() {
+            const visioCallCallback = await import(`~socializer/callbacks/visioPlayerCallback.js`)
+            const visioPlayerDataCallback = await import(`~socializer/callbacks/visioPlayerDataCallback.js`)
             this.setLocalVideoPeer(this, visioCallCallback.default)
             this.setLocalDataPeer(this, visioPlayerDataCallback.default)
             
