@@ -1,17 +1,10 @@
 <template>
-    <button v-if="!isInCall" 
+    <button
         type="button" 
         class="btn btn-primary btn-sm" 
-        :disabled="isCalling"
+        :disabled="isInCall"
         :title="`Appel ${type}`"
         @click="onCallUser">
-        <IconWidget :icon="callIcon"></IconWidget>
-    </button>
-    <button v-else 
-        type="button"
-        class="btn btn-danger btn-sm"
-        :title="`Terminer appel ${type}`"
-        @click="onCloseCall">
         <IconWidget :icon="callIcon"></IconWidget>
     </button>
 </template>
@@ -22,16 +15,12 @@
      */
 
     import IconWidget from '~estarter/components/widgets/IconWidget.vue'
-    import { usePeers } from '~socializer/components/WebRTC/composables/usePeers.js'
-    import { useMeStore } from '~estarter/stores/me.js'
-    import { mapActions, mapState } from 'pinia'
-    import { ref } from 'vue'
-
 
     export default {
         name: 'CallUserButton',
         inject: [
             "AWN",
+            "eventBus",
         ],
         components: {
             IconWidget,
@@ -46,37 +35,18 @@
                 default: 'visio'
             }
         },
-        setup( props ) {
-            const {
-                getAuthorizationRemotePeerId,
-                pendingRequests,
-                stopAllVisioStream,
-                connections,
-                ConnectionsHasTypeInRoom,
-            } = usePeers(props, 'visio', null)
-
-            const isInCall= ref(false)
-
+        data() {
             return {
-                getAuthorizationRemotePeerId,
-                pendingRequests,
-                stopAllVisioStream,
-                connections,
-                ConnectionsHasTypeInRoom,
-                isInCall,
+                isInCall: false,
             }
         },
-        async mounted() {
-          
-            this.checkIsInCall()
+        mounted() {
+            this.eventBus.$on('close-call', this.onCloseCall)
+        },
+        beforeUnmount() {
+            this.eventBus.$off('close-call', this.onCloseCall)
         },
         computed: {
-            ...mapState(useMeStore, {
-                me: 'getMe',
-            }),
-            isCalling: function() {
-                return this.pendingRequests.hasOwnProperty(this.user.slug)
-            },
             callIcon: function() {
                 if(this.type === 'vocal') {
                     return this.isCalling ? 'phone-slash' : 'phone'
@@ -84,25 +54,17 @@
                 return this.isCalling ? 'video-slash' : 'video'
             },
         },
-        watch: {
-            connections: {
-                handler() {
-                    this.checkIsInCall()
-                },
-                deep: true
-            },
-        },
         methods: {
             onCallUser() {
-                this.getAuthorizationRemotePeerId(this.user.slug, this.type)
+                this.eventBus.$emit('call-user', this.user.slug, this.type)
                 this.AWN.info(`Appel ${this.user.slug}`)
+                this.isInCall = true
             },
-            onCloseCall() {
-                this.stopAllVisioStream(this.type)
+            onCloseCall(users) {
+                if(users.find(user => user.userSlug === this.user.slug && user.type === this.type)) {
+                    this.isInCall = false
+                }
             },
-            checkIsInCall() {
-                this.isInCall = this.ConnectionsHasTypeInRoom(this.user.slug, this.type)
-            }
         }
     }
 </script>

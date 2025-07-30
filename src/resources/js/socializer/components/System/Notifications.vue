@@ -41,6 +41,9 @@
 
     export default {
         name: 'Notifications',
+        inject: [
+            "eventBus",
+        ],
         components: {
             AlertComponent: defineAsyncComponent(() => import('~socializer/components/System/widgets/AlertComponent.vue')),
             CallWebUI: defineAsyncComponent(() => import('~socializer/components/System/widgets/CallWebUI.vue')),
@@ -53,6 +56,7 @@
 
             const {
                 sendLocalPeerId,
+                getAuthorizationRemotePeerId,
                 closeRemotePeerId,
                 sendAuthorizationRemotePeerId,
                 receiveAuthorizationRemotePeerId,
@@ -77,16 +81,18 @@
                 setCallInProgress,
                 setCurrentCallRoomId,
 
-            } = usePeers({unmount: false})
+            } = usePeers()
 
             const totalNotification = ref(0)
             const notificationComponent = ref(null)
             const notificationComponentProps = ref(null)
             const NewMessageNotification= ref(null)
             const queueProcesing = ref(false)
+            const currentCallUsers = ref([])
         
             return {
                 sendLocalPeerId,
+                getAuthorizationRemotePeerId,
                 closeRemotePeerId,
                 sendAuthorizationRemotePeerId,
                 receiveAuthorizationRemotePeerId,
@@ -115,6 +121,7 @@
                 NewMessageNotification,
                 connectToQueuedConnections,
                 queueProcesing,
+                currentCallUsers,
             }
         },
         watch: {
@@ -144,6 +151,8 @@
             const visioPlayerDataCallback = await import(`~socializer/callbacks/visioPlayerDataCallback.js`)
             this.setLocalVideoPeer(this, visioCallCallback.default)
             this.setLocalDataPeer(this, visioPlayerDataCallback.default)
+
+            this.eventBus.$on('call-user', this.onStartCall)
             
             setInterval(() => { 
                 this.setOnlineStatus() 
@@ -151,6 +160,7 @@
         },
         unmounted() {
             Echo.leave(this.userChannel)
+            this.eventBus.$off('call-user', this.onStartCall)
         },
         methods: {
             ...mapActions(useConversationsStore, [
@@ -226,14 +236,22 @@
                     )
                 }
             },
-            onStopCall() {
-                this.stopAllVisioStream('visio')
-            },
             setOnlineStatus() {
                 Echo.private(this.me.channel).whisper('ping', {
                     timestamp: Date.now(),
                     userId: this.me.id,
                 });
+            },
+            onStopCall() {
+                this.stopAllVisioStream('visio')
+                this.eventBus.$emit('close-call', this.currentCallUsers)
+            },
+            onStartCall(userSlug, type) {
+                this.currentCallUsers.push({
+                    userSlug: userSlug,
+                    type: type,
+                })
+                this.getAuthorizationRemotePeerId(userSlug, type)
             },
         }
     }

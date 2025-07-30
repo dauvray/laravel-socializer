@@ -24,8 +24,6 @@ export function usePeers(props, type = 'data', room = 'app') {
         isVideoEnabled: true,
     })
 
-    const unmountPlayersOnNavigation = props.unmount === false ? false : true
-
     const previousIds = ref([]) // store previous ids to compare with new users
 
     const videoContainer = ref('#videoContainer')
@@ -378,14 +376,10 @@ export function usePeers(props, type = 'data', room = 'app') {
             })
 
             await peerStore.stopVideoStream(currentCallRoomId, type)
-
         }
 
-        // if no one in room stop my stream
-      // if(!connections.hasOwnProperty(currentCallRoomId)) {
-            removeVideoElement(`local-${type}`)
-            peerStore.setCallInProgress(false)
-       // }
+        removeVideoElement(`local-${type}`)
+        peerStore.setCallInProgress(false)
     }
 
     const startScreenCapture = async () => {
@@ -580,31 +574,28 @@ export function usePeers(props, type = 'data', room = 'app') {
 
     onBeforeUnmount(() => {
 
-        if(unmountPlayersOnNavigation) {
+        unregisterIncomingPeerCallback()
 
-            unregisterIncomingPeerCallback()
+        /***********************************************************
+         coupe tous les flux et connections quand on quitte le salon */
 
-            /***********************************************************
-             coupe tous les flux et connections quand on quitte le salon */
-
-            for (const userSlug in connections.value[onAirRoom.value]) {
-                connections.value[onAirRoom.value][userSlug][currentType.value].forEach (conn => {
-                    closeRemotePeerId(userSlug, currentType.value, onAirRoom.value, true)
-                })
-            }
-            
-            eventBus.$off("closeStream", closeEventBusStream)
-
-            const players = peerStore.getPlayers
-            players.forEach(player => {
-                if(player.type === currentType.value) {
-                    removeVideoElement(player.videoId)
-                } 
+        for (const userSlug in connections.value[onAirRoom.value]) {
+            connections.value[onAirRoom.value][userSlug][currentType.value].forEach (conn => {
+                closeRemotePeerId(userSlug, currentType.value, onAirRoom.value, true)
             })
+        }
+        
+        eventBus.$off("closeStream", closeEventBusStream)
 
-            stopVideoStream(currentType.value)
-       }
+        const players = peerStore.getPlayers
+        players.forEach(player => {
+            if(player.type === currentType.value) {
+                removeVideoElement(player.videoId)
+            } 
+        })
 
+        stopVideoStream(currentType.value)
+      
     })
 
     onMounted(() => {
