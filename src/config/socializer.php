@@ -210,6 +210,7 @@ return [
                 'props' => [
                     'name string NOT NULL',
                     'image string NULL',
+                    'cover string NULL',
                     'active int NOT NULL',
                     'connected int NULL',
                     'function string NULL',
@@ -346,6 +347,7 @@ return [
             'user' => [
                 "name" => null,
                 "image" => null,
+                "cover" => null,
                 "active" => null,
                 "connected" => null,
                 "function" => null,

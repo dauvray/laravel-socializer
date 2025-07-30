@@ -1,12 +1,11 @@
 <template>
     <div ref="userLink" 
         class="user-link-container" >
+            <span class="user-link" @click="viewProfile">{{ user.name }}</span>
             <IconWidget icon="user-circle"  
-                @mouseenter="showDropdown" 
+                @click="showDropdown" 
                 @touch="showDropdown"
             ></IconWidget>
-           
-            
             <!-- Dropdown -->
             <div v-if="isDropdownVisible" 
                 ref="userCover" 
@@ -44,10 +43,7 @@
                     </div>
                 </div>
             </div>
-
-            
-        </div>
-         <span class="user-link" @click="viewProfile">{{ user.name }}</span>
+    </div>
 </template>
 
 <script>
@@ -91,7 +87,6 @@ export default {
             }
         },
         canSendMessage() {
-            // Logique pour déterminer si on peut envoyer un message
             return this.user.slug && this.user.id !== this.currentUserId
         }
     },
@@ -160,24 +155,26 @@ export default {
 }
 </script>
 
-<style scoped>
+<style lang="scss" scoped>
 .user-link-container {
     position: relative;
     display: inline-block;
+    cursor: pointer;
 }
 
 .user-link {
     color: #007bff;
     text-decoration: none;
-    cursor: pointer;
     padding: 2px 4px;
     border-radius: 3px;
     transition: background-color 0.2s;
+
+    &:hover {
+        text-decoration: underline;
+    }   
 }
 
-.user-link:hover {
-    background-color: #f8f9fa;
-}
+
 
 .user-dropdown {
      position: absolute;

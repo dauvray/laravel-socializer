@@ -47,9 +47,15 @@
             <div v-if="users" class="list-group list-group-flush ">
                 <a v-for="user in users.data" :key="user.slug"
                     href="#"
-                    class="list-group-item list-group-item-action"
-                    @click="onAddContact(user.identifier)"
-                >{{ user.name }}
+                    class="list-group-item list-group-item-action d-flex align-items-center"
+                    @click="onAddContact(user.identifier)">
+                    <Gravatar 
+                        :user="user"
+                        style="width:35px;"
+                        class="me-2"
+                        size="small"
+                        :showStatus="true"
+                    ></Gravatar>{{ user.name }}
                 </a>
             </div>
         </template>

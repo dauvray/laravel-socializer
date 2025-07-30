@@ -211,7 +211,6 @@ class NebulaGraphConnection extends Connection {
     {
         $result = [];
 
-        // overwrite id property if commentable
         if(isset($object->vertexId)) {
             $result['id'] = $object->vertexId;
             $pattern = Arr::except($pattern, ['id']);
@@ -220,6 +219,8 @@ class NebulaGraphConnection extends Connection {
         foreach ($pattern as $key => $value) {
             if (isset($object->$key)) {
                 $result[$key] = is_numeric($object->$key) ? $this->formatNumber($object->$key) : $object->$key;
+            } elseif (isset($object->extras[$key])) {
+                $result[$key] = is_numeric($object->extras[$key]) ? $this->formatNumber($object->extras[$key]) : $object->extras[$key];
             } else {
                 $result[$key] = is_numeric($value) ? $this->formatNumber($value) : $value;
             }

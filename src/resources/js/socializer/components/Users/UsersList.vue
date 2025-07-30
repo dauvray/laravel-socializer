@@ -1,7 +1,8 @@
 <template>
-
     <div class="m-3 px-3">
-        <ThumbnailUserWidget v-for="user in users"
+        <ThumbnailUserWidget 
+            v-for="user in users" 
+            :key="user.slug"
             :user="user"
         ></ThumbnailUserWidget>
     </div>

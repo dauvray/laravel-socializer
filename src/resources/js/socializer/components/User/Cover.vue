@@ -29,6 +29,7 @@
                     :user="element"
                 ></FollowButton>
                 <CallUserButton
+                    v-if="user.connected"
                     :user="element"
                 ></CallUserButton>
             </div>

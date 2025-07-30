@@ -34,7 +34,7 @@ class User extends JsonResource
                 return $this->resource->follow_status == 'followed' ? true : false;
             }),
             'nb_followers' => $this->resource->nb_followers,
-            'cover' => isset($this->resource->extras) && isset($this->resource->extras['cover']) ? $this->resource->extras['cover'] : null,
+            'cover' => $this->resource->extras['cover'] ?? $this->resource?->cover ?? null,
             'vertexid' => isset($this->resource->vertexid) ? $this->resource->vertexid : null,
             'channel' => $this->when($is_me, function () use ($user_id) {
                 return 'App.Models.User.' . $user_id;
