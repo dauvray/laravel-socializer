@@ -1,3 +1,4 @@
+
 import { isEmpty, findDeepValue } from '~estarter/services/helpers.js'
 
 export default {
@@ -45,12 +46,15 @@ export default {
     getStream: (state) => {
         return (room = 'default', type = 'stream') => {
 
-          return findDeepValue(state.streams, {
-              conditions: { type },
-              rootCondition: (key) => key == room
-          }, 'stream')
+            return findDeepValue(state.streams, {
+                conditions: { type },
+                rootCondition: (key) => key == room
+            }, 'stream')
 
         }
+    },
+    getRemoteStreams() {
+       return this.remoteStreams
     },
     getPendingRequests() {
         return this.pendingRequests

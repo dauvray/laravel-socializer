@@ -177,9 +177,8 @@ export default {
 
 
 .user-dropdown {
-     position: absolute;
-   /* top: 100%;
-    left: 0; */
+    position: absolute;
+    overflow: hidden;
     z-index: 5;
     background: white;
     border: 1px solid #ddd;

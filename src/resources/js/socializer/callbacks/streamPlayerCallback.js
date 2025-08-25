@@ -5,6 +5,7 @@ export default (call, context) => {
     call.answer()
 
     call.on('stream', async(stream) => {
+
         if (receivedStreams.has(stream.id)) {
             return
         }
@@ -12,6 +13,11 @@ export default (call, context) => {
         receivedStreams.add(stream.id)
 
         if (stream instanceof MediaStream) {
+
+            if(typeof context.saveRemoteStream === 'function') {
+                console.log('Enregistrement du flux distant:', call.metadata.from, stream, call.metadata.source)
+                context.saveRemoteStream(call.metadata.room, call.metadata.from, stream, call.metadata.source)
+            }
 
             await context.createVideoElement(
                 {
@@ -45,7 +51,10 @@ export default (call, context) => {
     call.on('close', () => {
         context.removeVideoElement(call.connectionId)
         context.deleteRemoteOpenedConnections(call)
-       
+
+        if(typeof context.removeRemoteStream === 'function') {
+            context.removeRemoteStream(call.metadata.room, call.metadata.from, call.metadata.source)
+        }
 
     })
 

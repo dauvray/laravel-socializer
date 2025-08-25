@@ -80,6 +80,8 @@
                 callInprogress,
                 setCallInProgress,
                 setCurrentCallRoomId,
+                saveRemoteStream,
+                removeRemoteStream,
 
             } = usePeers()
 
@@ -122,6 +124,8 @@
                 connectToQueuedConnections,
                 queueProcesing,
                 currentCallUsers,
+                saveRemoteStream,
+                removeRemoteStream,
             }
         },
         watch: {

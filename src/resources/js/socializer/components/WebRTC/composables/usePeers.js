@@ -205,6 +205,8 @@ export function usePeers(props, type = 'data', room = 'app') {
 
                 receivedStreams.add(remoteStream.id)
 
+                saveRemoteStream(connection.call.metadata.room, connection.call.metadata.from, remoteStream, connection.call.metadata.source)
+
                 createVideoElement({
                     videoId: connection.call.connectionId, 
                     nickname: connection.call.metadata.slug,
@@ -216,6 +218,8 @@ export function usePeers(props, type = 'data', room = 'app') {
                     console.log('ended stream remote')
 
                     removeVideoElement(connection.call.connectionId)
+                    removeRemoteStream(connection.metadata.room, connection.metadata.from, connection.call.metadata.source)
+
                     if(!connections.value.hasOwnProperty(onAirRoom.value)) {
                         console.log('le salon est vide')
                     }
@@ -363,7 +367,7 @@ export function usePeers(props, type = 'data', room = 'app') {
 
         if (connections[currentCallRoomId]) {
 
-            Object.keys(connections[currentCallRoomId]).forEach (userSlug => {
+            Object.keys(connections[currentCallRoomId]).forEach(userSlug => {
 
                 if(connections[currentCallRoomId][userSlug].hasOwnProperty(type)) {
                     connections[currentCallRoomId][userSlug][type].forEach(peer => {
@@ -522,6 +526,14 @@ export function usePeers(props, type = 'data', room = 'app') {
         return false
     }
 
+    const saveRemoteStream = (room, userSlug, stream, type) => {
+        peerStore.saveRemoteStream( room, userSlug, stream, type)
+    }
+
+    const removeRemoteStream = (room, userSlug, type) => {
+        peerStore.removeRemoteStream(room, userSlug, type)
+    }
+
     /*******************************
      * COMPUTED
      * *****************************/
@@ -560,6 +572,10 @@ export function usePeers(props, type = 'data', room = 'app') {
 
     const currentCallRoomId = computed(() => {
         return peerStore.getCurrenCallRoomId
+    })
+
+    const remoteStreams = computed(() => {
+        return peerStore.getRemoteStreams
     })
 
     /*******************************
@@ -634,6 +650,8 @@ export function usePeers(props, type = 'data', room = 'app') {
         registerIncomingPeerCallback,
         unregisterIncomingPeerCallback,
         deleteRemoteOpenedConnections,
+        saveRemoteStream,
+        removeRemoteStream,
         localPeer,
         localPeerId,
         isConnecting,
@@ -644,5 +662,7 @@ export function usePeers(props, type = 'data', room = 'app') {
         isStreaming,
         isCapturing,
         callInprogress,
+        onAirRoom,
+        remoteStreams,
     }
 }

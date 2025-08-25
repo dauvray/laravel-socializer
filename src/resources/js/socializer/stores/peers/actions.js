@@ -450,4 +450,41 @@ console.log('Creating data connection for', type, payload.options.metadata.callb
             }
         }
     },
+    saveRemoteStream(room = 'default', userSlug, stream = null, type = 'stream') {
+
+        // init room
+        if(!this.remoteStreams.hasOwnProperty(room)) {
+            this.remoteStreams[room] = {}
+        }
+
+        // init user
+        if(!this.remoteStreams[room].hasOwnProperty(userSlug)) {
+            this.remoteStreams[room][userSlug] ={}
+        }
+
+        // init type
+        if(!this.remoteStreams[room][userSlug].hasOwnProperty(type)) {
+            this.remoteStreams[room][userSlug][type] = []
+        }
+
+        this.remoteStreams[room][userSlug][type].push(stream)
+    },
+    removeRemoteStream(room = 'default', userSlug, type = 'stream') {
+
+        if (!this.remoteStreams?.[room]?.[userSlug]?.[type]) return;
+
+        this.remoteStreams[room][userSlug][type] = [];
+        
+        if (this.remoteStreams[room][userSlug][type].length === 0) {
+            delete this.remoteStreams[room][userSlug][type];
+        }
+
+        if (Object.keys(this.remoteStreams[room][userSlug]).length === 0) {
+            delete this.remoteStreams[room][userSlug];
+        }
+
+        if (Object.keys(this.remoteStreams[room]).length === 0) {
+            delete this.remoteStreams[room];
+        }
+    }
 }

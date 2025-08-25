@@ -1,10 +1,10 @@
 <template>
     <Teleport :to="`#collapser-${room.id}`" >
-        <!-- <SpectrumAnalyzer
+        <SpectrumAnalyzer
             v-if="currentStream"
             class="border rounded mt-2"
-            :stream="currentStream"
-        ></SpectrumAnalyzer> -->
+            :streams="streams"
+        ></SpectrumAnalyzer>
     </Teleport>
 
     <div class="chat-header m-2">
@@ -51,10 +51,14 @@
                 isStreaming,
                 currentStream,
                 setLocalVideoPeer,
+                connections,
+                onAirRoom,
+                remoteStreams,
             } = usePeers(props, 'stream', props.room.id)
 
             const isAudioCall = ref(true)
             const audioLocalRoomStream = 'audio-local-Room-stream'
+            const streams = ref([])
 
             return {
                 startWebcamStream,
@@ -68,6 +72,10 @@
                 createVideoElement,
                 currentStream,
                 setLocalVideoPeer,
+                connections,
+                onAirRoom,
+                streams,
+                remoteStreams,
             }
         },
         mounted() {
@@ -95,6 +103,15 @@
                     if(this.isStreaming) {
                         this.syncJoingingUsers(newVal, oldVal)
                     }
+                },
+                deep: true,
+                immediate: true
+            },
+            remoteStreams: {
+                handler() {
+                    console.log('remoteStreams updated', this.remoteStreams)
+                   this.updateStreams()
+                 
                 },
                 deep: true,
                 immediate: true
@@ -128,7 +145,19 @@
                     }
                 })
             },
+            updateStreams() {
+
+                if (!this.remoteStreams?.[this.onAirRoom]) return;
+
+                Object.keys(this.remoteStreams[this.onAirRoom]).forEach(slug => {
+                   this.remoteStreams[this.onAirRoom][slug].stream.forEach(mediaStream => {
+                        this.streams.push(mediaStream)
+                   })
+                })
+
+            }
+            
         }
-    };
+    }
 </script>
 

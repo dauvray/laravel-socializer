@@ -22,7 +22,6 @@
 
         </Teleport> 
 
-
         <div class="conversations-list-wrapper"
             v-resizable="{
                 min: initialSidebarWidth,
@@ -50,9 +49,9 @@
             @update-chatters="onUpdateChatters"
         ></ChatComponent>
 
-        <template v-else>
-           No con
-        </template>
+        <dtemplate v-else >
+           <span class="p-3"> Aucune conversation sélectionnée.</span>
+        </dtemplate>
 
     </div>
 </template>
