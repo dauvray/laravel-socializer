@@ -463,6 +463,7 @@ class Server
 
         $final_values = array_merge(['id' => $vid], $values);
 
+         // send to all server users
         Broadcast::presence("server.$server_id")
             ->as('roomCreated')
             ->with($final_values)

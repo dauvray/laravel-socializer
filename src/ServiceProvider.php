@@ -163,6 +163,8 @@ class ServiceProvider extends \Illuminate\Support\ServiceProvider
         $this->commands([
             \Dauvray\Socializer\app\console\Commands\SocializerInstall::class,
             \Dauvray\Socializer\app\console\Commands\SocializerUpgrade::class,
+            \Dauvray\Socializer\app\console\Commands\NebulaGraphPopulate::class,
+            \Dauvray\Socializer\app\console\Commands\NebulaGraphClearSessions::class,
         ]);
     }
 }

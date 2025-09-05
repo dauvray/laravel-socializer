@@ -4,7 +4,6 @@ use App\Models\User;
 use Illuminate\Support\Facades\Broadcast;
 use Dauvray\Socializer\app\Http\Resources\User as UserResource;
 
-
 /*-----------------------------------
 | Private channels
 ------------------------------------*/

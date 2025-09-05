@@ -200,7 +200,8 @@ class Chat
         Broadcast::presence("chat.{$data['chat_id']}")
             ->as('receivedMsg')
             ->with($params)
-            ->sendNow();
+            ->sendNow()
+            ;
 
         // only when there is only two users ( real conversation )
         // here we check if the user is registered in the chat

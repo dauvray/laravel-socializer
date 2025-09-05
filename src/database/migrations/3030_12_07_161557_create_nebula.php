@@ -72,30 +72,8 @@ return new class extends Migration
         sleep(config('socializer.nebulagraph.sleeping_duration'));
 
         /*
-        | USERS
-        */
-        foreach(config('estarter.models.user')::all() as $user) {
-            createUserAndNetwork($user);
-        }
-
-        /*
         | VERTEX
         */
-
-        foreach(config('eblogger.models.article')::all() as $article) {
-            $nebula->insertVertex(
-                config('socializer.nebulagraph.tags.article.name'), 
-                array_merge(
-                    $nebula->populatePropsFromPattern(
-                        $article, 
-                        config('socializer.nebulagraph.vertices.article')
-                    ),
-                    [
-                        'identifier' => hideIdentifier($article)
-                    ]
-                )
-            );
-        }
 
         $nebula->insertVertex(
             config('socializer.nebulagraph.tags.marketplace.name'),
@@ -109,17 +87,7 @@ return new class extends Migration
         | RELATIONSHIP
         */
 
-        foreach(config('eblogger.models.article')::all() as $article) {
-            // relie article et auteur
-            // Defini le sens de la relation et passe des parametres
-            // e.g : Article2->User3 => []
-            $nebula->insertEdge(
-                config('socializer.nebulagraph.edges.has_creator.name'), 
-                [
-                    config('socializer.nebulagraph.tags.article.name').$article->id.'->'.config('socializer.nebulagraph.tags.user.name').$article->author->id => config('socializer.nebulagraph.edges.has_creator.props')
-                ]
-            );
-        }
+
         
     }
 
