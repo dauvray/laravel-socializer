@@ -37,22 +37,12 @@ class SendMessageToBot implements ShouldQueue
     {     
         $chatbot = config('estarter.models.user')::find($this->chat['bot_id']); 
 
-        $botResponse = Http::post($chatbot->extras['webhook_url'], [
+        Http::post($chatbot->extras['webhook_url'], [
+            'assistantPrompt' => $chatbot->extras['prompt'] ?? '',
             'chatInput' => $this->message->message_src,
             'author' => ['name' => $this->user->name, 'id' => $this->user->id],
             'sessionId' => $this->chat['id'],
+            'conversation' => $this->chat,
         ]);
-
-        // $responseJson = $botResponse->body(); // chaîne JSON brute
-        // $responseArray = json_decode($responseJson, true); // tableau PHP
-        // $message = $responseArray['output'] ?? '...';
-
-        // $botMessage = [
-        //     'chat_id' =>  $this->chat['id'],
-        //     'message' => $message,
-        //     'user' => $this->chat['bot_id'],
-        //  ];
-
-        //  $service->sendMessage(null, $botMessage, true);
     }
 }

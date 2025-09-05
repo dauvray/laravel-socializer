@@ -24,6 +24,7 @@ class ServiceProvider extends \Illuminate\Support\ServiceProvider
     public $routeFilePath = '/routes/socializer/routes.php';
     public $routeChannelsFilePath = '/routes/socializer/channels.php';
     public $routeFilePathAdmin = '/routes/socializer/admin.php';
+    public $routeApiFilePath = '/routes/socializer/api.php';
 
 
     /**
@@ -102,6 +103,8 @@ class ServiceProvider extends \Illuminate\Support\ServiceProvider
             $this->loadRoutesFrom(__DIR__ . $this->routeFilePath);
 
             $this->loadRoutesFrom(__DIR__ . $this->routeChannelsFilePath);
+
+            $this->loadRoutesFrom(__DIR__ . $this->routeApiFilePath);
 
 
             // load admin routes
