@@ -133,6 +133,7 @@
         inject: ["eventBus"],
         emits: [
             'update-chatters',
+            'update-conversation-title',
         ],
         components: {
             IconWidget,
@@ -319,6 +320,9 @@
                         })
                         .listen('.updatedMsg', (event) => {
                             this.onUpdatedMessage(event)
+                        })
+                        .listen('.updateConversationTitle', (event) => {
+                           this.$emit('update-conversation-title', event.title)
                         })
                         .listen('.botWriting', () => {
                            this.addActorWriting('Agent Bot')

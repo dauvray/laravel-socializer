@@ -23,6 +23,8 @@
         :styles="pageCss"
         :script="pageJs"
         @update-content="onUpdateContent"
+        @submit-prompt="onSubmitPrompt"
+        @reload-current-page="loadPage"
     ></component>
 
     <input type="hidden" name="identifier" :value="identifier" id="identifier"/>
@@ -30,6 +32,8 @@
 
 <script>
 
+    import { mapActions } from 'pinia'
+    import { useServerStore } from '~socializer/stores/server.js'
     import { defineAsyncComponent } from '@vue/runtime-core'
     import { useAjaxService } from '~estarter/services/AjaxService.js'
     const AjaxService = useAjaxService()
@@ -88,6 +92,9 @@
             }
         },
         methods: {
+            ...mapActions(useServerStore, [
+                'submitPagePrompt',
+            ]),
             async loadPage() {
                 const response = await AjaxService.load(`/get-room-page/${this.currentPageId}`)
                 this.pageHtml = response.page // html with rendered components
@@ -126,6 +133,13 @@
                 this.pageHtml = response.page
                 this.displayPage()
             },
+            onSubmitPrompt(prompt, botId = null) {
+                this.submitPagePrompt({ 
+                    prompt: prompt, 
+                    pageId: this.currentPageId ,
+                    botId: botId
+                })
+            }
         }
     }
 </script>

@@ -26,4 +26,9 @@ class PageController extends Controller
     {
         return response()->json($service->updatePage($request), 200);
     }
+
+    public function generatePage(Request $request, PageService $service)
+    {
+        return response()->json($service->generatePage($request), 200);
+    }
 }

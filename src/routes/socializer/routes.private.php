@@ -244,6 +244,10 @@ Route::post('/update-room-page',
     config('socializer.controllers_front.page').'@updatePage')
     ->name('server.update.page');
 
+Route::post('/generate-room-page', 
+    config('socializer.controllers_front.page').'@generatePage')
+    ->name('server.generate.page');
+
 
 /*----------------------------------------------------------------------
 | Users

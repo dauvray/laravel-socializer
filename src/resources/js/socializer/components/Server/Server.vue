@@ -90,6 +90,9 @@
 
     export default {
         name: 'Server',
+        inject: [
+            "eventBus",
+        ],
         emits: [
             'update-users-server',
             'joining-user-server',
@@ -270,6 +273,10 @@
                             if(this.currentServer.id === event.server.id) {
                                 this.updateServer(event.server, true)
                             }
+                        })
+                        .listen('.contentGenerated', (event) => {
+                            console.log(event);
+                             this.eventBus.$emit('content-generated-ia', event)
                         })
                         .error((error) => {
                             console.error(error);

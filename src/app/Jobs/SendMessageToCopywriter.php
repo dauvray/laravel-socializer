@@ -10,20 +10,22 @@ use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Http;
 use \App\Models\User;
 
-class SendMessageToBot implements ShouldQueue
+ 
+class SendMessageToCopywriter implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public $message;
-    public $chat;
+    public $page;
     public User $user;
 
+ 
     /**
      * Create a new job instance.
      */
-    public function __construct($message, $chat, User $user) {
+    public function __construct($message, $page, User $user) {
         $this->message = $message;
-        $this->chat = $chat;
+        $this->page = $page;
         $this->user = $user;
     }
  
@@ -31,15 +33,15 @@ class SendMessageToBot implements ShouldQueue
      * Execute the job.
      */
     public function handle(): void
-    {     
-        $chatbot = config('estarter.models.user')::find($this->chat['bot_id']); 
+    {    
+        $chatbot = config('estarter.models.user')::find($this->page['bot_id']); 
 
         Http::post($chatbot->extras['webhook_url'], [
             'assistantPrompt' => $chatbot->extras['prompt'] ?? '',
-            'chatInput' => $this->message->message_src,
+            'chatInput' => $this->message,
             'author' => ['name' => $this->user->name, 'id' => $this->user->id],
-            'sessionId' => $this->chat['id'],
-            'conversation' => $this->chat,
+            'document' => $this->page,
+
         ]);
     }
 }

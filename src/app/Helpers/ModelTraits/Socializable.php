@@ -224,8 +224,10 @@ trait Socializable
             MATCH (u:user)-[:registered_in]->(c:chat)
             WHERE id(u) == '$this->vertexid' AND c.chat.is_bot == $is_bot
             OPTIONAL MATCH (c)-[:published_in]->(v)
-            WITH c, collect(v) AS other_targets
+            WITH c, collect(v) AS other_targets, c.chat.created_at AS created_at 
             WHERE size(other_targets) == 0
+            WITH c, other_targets, created_at
+            ORDER BY created_at DESC 
             RETURN c
         ");
 

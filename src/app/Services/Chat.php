@@ -67,6 +67,11 @@ class Chat
 
         $chat = $result['chat'];
         $user = isset($options['user']) ? config('estarter.models.user')::find($options['user']) : $this->user;
+
+        // update conversation title if provided
+        if(isset($options['title']) && $options['title'] && !$chat['name']) {
+            $this->updateConversationTitle($chat_id, $options['title']);
+        }
        
         $registeredUsers = Arr::flatten($result['users']) ?? [];
         foreach ($registeredUsers as $idx => $registeredUser) {
@@ -482,6 +487,17 @@ class Chat
         );
 
        return $this->getConversation($vid);
+    }
+
+    public function updateConversationTitle($chat_id, $title)
+    {
+        $this->nebula->updateVertex(config('socializer.nebulagraph.tags.chat.name'), $chat_id, ['name' => $title]);
+
+        Broadcast::presence("chat.{$chat_id}")
+        ->as('updateConversationTitle')
+        ->with(['title' => $title])
+        ->sendNow()
+        ;
     }
 
     public function createChatVertice($room_id = null, $values = [])

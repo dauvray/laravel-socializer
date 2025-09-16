@@ -34,4 +34,10 @@ export default {
             this.currentConversation = null
         }
     },
+    updateConversationName(vertexid, title) {
+        const conversation = this.conversations.find( c => c.id === vertexid)
+        if(conversation) {
+            conversation.name = title
+        }
+    }
 }

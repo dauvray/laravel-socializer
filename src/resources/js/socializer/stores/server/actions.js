@@ -202,5 +202,19 @@ export default {
         return result
     },
 
- 
+    /*-----------------------------------
+    | PAGES
+    |-----------------------------------*/
+
+    async submitPagePrompt(payload) {
+      
+        const result = await AjaxService.load('/generate-room-page', 'post', {
+            prompt: payload.prompt,
+            page_id: payload.pageId,
+            bot_id: payload.botId,
+            server_id: this.getCurrentServer.id
+        })
+        
+    }
+
 }

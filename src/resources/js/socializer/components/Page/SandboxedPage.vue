@@ -69,7 +69,7 @@
 
 
             // Prépare le contenu iframe
-            const srcdoc = `<!DOCTYPE html><html lang="en"><head>${headContent.join('')}</head><body><div id=\"app-root\" ></div></body></html>`;
+            const srcdoc = `<!DOCTYPE html><html lang="en"><head>${headContent.join('')}</head><body style="overflow:hidden;"></body></html>`;
             iframe.srcdoc = srcdoc;
 
 
@@ -102,6 +102,18 @@
                     doc.body.appendChild(scriptTag);
                 }
                 this.pageLoaded = true
+
+                // Intercepter les clics sur les ancres
+                doc.querySelectorAll('a[href^="#"]').forEach(a => {
+                    a.addEventListener('click', e => {
+                        e.preventDefault();
+                        const id = a.getAttribute('href').substring(1);
+                        const target = doc.getElementById(id);
+                        if (target) {
+                        target.scrollIntoView({ behavior: 'smooth' });
+                        }
+                    });
+                });
             });
 
             window.addEventListener('message', this.handleMessageFromIframe);

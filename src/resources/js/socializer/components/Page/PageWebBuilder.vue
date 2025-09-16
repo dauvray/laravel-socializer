@@ -1,6 +1,12 @@
 <template>
    
-    <div class="card-body m-3">
+    <div class="generate-content" v-if="isBuilding">
+        <div class="generate-content-inner">
+            <Sprinner2 ></Sprinner2>
+            Contenu en cours de création...
+        </div>
+    </div>
+    <div v-else class="card-body m-3">
         <WebBuilder
             :html="html"
             :styles="styles"
@@ -42,6 +48,7 @@
                 <PromptWidget
                     :seeJson="false"
                     @prompt-data="onChangeJson"
+                    @submit-prompt="onSubmitPrompt"
                 ></PromptWidget>
             </template>
     </ModalWidget>
@@ -55,8 +62,13 @@
 
     export default {
         name: 'PageWebBuilder',
+        inject: [
+            "eventBus",
+        ],
         emits: [
             'update-content',
+            'submit-prompt',
+            'reload-current-page',
         ],
         props: {
             html: {
@@ -80,17 +92,25 @@
             PromptWidget: defineAsyncComponent(() => import('~formdesigner/application/formCreator/widgets/partials/Prompt.vue')),
             ModalWidget: defineAsyncComponent(() => import('~estarter/components/widgets/ModalLazy.js')),
             IconWidget: defineAsyncComponent(() => import('~estarter/components/widgets/IconWidgetLazy.js')),
+            Sprinner2: defineAsyncComponent(() => import('~estarter/components/widgets/Spinners/Spinner2.vue')),
         },
         data() {
             return {
                 showModal: false,
                 canValidate: false,
+                isBuilding: false,
             }
         },
         computed: {
             ...mapState(useServerStore, {
                 currentServer: 'getCurrentServer',
             }),
+        },
+        mounted() {
+            this.eventBus.$on('content-generated-ia', this.onReloadPage)
+        },
+        unmounted() {
+            this.eventBus.$off('content-generated-ia', this.onReloadPage)
         },
         methods: {
             onUpdateContent(html, css, js) {
@@ -103,6 +123,31 @@
                 this.showModal = false
                 this.canValidate = false
             },
+            onSubmitPrompt(prompt) {
+                this.isBuilding = true
+                this.onSaveUpdatedModal()
+                this.$emit('submit-prompt', prompt)
+            },
+            onReloadPage() {
+                this.isBuilding = false
+                this.$emit('reload-current-page')
+            },
         }
     }
 </script>
+
+<style lang="scss" scoped>
+    .generate-content {
+        position: fixed;
+        z-index: 200;
+        height: 200%;
+        width: 100%;
+        background-color: #000;
+
+        .generate-content-inner {
+            position: absolute;
+            top: 10%;
+            left: 35%;
+        }
+    }
+</style>

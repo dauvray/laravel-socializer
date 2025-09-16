@@ -3,6 +3,8 @@
 namespace Dauvray\Socializer\app\Services;
 
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Broadcast;
+use Dauvray\Socializer\app\Jobs\SendMessageToCopywriter;
 
 class Page
 {
@@ -98,5 +100,54 @@ class Page
             $page->delete();
             $this->nebula->deleteVertex([$page_id], true);
         }
+    }
+
+    public function generatePage($request)
+    {
+        $server_id = $request->get('server_id');
+        $page_id = $request->get('page_id');
+        $bot_id = config('socializer.agents_ai.copywriter.user_id'); // todo : a dynamiser
+        $prompt = $request->get('prompt');
+
+        if(!$this->user->isServerOwner($server_id)) {
+            return response()->json(['message' => 'Non autorisé'], 401);
+        }
+
+        // Broadcast::presence("chat.{$chat_id}")
+        //     ->as('botWriting')
+        //     ->sendNow();
+
+        SendMessageToCopywriter::dispatch(
+            message: $prompt,
+            page: [
+                'id' => $page_id, 
+                'bot_id' => $bot_id,
+                'server_id' => $server_id
+            ],
+            user: $this->user
+        );
+    }
+
+    public function storeGeneratedPage($data = null)
+    {
+        $result = $data['output'] ?? null;
+        $document = $data['document'] ?? null;
+        
+        if($document && $result) {
+
+            $page_id = $document['id'];
+            $page = config('socializer.models.page')::where('vertexid',  $page_id)->first();
+
+            $page->content = $result['html'] ?? $page->content;
+            $page->styles = $result['styles'] ?? $page->styles;
+            $page->script = $result['script'] ?? $page->script;
+            $page->save();
+
+            Broadcast::presence("server.".$document['server_id'])
+                ->as('contentGenerated')
+                ->with(['page_id' => $page_id])
+                ->sendNow();
+            }
+
     }
 }

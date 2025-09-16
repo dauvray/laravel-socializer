@@ -47,6 +47,7 @@
             ref="chatWidget"
             :display-separator="conversationType != 'agents'"
             @update-chatters="onUpdateChatters"
+            @update-conversation-title="onUpdatedConversationTitle"
         ></ChatComponent>
 
         <dtemplate v-else >
@@ -120,6 +121,7 @@
             ...mapActions(useConversationsStore, [
                 'loadConversations',
                 'createConversation',
+                'updateConversationName',
             ]),
             updateSidebarWidth(newWidth) {
                 this.sidebarWidth = newWidth
@@ -154,6 +156,11 @@
             },
             onUpdateChatters(chatters) {
                 this.chatters = chatters
+            },
+            onUpdatedConversationTitle(title) {
+                if(this.currentConversationId && title) {
+                    this.updateConversationName(this.currentConversationId, title)
+                }
             },
         }
     }

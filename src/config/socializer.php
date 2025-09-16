@@ -502,6 +502,9 @@ return [
         ],
         'chatbot' => [
             'user_id' => env('SOCIALIZER_CHATBOT_USER_ID', null),
+        ],
+        'copywriter' => [
+            'user_id' => env('SOCIALIZER_COPYWRITER_USER_ID', null),
         ]
     ],
 ];

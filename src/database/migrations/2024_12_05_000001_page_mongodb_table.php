@@ -22,9 +22,11 @@ return new class extends Migration
             $collection->bigInteger('model_id');
             $collection->string('server_id', 255);
             $collection->string('room_id', 255)->nullable();
-            $collection->string('content_id', 255)->nullable();
+            $collection->string('application_id', 255)->nullable();
             $collection->string('vertexid', 255);
             $collection->text('content')->nullable();
+            $collection->text('styles')->nullable();
+            $collection->text('script')->nullable();
 
             // Indexation (MongoDB crée des index différemment de MySQL)
             $collection->index('model_id');

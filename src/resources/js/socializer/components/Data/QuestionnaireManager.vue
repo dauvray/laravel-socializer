@@ -50,6 +50,7 @@
                         :isstandalone="true"
                         :iseditable="true"
                         :isbackend="true"
+                        :isai="aiEnhancement"
                         :display-builder="true"
                         :deport-saving="true"
                         :questionnaireid="selectedQuestionnaire"
@@ -65,6 +66,7 @@
     import TableWidget from '~estarter/components/widgets/Table.vue'
     import { mapActions, mapState } from 'pinia'
     import { useServerStore } from '~socializer/stores/server.js'
+    import { useApplicationStore } from '~estarter/stores/application.js'
     import { defineAsyncComponent } from 'vue'
     import { useAjaxService } from '~estarter/services/AjaxService.js'
     const AjaxService = useAjaxService()
@@ -116,6 +118,9 @@
         computed: {
             ...mapState(useServerStore, {
                 currentServer: 'getCurrentServer',
+            }),
+            ...mapState(useApplicationStore, {
+                aiEnhancement: 'getIsAi',
             }),
         },
         created() {
