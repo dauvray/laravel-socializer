@@ -8,27 +8,44 @@
         ></Gravatar>
 
         <div class="comment flex-grow-1">
-            <div class="card">
+            <div class="post-wrapper">
                 <CommentHeader
-                    class="card-header"
+                    class="post-header"
                     :message="comment"
                     :commentable="commentable"
                     :vertexid="vertexid"
                     @delete-comment="onDeleteComment"
                 ></CommentHeader>
                 <CommentBody
-                    class="card-body"
+                    class="post-body"
                     :item="comment.comment"
                 ></CommentBody>
+                <div class="post-footer">
+                    <div class="post-footer-inner-left">
+                        <LikeButtons
+                            :likes="comment.likes"
+                            :dislikes="comment.dislikes"
+                            @like-item="onLikeItem"
+                        ></LikeButtons>
+                    </div>
+                    <div class="post-footer-inner-right">
+                        <button
+                            v-if="canDelete"
+                            type="button" 
+                            class="delete-btn"
+                            @click="onDeleteComment"
+                            ><IconWidget icon="trash-alt" title="supprimer"></IconWidget>
+                        </button>
+                    </div>
+                </div>
             </div>
             <CommentFooter
-                class="card-footer"
+                class="post-footer"
                 :logged="logged"
                 :comment="comment"
                 :commentable="commentable"
                 :vertexid="vertexid"
                 :formvisible="formvisible"
-                @like-item="onLikeItem"
                 @comment-created="onCommentCreated"
                 @comment-deleted="onDeleteComment"
             ></CommentFooter>
@@ -42,6 +59,10 @@
     import CommentBody from '~socializer/components/Comment/partials/CommentBody.vue'
     import CommentFooter from '~socializer/components/Comment/partials/CommentFooter.vue'
     import Gravatar from '~estarter/components/widgets/Gravatar.vue'
+    import LikeButtons from '~socializer/components/Comment/widgets/Like.vue'
+    import IconWidget from '~estarter/components/widgets/IconWidget.vue'
+    import { mapState } from 'pinia'
+    import { useMeStore } from '~estarter/stores/me.js'
 
     export default {
         name: 'Comment',
@@ -50,6 +71,8 @@
             CommentBody,
             CommentFooter,
             Gravatar,
+            LikeButtons,
+            IconWidget,
         },
         emits: [
             'delete-comment',
@@ -79,15 +102,26 @@
                 default: false
             },
         },
+        computed: {
+            ...mapState(useMeStore, {
+                me: 'getMe',
+            }),
+            canDelete: function() {
+                if(this.me) {
+                    return this.me.vertexid == this.comment.author.id
+                }
+            },
+        },
         methods: {
-            onDeleteComment(message, status = false) {
-                this.$emit('delete-comment', message, status)
+            onDeleteComment() {
+                // false because not treated
+                this.$emit('delete-comment', this.comment, false)
             },
             onCommentCreated(comment, status) {
                 this.$emit('comment-created', comment, status)
             },
-            onLikeItem(payload) {
-                this.$emit('like-item', payload)
+            onLikeItem(value) {
+                this.$emit('like-item', { value , itemVid: this.comment.comment.id })
             },
         },
     }

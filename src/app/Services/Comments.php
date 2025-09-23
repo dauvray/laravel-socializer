@@ -29,27 +29,33 @@ class Comments
         // my comments
         if($order == 'mine') {
             $subQuery = 'MATCH (c:'. $tag .')<-[b:reply_of]-(a:comment)-[h:has_creator]->(u:user) 
-            WHERE id(u) =="'.Auth::user()->vertexId.'" AND id(c) == "'. $vertex_id .'"';
-
-            $order = 'createdAT DESC';
-
+            WHERE id(u) =="'.Auth::user()->vertexId.'" AND id(c) == "'. $vertex_id .'" ';
         } else {
-        // all comments
-        $subQuery = ' MATCH (a:comment)-[b:reply_of]->(c:'. $tag .') WHERE id(c) =="'. $vertex_id .'" 
-                    OPTIONAL MATCH (a)-[h:has_creator]->(u:user)';
+            // all comments
+            $subQuery = 'MATCH (a:comment)-[b:reply_of]->(c:'. $tag .') WHERE id(c) =="'. $vertex_id .'" 
+                        OPTIONAL MATCH (a)-[h:has_creator]->(u:user) ';
         }
 
-        $comments = collect(app('nebulaGraph')->execute( 
-            $subQuery .'
-            OPTIONAL MATCH (l:comment)-[m:reply_of]->(a)
-            OPTIONAL MATCH (a)-[z:liked_by]->(:user)
-            OPTIONAL MATCH (a)-[x:disliked_by]->(:user)
-            OPTIONAL MATCH (c)-[ff:reply_of]->(p)
-            RETURN a as comment, a.comment.created_at as createdAT, u as author, count(DISTINCT l) as count, count(DISTINCT z) as likes, count(DISTINCT x) as dislikes, id(c) as parent, id(p) as store
-            ORDER BY '. $order .';
-        '));
+        $match = $subQuery .'
+          OPTIONAL MATCH (l:comment)-[m:reply_of]->(a)
+          OPTIONAL MATCH (a)-[z:liked_by]->(:user)
+          OPTIONAL MATCH (a)-[x:disliked_by]->(:user)
+          OPTIONAL MATCH (c)-[ff:reply_of]->(p)';
 
-        $paginator = makePaginationCollection($comments, route($route_name));
+        $return = 'RETURN a as comment, a.comment.created_at as createdAT, u as author, 
+                count(DISTINCT l) as count, 
+                count(DISTINCT z) as likes, 
+                count(DISTINCT x) as dislikes, 
+                id(c) as parent, id(p) as store';
+
+        $orderBy = 'createdAT DESC';
+
+        $paginator = makeNebulaPagination(
+            $match,
+            $return,
+            $orderBy,
+            route($route_name)
+        );
 
         return new CommentCollection($paginator);
     }

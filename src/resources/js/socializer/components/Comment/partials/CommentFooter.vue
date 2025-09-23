@@ -1,11 +1,4 @@
 <template>
-
-    <LikeButtons
-        :likes="comment.likes"
-        :dislikes="comment.dislikes"
-        @like-item="onLikeItem"
-    ></LikeButtons>
-
     <CommentListWrapper
         btn-label="Répondre"
         counter-label="Réponse"
@@ -20,7 +13,6 @@
         @comment-created="onCommentCreated"
         @comment-deleted="onCommentDeleted"
     ></CommentListWrapper> 
-
 </template>
 
 <script>
@@ -29,7 +21,6 @@
     import { useMeStore } from '~estarter/stores/me.js'
     import { defineAsyncComponent } from 'vue'
     import CommentListWrapper from '../CommentListWrapper.vue'
-    import LikeButtons from '~socializer/components/Comment/widgets/Like.vue'
 
     export default {
         name: "CommentFooter",
@@ -37,10 +28,8 @@
             CommentListWrapper,
             CommentList: defineAsyncComponent(() => import('~socializer/components/Comment/CommentList.vue')),
             CounterWidget: defineAsyncComponent(() => import('~socializer/components/Comment/widgets/Counter.vue')),
-            LikeButtons,
         },
         emits: [
-            'like-item',
             'comment-created',
             'comment-deleted',
         ],
@@ -105,9 +94,6 @@
             },
         },
         methods: {
-            onLikeItem(value) {
-                this.$emit('like-item', { value , itemVid: this.comment.comment.id })
-            },
             onCommentCreated(comment) {
                 this.$emit('comment-created', comment)
             },

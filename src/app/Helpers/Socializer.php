@@ -3,6 +3,7 @@
 use Dauvray\Socializer\app\Helpers\ContentFormater;
 use Illuminate\Support\Facades\Auth;
 use Dauvray\Socializer\app\Http\Resources\User as UserResource;
+use \Illuminate\Pagination\LengthAwarePaginator;
 
 if (!function_exists('formatTextToContent')) {
     function formatTextToContent($text) {
@@ -37,6 +38,48 @@ if (!function_exists('filterSensibleDataUserRessource')) {
 /*---------------------------
 | NEBULAGRAPH
 |----------------------------*/
+
+if (!function_exists('makeNebulaPagination')) {
+    function makeNebulaPagination(
+        string $matchQuery,    // ton MATCH ... WHERE ...
+        string $returnClause,  // ton RETURN ...
+        string $orderBy = '',  // ORDER BY ...
+        string $path = '',
+        int $defaultPage = 1,
+        ?int $perPage = null
+    ) {
+        $page    = request('page', $defaultPage);
+        $perPage = $perPage ?? config('settings.items_by_pages');
+
+        // 1️⃣ Query pour compter le total
+        $countQuery = "
+            $matchQuery
+            RETURN count(*) AS total
+        ";
+
+        $totalResult = app('nebulaGraph')->execute($countQuery);
+
+        // 2️⃣ Query paginée
+        $pagedQuery = "
+            $matchQuery
+            $returnClause
+            " . ($orderBy ? "ORDER BY $orderBy" : "") . "
+            LIMIT $perPage
+        ";
+
+        $pagedResult = app('nebulaGraph')->execute($pagedQuery);
+        $results = collect($pagedResult);
+
+        // 3️⃣ Retour paginator
+        return new LengthAwarePaginator(
+            $results,
+            $totalResult[0],
+            $perPage,
+            $page,
+            ['path' => $path]
+        );
+    }
+}
 
 if (!function_exists('getVertexId')) {
     function getVertexId($item)
@@ -82,13 +125,11 @@ if (!function_exists('getRealIdFromVertexId')) {
 if (!function_exists('getFeedFollowers')) {
     function getFeedFollowers($feedVertexId, $except_me = false) {
         if(!$except_me) {
-
             $followers = app('nebulaGraph')->execute("
                 MATCH (feed_dest:feed)-[:owned_by]->(u:user)<-[:followed_by]-(w:wall) 
                 WHERE id(w) == '$feedVertexId' 
                 RETURN feed_dest, u as user
             ");
-
         } else {
             $user = Auth::user();
             $followers = app('nebulaGraph')->execute("

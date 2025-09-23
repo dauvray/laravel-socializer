@@ -26,13 +26,13 @@ class SendPostToFollowers implements ShouldQueue
      */
     public function handle(): void
     {
-        // send to followers
-        $feed_followers = getFeedFollowers($this->feed_id);
+         $feed_followers = getFeedFollowers($this->feed_id);
 
+        // send to followers
         foreach($feed_followers as $feed) {
 
             try {
-                
+               
                 $feed_destination = $feed['feed_dest']['id'];
 
                 // publish post on feed follower

@@ -1,4 +1,5 @@
 <template>
+    <div>
     <SharedThumbnail 
         v-if="item.post.type == 'shared'"
         :user="item.post.shared_by">
@@ -31,34 +32,35 @@
                     <span v-if="item.post.shares" class="ms-3" title="Republications"><IconWidget icon="retweet"></IconWidget>{{ item.post.shares }}</span>
                 </div>
 
-
-
             </div>
-            <button
-                v-if="canDelete"
-                type="button" 
-                class="delete-button"
-                @click="onPostDelete"
-                ><IconWidget icon="trash-alt" title="supprimer"></IconWidget>
-            </button>
         </div>
-
         <div class="post-body">
             <div class="post-text" v-html="item.post.content"></div>
         </div>
+        <div class="post-footer">
+            <div class="post-footer-inner-left">
+                <LikeButtons
+                    :likes="item.post.likes"
+                    :dislikes="item.post.dislikes"
+                    @like-item="onLikeItem"
+                ></LikeButtons>
+            </div>
+            <div class="post-footer-inner-right">
+                <button
+                    v-if="canDelete"
+                    type="button" 
+                    class="delete-btn"
+                    @click="onPostDelete"
+                    ><IconWidget icon="trash-alt" title="supprimer"></IconWidget>
+                </button>
+                <ShareButton
+                    v-if="canShare"
+                    @share-item="onSharePost"
+                ></ShareButton>
+            </div>
+        </div>
     </div>
- 
-    <LikeButtons
-        :likes="item.post.likes"
-        :dislikes="item.post.dislikes"
-        @like-item="onLikeItem"
-    ></LikeButtons>
 
-    <ShareButton
-        v-if="canShare"
-        @share-item="onSharePost"
-    ></ShareButton>
-     
     <socializer-comments
         :canbecommented="true" 
         :formvisible="false" 
@@ -71,6 +73,7 @@
         @comment-created="onCommentCreated"
         @comment-deleted="onCommentDeleted"
     ></socializer-comments>
+</div>
 </template>
 
 <script>

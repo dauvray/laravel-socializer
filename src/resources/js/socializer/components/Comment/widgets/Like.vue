@@ -1,16 +1,14 @@
 <template>
-    <div class="btn-group btn-group-sm float-end" 
-        role="group" 
-        aria-label="Basic example">
+    <div class="like-btn" role="group" aria-label="like buttons">
         <button type="button" 
-            class="btn"
+            class="thumbs-up-btn"
             :disabled="this.me ? false: true"
             :aria-disabled="this.me ? false: true"
             @click="onLike">
             <IconWidget icon="thumbs-up"></IconWidget> {{ likes }}
         </button>
         <button type="button" 
-            class="btn"
+            class="thumbs-down-btn"
             :disabled="this.me ? false: true"
             :aria-disabled="this.me ? false: true"
             @click="onDislike">

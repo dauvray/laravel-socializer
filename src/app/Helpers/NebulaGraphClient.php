@@ -136,6 +136,7 @@ class NebulaGraphClient
             }
 
             Cache::forget('nebulagraph_sessionid');
+            Cache::forget('nebulagraph_last_sessionid');
             $this->sessionId = null;
         }
     }

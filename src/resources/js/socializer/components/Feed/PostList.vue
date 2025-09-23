@@ -2,16 +2,18 @@
     <div  v-if="posts.length === 0" class="alert alert-light" role="alert">
         Votre fil d'actualité est vide
     </div>
-    <PostWidget
-        v-for="item in posts"
-        :key="item.post.id"
-        :item="item"
-        @delete-post="onPostDelete"
-        @like-item="onLikeItem"
-        @share-item="onShareItem"
-        @comment-created="onCommentCreated"
-        @comment-deleted="onCommentDeleted"
-    ></PostWidget>
+    <TransitionGroup name="fade" tag="div">
+        <PostWidget
+            v-for="item in posts"
+            :key="item.post.id"
+            :item="item"
+            @delete-post="onPostDelete"
+            @like-item="onLikeItem"
+            @share-item="onShareItem"
+            @comment-created="onCommentCreated"
+            @comment-deleted="onCommentDeleted"
+        ></PostWidget>
+    </TransitionGroup>
     <PaginationOrIntersection
         :paginator="paginator"
         :pagination="pagination"
@@ -83,3 +85,14 @@
 
     }
 </script>
+
+<style>
+    .fade-enter-active,
+    .fade-leave-active {
+    transition: opacity 0.5s ease;
+    }
+    .fade-enter-from,
+    .fade-leave-to {
+    opacity: 0;
+    }
+</style>

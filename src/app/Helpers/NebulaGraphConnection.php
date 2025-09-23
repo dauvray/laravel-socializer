@@ -69,7 +69,7 @@ namespace Dauvray\Socializer\app\Helpers;
 use Illuminate\Database\Connection;
 
 use Dauvray\Socializer\app\Helpers\NebulaGraphClient;
-
+use Illuminate\Container\Attributes\Log;
 use Illuminate\Support\Arr;
 
 class NebulaGraphConnection extends Connection {
@@ -163,11 +163,6 @@ class NebulaGraphConnection extends Connection {
                 foreach($spacename->data as $idx_item => $item) {
                     $graphData[] = $this->formatValues($item, $idx_item, $spacename->columns);
                 }
-
-
-                // if(count($graphData) == 1) {
-                //     $graphData = $graphData[0];
-                // }
             } 
         }
 
@@ -237,9 +232,8 @@ class NebulaGraphConnection extends Connection {
      * @param string $stmt
      */
     public function execute(string $stmt)
-    {   //dump($stmt);
-        $res = $this->responseJson($this->nebula->executeJson($stmt));
-        //dump($res);
+    {   $res = $this->responseJson($this->nebula->executeJson($stmt));
+        \Log::debug('NebulaGraph Query: '. $stmt.' Result: '.json_encode($res));
         return $res;
     }
 

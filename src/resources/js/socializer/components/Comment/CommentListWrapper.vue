@@ -200,7 +200,7 @@
                 } 
                  else {
 
-                        let onOk = async () => {
+                    let onOk = async () => {
                         await this.deleteComment(message.comment.id)
                         this.$emit('comment-deleted', message, true)
                     }
@@ -219,9 +219,7 @@
                             }
                         }
                     )
-
                 }
- 
             },
             onTriggerObserver() {
                 if(this.nextUrl) {

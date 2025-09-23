@@ -435,10 +435,10 @@ class Chat
 
         // messages
         $messages_vid = flattenArray(($result[0]['messages']), '', false);
-        $messages = config('socializer.models.message')::whereIn('vertexid', $messages_vid)->get();
+        $messages = config('socializer.models.message')::whereIn('vertexid', $messages_vid)->orderBy('created_at', 'desc');
         unset($result[0]['messages']);
 
-        $paginator = makePaginationCollection($messages->reverse(), route('chat.get.conversation', $vertex_id));
+        $paginator = makePaginationQuery($messages, route('chat.get.conversation', $vertex_id));
 
         // set user in online chat connections
         $this->usersOnlineService->addUserItem('chat', $vertex_id);

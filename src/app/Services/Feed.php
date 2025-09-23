@@ -83,17 +83,22 @@ class Feed
             ORDER BY createdAt DESC 
          ");
 
-        // extract mongo Ids and prepare
+         // work in progress
+        // $posts_nebula = $this->_getFeedPosts($feed_id);
+        // $shared_posts_nebula = $this->_getSharedPosts($feed_id);
+
+        
+         // extract mongo Ids and prepare
         $mongo_ids = [];
         $final_list = [];
 
         foreach($posts_nebula as $item) {
-            $mongo_id = $item['post']['mongoid'];
-            $mongo_ids[] = $mongo_id;
-            $final_list[$mongo_id] = $item;
+             $mongo_id = $item['post']['mongoid'];
+             $mongo_ids[] = $mongo_id;
+             $final_list[$mongo_id] = $item;
         }
-    
-        // search in mogo
+
+        // search in mongo
         $posts_mongo = Post::Find($mongo_ids);
 
         // insert post
@@ -112,12 +117,64 @@ class Feed
         return new PostCollection($paginator);
     }
 
+    private function _getFeedPosts($feed_id)
+    {
+        $match_posts = "MATCH (author:user)<-[:has_creator]-(p:post)-[:published_in]->(f) 
+                        WHERE id(f) == '$feed_id'
+                        OPTIONAL MATCH (c:comment)-[r:reply_of]->(p) 
+                        OPTIONAL MATCH (p)-[z:liked_by]->(:user) 
+                        OPTIONAL MATCH (p)-[x:disliked_by]->(:user)
+                        OPTIONAL MATCH (p)<-[sh:sharing_of]-(:share)";
+
+        $return_posts = "RETURN p AS post, author AS user, p.created_at AS createdAt, count(DISTINCT c) as nb_comments, 
+                        count(DISTINCT z) as likes, count(DISTINCT x) as dislikes, count(DISTINCT sh) as shares, 
+                        'original' AS type, null AS shared_by";
+                        
+        $order_by = "createdAt DESC";
+
+
+        return makeNebulaPagination(
+            $match_posts,
+            $return_posts,
+            $order_by,
+             route('feed.posts', $feed_id)
+        );
+    }
+
+    private function _getSharedPosts($feed_id)
+    {
+        $user_vertextid = $this->user->vertexid;
+
+        $match_posts = "MATCH (u:user)<-[:shared_by]-(share)-[:shared_in]->(f), (share)-[:sharing_of]->(p:post)-[:has_creator]->(author:user) 
+                        WHERE id(f) == '$feed_id' AND id(author) != '$user_vertextid'
+                        OPTIONAL MATCH (c:comment)-[r:reply_of]->(p) 
+                        OPTIONAL MATCH (p)-[z:liked_by]->(:user) 
+                        OPTIONAL MATCH (p)-[x:disliked_by]->(:user)
+                        OPTIONAL MATCH (p)<-[sh:sharing_of]-(:share)";
+
+        $return_posts = "RETURN p AS post, author AS user, p.created_at AS createdAt, count(DISTINCT c) as nb_comments, 
+                        count(DISTINCT z) as likes, count(DISTINCT x) as dislikes, count(DISTINCT sh) as shares, 
+                        'original' AS type, null AS shared_by";
+                        
+        $order_by = "createdAt DESC";
+
+
+        return makeNebulaPagination(
+            $match_posts,
+            $return_posts,
+            $order_by,
+             route('feed.posts', $feed_id)
+        );
+
+    }
+
     public function sendFeedPost($request)
     {
         $model = $request->get('model');
         $formated = formatTextToContent($model['POST']);
         $model['POST'] = $formated['content'];
-        $feed_id = $this->user->wall();
+        $feed_id = $this->user->feed();
+        $wall_id = $this->user->wall();
 
         $post = Post::create([
             'feed_id' => $feed_id,
@@ -161,6 +218,14 @@ class Feed
             ]
         );
 
+        // post / wall relation
+        $this->nebula->insertEdge(
+            config('socializer.nebulagraph.edges.published_in.name'), 
+            [
+                $vid.'->'.$wall_id => config('socializer.nebulagraph.edges.published_in.props')
+            ]
+        );
+
         // post / author relation
         $this->nebula->insertEdge(
             config('socializer.nebulagraph.edges.has_creator.name'), 
@@ -177,7 +242,7 @@ class Feed
         $resource = $this->_formatPostToResource($post, $post_identifier);
 
         // to queue
-        SendPostToFollowers::dispatch($resource, $feed_id);
+        SendPostToFollowers::dispatch($resource, $wall_id);
 
         return $resource;
     }
@@ -219,8 +284,13 @@ class Feed
         // get feed followers
         $feed_followers = $this->nebula->execute("MATCH (p:post)-[:published_in]->(f:feed) WHERE id(p) == '$vid' RETURN f");
 
+        // delete post comments
+        $comments = app('nebulaGraph')->execute("GO 1 TO 25 STEPS FROM '$vid' OVER reply_of REVERSELY YIELD src(edge)");
+        app('nebulaGraph')->deleteVertex($comments, true);
+
         // delete post in Nebula
         $this->nebula->deleteVertex([$vid], true);
+
 
         // broadcast delete to author
         PostDeletedEvent::dispatch($post_id, $feed_id);
