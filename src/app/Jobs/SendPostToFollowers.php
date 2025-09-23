@@ -8,6 +8,7 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Dauvray\Socializer\app\Events\PostCreatedEvent;
+use Dauvray\Socializer\app\Helpers\NebulaGraphConnection;
 
 class SendPostToFollowers implements ShouldQueue
 {
@@ -26,7 +27,8 @@ class SendPostToFollowers implements ShouldQueue
      */
     public function handle(): void
     {
-         $feed_followers = getFeedFollowers($this->feed_id);
+        $nebula =  new NebulaGraphConnection(config('database.connections.nebula'));
+        $feed_followers = getFeedFollowers($this->feed_id);
 
         // send to followers
         foreach($feed_followers as $feed) {
@@ -36,7 +38,7 @@ class SendPostToFollowers implements ShouldQueue
                 $feed_destination = $feed['feed_dest']['id'];
 
                 // publish post on feed follower
-                app('nebulaGraph')->insertEdge(
+                $nebula->insertEdge(
                     config('socializer.nebulagraph.edges.published_in.name'), 
                     [
                         $this->resource->resource['post']['vertexid'].'->'.$feed_destination => config('socializer.nebulagraph.edges.published_in.props')
