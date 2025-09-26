@@ -9,7 +9,7 @@
         <button class="btn flex-grow-1" 
             style="text-align:start;"
             @click="onJoinChat"
-            >{{ conversationName }}
+            >{{ conversation.name }}
         </button>
         <div class="dropdown">
             <button class="btn" data-bs-toggle="dropdown">
@@ -48,9 +48,9 @@
             }
         },
         computed: {
-            conversationName: function() {
-                return this.conversation.name || this.conversation.id
-            }
+            // conversationName: function() {
+            //     return this.conversation.name || this.conversation.id
+            // }
         },
         methods: {
             onJoinChat() {

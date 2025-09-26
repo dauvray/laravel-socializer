@@ -1,5 +1,8 @@
 $message_width: 60%;
 
+@import './socializer/_post.scss';
+@import './socializer/_buttons.scss';
+
  .app-body {
 
     header {
@@ -338,57 +341,6 @@ $message_width: 60%;
     }
 }
 
-.post-wrapper {
-    @extend .card;
-
-    .post-header {
-         @extend .card-header;
-         @extend .p-1;
-         width: 100%;
-
-         .post-wrapper-inner {
-            @extend .d-flex;
-            width: 100%;
-
-            .post-user-wrapper {
-                @extend .d-flex;
-                @extend .flex-grow-1;
-
-                .post-user-infos {
-                    @extend .d-flex; 
-                    @extend .flex-column;
-                }
-            }
-
-            .post-infos-wrapper {
-                @extend .d-flex; 
-                text-align: right;
-                @extend .flex-column;
-                .date {
-                    @extend .flex-grow-1;
-                }
-            }
-         }
-
-        .delete-button {
-            @extend .btn;
-            @extend .btn-sm;
-            @extend .btn-link;
-            position: absolute;
-            right: 0;
-            bottom: 0;
-        }
-    }
-
-    .post-body {
-          @extend .card-body;
-
-          .post-text {
-            @extend .card-text;
-          }
-    }
-}
-
 .chatters-list {
     @extend .m-0;
     @extend .p-0;
@@ -597,7 +549,7 @@ $message_width: 60%;
             @extend .btn-group-sm;
             display: none;
             position: absolute;
-            bottom: 10px;
+            top: 10px;
             right: 5px;
             z-index: 2;
         }
@@ -687,6 +639,7 @@ $message_width: 60%;
     @extend .bg-auto;
     z-index: 11;
 }
+
 
 /*--------------------------
 | Uppy

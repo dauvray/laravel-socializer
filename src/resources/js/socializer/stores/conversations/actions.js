@@ -13,7 +13,7 @@ export default {
         let result = await AjaxService.load('/create-new-conversations', 'post', payload)
 
         const chat = {...result.conversation.general.chat}
-        this.conversations.push(chat)
+        this.addConversation(chat)
 
         return result.conversation
     },

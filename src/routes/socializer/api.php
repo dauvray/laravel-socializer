@@ -15,6 +15,7 @@ Route::prefix('api')->group(function () {
 
       // Vérifie que 'body' et 'output' existent
        $output = json_decode($data['output']) ?? '...';
+
        $conversation = $data['chat'] ?? null;
 
       $botMessage = [

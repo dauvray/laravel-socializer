@@ -301,6 +301,10 @@ class SocializerInstall extends EstarterPrepare
             base_path('vendor/dauvray/laravel-socializer/src/resources/sass/_socializer.scss'),
             base_path('resources/sass/_socializer.scss')
         ]);
+        $this->executeProcess(['cp', '-a',
+            base_path('vendor/dauvray/laravel-socializer/src/resources/sass/socializer'),
+            base_path('resources/sass/socializer')
+        ]);
 
         $this->replaceInfile(
             base_path('resources/sass/app.scss'),

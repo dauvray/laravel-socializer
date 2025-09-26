@@ -6,12 +6,12 @@
             aria-expanded="false" 
             :data-bs-target="`#${targetId}`"
             :aria-controls="targetId"
+            :aria-expanded="false"
             :nbcomments="totalComments"
             :counterLabel="counterLabel"
             :loaded="loaded"
             @load-comments="onLoadComments"
         ></CounterWidget>
-
         <CommentForm
             v-if="logged && canComment"
             :canberated="true"
@@ -20,7 +20,6 @@
             @cancel-submit-comment="onCancelSubmitComment"
         ></CommentForm>
     </div>
-
     <CommentList
         class="collapse"
         :id="targetId"
@@ -37,7 +36,6 @@
         @load-pagination="onLoadPagination"
         @like-item="onSubmitLike"
     ></CommentList>
-
     <SpinnerWidget v-if="loading"></SpinnerWidget>
 </template>
 

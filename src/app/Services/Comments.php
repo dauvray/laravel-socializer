@@ -140,7 +140,6 @@ class Comments
         ];
 
         // broadcast new comment to listeners
-       // CommentCreated::dispatch($resource, $vertexid);
         SendCommentToUsers::dispatch($resource, $vertexid);
 
         // updateCounter parent counter

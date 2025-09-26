@@ -1,0 +1,33 @@
+.like-btn {
+  @extend .btn-group;
+  @extend .btn-sm;
+
+    button{
+        @extend .btn;
+        @extend .btn-sm;
+        @extend .rounded;
+        @extend .p-2;
+
+
+        &.thumbs-up-btn {
+            @extend .btn-outline-success;
+        }
+        &.thumbs-down-btn {
+            @extend .btn-outline-danger;
+        }
+    }
+}
+
+.delete-btn {
+    @extend .btn;
+    @extend .btn-sm;
+    @extend .rounded;
+    @extend .btn-outline-danger;
+}
+
+.share-btn {
+    @extend .btn;
+    @extend .btn-sm;
+    @extend .rounded;
+    @extend .btn-outline-primary;
+}

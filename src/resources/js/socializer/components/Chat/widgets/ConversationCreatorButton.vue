@@ -27,7 +27,7 @@
                     type="button" 
                     :data-bs-toggle="hasMultiAgents ? 'dropdown' : false " 
                     aria-expanded="false"
-                    @click="onSelectAgent(availableAgents[0].bot_id)">
+                    @click="!hasMultiAgents ? onSelectAgent(availableAgents[0].bot_id) : null">
                     <IconWidget icon="plus"></IconWidget>
                 </button>
                 <ul v-if="hasMultiAgents" class="dropdown-menu">

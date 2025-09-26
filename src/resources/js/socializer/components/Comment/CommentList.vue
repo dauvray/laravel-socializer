@@ -1,22 +1,24 @@
 <template>
-    <CommentItem
-        v-for="(comment, idx) in comments"
-        :key="comment.comment.id"
-        :comment="comment"
-        :commentable="commentable"
-        :vertexid="comment.comment.id"
-        :logged="logged"
-        @comment-created="onCommentCreated"
-        @delete-comment="onDeleteComment"
-        @like-item="onLikeItem"
-    ></CommentItem>
-    <PaginationOrIntersection
-        :paginator="paginator"
-        :pagination="pagination"
-        @load-page="onLoadPagination"
-        @trigger-intersected="onTriggerObserver">
-    </PaginationOrIntersection>
-  </template>
+    <div>
+        <CommentItem
+            v-for="(comment, idx) in comments"
+            :key="comment.comment.id"
+            :comment="comment"
+            :commentable="commentable"
+            :vertexid="comment.comment.id"
+            :logged="logged"
+            @comment-created="onCommentCreated"
+            @delete-comment="onDeleteComment"
+            @like-item="onLikeItem"
+        ></CommentItem>
+        <PaginationOrIntersection
+            :paginator="paginator"
+            :pagination="pagination"
+            @load-page="onLoadPagination"
+            @trigger-intersected="onTriggerObserver">
+        </PaginationOrIntersection>
+    </div>
+</template>
 
 <script>
     import { useCommentStore } from '~socializer/stores/comments.js'

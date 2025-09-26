@@ -1,0 +1,66 @@
+.post-wrapper {
+    @extend .card;
+    @extend .p-3;
+    box-shadow: 0 8px 30px rgba(0,0,0,.05)!important;
+
+    .post-header {
+        @extend .card-body;
+        @extend .p-0;
+         width: 100%;
+
+         .post-wrapper-inner {
+            @extend .d-flex;
+            width: 100%;
+
+            .post-user-wrapper {
+                @extend .d-flex;
+                @extend .flex-grow-1;
+
+                .post-user-infos {
+                    @extend .d-flex; 
+                    @extend .flex-column;
+                }
+            }
+
+            .post-infos-wrapper {
+                @extend .d-flex; 
+                text-align: right;
+                @extend .flex-column;
+                .date {
+                    @extend .flex-grow-1;
+                }
+            }
+         }
+
+        .delete-button {
+            @extend .btn;
+            @extend .btn-sm;
+            @extend .btn-link;
+            position: absolute;
+            right: 0;
+            bottom: 0;
+        }
+    }
+
+    .post-body {
+          @extend .card-body;
+          @extend .ps-0;
+          @extend .pe-0;
+
+          .post-text {
+            @extend .card-text;
+          }
+    }
+
+    .post-footer {
+        @extend .card-body;
+        @extend .d-flex;
+        @extend .ps-0;
+        @extend .pe-0;
+        @extend .pb-0;
+
+        .post-footer-inner-left {
+            @extend .flex-grow-1;
+        }
+    }
+}

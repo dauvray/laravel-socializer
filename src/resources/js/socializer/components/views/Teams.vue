@@ -19,7 +19,6 @@
                     @stoped-stream="onStopedStream"
                 ></CaptureUserButton>
             </div>
-
         </Teleport> 
 
         <div class="conversations-list-wrapper"
