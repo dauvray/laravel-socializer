@@ -29,9 +29,18 @@
         :trigger="showModal"
         :canValidate="validModal"
         :show-btn="false"
+        :closebutton="false"
         @hidden="onResetModal"
         @shown="checkQuestionnaireInfo"
         @saveModalChanges="onSaveQuestionnaireSettings">
+        <template #header>
+            <div class="d-flex justify-content-between">
+                <h1>Questionnaire</h1>
+                <button type="button" class="btn btn btn-outline-auto" @click="onShowModalIA">
+                    <IconWidget icon="robot"></IconWidget> IA
+                </button>
+            </div>
+        </template>
         <template #body>
             <div class="row">
                 <form class="col-md-2" >
@@ -51,13 +60,33 @@
                         :iseditable="true"
                         :isbackend="true"
                         :isai="aiEnhancement"
+                        :urls="{
+                            aiCreateQuestionnaire: '/create-ia-questionnaire'
+                        }"
                         :display-builder="true"
                         :deport-saving="true"
                         :questionnaireid="selectedQuestionnaire"
                         @deport-saving="onUpdateQuestionnaireSettings"
+                        @questionnaire-store-created="onQuestionnaireStoreCreated"
                     ></questionnaire-component>
                 </div>
             </div>
+        </template>
+    </ModalWidget>
+
+    <ModalWidget v-if="showModalIA"
+        modalClasses="modal-fullscreen"
+        :trigger="showModalIA"
+        @hidden="onResetModalIA">
+        <template #body>
+            <PromptWidget
+                class="mt-3 mb-3"
+                placeholderPrompt="je veux un formulaire pour ..."
+                :isLoading="isLoading"
+                @prompt-data="onReceivedData"
+                @submit-prompt="onSubmitPrompt"
+                @receive-prompt-response="onReceivePromptResponse"
+            ></PromptWidget>
         </template>
     </ModalWidget>
 </template>
@@ -70,6 +99,7 @@
     import { defineAsyncComponent } from 'vue'
     import { useAjaxService } from '~estarter/services/AjaxService.js'
     const AjaxService = useAjaxService()
+     import { useDynamicQuestionnaireStore } from '~formdesigner/application/formCreator/composables/useDynamicQuestionnaireStore.js'
 
     export default {
         name: 'QuestionnaireManager',
@@ -79,10 +109,14 @@
         components: {
             TableWidget,
             ModalWidget: defineAsyncComponent(() => import('~estarter/components/widgets/ModalLazy.js')),
+            IconWidget: defineAsyncComponent(() => import('~estarter/components/widgets/IconWidgetLazy.js')),
+            PromptWidget: defineAsyncComponent(() => import('~formdesigner/application/formCreator/widgets/partials/Prompt.vue')),
         },
         data() {
             return {
+                QStoreDyn: null,
                 showModal: false,
+                showModalIA: false,
                 validModal: false,
                 per_page: 50,
                 buttons: [
@@ -139,6 +173,10 @@
                 'loadServerQuestionnaires',
                 'deleteServerQuestionnaire'
             ]),
+            onQuestionnaireStoreCreated(dynStoreId) {
+                const dynamicStore = useDynamicQuestionnaireStore(dynStoreId)
+                this.QStoreDyn = dynamicStore()
+            },
             async onLoadQuestionnaires() {
                 let result = await this.loadServerQuestionnaires(this.per_page)
 
@@ -163,7 +201,6 @@
                 this.questionnaireTitle = null
             },
             onUpdateQuestionnaireSettings(settings, isDirty = false) {
-                console.log(settings, isDirty)
                 this.questionnaireSettings = settings
                 if(this.questionnaireTitle) {
                     this.validModal = isDirty
@@ -230,7 +267,21 @@
                         this.validModal = false
                     }
                 }
-            }
+            },
+            onShowModalIA() {
+                this.showModalIA = true
+            },
+            onResetModalIA() {
+                this.showModalIA = false
+            },
+            async onSubmitPrompt(payload) {
+                this.isLoading = true
+                const data = await this.QStoreDyn.createQuestionnaireIA(payload)
+            },
+            onReceivePromptResponse(payload) {
+                const form = this.QStoreDyn.returnNewQuestionnaireIA(payload)
+                this.onResetModalIA()
+            },
         }
     }
 </script>

@@ -133,12 +133,8 @@
                 this.pageHtml = response.page
                 this.displayPage()
             },
-            onSubmitPrompt(prompt, botId = null) {
-                this.submitPagePrompt({ 
-                    prompt: prompt, 
-                    pageId: this.currentPageId ,
-                    botId: botId
-                })
+            onSubmitPrompt(payload) {
+                this.submitPagePrompt({...payload, pageId: this.currentPageId})
             }
         }
     }

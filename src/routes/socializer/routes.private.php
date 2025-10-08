@@ -204,6 +204,11 @@ Route::post('/get-server-author-answers-list',
 Route::post('/delete-server-answer-questionnaire',
     config('socializer.controllers_front.server').'@deleteAnswersQuestionnaire');
 
+/*-------------------------- AI ---------------------------------------*/
+
+Route::post('/create-ia-questionnaire',
+    config('socializer.controllers_front.questionnaire_ia').'@createIAQuestionnaire');
+
 /*----------------------------------------------------------------------
 | Rooms
 |----------------------------------------------------------------------*/

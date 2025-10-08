@@ -124,6 +124,16 @@ return [
 
         /*
         |--------------------------------------------------------------------------
+        | QuestionnaireIA FrontController
+        |--------------------------------------------------------------------------
+        |
+        |
+        */
+
+        'questionnaire_ia' => $prefix_front.'\QuestionnaireIAController',
+
+        /*
+        |--------------------------------------------------------------------------
         | Store FrontController
         |--------------------------------------------------------------------------
         |
@@ -503,6 +513,13 @@ return [
         'chatbot' => [
             'user_id' => env('SOCIALIZER_CHATBOT_USER_ID', null),
         ],
+        'n8n' => [
+            'create_questionnaire_webhook' => env('SOCIALIZER_N8N_CREATE_QUESTIONNAIRE_WEBHOOK', null),
+        ],
+        // todo a transformer en webhook n8n plus tard
+        // ou autre systeme de gestion de tache asynchrone
+        // ou gestion directe dans le front en js
+        // pour l'instant on garde comme ca
         'copywriter' => [
             'user_id' => env('SOCIALIZER_COPYWRITER_USER_ID', null),
         ]

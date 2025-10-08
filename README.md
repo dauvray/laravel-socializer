@@ -150,10 +150,7 @@ Add somewhere in the template
 
     <socializer-notifications style="position:absolute;top:-2000px;"></socializer-notifications>
 
-Add navbar to App.vue
 
-    <NavBarWidget id="main-navbar" menuName="Menu Socializer"/>
-    import NavBarWidget from '~estarter/components/widgets/NavBar.vue'
 
 Add routes/api.php    
 

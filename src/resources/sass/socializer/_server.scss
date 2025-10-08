@@ -1,0 +1,149 @@
+#server-wrapper {
+
+    &.large {
+        height: 100%;
+        display: grid;
+        grid-template-columns: 200px 1fr;
+        grid-template-rows: 50px auto;
+        grid-template-areas: 
+        "room-sidebar room-header"
+        "room-sidebar main-room";
+    }
+
+    &.small {
+        #offcanvasRoomSidebarBtn {
+            @extend .btn;
+            @extend .btn-sm;
+            @extend .btn-primary;
+            position: absolute;
+            right: 5px;
+            z-index: 10;
+            margin-top: 5px;
+        }
+        #room-sidebar {
+            width: 100%
+        }
+    }
+
+    #server-list {
+        grid-area: server-list; 
+        @extend .border-end; 
+        @extend .bg-auto-secondary;
+        position: sticky;
+        top: 0;
+        align-self: self-start;
+
+        ul {
+            li{
+                background: none;
+                @extend .p-0;
+            }
+        }
+    }
+
+    #room-sidebar {
+
+        height: 100%;
+        grid-area: room-sidebar; 
+        position: sticky;
+        z-index: 10;
+        top: 0;
+        align-self: self-start;
+        min-width: 150px;
+        max-width: 600px;
+        @extend .border-end;
+
+        #room-params {
+             @extend .border-bottom;
+             @extend .rounded;
+             @extend .d-flex;
+             @extend .ps-3;
+             @extend .pe-2;
+             @extend .align-items-center;
+             @extend .bg-auto-tertiary;
+
+             .server-name {
+                @extend .flex-grow-1;
+             }
+         }
+     
+         #room-list {
+            
+             @extend .rounded;
+             @extend .bg-auto-tertiary;
+     
+             ul {
+                .list-group-item {
+                     @extend .d-flex;
+                     @extend .ps-3;
+                     @extend .pe-2;
+                     background: none;
+                     .room-name {
+                         @extend .flex-grow-1;
+
+                         button {
+                            @extend .btn;
+                            @extend .w-100;
+                            @extend .h-100;
+                            @extend .p-0;
+                            text-align: left;
+                         }
+                     }
+                     &:hover {
+                         @extend .bg-auto-secondary;
+                    }
+                }
+             }
+         }
+    }
+
+    #room-header {
+        @extend .border-bottom;
+        @extend .d-flex;
+        @extend .align-items-center;
+        grid-area: room-header; 
+
+        #room-header-inner {
+            @extend .flex-grow-1;
+            @extend .ps-2;
+            height: 100%;;
+        }
+    }
+
+    #main-room {
+        @extend .d-flex;
+        @extend .flex-column;
+        grid-area: main-room;  
+
+        .room-wrapper {
+            position: relative;
+            @extend .d-flex;
+            @extend .flex-column;
+            @extend .w-100;
+            @extend .h-100;
+
+            .room-view-selector-nav {
+                @extend .bg-auto;
+                @extend .nav;
+                @extend .nav-underline;
+                @extend .ps-2;
+                @extend .pe-2;
+                @extend .pb-2;
+                @extend .d-flex;
+                @extend .align-items-center;
+                min-height: 45px;
+    
+                a {
+                    @extend .nav-link;
+                    @extend .btn-link;
+                }
+            }
+
+            .adminpanel-filters {
+                position: absolute;
+                right: 15px;
+                top: 10px;
+            }
+        }
+    }
+}

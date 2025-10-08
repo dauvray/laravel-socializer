@@ -6,7 +6,7 @@ export default [
         meta: {
             breadcrumb: [
                 { name: 'Accueil', link: '/'},
-                { name: 'Application', link: null },
+                { name: 'Mur', link: null },
             ]
         }
     },
@@ -17,7 +17,7 @@ export default [
         meta: {
             breadcrumb: [
                 { name: 'Accueil', link: '/'},
-                { name: 'Application', link: null },
+                { name: 'Fil', link: null },
             ]
         }
     },
@@ -28,7 +28,7 @@ export default [
         meta: {
             breadcrumb: [
                 { name: 'Accueil', link: '/'},
-                { name: 'Application', link: null },
+                { name: 'Store', link: null },
             ]
         }
     },
@@ -39,7 +39,7 @@ export default [
         meta: {
             breadcrumb: [
                 { name: 'Accueil', link: '/'},
-                { name: 'Application', link: null },
+                { name: 'Conversations', link: null },
             ]
         }
     },
@@ -50,7 +50,7 @@ export default [
         meta: {
             breadcrumb: [
                 { name: 'Accueil', link: '/'},
-                { name: 'Application', link: null },
+                { name: 'Membres', link: null },
             ]
         }
     },
@@ -61,9 +61,9 @@ export default [
         meta: {
             breadcrumb: [
                 { name: 'Accueil', link: '/'},
-                { name: 'Utilisateurs', link: null },
+                { name: 'Domaines', link: null },
             ]
-        }
+        },
     },
     {
         path: `/${router_base_url}/server/:serverId?`,
@@ -72,7 +72,8 @@ export default [
         meta: {
             breadcrumb: [
                 { name: 'Accueil', link: '/'},
-                { name: 'Application', link: null },
+                { name: 'Domaines', link: `/${router_base_url}/servers` },
+                { name: 'Server_name', link: null},
             ]
         },
         children: [
@@ -83,7 +84,7 @@ export default [
                 meta: {
                     breadcrumb: [
                         { name: 'Accueil', link: '/'},
-                        { name: 'Room', link: null },
+                        { name: 'Salon', link: null },
                     ]
                 },
                 children: [
@@ -94,7 +95,7 @@ export default [
                         meta: {
                             breadcrumb: [
                                 { name: 'Accueil', link: '/'},
-                                { name: 'Application', link: null },
+                                { name: 'Page', link: null },
                             ]
                         }
                     },
@@ -116,7 +117,7 @@ export default [
                         meta: {
                             breadcrumb: [
                                 { name: 'Accueil', link: '/'},
-                                { name: 'Application', link: null },
+                                { name: 'Chat', link: null },
                             ]
                         }
                     },
@@ -127,7 +128,7 @@ export default [
                         meta: {
                             breadcrumb: [
                                 { name: 'Accueil', link: '/'},
-                                { name: 'Application', link: null },
+                                { name: 'Formulaire', link: null },
                             ]
                         }
                     },
@@ -138,7 +139,7 @@ export default [
                         meta: {
                             breadcrumb: [
                                 { name: 'Accueil', link: '/'},
-                                { name: 'Application', link: null },
+                                { name: 'Data', link: null },
                             ]
                         },
                         children: [
@@ -149,7 +150,7 @@ export default [
                                 meta: {
                                     breadcrumb: [
                                         {name: 'Accueil', link: '/'},
-                                        { name: 'Application', link: null },
+                                        { name: 'Consultation des données', link: null },
                                     ],
                                     rendererQuestionnaireLink: "/renderer-server-questionnaire"
                                 },
@@ -163,7 +164,7 @@ export default [
                         meta: {
                             breadcrumb: [
                                 { name: 'Accueil', link: '/'},
-                                { name: 'Application', link: null },
+                                { name: 'Adminstration data', link: null },
                             ]
                         },
                     },
@@ -174,7 +175,7 @@ export default [
                         meta: {
                             breadcrumb: [
                                 { name: 'Accueil', link: '/'},
-                                { name: 'Application', link: null },
+                                { name: 'Tableau blanc', link: null },
                             ]
                         }
                     },
@@ -185,7 +186,7 @@ export default [
                         meta: {
                             breadcrumb: [
                                 { name: 'Accueil', link: '/'},
-                                { name: 'Application', link: null },
+                                { name: 'Conference', link: null },
                             ]
                         }
                     },
@@ -209,7 +210,7 @@ export default [
                 meta: {
                     breadcrumb: [
                         {name: 'Accueil', link: '/'},
-                        { name: 'Application', link: null },
+                        { name: 'Gestion des formulaires', link: null },
                     ]
                 }
             },

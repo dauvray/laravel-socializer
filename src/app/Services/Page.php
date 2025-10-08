@@ -3,8 +3,7 @@
 namespace Dauvray\Socializer\app\Services;
 
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Broadcast;
-use Dauvray\Socializer\app\Jobs\SendMessageToCopywriter;
+use Illuminate\Support\Facades\Http;
 
 class Page
 {
@@ -108,32 +107,37 @@ class Page
         $page_id = $request->get('page_id');
         $bot_id = config('socializer.agents_ai.copywriter.user_id'); // todo : a dynamiser
         $prompt = $request->get('prompt');
+        $prompt_id = $request->get('prompt_id');
 
         if(!$this->user->isServerOwner($server_id)) {
             return response()->json(['message' => 'Non autorisé'], 401);
         }
 
-        // Broadcast::presence("chat.{$chat_id}")
-        //     ->as('botWriting')
-        //     ->sendNow();
+        $chatbot = config('estarter.models.user')::find($bot_id); 
 
-        SendMessageToCopywriter::dispatch(
-            message: $prompt,
-            page: [
+        Http::post($chatbot->extras['webhook_url'], [
+            'assistantPrompt' => $chatbot->extras['prompt'] ?? '',
+            'chatInput' => $prompt,
+            'author' => ['name' => $this->user->name, 'id' => $this->user->id],
+            'html' => $request->get('html'),
+            'styles' => $request->get('styles'),
+            'script' => $request->get('script'),
+            'document' => [
                 'id' => $page_id, 
                 'bot_id' => $bot_id,
-                'server_id' => $server_id
+                'server_id' => $server_id,
+                'prompt_id' => $prompt_id,
             ],
-            user: $this->user
-        );
+        ]);
     }
 
     public function storeGeneratedPage($data = null)
     {
         $result = $data['output'] ?? null;
         $document = $data['document'] ?? null;
+        $author = $data['author'] ?? null;
         
-        if($document && $result) {
+        if($document && $result && $author) {
 
             $page_id = $document['id'];
             $page = config('socializer.models.page')::where('vertexid',  $page_id)->first();
@@ -143,11 +147,8 @@ class Page
             $page->script = $result['script'] ?? $page->script;
             $page->save();
 
-            Broadcast::presence("server.".$document['server_id'])
-                ->as('contentGenerated')
-                ->with(['page_id' => $page_id])
-                ->sendNow();
-            }
+            broadcastEventbusNotification($author['id'], ['prompt_id' => $document['prompt_id'], 'output' => null]);
 
+        }
     }
 }

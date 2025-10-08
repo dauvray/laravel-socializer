@@ -3,6 +3,7 @@ import { helpers } from '~formdesigner/application/formCreator/utils/formItemSet
 import { orderBy, sortUpElement, sortDownElement } from '~estarter/services/helpers.js'
 const AjaxService = useAjaxService()
 import { useQuestionnaireStore } from '~formdesigner/stores/questionnaire.js'
+import { html } from '@codemirror/lang-html'
 
 export default {
     /*-----------------------------------
@@ -207,14 +208,15 @@ export default {
     |-----------------------------------*/
 
     async submitPagePrompt(payload) {
-      
         const result = await AjaxService.load('/generate-room-page', 'post', {
             prompt: payload.prompt,
+            prompt_id: payload.promptId,
+            html: payload.html,
+            styles: payload.styles,
+            script: payload.script,
             page_id: payload.pageId,
-            bot_id: payload.botId,
             server_id: this.getCurrentServer.id
-        })
-        
+        }) 
     }
 
 }

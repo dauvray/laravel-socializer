@@ -10,6 +10,7 @@
     import { useWallStore } from '~socializer/stores/wall.js'
     import { useMeStore } from '~estarter/stores/me.js'
     import WallWidget from '~socializer/components/User/Wall.vue'
+    import { useBreadcrumbService } from '~estarter/services/BreadcrumbService.js'
 
     export default {
         name: 'WallUser',
@@ -30,6 +31,10 @@
             ...mapState(useMeStore, {
                 me: 'getMe',
             }),
+        },
+        created() {
+           const breadcrumbService = useBreadcrumbService()
+           breadcrumbService.setBreadcrumb()
         },
         methods: {
             ...mapActions(useWallStore, [

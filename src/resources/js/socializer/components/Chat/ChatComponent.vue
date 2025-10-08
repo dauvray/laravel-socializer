@@ -1,6 +1,6 @@
 <template>
     <div class="chat-wrapper">
-        <Teleport to="#app-header-tools">
+        <Teleport to="#system-socializer-tools">
             <div id="room-stream-btn" role="group">
                 <StreamUserButton 
                     ref="webcamBtn"

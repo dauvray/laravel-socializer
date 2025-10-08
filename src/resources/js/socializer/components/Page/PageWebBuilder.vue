@@ -1,12 +1,12 @@
 <template>
    
-    <div class="generate-content" v-if="isBuilding">
+    <!-- <div class="generate-content" v-if="isBuilding">
         <div class="generate-content-inner">
             <Sprinner2 ></Sprinner2>
             Contenu en cours de création...
         </div>
-    </div>
-    <div v-else class="card-body m-3">
+    </div> -->
+    <div class="card-body m-3">
         <WebBuilder
             :html="html"
             :styles="styles"
@@ -47,8 +47,8 @@
             <template #body>
                 <PromptWidget
                     :seeJson="false"
-                    @prompt-data="onChangeJson"
                     @submit-prompt="onSubmitPrompt"
+                    @receive-prompt-response="onReloadPage"
                 ></PromptWidget>
             </template>
     </ModalWidget>
@@ -62,9 +62,6 @@
 
     export default {
         name: 'PageWebBuilder',
-        inject: [
-            "eventBus",
-        ],
         emits: [
             'update-content',
             'submit-prompt',
@@ -106,12 +103,6 @@
                 currentServer: 'getCurrentServer',
             }),
         },
-        mounted() {
-            this.eventBus.$on('content-generated-ia', this.onReloadPage)
-        },
-        unmounted() {
-            this.eventBus.$off('content-generated-ia', this.onReloadPage)
-        },
         methods: {
             onUpdateContent(html, css, js) {
                 this.$emit('update-content', html, css, js)
@@ -123,10 +114,9 @@
                 this.showModal = false
                 this.canValidate = false
             },
-            onSubmitPrompt(prompt) {
+            onSubmitPrompt(payload) {
                 this.isBuilding = true
-                this.onSaveUpdatedModal()
-                this.$emit('submit-prompt', prompt)
+                this.$emit('submit-prompt', {...payload, html: this.html, styles: this.styles, script: this.script} )
             },
             onReloadPage() {
                 this.isBuilding = false

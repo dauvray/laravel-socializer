@@ -1,0 +1,156 @@
+.chat-wrapper {
+
+    @extend .container-fluid;
+    
+    .chat-header {
+        @extend .d-flex;
+        @extend .rounded;
+        @extend .border-bottom;
+        @extend .bg-auto;
+        @extend .my-2;
+        @extend .p-2;
+        position: sticky;
+        top: 0;
+        z-index: 3;
+    }
+
+    .chat-messages-wrapper {
+        position: relative;
+        @extend .pe-0;
+
+        .chat-messages {
+            @extend .card;
+            @extend .border-0;
+            @extend .mb-2;
+            @extend .bg-opacity-dark-4;
+            min-height: 68vh;
+            max-height: 68vh;
+            overflow-y: auto;
+            background: url(https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png) top left no-repeat;
+            background-size: contain;
+            background-repeat: repeat;
+            background-attachment: fixed;
+
+            .chat-messages-inner {
+                @extend .card-body;
+                background-color: rgba(0, 0, 0, 0.1);
+                -webkit-box-shadow: inset 5px 5px 36px -6px rgba(0,0,0,0.71); 
+                box-shadow: inset 5px 5px 36px -6px rgba(0,0,0,0.71);
+
+                .date-separator {
+                    display: flex;
+                    align-items: center;
+                    margin: 20px 0;
+                    padding: 0 20px;
+                    }
+
+                    .date-separator-line {
+                    flex: 1;
+                    height: 1px;
+                    background-color: #e0e0e0;
+                    }
+
+                    .date-separator-text {
+                    padding: 0 15px;
+                    font-size: 12px;
+                    color: #666;
+                    background-color: #f5f5f5;
+                    border-radius: 12px;
+                    font-weight: 500;
+                    white-space: nowrap;
+                }
+            }
+        }
+    }
+
+    .chat-messenger-sticky-wrapper {
+        @extend .mb-2;
+        position: sticky;
+        z-index: 10;
+        height: var(--messenger-height, 50px); /* hauteur contrôlée dynamiquement */
+
+    }
+
+    /* invisible mais occupe la place dans le layout */
+    .chat-messenger-ghost {
+        height: var(--messenger-height, 50px);
+        pointer-events: none;
+        visibility: hidden;
+    }
+
+    .chat-messenger {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: var(--messenger-height, 50px);
+        @extend .border;
+        @extend .shadow-sm;
+        @extend .rounded;
+        background-color:rgba(0, 0, 0, 0.8);
+
+        .chat-messenger-writting {
+            @extend .d-flex;
+            @extend .justify-content-start;
+            width: fit-content;
+            position: absolute;
+            top: -45px;
+            @extend .bg-opacity-dark-2;
+
+            .es-spinner-text-writting  {
+                @extend .text-dark-auto;
+            }
+
+            ul {
+                @extend .d-flex;
+                @extend .ps-5;
+                @extend .m-0;
+            }
+        }
+
+        .message-input-container {
+             @extend .d-flex;
+             @extend .align-items-end;
+             @extend .color-auto;
+             height: 100%;
+            overflow: hidden;
+            
+            .message-input { 
+                @extend .flex-grow-1;
+                color: $white;
+                padding: 10px 15px;
+                z-index: 5;
+                overflow: hidden;
+
+                &.drag-over {
+                    outline: 2px dashed #999;
+                }
+
+                &:focus {
+                    border: none !important;
+                    outline: none !important;
+                    box-shadow: none !important;
+                }
+
+                &.pell{
+                    position: absolute;
+                    width: 100%;
+                }
+            }
+
+            .message-input-tools {
+                @extend .d-flex;
+                right: 0;
+                bottom: 0;
+                position: absolute;
+                z-index: 10;
+            }
+        }
+
+        .pell,
+        .pell-content {
+            height: 100%;
+             background-color:rgba(0, 0, 0, 0.0);
+        }
+    }
+}

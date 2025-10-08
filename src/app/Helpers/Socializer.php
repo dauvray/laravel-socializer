@@ -4,6 +4,7 @@ use Dauvray\Socializer\app\Helpers\ContentFormater;
 use Illuminate\Support\Facades\Auth;
 use Dauvray\Socializer\app\Http\Resources\User as UserResource;
 use \Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Facades\Broadcast;
 
 if (!function_exists('formatTextToContent')) {
     function formatTextToContent($text) {
@@ -34,6 +35,24 @@ if (!function_exists('filterSensibleDataUserRessource')) {
         return $result;
     }
 }
+
+if (!function_exists('broadcastEventbusNotification')) {
+    function broadcastEventbusNotification($user_id, $payload = []) {
+        try {
+            Broadcast::private('App.Models.User.'.$user_id)
+            ->as('EventBusNotification')
+            ->with([
+                'type' => 'prompt_request_completed',
+                'payload' => $payload,
+            ])
+            ->sendNow();
+        }
+            catch (\Exception $ex) {
+            return $ex;
+        }
+    }
+}
+
 
 /*---------------------------
 | NEBULAGRAPH

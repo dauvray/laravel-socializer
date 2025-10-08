@@ -1,41 +1,63 @@
 <template>
-    <div v-if="currentServer" id="server-wrapper">
+    <div v-if="currentServer" 
+        :class="{ 'large' : breakpoints.up.lg , 'small' : breakpoints.down.lg }"
+        id="server-wrapper">
 
         <!-- <ServerList 
             id="server-list"
             @change-server="onChangeServer"
         ></ServerList> -->
 
-        <section v-if="!isLoading" id="room-sidebar" 
-            ref="sidebar"
-            v-resizable="{
-                min: initialSidebarWidth,
-                max: 600,
-                callback: updateSidebarWidth
-            }">
-          
-            <ServerParamsButton
-                id="room-params"
-                :server="currentServer"
-                :serverUsersTotal="serverUsers.length"
-                @create-room="onCreateRoom"
-                @delete-server="onDeleteServer"
-                @edit-server="onEditServer"
-                @add-module="onAddModule"
-            ></ServerParamsButton>
+        <template v-if="breakpoints.up.lg">
+            <section v-if="!isLoading" id="room-sidebar" 
+                ref="sidebar"
+                v-resizable="{
+                    min: initialSidebarWidth,
+                    max: 600,
+                    callback: updateSidebarWidth
+                }">
+                <RoomSidebar
+                    :currentServer="currentServer"
+                    :serverUsers="serverUsers"
+                    :rooms="rooms"
+                    @create-room="onCreateRoom"
+                    @delete-server="onDeleteServer"
+                    @edit-server="onEditServer"
+                    @add-module="onAddModule"
+                    @delete-room="onDeleteRoom"
+                    @edit-room="onEditRoom"
+                    @sort-up-room="onSortUpRoom"
+                    @sort-down-room="onSortDownRoom"
+                ></RoomSidebar>
+            </section>
+        </template>
+        <template v-else>
+            <button id="offcanvasRoomSidebarBtn" type="button" data-bs-toggle="offcanvas" data-bs-target="#offcanvasRoomSidebar" aria-controls="offcanvasRoomSidebar">
+                <IconWidget icon="bars"></IconWidget>Salons
+            </button>
+            <div class="offcanvas offcanvas-end" tabindex="-1" id="offcanvasRoomSidebar" aria-labelledby="offcanvasRoomSidebarLabel">
+                <div class="offcanvas-header">
+                    <h5 class="offcanvas-title" id="offcanvasRoomSidebarLabel">Offcanvas</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+                </div>
+                <div class="offcanvas-body" id="room-sidebar" >
+                    <RoomSidebar
+                        :currentServer="currentServer"
+                        :serverUsers="serverUsers"
+                        :rooms="rooms"
+                        @create-room="onCreateRoom"
+                        @delete-server="onDeleteServer"
+                        @edit-server="onEditServer"
+                        @add-module="onAddModule"
+                        @delete-room="onDeleteRoom"
+                        @edit-room="onEditRoom"
+                        @sort-up-room="onSortUpRoom"
+                        @sort-down-room="onSortDownRoom"
+                    ></RoomSidebar>
+                </div>
+            </div>
+        </template>
 
-            <RoomParamsWrapper
-                id="room-list"
-                :key="roomParamsKey"
-                :currentServer="currentServer"
-                :rooms="rooms"
-                @delete-room="onDeleteRoom"
-                @edit-room="onEditRoom"
-                @sort-up-room="onSortUpRoom"
-                @sort-down-room="onSortDownRoom"
-            ></RoomParamsWrapper>
-            
-        </section>
           
         <section v-if="!isLoading" id="room-header" :style="setMainContentMargin">
             <RoomHeader id="room-header-inner"></RoomHeader>
@@ -75,24 +97,19 @@
     import { useServerStore } from '~socializer/stores/server.js'
     import { usePeerStore } from '~socializer/stores/peers.js'
     import { useMeStore } from '~estarter/stores/me.js'
-    import ServerParamsButton from './widgets/ServerParamsButton.vue'
+    import RoomSidebar from './widgets/RoomSidebar.vue'
     import RoomHeader from './RoomHeader.vue'
   //  import ServerList from './widgets/ServerList.vue'
     import FormsSettingHelper from '~socializer/services/FormsSetting.js'
     import IconWidget from '~estarter/components/widgets/IconWidget.vue'
     import Gravatar from '~estarter/components/widgets/Gravatar.vue'
-    import RoomParamsWrapper from './widgets/RoomParamsWrapper.vue'
     import resizable from "~socializer/directives/resizable_vertical.js"
-
-
     import { useAjaxService } from '~estarter/services/AjaxService.js'
+    import { useBreakpoints } from '~socializer/composables/useBreakpoints'
     const AjaxService = useAjaxService()
 
     export default {
         name: 'Server',
-        inject: [
-            "eventBus",
-        ],
         emits: [
             'update-users-server',
             'joining-user-server',
@@ -102,8 +119,7 @@
             resizable,
         },
         components: {
-            ServerParamsButton,
-            RoomParamsWrapper,
+            RoomSidebar,
             RoomHeader,
          //   ServerList,
             IconWidget,
@@ -124,6 +140,7 @@
                 modelPlaceholder: null,
                 currentRoomUsers: [],
                 serverUsers: [],
+                breakpoints: useBreakpoints(),
             }
         },
         computed: {
@@ -273,10 +290,6 @@
                             if(this.currentServer.id === event.server.id) {
                                 this.updateServer(event.server, true)
                             }
-                        })
-                        .listen('.contentGenerated', (event) => {
-                            console.log(event);
-                             this.eventBus.$emit('content-generated-ia', event)
                         })
                         .error((error) => {
                             console.error(error);

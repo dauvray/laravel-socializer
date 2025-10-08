@@ -2,7 +2,6 @@
 
 namespace Dauvray\Socializer\app\Helpers;
 
-use Illuminate\Support\Facades\Auth;
 use Innovation\formdesigner\app\Helpers\QuestionnaireHelper;
 use Dauvray\Socializer\app\Models\DynAnswerMongo;
 

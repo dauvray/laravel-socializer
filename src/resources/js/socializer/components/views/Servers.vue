@@ -53,6 +53,7 @@
     import { useServerStore } from '~socializer/stores/server.js'
     import IconWidget from '~estarter/components/widgets/IconWidget.vue'
     import FormsSettingHelper from '~socializer/services/FormsSetting.js'
+    import { useBreadcrumbService } from '~estarter/services/BreadcrumbService.js'
 
     export default {
         name: 'Servers',
@@ -73,6 +74,8 @@
             })
         },
         created() {
+            const breadcrumbService = useBreadcrumbService()
+            breadcrumbService.setBreadcrumb()
             this.loadAllServers()
         },
         methods: {

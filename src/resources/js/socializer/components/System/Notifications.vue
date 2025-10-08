@@ -211,6 +211,9 @@
                         .listen('.NewChatMessageNotification', (event) => {
                             this.NewMessageNotification = event
                         })
+                        .listen('.EventBusNotification', (event) => {
+                            this.eventBus.$emit(event.type, event.payload)
+                        })
                 }
             },
             onResponseAlert(fromUserSlug, options, status) {
