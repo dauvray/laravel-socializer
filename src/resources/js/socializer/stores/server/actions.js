@@ -3,7 +3,6 @@ import { helpers } from '~formdesigner/application/formCreator/utils/formItemSet
 import { orderBy, sortUpElement, sortDownElement } from '~estarter/services/helpers.js'
 const AjaxService = useAjaxService()
 import { useQuestionnaireStore } from '~formdesigner/stores/questionnaire.js'
-import { html } from '@codemirror/lang-html'
 
 export default {
     /*-----------------------------------

@@ -72,29 +72,29 @@
              @extend .rounded;
              @extend .bg-auto-tertiary;
      
-             ul {
-                .list-group-item {
-                     @extend .d-flex;
-                     @extend .ps-3;
-                     @extend .pe-2;
-                     background: none;
-                     .room-name {
-                         @extend .flex-grow-1;
+            .list-group-item {
+                @extend .d-flex;
+                @extend .ps-3;
+                @extend .pe-2;
+                background: none;
+                .room-name {
+                    @extend .flex-grow-1;
 
-                         button {
-                            @extend .btn;
-                            @extend .w-100;
-                            @extend .h-100;
-                            @extend .p-0;
-                            text-align: left;
-                         }
-                     }
-                     &:hover {
-                         @extend .bg-auto-secondary;
+                    button {
+                        @extend .btn;
+                        @extend .btn-link;
+                        @extend .w-100;
+                        @extend .h-100;
+                        @extend .p-0;
+                        text-align: left;
+                        text-decoration: none;
                     }
                 }
-             }
-         }
+                &:hover {
+                    @extend .bg-auto-secondary;
+                } 
+            }
+        }
     }
 
     #room-header {

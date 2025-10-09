@@ -3,14 +3,15 @@
         class="room-wrapper">
         <div id="room-navigation"></div>
         <Teleport :to="`#collapser-${currentRoom.id}`" >
-            <div class="list-group list-group-flush">
-                <router-link 
-                    v-for="(content, index) in roomContent"  
-                    :to="{ name: content.content_type, params: { vertexId: content.id }}" 
-                    class="room-name">
-                    {{ content.name }}
-                </router-link>
-            </div>
+            <ul class="list-group list-group-flush">
+                <li class="list-group-item" v-for="(content, index) in roomContent"  >
+                    <router-link 
+                        :to="{ name: content.content_type, params: { vertexId: content.id }}" 
+                        class="room-name">
+                        <button  type="button">{{ content.name }}</button>
+                    </router-link>
+                </li>
+            </ul>
         </Teleport>
 
         <router-view

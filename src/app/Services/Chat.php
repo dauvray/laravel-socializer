@@ -449,7 +449,7 @@ class Chat
         ];
     }
 
-    public function createConversation($values = [])
+    public function createConversation($values = [], $room_id = null)
     {
         $vertex = $this->nebula->insertVertex(
             config('socializer.nebulagraph.tags.chat.name'),
@@ -457,6 +457,8 @@ class Chat
                 'privacy' => isset($values['privacy']) ? (int)$values['privacy'] : 1,
                 'is_bot' => isset($values['is_bot']) ? (int)$values['is_bot'] : 0,
                 'bot_id' => isset($values['bot_id']) ? $values['bot_id'] : null,
+                'position' => getNextPublishedPosition($room_id),
+                'name' => isset($values['name']) ? $values['name'] : null
             ]
         );
 
@@ -502,7 +504,7 @@ class Chat
 
     public function createChatVertice($room_id = null, $values = [])
     {
-        $result = $this->createConversation($values);
+        $result = $this->createConversation($values, $room_id);
         $chat_vid = $result['general']['chat']['id'];
 
         // chat / room relation

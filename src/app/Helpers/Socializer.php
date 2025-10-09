@@ -116,6 +116,9 @@ if (!function_exists('getVertexId')) {
 if (!function_exists('getNextPositionItem')) {
     function getNextPublishedPosition($vertex_id)
     {
+        if(!$vertex_id) {
+            return 0;
+        }
         $result = app('nebulaGraph')->execute("MATCH (s)<-[:published_in]-(r) WHERE id(s) == '$vertex_id' RETURN COUNT(r)");
         return $result[0];
     }

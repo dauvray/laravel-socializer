@@ -512,25 +512,23 @@ class Server
 
     private function _createContent($new_content, $server_id, $room_id)
     {
-        $vid = $room_id;
-
         switch($new_content['content_type']) {
             case 'chat':
-                $new_vid = $this->serviceChat->createChatVertice($vid, $new_content);
+                $new_vid = $this->serviceChat->createChatVertice($room_id, $new_content);
                 break;
             case 'data':
             case 'admin':
             case 'form':
-                $new_vid = $this->createDataVertice($vid, $new_content);
+                $new_vid = $this->createDataVertice($room_id, $new_content);
                 break;
             case 'whiteboard':
-                $new_vid = $this->createBoardVertice($vid, $new_content);
+                $new_vid = $this->createBoardVertice($room_id, $new_content);
                 break;
             case 'classroom':
-                $new_vid = $this->createClassroomVertice($vid, $new_content);
+                $new_vid = $this->createClassroomVertice($room_id, $new_content);
                 break;
             case 'application':
-                $new_vid = $this->serviceApplication->createApplicationVertice($vid, $new_content);
+                $new_vid = $this->serviceApplication->createApplicationVertice($room_id, $new_content);
                 break;
             // all others types are considered as page
             default:
@@ -542,7 +540,7 @@ class Server
                 $this->nebula->insertEdge(
                     config('socializer.nebulagraph.edges.published_in.name'), 
                     [
-                        $new_vid.'->'.$vid => config('socializer.nebulagraph.edges.published_in.props')
+                        $new_vid.'->'.$room_id => config('socializer.nebulagraph.edges.published_in.props')
                     ]
                 );
                 break;
@@ -730,7 +728,8 @@ class Server
             config('socializer.nebulagraph.tags.data.name'),
             [
                 'questionnaire_id' => $new_content['questionnaire_id'],
-                'content_type' => $new_content['content_type']    
+                'content_type' => $new_content['content_type'],
+                'position' => getNextPublishedPosition($vid),  
             ]
         );
 
