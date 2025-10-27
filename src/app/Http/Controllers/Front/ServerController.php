@@ -14,9 +14,33 @@ use Dauvray\Socializer\app\Helpers\SocializerQuestionnaireHelper;
 
 class ServerController extends Controller
 {
+
 /*----------------------------------------------------------------------
 | Servers
 |----------------------------------------------------------------------*/
+
+    public function checkServerAccess(ServerService $service, $vertex_id)
+    {
+        return response()->json($service->checkServerAccess($vertex_id), 200);
+    }
+
+    public function requestServerAccess(Request $request, ServerService $service)
+    {
+        if($service->requestServerAccess($request)) {
+            return response()->json(['message' => 'Votre demande a été envoyée au propriétaire du domaine'], 200);
+        }
+
+        return response()->json(['message' => 'Impossible d\'envoyer la demande'], 500);
+    }
+
+    public function responseServerAccess(Request $request, ServerService $service)
+    {
+        if($service->responseServerAccess($request)) {
+            return response()->json(['message' => 'Autorisation accordée'], 200);
+        }
+
+        return response()->json(['message' => 'Impossible d\'enregistrer la réponse'], 500);
+    }
 
     public function createServer(Request $request,ServerService $service)
     {
@@ -54,7 +78,12 @@ class ServerController extends Controller
 
     public function getServer(ServerService $service, $vertex_id)
     {
-        return $service->getServer($vertex_id);
+        $result = $service->getServer($vertex_id);
+        if($result) {
+            return response()->json($result, 200);
+        } else {
+            return response()->json(['message' => 'Serveur introuvable'], 404);
+        }
     }
 
     public function getVueFinderFiles(Request $request, VueFinderService $service,) 
@@ -199,6 +228,19 @@ class ServerController extends Controller
         return response()->json($result['response'], $result['code']);
     }
 
+    public function searchServerInputResults(Request $request, SearchService $searchService)
+    {
+        $helper = new SocializerQuestionnaireHelper(
+            $request->questionnaire_id,
+            null, 
+            null, 
+            true
+        );
+
+        $items = $searchService->getQuestionnaireValuesInputItems($request, $helper);
+        return response()->json($items, 200);
+    }
+
     /*----------------------------------------------------------------------
     | Questionnaires Search
     |----------------------------------------------------------------------*/  
@@ -210,18 +252,30 @@ class ServerController extends Controller
         return response()->json($result, 200);
     }
 
-    public function getAdminpanelList(Request $request, SearchService $searchService)
+    public function getAdminpanelList(Request $request, SearchService $searchService, ServerService $serverService)
     {
         $questionnaire_id = revealIdentifier($request->get('questionnaire_id'));
-        $helper = new SocializerQuestionnaireHelper($questionnaire_id, null, null, true);
-        return response()->json($searchService->getAdminpanelList($request, $helper), 200);
-    }
+        $options = $request->get('options', null);
+        $user =  revealIdentifier($options['identifier']);
 
-    public function getAuthorpanelList(Request $request, SearchService $searchService)
-    {
-        $questionnaire_id = revealIdentifier($request->get('questionnaire_id'));
+        if(!$options || !isset($options['roomId']) || !$options['roomId']) {
+            abort(403);
+        }
+
+        if(!checkServerAccess($options['roomId'], $user->vertex_id, 'room')) {
+            abort(403);
+        }
+
+        $room = $serverService->getSimpleRoom($options['roomId']);
+
+        $limitations = $room['room']['privacy'] == 2 ? false : true;
+        $authoredLimitations = false;   
+        if($room['content']['author_only'] === 1) {
+            $authoredLimitations = true;
+        }
+       
         $helper = new SocializerQuestionnaireHelper($questionnaire_id, null, null, true);
-        return response()->json($searchService->getAdminpanelList($request, $helper, true), 200);
+        return response()->json($searchService->getAdminpanelList($request, $helper, $limitations, $authoredLimitations), 200);
     }
 
     public function getQuestionnaireFilters(Request $request)
@@ -237,24 +291,67 @@ class ServerController extends Controller
             if(isset($item['field'])) {
 
                 foreach($helper->global_limitations as $limitation) {
-                    // todo
+                    if($limitation['model'] == $item['field']->model) {
+                        switch($limitation['settings']->limitedConstraint) {
+                            case 'not':
+                                foreach($item['field']->values as $idx => $value) {
+                                    if(in_array($value->value, $limitation['settings']->limitedAnswers)) {
+                                        unset($item['field']->values[$idx]);
+                                    }
+                                }
+                                break;
+                            default:
+                                foreach($item['field']->values as $idx => $value) {
+                                    if(!in_array($value->value, $limitation['settings']->limitedAnswers)) {
+                                        unset($item['field']->values[$idx]);
+                                    }
+                                }
+                                break;
+                        }
+                    }
                 }
 
                 foreach($helper->user_limitations as $limitation) {
                     if($limitation['model'] == $item['field']->model) {
                         switch($limitation['settings']->limitedConstraint) {
                             case 'and':
-                                // todo
-                                break;
-                            case 'or':
-                                // todo
-                                break;
-                            case 'not':
                                 foreach($item['field']->values as $idx => $value) {
-                                    if($value->value == $user_answers['model'][$item['field']->model]) {
-                                        unset($item['field']->values[$idx]);
+                                    $user_answer = $user_answers['model'][$item['field']->model] ?? null;
+
+                                    if(is_array($user_answer)) {
+                                        if(!in_array($value->$value, $user_answers['model'][$item['field']->model])) {
+                                            unset($item['field']->values[$idx]);
+                                        }
+                                    } else {
+                                        if($value->value != $user_answer) {
+                                            unset($item['field']->values[$idx]);
+                                        }
                                     }
                                 }
+                                break;
+                            case 'or':
+                                 $fileterValues = [];
+
+                                 foreach($item['field']->values as $idx => $value) {
+                                    $fileterValues[] = $value->value;
+                                 }
+
+                                $user_answer = $user_answers['model'][$item['field']->model] ?? null;
+                                $valueArray = is_array($user_answer) ? $user_answer : [$user_answer];
+                                $intersec = array_intersect($fileterValues, $valueArray);
+
+                                foreach($item['field']->values as $idx => $value) {
+                                   if(!in_array($value->value, $intersec)) {
+                                    unset($item['field']->values[$idx]);
+                                   }
+                                 }
+                                break;
+                            case 'not':
+                                // Exclut les valeurs correspondant à la réponse utilisateur
+                                $item['field']->values = array_filter($item['field']->values, function ($v) use ($user_answers, $item) {
+                                    $userValue = $user_answers['model'][$item['field']->model] ?? null;
+                                    return $v->value != $userValue;
+                                });
                                 break;
                         }
                     }

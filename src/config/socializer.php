@@ -275,6 +275,7 @@ return [
                     'name string NULL',
                     'image string NULL',
                     'privacy int NULL',
+                    'description string NULL',
                 ]
             ],
             'room' => [
@@ -388,6 +389,7 @@ return [
                 "name" => null,
                 "image" => null,
                 "privacy" => null,
+                "description" => null,
             ],
             'room' => [
                 "name" => null,

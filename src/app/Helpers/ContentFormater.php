@@ -122,6 +122,7 @@ class ContentFormater {
 
         // creation de la vignette si on a une image
         if (!empty($data['image'])) {
+            dd($data['image']);
             $thumbnail = $this->createThumbnails($data['image']);
             $data['thumbnail'] = '/serve-thumbnail/' . $thumbnail . '/large';
             $this->thumbnails[] = $thumbnail;

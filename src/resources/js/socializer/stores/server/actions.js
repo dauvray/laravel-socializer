@@ -9,6 +9,22 @@ export default {
     | SERVER
     |-----------------------------------*/
 
+    async checkServerAccess(serverId) {
+        try {
+            let result = await AjaxService.load(`/check-server-access/${serverId}`)
+            return result
+        } catch(err) {
+            return false
+        }
+    },
+    async requestServerAccess(payload) {
+        let result = await AjaxService.load('/request-server-access', 'post', payload)
+        return result
+    },
+    async responseServerAccess(payload) {
+        let result = await AjaxService.load('/response-server-access', 'post', payload)
+        return result
+    },
     async createServer(payload) {
          let result = await AjaxService.load('/create-server', 'post', {server: payload})
          return result

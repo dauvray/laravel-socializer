@@ -34,6 +34,7 @@
             notificationactived: {
                 type: Boolean,
                 required: false,
+                default: true
             },
             a11yactivated: {
                 type: Boolean,

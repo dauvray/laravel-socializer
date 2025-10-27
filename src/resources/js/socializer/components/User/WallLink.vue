@@ -2,7 +2,7 @@
     <div ref="userLink" 
         class="user-link-container" >
             <span class="user-link" @click="viewProfile">{{ user.name }}</span>
-            <IconWidget icon="user-circle"  
+            <IconWidget v-if="dropdown" icon="user-circle"  
                 @click="showDropdown" 
                 @touch="showDropdown"
             ></IconWidget>
@@ -23,7 +23,7 @@
                     <div class="user-info">
                         <h4 class="user-name">{{ user.name }}</h4>
                         <p v-if="user.email" class="user-email">{{ user.email }}</p>
-                        <p v-if="user.role" class="user-role">{{ user.role }}</p>
+                        <p v-if="user.function" class="user-function">{{ user.function }}</p>
                         <p v-if="user.lastSeen" class="user-last-seen">
                             Dernière connexion: {{ formatDate(user.lastSeen) }}
                         </p>
@@ -63,6 +63,11 @@ export default {
         reloadPage: {
             type: Boolean,
             required: true,
+        },
+        dropdown: {
+            type: Boolean,
+            required: false,
+            default: true
         }
     },
     components: {

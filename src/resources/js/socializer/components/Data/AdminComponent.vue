@@ -11,11 +11,16 @@
         getFiltersUrl="/get-server-questionnaire-filters"
         :forceLoadAnswers="true"
         :routes="{
-            list: adminListRoute,
+            list: '/get-server-panel-answers-list',
             delete: '/delete-server-answer-questionnaire',
             edit: `/get-answers-server/${currentServer.id}`,
             store: '/send-social-answers',
             view: '/renderer-server-questionnaire',
+            search: '/search-server-input-results',
+        }"
+        :options="{
+            roomId: currentRoom.id,
+            identifier: identifier,
         }"
     ></AdminPanel>
 
@@ -26,6 +31,7 @@
         :isstandalone="true"
         :displayBuilder="true"
         :loadable="true"
+        :editorQuickAccess="{ configuration: true }"
         :urls="{
             loadAnswers: `/get-answers-server/${currentServer.id}`
         }"
@@ -37,6 +43,7 @@
 <script>
     import { defineAsyncComponent } from 'vue'
     import { useServerStore } from '~socializer/stores/server.js'
+    import { useMeStore} from '~estarter/stores/me.js'
     import { mapState } from 'pinia'
 
     export default {
@@ -65,13 +72,14 @@
             ...mapState(useServerStore, {
                 currentServer: 'getCurrentServer',
                 currentContent: 'getCurrentContent',
+                currentRoom: 'getCurrentRoom',
+            }),
+            ...mapState(useMeStore, {
+                identifier: 'getIdentifier',
             }),
             currentQuestionnaireId: function() {
                 return this.questionnaireid || this.currentContent.questionnaire_id
             },
-            adminListRoute: function() {
-                return this.currentContent.author_only == 1 ? '/get-server-author-answers-list' : '/get-server-panel-answers-list'
-            }
         },
         methods: {
             onEditionMode(value) {

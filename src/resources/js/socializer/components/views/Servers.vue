@@ -1,49 +1,50 @@
 <template>
-    <div class="m-3">
-        <button 
-            class="btn btn-primary btn-sm"
-            @click="onCreateServer"
-            ><IconWidget icon="plus"></IconWidget> Nouveau domaine
-        </button>
-        <ModalWidget
-            data-test="fmd-modal-plugin"
-            v-if="showModal"
-            class="d-flex justify-content-end"
-            modalClasses="modal-lg"
-            target="server-create-modal"
-            :trigger="showModal"
-            :canValidate="canValidate"
-            :showBtn="false"
-            @hidden="onCancelEditModal"
-            @saveModalChanges="onSaveUpdatedModal">
-                <template #header>
-                    header
-                </template>
-                <template #body>
-                    <questionnaire-component
-                        ref="serverQuestionnaire"
-                        v-if="currentQuestionnaire"
-                        :questionnaireid="currentQuestionnaire"
-                        :isstandalone="true"
-                        :deportvalidation="true"
-                        :deport-sending=true
-                        @deport-sending="onQuestionnaireData"
-                        @deported-validation="onQuestionnaireValidation"
-                    ></questionnaire-component>
-                </template>
-        </ModalWidget>
+    <button 
+        class="btn btn-primary"
+        @click="onCreateServer"
+        ><IconWidget icon="plus"></IconWidget> Créer un domaine
+    </button>
+    <ModalWidget
+        data-test="fmd-modal-plugin"
+        v-if="showModal"
+        class="d-flex justify-content-end"
+        modalClasses="modal-lg"
+        :modalTitle="modalTitle"
+        target="server-create-modal"
+        :trigger="showModal"
+        :canValidate="canValidate"
+        :showBtn="false"
+        @hidden="onCancelEditModal"
+        @saveModalChanges="onSaveUpdatedModal">
+            <template #body>
+                <questionnaire-component
+                    ref="serverQuestionnaire"
+                    v-if="currentQuestionnaire"
+                    :questionnaireid="currentQuestionnaire"
+                    :isstandalone="true"
+                    :deportvalidation="true"
+                    :deport-sending=true
+                    @deport-sending="onQuestionnaireData"
+                    @deported-validation="onQuestionnaireValidation"
+                ></questionnaire-component>
+            </template>
+    </ModalWidget>
 
-        <h3>Domaines</h3>
-        <ul v-if="servers" 
-            class="list-group list-group-flush">
-            <li v-for="server in servers"
-                class="list-group-item"
-                :key="server.id">
-                <router-link :to="{ name: 'server', params: { serverId: server.id }}">
-                    <IconWidget icon="server"></IconWidget> {{ server.name }}
-                </router-link>
-            </li>
-        </ul>
+    <h1>Domaines</h1>
+    <div class="d-flex">
+        <div v-for="server in servers" class="card col-md-4 col-lg-3" :key="server.id">
+            <img :src="server.image || 'https://picsum.photos/200'" class="card-img-top" alt="...">
+            <div class="card-body">
+                <h5 class="card-title"><IconWidget v-if="server.is_private" class="text-warning" icon="key"></IconWidget> {{ server.name }}</h5>
+                <h6 class="card-subtitle mb-2 text-body-secondary">
+                    <span class="badge text-bg-info">Catégorie</span>
+                </h6>
+                <p class="card-text">{{ server.description }}</p>
+                <button class="btn btn-primary" @click="onCheckAccess(server.id)">
+                    visiter
+                </button>
+            </div>
+        </div>
     </div>
 </template>
 
@@ -66,6 +67,8 @@
                 showModal: false,
                 canValidate: false,
                 currentQuestionnaire: null,
+                currentServer: null,
+                modalTitle: '',
             }
         },
         computed: {
@@ -81,11 +84,14 @@
         methods: {
             ...mapActions(useServerStore, [
                 'createServer',
-                'loadAllServers'
+                'loadAllServers',
+                'checkServerAccess',
+                'requestServerAccess',
             ]),
             onCreateServer() {
                 this.showModal = true
                 this.currentQuestionnaire = FormsSettingHelper.questionnaires.createServer
+                this.modalTitle = 'Créer un domaine'
             },
             onQuestionnaireData(formData){
                 // create  serve
@@ -97,6 +103,17 @@
                         this.$router.push({ name: 'server', params: { serverId: server.id }})
                     })
                 }  
+
+                // request private server
+                if(this.currentQuestionnaire === FormsSettingHelper.questionnaires.accessPrivateServer) {
+                    this.$refs.serverQuestionnaire.setUnsavedStatus(false)
+                    formData.append('serverId', this.currentServer)
+                    this.requestServerAccess(formData)
+                    .then(() => {
+                        this.showModal = false
+                        console.log('Votre demande d\'accès a été envoyée au propriétaire du domaine')
+                    })
+                }
             },
             onQuestionnaireValidation(isValid) {
                 if(isValid) {
@@ -113,6 +130,17 @@
             onSaveUpdatedModal() {
                 this.$refs.serverQuestionnaire.onValidQuestionnaire()
             },
+            async onCheckAccess(serverId) {
+                this.currentServer = serverId
+                this.modalTitle = 'Demande d\'accès'
+                const hasAccess = await this.checkServerAccess(serverId)
+                if(hasAccess) {
+                    this.$router.push({ name: 'server', params: { serverId }})
+                } else {
+                    this.showModal = true
+                    this.currentQuestionnaire = FormsSettingHelper.questionnaires.accessPrivateServer
+                }
+            }
         }
     }
 </script>

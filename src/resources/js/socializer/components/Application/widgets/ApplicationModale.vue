@@ -96,6 +96,7 @@
                         <PromptWidget
                             :data="componentData"
                             @prompt-data="onChangeJson"
+                            @submit-prompt="onSendAppDetails"
                         ></PromptWidget>
                     </div>
 

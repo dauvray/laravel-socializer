@@ -83,6 +83,8 @@ class SocializerInstall extends EstarterPrepare
 
 
         // update estarter config
+
+        // todo prevoir des warnings si les lignes n'existent pas
         $this->replaceInfile(
             base_path('config/estarter.php'),
             '$prefix_back.\'\General\UserCrudController\'',
@@ -93,6 +95,18 @@ class SocializerInstall extends EstarterPrepare
             base_path('config/estarter.php'),
             "Dauvray\Estarter\app\Services\OnlineUsersService",
             "Dauvray\Socializer\app\Services\OnlineUsersService"
+        );
+
+        $this->replaceInfile(
+            base_path('config/estarter.php'),
+            '$prefix_back.\'\General\NotificationTemplateCrudController\'',
+            "'\Dauvray\Socializer\app\Http\Controllers\Admin\NotificationTemplateCrudController'"
+        );
+
+        $this->replaceInfile(
+            base_path('config/estarter.php'),
+            'Dauvray\Estarter\app\Models\General\NotificationTemplate::class',
+            "Dauvray\Socializer\app\Models\NotificationTemplate::class"
         );
 
         // todo a filtrer
@@ -188,7 +202,25 @@ class SocializerInstall extends EstarterPrepare
             ."// -- DO NOT DELETE THIS LINE : new customIgnoredFields can automatically be inserted here\n"
         );
 
-        // create forms
+        // cards notifications
+         $this->replaceInfile(
+            resource_path('js/estarter_custom_elements/notifications/index.js'),
+            "// -- DO NOT DELETE THIS LINE : new cardsNotifications can automatically be inserted here",
+            "import socializerCardsNotification from '~socializer/components/widgets/Notifications'"."\n"
+            ."// -- DO NOT DELETE THIS LINE : new cardsNotifications can automatically be inserted here\n"
+        );
+
+        $this->replaceInfile(
+            resource_path('js/estarter_custom_elements/notifications/index.js'),
+            "// -- DO NOT DELETE THIS LINE : new export can automatically be inserted here",
+            "...socializerCardsNotification,"."\n"
+            ."// -- DO NOT DELETE THIS LINE : new export can automatically be inserted here\n"
+        );
+
+
+        /**
+         * CREATE FORMS
+         */
 
         // post from
         $classic_post =             [
@@ -247,7 +279,7 @@ class SocializerInstall extends EstarterPrepare
             VITE_SOCIALIZER_CREATE_ROOM_FORM_ID=\"${SOCIALIZER_CREATE_ROOM_FORM_ID}\"\n
         ");
 
-        // create room form
+        // create server form
         $create_server_form = [
             'created_at' => '2019-01-01 00:00:00',
             'updated_at' => '2019-01-01 00:00:00',
@@ -274,6 +306,16 @@ class SocializerInstall extends EstarterPrepare
         $this->putInFile(base_path('.env'), "
             SOCIALIZER_CREATE_SERVER_FORM_ID=$id\n
             VITE_SOCIALIZER_CREATE_SERVER_FORM_ID=\"${SOCIALIZER_CREATE_SERVER_FORM_ID}\"\n
+        ");
+
+        // create access server request form
+        $create_access_server_request_form = [
+            // todo
+        ];
+        $id = DB::table('questionnaires')->insert($create_access_server_request_form);
+        $this->putInFile(base_path('.env'), "
+            SOCIALIZER_ACCESS_PRIVATE_SERVER_FORM_ID=$id\n
+            VITE_SOCIALIZER_ACCESS_PRIVATE_SERVER_FORM_ID=\"${SOCIALIZER_ACCESS_PRIVATE_SERVER_FORM_ID}\"\n
         ");
 
         // create add room module form

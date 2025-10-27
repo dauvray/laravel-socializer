@@ -20,13 +20,6 @@
         @closed="NewMessageNotification = null"
     ></ToasterNewMessage>
 
-    <!-- <button type="button" class="btn btn-outline-primary position-relative me-4">
-        <IconWidget icon="comment-dots"></IconWidget>
-        <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">
-            {{ totalNotification }}
-            <span class="visually-hidden">Notification</span>
-        </span>
-    </button> -->
 </template>
 
 <script>
@@ -85,7 +78,6 @@
 
             } = usePeers()
 
-            const totalNotification = ref(0)
             const notificationComponent = ref(null)
             const notificationComponentProps = ref(null)
             const NewMessageNotification= ref(null)
@@ -98,7 +90,6 @@
                 closeRemotePeerId,
                 sendAuthorizationRemotePeerId,
                 receiveAuthorizationRemotePeerId,
-                totalNotification,
                 notificationComponent,
                 notificationComponentProps,
                 setLocalVideoPeer,
@@ -170,10 +161,17 @@
             ...mapActions(useConversationsStore, [
                 'addConversation',
             ]),
+            ...mapActions(useMeStore, [
+                'addUnreadNotifications',
+            ]),
             initUserChannel() {
                 if(this.userChannel) {
                     Echo.leave(this.userChannel)
                     Echo.private(this.userChannel)
+                        // laravel notifications
+                        .notification((evt) => {
+                           this.addUnreadNotifications(1)
+                        })
                         // display alerts to user
                         .listen('.AlertToUser', (event) => {
                             this.notificationComponentProps = event
@@ -211,9 +209,10 @@
                         .listen('.NewChatMessageNotification', (event) => {
                             this.NewMessageNotification = event
                         })
+                        // Eventbus for components
                         .listen('.EventBusNotification', (event) => {
                             this.eventBus.$emit(event.type, event.payload)
-                        })
+                        });
                 }
             },
             onResponseAlert(fromUserSlug, options, status) {

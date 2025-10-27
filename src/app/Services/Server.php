@@ -18,6 +18,8 @@ use Dauvray\Socializer\app\Http\Resources\ServerCollection;
 use Innovation\formdesigner\app\Services\QuestionnaireService;
 use Dauvray\Socializer\app\Helpers\SocializerQuestionnaireHelper;
 use Dauvray\Socializer\app\Events\QuestionnaireAnswered;
+use Dauvray\Socializer\app\Notifications\serverAccessRequest;
+use Dauvray\Socializer\app\Notifications\serverAccessResponse;
 
 class Server
 {
@@ -43,6 +45,61 @@ class Server
     | SERVER
     |-----------------------------------*/
 
+    public function checkServerAccess($vertex_id)
+    {
+        $user_vertexid = $this->user->vertexid;
+        return checkServerAccess($vertex_id, $user_vertexid);
+    }
+
+    public function requestServerAccess(Request $request)
+    {
+        $server_vid = $request->get('serverId');
+        $action = $request->get('model')['action'];
+        $success = false;
+
+        switch($action) {
+            case 'administrateur':
+                $admin_id = getServerAdmin($server_vid);
+                $admin = config('estarter.models.user')::where('id', $admin_id)->first();
+                $server = $this->getServer($server_vid, false);
+                    if($admin) {
+                        $admin->notify(new serverAccessRequest($this->user, $server));
+                    }
+                    $success = true;
+                break;
+            case 'serial':
+                break;
+        }
+
+        return $success;
+    }
+
+    public function responseServerAccess(Request $request)
+    {
+        $server_vid = $request->get('server_vid');
+        $user_id = $request->get('user_id');
+        $notification_id = $request->get('notification_id');
+        $response = $request->get('response');
+
+        if(!$this->user->isServerOwner($server_vid)) {
+            return false;
+        }
+
+        // $accepted_user = config('estarter.models.user')::where('id', $user_id)->first();
+        // $server = $this->getServer($server_vid, false);
+
+        // if($response) {
+        //     // server / user relation
+        //     $this->setRegisteredRelation($accepted_user->vertexid, $server_vid);
+        // }
+
+        // $accepted_user->notify(new serverAccessResponse($this->user, $server, $response));
+       
+        // deleteNotification($this->user, $notification_id);
+
+        return true;
+    }
+
     public function createServer(Request $request)
     {
         $new_server = $request->get('server');
@@ -66,31 +123,16 @@ class Server
         }
 
         // server / user relation
-        $this->nebula->insertEdge(
-            config('socializer.nebulagraph.edges.registered_in.name'), 
-            [
-                $this->user->vertexid.'->'.$vid => config('socializer.nebulagraph.edges.registered_in.props')
-            ]
-        );
+        $this->setRegisteredRelation($this->user->vertexid, $vid);
 
         // server / creator relation
-        $this->nebula->insertEdge(
-            config('socializer.nebulagraph.edges.has_creator.name'), 
-            [
-                $vid.'->'.$this->user->vertexid => config('socializer.nebulagraph.edges.has_creator.props')
-            ]
-        );
+        $this->setHasCreatorRelation($this->user->vertexid, $vid);
 
         // server page
         $page_vid = $this->servicePage->createPageVertice($vid);
 
         // page / server relation
-        $this->nebula->insertEdge(
-            config('socializer.nebulagraph.edges.published_in.name'), 
-            [
-                $page_vid.'->'.$vid => config('socializer.nebulagraph.edges.published_in.props')
-            ]
-        );
+        $this->setPublishedInRelation($page_vid, $vid);
 
         return $vid;
     }
@@ -230,26 +272,40 @@ class Server
         return $this->user->servers();
     }
 
-    public function getServer($vertex_id = null)
+    public function getServer($vertex_id = null, $with_relations = true)
     {
-        $user_vertexid = $this->user->vertexid;
+        $query = "MATCH (o:user)<-[:has_creator]-(s:server)<-[:registered_in]-(u:user) WHERE id(s) == '$vertex_id' ";
 
-        $query = "
-            MATCH (o:user)<-[:has_creator]-(s:server)<-[:registered_in]-(u:user) 
-            WHERE id(s) == '$vertex_id' AND (s.server.privacy == 0 OR (s.server.privacy == 1 AND id(u) == '$user_vertexid')) 
-            MATCH (s)<-[:registered_in]-(us:user) 
-            MATCH (s)<-[:published_in]-(p:page) 
-            OPTIONAL MATCH (s)<-[:published_in]-(r:room)
-            WITH s as server, properties(s) AS server_props, count(distinct us) as nb_users, collect(r) as rooms , o as owner, p as page
-            RETURN server, owner, nb_users, rooms, page
-        ";
+            if($with_relations) {
+
+                $user_vertexid = $this->user->vertexid;
+
+                $query .= "AND (s.server.privacy == 0 OR (s.server.privacy == 1 AND id(u) == '$user_vertexid')) 
+                    MATCH (s)<-[:registered_in]-(us:user) 
+                    MATCH (s)<-[:published_in]-(p:page) 
+                    OPTIONAL MATCH (s)<-[:published_in]-(r:room)
+                    WITH s as server, properties(s) AS server_props, count(distinct us) as nb_users, collect(r) as rooms , o as owner, p as page
+                    RETURN server, owner, nb_users, rooms, page
+                ";
+            } else {
+
+                $query .= "RETURN s as server";
+
+            }
 
         $result = $this->nebula->execute($query);
 
         if(!isset($result[0])) {
-            return response()->json(['message' => 'Serveur introuvale'], 404);
+            return false;
         }
 
+        // for notifications users
+        if(!$with_relations) {
+            return $result[0];
+        }
+
+        // decode image server
+        $result[0]['server']['image'] = json_decode($result[0]['server']['image']);
         // decode image room
         $result[0]['rooms'] = $this->decodeImageRooms($result[0]['rooms']);
         // check rooms permissions
@@ -258,7 +314,7 @@ class Server
         // set user in online server connections
         $this->usersOnlineService->addUserItem('server', $vertex_id);
 
-        return response()->json($result[0], 200);
+        return $result[0];
     }
 
     public function getServerQuestionnaireList(Request $request)
@@ -435,28 +491,13 @@ class Server
         }
 
         // room / server relation
-        $this->nebula->insertEdge(
-            config('socializer.nebulagraph.edges.published_in.name'), 
-            [
-                $vid.'->'.$server_id => config('socializer.nebulagraph.edges.published_in.props')
-            ]
-        );
+        $this->setPublishedInRelation($vid, $server_id);
 
         // room / creator relation
-        $this->nebula->insertEdge(
-            config('socializer.nebulagraph.edges.has_creator.name'), 
-            [
-                $vid.'->'.$this->user->vertexid => config('socializer.nebulagraph.edges.has_creator.props')
-            ]
-        );
+        $this->setHasCreatorRelation($this->user->vertexid, $vid);
 
         // room / user relation
-        $this->nebula->insertEdge(
-            config('socializer.nebulagraph.edges.registered_in.name'), 
-            [
-                $this->user->vertexid.'->'.$vid => config('socializer.nebulagraph.edges.registered_in.props')
-            ]
-        );
+        $this->setRegisteredRelation($this->user->vertexid, $vid);
 
         // create associated content
         $this->_createContent($values, $server_id, $vid);
@@ -536,13 +577,9 @@ class Server
                 if(!$new_vid) {
                     return response()->json(['message' => "Création impossible"], 404);
                 }
+
                 // page / room relation
-                $this->nebula->insertEdge(
-                    config('socializer.nebulagraph.edges.published_in.name'), 
-                    [
-                        $new_vid.'->'.$room_id => config('socializer.nebulagraph.edges.published_in.props')
-                    ]
-                );
+                $this->setPublishedInRelation($new_vid, $room_id);
                 break;
         }
 
@@ -589,6 +626,24 @@ class Server
         $this->usersOnlineService->addUserItem('room', $vertex_id);
 
         return $response;
+    }
+
+    public function getSimpleRoom($vertex_id = null)
+    {
+        $query = "
+            MATCH (r:room) WHERE id(r) == '$vertex_id' 
+            OPTIONAL MATCH (r)<-[:published_in]-(c)
+            RETURN r as room, c as content
+        ";
+
+        $result = $this->nebula->execute($query);
+
+        if(!count($result)) {
+           return null;
+        }
+
+        return $result[0];
+
     }
 
     public function updateRoomServer(Request $request)
@@ -744,12 +799,7 @@ class Server
         }
 
         // data / room relation
-        $this->nebula->insertEdge(
-            config('socializer.nebulagraph.edges.published_in.name'), 
-            [
-                $new_vid.'->'.$vid => config('socializer.nebulagraph.edges.published_in.props')
-            ]
-        );
+         $this->setPublishedInRelation($new_vid, $vid);
 
         return $new_vid;
     }
@@ -772,19 +822,11 @@ class Server
         }
 
         // classroom / room relation
-        $this->nebula->insertEdge(
-            config('socializer.nebulagraph.edges.published_in.name'), 
-            [
-                $new_vid.'->'.$vid => config('socializer.nebulagraph.edges.published_in.props')
-            ]
-        );
+        $this->setPublishedInRelation($new_vid, $vid);
+
         // classroom / creator relation
-        $this->nebula->insertEdge(
-            config('socializer.nebulagraph.edges.has_creator.name'), 
-            [
-                $new_vid.'->'.$this->user->vertexid => config('socializer.nebulagraph.edges.has_creator.props')
-            ]
-        );
+        $this->setHasCreatorRelation($this->user->vertexid, $new_vid);
+
 
         $this->serviceChat->createChatVertice($new_vid, $new_content['privacy']);
         $this->createBoardVertice($new_vid, $new_content);
@@ -811,12 +853,8 @@ class Server
         }
 
         // board / room relation
-        $this->nebula->insertEdge(
-            config('socializer.nebulagraph.edges.published_in.name'), 
-            [
-                $new_vid.'->'.$vid => config('socializer.nebulagraph.edges.published_in.props')
-            ]
-        );
+        $this->setPublishedInRelation($new_vid, $vid);
+
 
         return $new_vid;
     }
@@ -952,5 +990,39 @@ class Server
     public function deleteAnswersQuestionnaire(Request $request)
     {
 
+    }
+
+    /*------------------------------------------
+    | Utils
+    |------------------------------------------*/ 
+
+    public function setRegisteredRelation($user_vid, $vid)
+    {
+         $this->nebula->insertEdge(
+            config('socializer.nebulagraph.edges.registered_in.name'), 
+            [
+                $user_vid .'->'. $vid => config('socializer.nebulagraph.edges.registered_in.props')
+            ]
+        );
+    }
+
+    public function setHasCreatorRelation($creator_vid, $vid)
+    {
+         $this->nebula->insertEdge(
+            config('socializer.nebulagraph.edges.has_creator.name'), 
+            [
+                $vid .'->'. $creator_vid => config('socializer.nebulagraph.edges.has_creator.props')
+            ]
+        );
+    }
+
+    public function setPublishedInRelation($from_vid, $to_vid)
+    {
+         $this->nebula->insertEdge(
+            config('socializer.nebulagraph.edges.published_in.name'), 
+            [
+                $from_vid .'->'. $to_vid => config('socializer.nebulagraph.edges.published_in.props')
+            ]
+        );
     }
 }

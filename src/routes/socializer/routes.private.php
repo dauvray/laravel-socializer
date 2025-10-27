@@ -157,6 +157,18 @@ Route::get('/load-server/{vertex_id}',
     config('socializer.controllers_front.server').'@getServer')
     ->name('server.get.server');
 
+Route::get('/check-server-access/{vertex_id}', 
+    config('socializer.controllers_front.server').'@checkServerAccess')
+    ->name('server.check.access');
+
+Route::post('/request-server-access', 
+    config('socializer.controllers_front.server').'@requestServerAccess')
+    ->name('server.request.access');
+
+Route::post('/response-server-access', 
+    config('socializer.controllers_front.server').'@responseServerAccess')
+    ->name('server.response.access');
+
 /*----------------------------------------------------------------------
 | Questionnaires
 |----------------------------------------------------------------------*/    
@@ -198,11 +210,11 @@ Route::post('/renderer-server-questionnaire',
 Route::post('/get-server-panel-answers-list',
     config('socializer.controllers_front.server').'@getAdminpanelList');
 
-Route::post('/get-server-author-answers-list',
-    config('socializer.controllers_front.server').'@getAuthorpanelList');
-
 Route::post('/delete-server-answer-questionnaire',
     config('socializer.controllers_front.server').'@deleteAnswersQuestionnaire');
+
+Route::post('/search-server-input-results',
+    config('socializer.controllers_front.server').'@searchServerInputResults');
 
 /*-------------------------- AI ---------------------------------------*/
 

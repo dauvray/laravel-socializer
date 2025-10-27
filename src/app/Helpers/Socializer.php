@@ -231,3 +231,31 @@ if (!function_exists('createUserAndNetwork')) {
         );
     }
 }
+
+// SERVER HELPERS
+if (!function_exists('checkServerAccess')) {
+    function checkServerAccess($vertex_id, $user_vertexid, $tag='server') {
+        $nebula = app('nebulaGraph');
+        $query = "
+            MATCH (o:user)<-[:has_creator]-(s:".$tag.")<-[:registered_in]-(u:user) 
+            WHERE id(s) == '$vertex_id' AND (s.".$tag.".privacy == 0 OR (s.".$tag.".privacy == 1 AND id(u) == '$user_vertexid') OR (s.".$tag.".privacy == 2 AND id(o) == '$user_vertexid')) 
+            RETURN id(s) as server_id
+        ";
+        $result = $nebula->execute($query);
+        return isset($result[0]);
+    }
+}
+
+if (!function_exists('getServerAdmin')) {
+    function getServerAdmin($server_vertexid)
+    {
+        $nebula = app('nebulaGraph');
+        $query = "
+            MATCH (o:user)<-[:has_creator]-(s:server)
+            WHERE id(s) == '$server_vertexid'
+            RETURN id(o)
+        ";
+        $result = $nebula->execute($query);
+        return getRealIdFromVertexId($result[0]);
+    }
+}
