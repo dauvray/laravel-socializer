@@ -9,7 +9,7 @@
         :questionnaireid="currentQuestionnaireId"
         getQuestionnaireUrl="/get-server-questionnaire"
         getFiltersUrl="/get-server-questionnaire-filters"
-        :forceLoadAnswers="true"
+        :forceLoadAnswers="false"
         :routes="{
             list: '/get-server-panel-answers-list',
             delete: '/delete-server-answer-questionnaire',

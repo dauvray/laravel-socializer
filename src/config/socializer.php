@@ -296,7 +296,6 @@ return [
                     'content_type string NULL',
                     'questionnaire_id int NULL',
                     'position int NULL',
-                    'author_only int NULL',
                 ]
             ],
             'chat' => [
@@ -413,7 +412,6 @@ return [
                 "content_type" => 'data',
                 "questionnaire_id" => null,
                 "position" => null,
-                "author_only" => null,
             ],
             'whiteboard' => [
                 "name" => null,

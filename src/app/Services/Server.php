@@ -466,7 +466,6 @@ class Server
             'name' => $new_room['name'],
             'image' => isset($new_room['image']) ? $new_room['image'] : null,
             'privacy' => (int)$new_room['privacy'],
-            'author_only' => isset($new_room['author_only']) ? $new_room['author_only'] : null,
             'content_type' => $new_room['content_type'],
             'questionnaire_id' => isset($new_room['questionnaire_id']) ? (int)$new_room['questionnaire_id'] : null,
             'module_id' => isset($new_room['module_id']) ? (int)$new_room['module_id'] : null,
@@ -626,24 +625,6 @@ class Server
         $this->usersOnlineService->addUserItem('room', $vertex_id);
 
         return $response;
-    }
-
-    public function getSimpleRoom($vertex_id = null)
-    {
-        $query = "
-            MATCH (r:room) WHERE id(r) == '$vertex_id' 
-            OPTIONAL MATCH (r)<-[:published_in]-(c)
-            RETURN r as room, c as content
-        ";
-
-        $result = $this->nebula->execute($query);
-
-        if(!count($result)) {
-           return null;
-        }
-
-        return $result[0];
-
     }
 
     public function updateRoomServer(Request $request)

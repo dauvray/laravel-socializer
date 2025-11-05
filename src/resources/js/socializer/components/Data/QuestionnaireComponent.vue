@@ -97,7 +97,7 @@
                 this.$refs.serverQuestionnaire.afterValidation(resp)
             },
             onSavedAnswers(resp) {
-                console.log(resp)
+                //console.log(resp)
             }
         }
     }

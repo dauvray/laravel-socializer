@@ -198,8 +198,8 @@ Route::post('/send-social-answers',
 Route::post('/get-answers-server/{server_id}', 
     config('socializer.controllers_front.server').'@getQuestionnaireAnswers');
 
-Route::post('/send-server-questionnaire-filters', 
-    config('socializer.controllers_front.server').'@applyFilters');
+// Route::post('/send-server-questionnaire-filters', 
+//     config('socializer.controllers_front.server').'@applyFilters');
    
 Route::post('/get-server-questionnaire-filters', 
     config('socializer.controllers_front.server').'@getQuestionnaireFilters');    

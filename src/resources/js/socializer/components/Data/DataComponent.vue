@@ -89,7 +89,7 @@
            searchResultLink: {
                type: String,
                required: false,
-               default: '/send-server-questionnaire-filters'
+               default: '/get-server-panel-answers-list'
            },
            getFiltersUrl: {
                type: String,

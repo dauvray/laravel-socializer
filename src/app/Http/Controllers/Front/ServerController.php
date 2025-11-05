@@ -244,13 +244,13 @@ class ServerController extends Controller
     /*----------------------------------------------------------------------
     | Questionnaires Search
     |----------------------------------------------------------------------*/  
-    public function applyFilters(Request $request, SearchService $searchService)
-    {
-        $questionnaire_id = revealIdentifier($request->get('questionnaire_id'));
-        $helper = new SocializerQuestionnaireHelper($questionnaire_id, null,null, true);
-        $result = $searchService->getQuestionnaireFilteredItems($request, $helper);
-        return response()->json($result, 200);
-    }
+    // public function applyFilters(Request $request, SearchService $searchService)
+    // {
+    //     $questionnaire_id = revealIdentifier($request->get('questionnaire_id'));
+    //     $helper = new SocializerQuestionnaireHelper($questionnaire_id, null,null, true);
+    //     $result = $searchService->getQuestionnaireFilteredItems($request, $helper);
+    //     return response()->json($result, 200);
+    // }
 
     public function getAdminpanelList(Request $request, SearchService $searchService, ServerService $serverService)
     {
@@ -265,17 +265,9 @@ class ServerController extends Controller
         if(!checkServerAccess($options['roomId'], $user->vertex_id, 'room')) {
             abort(403);
         }
-
-        $room = $serverService->getSimpleRoom($options['roomId']);
-
-        $limitations = $room['room']['privacy'] == 2 ? false : true;
-        $authoredLimitations = false;   
-        if($room['content']['author_only'] === 1) {
-            $authoredLimitations = true;
-        }
        
         $helper = new SocializerQuestionnaireHelper($questionnaire_id, null, null, true);
-        return response()->json($searchService->getAdminpanelList($request, $helper, $limitations, $authoredLimitations), 200);
+        return response()->json($searchService->getAdminpanelList($request, $helper), 200);
     }
 
     public function getQuestionnaireFilters(Request $request)
@@ -284,80 +276,6 @@ class ServerController extends Controller
         $helper = new SocializerQuestionnaireHelper($questionnaire_id, null, null, true);
         $service = new QuestionnaireService($helper);
         $result = $service->getQuestionnaireFilters();
-        $user_answers = $helper->_loadAnswersQuestionnaire();
-
-       // apply limitations
-       foreach($result['fields'] as $key => $item) {
-            if(isset($item['field'])) {
-
-                foreach($helper->global_limitations as $limitation) {
-                    if($limitation['model'] == $item['field']->model) {
-                        switch($limitation['settings']->limitedConstraint) {
-                            case 'not':
-                                foreach($item['field']->values as $idx => $value) {
-                                    if(in_array($value->value, $limitation['settings']->limitedAnswers)) {
-                                        unset($item['field']->values[$idx]);
-                                    }
-                                }
-                                break;
-                            default:
-                                foreach($item['field']->values as $idx => $value) {
-                                    if(!in_array($value->value, $limitation['settings']->limitedAnswers)) {
-                                        unset($item['field']->values[$idx]);
-                                    }
-                                }
-                                break;
-                        }
-                    }
-                }
-
-                foreach($helper->user_limitations as $limitation) {
-                    if($limitation['model'] == $item['field']->model) {
-                        switch($limitation['settings']->limitedConstraint) {
-                            case 'and':
-                                foreach($item['field']->values as $idx => $value) {
-                                    $user_answer = $user_answers['model'][$item['field']->model] ?? null;
-
-                                    if(is_array($user_answer)) {
-                                        if(!in_array($value->$value, $user_answers['model'][$item['field']->model])) {
-                                            unset($item['field']->values[$idx]);
-                                        }
-                                    } else {
-                                        if($value->value != $user_answer) {
-                                            unset($item['field']->values[$idx]);
-                                        }
-                                    }
-                                }
-                                break;
-                            case 'or':
-                                 $fileterValues = [];
-
-                                 foreach($item['field']->values as $idx => $value) {
-                                    $fileterValues[] = $value->value;
-                                 }
-
-                                $user_answer = $user_answers['model'][$item['field']->model] ?? null;
-                                $valueArray = is_array($user_answer) ? $user_answer : [$user_answer];
-                                $intersec = array_intersect($fileterValues, $valueArray);
-
-                                foreach($item['field']->values as $idx => $value) {
-                                   if(!in_array($value->value, $intersec)) {
-                                    unset($item['field']->values[$idx]);
-                                   }
-                                 }
-                                break;
-                            case 'not':
-                                // Exclut les valeurs correspondant à la réponse utilisateur
-                                $item['field']->values = array_filter($item['field']->values, function ($v) use ($user_answers, $item) {
-                                    $userValue = $user_answers['model'][$item['field']->model] ?? null;
-                                    return $v->value != $userValue;
-                                });
-                                break;
-                        }
-                    }
-                }
-            }
-       }
 
         return response()->json($result, 200);
     }
