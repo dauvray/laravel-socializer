@@ -201,6 +201,17 @@ export default [
                             ]
                         }
                     },
+                    {
+                        path: `wall/:vertexId`,
+                        name: 'wall',
+                        component: () => import('~socializer/components/WallRoom/WallComponent.vue'),
+                        meta: {
+                            breadcrumb: [
+                                { name: 'Accueil', link: '/'},
+                                { name: 'Wall', link: null },
+                            ]
+                        }
+                    },
                 ]
             },
             {

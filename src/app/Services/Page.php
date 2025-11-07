@@ -47,12 +47,7 @@ class Page
         }
 
         // page / creator relation
-        $this->nebula->insertEdge(
-            config('socializer.nebulagraph.edges.has_creator.name'), 
-            [
-                $vid.'->'.$this->user->vertexid => config('socializer.nebulagraph.edges.has_creator.props')
-            ]
-        );
+        setHasCreatorRelation($this->user->vertexid, $vid);
         
         $page->vertexid = $vid;
         $page->save();

@@ -36,12 +36,7 @@ class Chat
 
         if(!$is_registred) {
            // user / chat relation
-            $this->nebula->insertEdge(
-                config('socializer.nebulagraph.edges.registered_in.name'), 
-                [
-                    $this->user->vertexid.'->'.$room_id => config('socializer.nebulagraph.edges.registered_in.props')
-                ]
-            );
+           setRegisteredRelation($this->user->vertexid, $room_id);
         }
     }
 
@@ -170,19 +165,8 @@ class Chat
 
         if (!$vid) return null;
 
-        $this->nebula->insertEdge(
-            config('socializer.nebulagraph.edges.published_in.name'), 
-            [
-                $vid.'->'.$data['chat_id'] => config('socializer.nebulagraph.edges.published_in.props')
-            ]
-        );
-
-        $this->nebula->insertEdge(
-            config('socializer.nebulagraph.edges.has_creator.name'), 
-            [
-                $vid.'->'.$author->vertexid => config('socializer.nebulagraph.edges.has_creator.props')
-            ]
-        );
+        setPublishedInRelation($vid, $data['chat_id']);
+        setHasCreatorRelation( $author->vertexid, $vid);
 
         $message->vertexid = $vid;
         $message->save();
@@ -274,7 +258,6 @@ class Chat
         }
 
         return $message->message_src;
-
     }
 
     public function updateMessage(Request $request)
@@ -473,20 +456,10 @@ class Chat
         }
 
         // chat / user relation
-        $this->nebula->insertEdge(
-            config('socializer.nebulagraph.edges.registered_in.name'), 
-            [
-                $this->user->vertexid.'->'.$vid => config('socializer.nebulagraph.edges.registered_in.props')
-            ]
-        );
+        setRegisteredRelation($this->user->vertexid, $vid);
 
         // chat / creator relation
-        $this->nebula->insertEdge(
-            config('socializer.nebulagraph.edges.has_creator.name'), 
-            [
-                $vid.'->'.$this->user->vertexid => config('socializer.nebulagraph.edges.has_creator.props')
-            ]
-        );
+        setHasCreatorRelation($this->user->vertexid, $vid);
 
        return $this->getConversation($vid);
     }
@@ -508,19 +481,10 @@ class Chat
         $chat_vid = $result['general']['chat']['id'];
 
         // chat / room relation
-        $this->nebula->insertEdge(
-            config('socializer.nebulagraph.edges.published_in.name'), 
-            [
-                $chat_vid.'->'.$room_id => config('socializer.nebulagraph.edges.published_in.props')
-            ]
-        );
+        setPublishedInRelation($chat_vid, $room_id);
+
         // chat / user registered
-        $this->nebula->insertEdge(
-            config('socializer.nebulagraph.edges.registered_in.name'), 
-            [
-                $this->user->vertexid.'->'.$chat_vid => config('socializer.nebulagraph.edges.registered_in.props')
-            ]
-        );
+        setRegisteredRelation($this->user->vertexid, $chat_vid);
 
         return $chat_vid;
     }
@@ -582,12 +546,7 @@ class Chat
         $contact = revealIdentifier($contact);
 
         // chat / user relation
-        $this->nebula->insertEdge(
-            config('socializer.nebulagraph.edges.registered_in.name'), 
-            [
-                $contact->vertexid.'->'.$chat_vid => config('socializer.nebulagraph.edges.registered_in.props')
-            ]
-        );
+        setRegisteredRelation($contact->vertexid, $chat_vid);
 
         // send invitation to user
         $conversation = $this->getConversation($chat_vid, false);

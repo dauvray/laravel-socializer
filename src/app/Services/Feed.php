@@ -211,28 +211,13 @@ class Feed
         }
 
         // post / feed relation
-        $this->nebula->insertEdge(
-            config('socializer.nebulagraph.edges.published_in.name'), 
-            [
-                $vid.'->'.$feed_id => config('socializer.nebulagraph.edges.published_in.props')
-            ]
-        );
+        setPublishedInRelation($vid, $feed_id);
 
         // post / wall relation
-        $this->nebula->insertEdge(
-            config('socializer.nebulagraph.edges.published_in.name'), 
-            [
-                $vid.'->'.$wall_id => config('socializer.nebulagraph.edges.published_in.props')
-            ]
-        );
+        setPublishedInRelation($vid, $wall_id);
 
         // post / author relation
-        $this->nebula->insertEdge(
-            config('socializer.nebulagraph.edges.has_creator.name'), 
-            [
-                $vid.'->'.$this->user->vertexid => config('socializer.nebulagraph.edges.has_creator.props')
-            ]
-        );
+        setHasCreatorRelation($this->user->vertexid, $vid);
 
         $post->vertexid = $vid;
         $post->type = 'original';
@@ -316,28 +301,13 @@ class Feed
         $shared_post_vid = getVertexIdFromInsert($result);
 
         // shared_post / original post
-        $this->nebula->insertEdge(
-            config('socializer.nebulagraph.edges.sharing_of.name'), 
-            [
-                $shared_post_vid.'->'.$post_vid => config('socializer.nebulagraph.edges.sharing_of.props')
-            ]
-        );
+        setSharingOfRelation($shared_post_vid, $post_vid);
         
-        // shared_post / author relation    
-        $this->nebula->insertEdge(
-            config('socializer.nebulagraph.edges.shared_by.name'), 
-            [
-                $shared_post_vid.'->'.$this->user->vertexid => config('socializer.nebulagraph.edges.shared_by.props')
-            ]
-        );
+        // shared_post / author relation  
+        setSharedByRelation($shared_post_vid, $this->user->vertexid);  
 
         // shared_post / feed relation
-        $this->nebula->insertEdge(
-            config('socializer.nebulagraph.edges.shared_in.name'), 
-            [
-                $shared_post_vid.'->'.$feed_vid => config('socializer.nebulagraph.edges.shared_in.props')
-            ]
-        );
+        setSharedInRelation($shared_post_vid, $feed_vid);
 
         // send to followers
         $feed_id = $this->user->wall();

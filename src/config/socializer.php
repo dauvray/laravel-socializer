@@ -260,6 +260,7 @@ return [
                 'name' => 'wall',
                 'props' => [
                     'questionnaire_id int NULL',
+                    'content_type string NULL',
                 ]
             ],
             'message' => [
@@ -379,6 +380,7 @@ return [
             'feed' => [],
             'wall' => [
                 "questionnaire_id" => null,
+                "content_type" => 'wall',
             ],
             'message' => [
                 'mongoid' => null,

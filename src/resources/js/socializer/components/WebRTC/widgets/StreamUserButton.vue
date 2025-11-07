@@ -1,28 +1,30 @@
 <template>
     <template v-if="!callInprogress">
         <template v-if="!isStreaming">
-            <button class="btn btn-primary dropdown dropdown-toggle" 
-                type="button" 
-                data-bs-toggle="dropdown" 
-                aria-expanded="false">
-                <IconWidget icon="broadcast-tower"></IconWidget> Streaming
-            </button>
-            <ul class="dropdown-menu">
-                <li>
-                    <a class="dropdown-item" 
-                        href="#" 
-                        @click="onVideoCall">
-                        <IconWidget icon="video"></IconWidget> Stream vidéo
-                    </a>
-                </li>
-                <li>
-                    <a class="dropdown-item" 
-                        href="#" 
-                        @click="onAudioCall">
-                        <IconWidget icon="phone"></IconWidget> Stream audio
-                    </a>
-                </li>
-            </ul>
+            <div class="btn-group btn-group-sm" role="group">
+                <button class="btn btn-primary dropdown dropdown-toggle" 
+                    type="button" 
+                    data-bs-toggle="dropdown" 
+                    aria-expanded="false">
+                    <IconWidget icon="broadcast-tower"></IconWidget> Streaming
+                </button>
+                <ul class="dropdown-menu">
+                    <li>
+                        <a class="dropdown-item" 
+                            href="#" 
+                            @click="onVideoCall">
+                            <IconWidget icon="video"></IconWidget> Stream vidéo
+                        </a>
+                    </li>
+                    <li>
+                        <a class="dropdown-item" 
+                            href="#" 
+                            @click="onAudioCall">
+                            <IconWidget icon="phone"></IconWidget> Stream audio
+                        </a>
+                    </li>
+                </ul>
+            </div>
         </template>
 
         <template v-else >

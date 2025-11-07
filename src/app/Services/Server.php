@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\Broadcast;
 use Dauvray\Socializer\app\Services\Chat;
 use Dauvray\Socializer\app\Services\Page;
 use Dauvray\Socializer\app\Services\ApplicationIA;
+use Dauvray\Socializer\app\Services\Feed;
 use Dauvray\Estarter\app\Helpers\ModelTraits\Thumbnails;
 use Dauvray\Socializer\app\Http\Resources\ServerCollection;
 use Innovation\formdesigner\app\Services\QuestionnaireService;
@@ -29,6 +30,7 @@ class Server
     public $user = null;
     public $serviceChat = null;
     public $servicePage = null;
+    public $serviceFeed = null;
     public $serviceApplication = null;
     public $usersOnlineService = null;
 
@@ -39,6 +41,7 @@ class Server
         $this->serviceChat = new Chat();
         $this->servicePage = new Page();
         $this->serviceApplication = new ApplicationIA();
+        $this->serviceFeed = new Feed();
         $this->usersOnlineService = app('onlineUsers');
     }
     /*-----------------------------------
@@ -90,7 +93,7 @@ class Server
 
         // if($response) {
         //     // server / user relation
-        //     $this->setRegisteredRelation($accepted_user->vertexid, $server_vid);
+        //     setRegisteredRelation($accepted_user->vertexid, $server_vid);
         // }
 
         // $accepted_user->notify(new serverAccessResponse($this->user, $server, $response));
@@ -123,16 +126,16 @@ class Server
         }
 
         // server / user relation
-        $this->setRegisteredRelation($this->user->vertexid, $vid);
+        setRegisteredRelation($this->user->vertexid, $vid);
 
         // server / creator relation
-        $this->setHasCreatorRelation($this->user->vertexid, $vid);
+        setHasCreatorRelation($this->user->vertexid, $vid);
 
         // server page
         $page_vid = $this->servicePage->createPageVertice($vid);
 
         // page / server relation
-        $this->setPublishedInRelation($page_vid, $vid);
+        setPublishedInRelation($page_vid, $vid);
 
         return $vid;
     }
@@ -490,13 +493,13 @@ class Server
         }
 
         // room / server relation
-        $this->setPublishedInRelation($vid, $server_id);
+        setPublishedInRelation($vid, $server_id);
 
         // room / creator relation
-        $this->setHasCreatorRelation($this->user->vertexid, $vid);
+        setHasCreatorRelation($this->user->vertexid, $vid);
 
         // room / user relation
-        $this->setRegisteredRelation($this->user->vertexid, $vid);
+        setRegisteredRelation($this->user->vertexid, $vid);
 
         // create associated content
         $this->_createContent($values, $server_id, $vid);
@@ -570,6 +573,9 @@ class Server
             case 'application':
                 $new_vid = $this->serviceApplication->createApplicationVertice($room_id, $new_content);
                 break;
+            case 'wall':
+                $new_vid = $this->createFeedWallVertice($room_id, $new_content);
+                break;
             // all others types are considered as page
             default:
                 $new_vid = $this->servicePage->createPageVertice($server_id, $room_id, $new_content);
@@ -578,7 +584,7 @@ class Server
                 }
 
                 // page / room relation
-                $this->setPublishedInRelation($new_vid, $room_id);
+                setPublishedInRelation($new_vid, $room_id);
                 break;
         }
 
@@ -780,7 +786,7 @@ class Server
         }
 
         // data / room relation
-         $this->setPublishedInRelation($new_vid, $vid);
+        setPublishedInRelation($new_vid, $vid);
 
         return $new_vid;
     }
@@ -803,11 +809,10 @@ class Server
         }
 
         // classroom / room relation
-        $this->setPublishedInRelation($new_vid, $vid);
+        setPublishedInRelation($new_vid, $vid);
 
         // classroom / creator relation
-        $this->setHasCreatorRelation($this->user->vertexid, $new_vid);
-
+        setHasCreatorRelation($this->user->vertexid, $new_vid);
 
         $this->serviceChat->createChatVertice($new_vid, $new_content['privacy']);
         $this->createBoardVertice($new_vid, $new_content);
@@ -834,8 +839,33 @@ class Server
         }
 
         // board / room relation
-        $this->setPublishedInRelation($new_vid, $vid);
+        setPublishedInRelation($new_vid, $vid);
 
+        return $new_vid;
+    }
+
+    public function createFeedWallVertice($vid, $new_content)
+    {
+        $vertex = $this->nebula->insertVertex(
+            config('socializer.nebulagraph.tags.wall.name'),
+            $new_content
+        );
+
+        if(!is_array($vertex)) {
+            return false;
+        } 
+
+        $new_vid = getVertexIdFromInsert($vertex);
+
+        if(!$new_vid) {
+            return false;
+        }
+
+        // wall / room relation
+       setPublishedInRelation($new_vid, $vid);
+
+        // owner/ wall relation
+        setFollowedByRelation($this->user->vertexid, $new_vid);
 
         return $new_vid;
     }
@@ -970,40 +1000,6 @@ class Server
 
     public function deleteAnswersQuestionnaire(Request $request)
     {
-
-    }
-
-    /*------------------------------------------
-    | Utils
-    |------------------------------------------*/ 
-
-    public function setRegisteredRelation($user_vid, $vid)
-    {
-         $this->nebula->insertEdge(
-            config('socializer.nebulagraph.edges.registered_in.name'), 
-            [
-                $user_vid .'->'. $vid => config('socializer.nebulagraph.edges.registered_in.props')
-            ]
-        );
-    }
-
-    public function setHasCreatorRelation($creator_vid, $vid)
-    {
-         $this->nebula->insertEdge(
-            config('socializer.nebulagraph.edges.has_creator.name'), 
-            [
-                $vid .'->'. $creator_vid => config('socializer.nebulagraph.edges.has_creator.props')
-            ]
-        );
-    }
-
-    public function setPublishedInRelation($from_vid, $to_vid)
-    {
-         $this->nebula->insertEdge(
-            config('socializer.nebulagraph.edges.published_in.name'), 
-            [
-                $from_vid .'->'. $to_vid => config('socializer.nebulagraph.edges.published_in.props')
-            ]
-        );
+        // todo
     }
 }

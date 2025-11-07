@@ -87,12 +87,7 @@ class Users
     {
         $wall_id = $user_tofollow->wall();
 
-        $result = $this->nebula->insertEdge(
-            config('socializer.nebulagraph.edges.followed_by.name'), 
-            [
-                $wall_id.'->'.$this->user->vertexid => config('socializer.nebulagraph.edges.followed_by.props')
-            ]
-        );
+        $result = setFollowedByRelation($wall_id, $this->user->vertexid);
         
         if (count($result) === 0) {
             return true;

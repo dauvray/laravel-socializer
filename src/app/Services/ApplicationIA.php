@@ -75,20 +75,10 @@ class ApplicationIA
         $application->save();
         
         // application / room relation
-        $this->nebula->insertEdge(
-            config('socializer.nebulagraph.edges.published_in.name'), 
-            [
-                $new_vid.'->'.$vid => config('socializer.nebulagraph.edges.published_in.props')
-            ]
-        );
+        setPublishedInRelation($new_vid, $vid);
 
         // application / creator relation
-        $this->nebula->insertEdge(
-            config('socializer.nebulagraph.edges.has_creator.name'), 
-            [
-                $new_vid.'->'.$this->user->vertexid => config('socializer.nebulagraph.edges.has_creator.props')
-            ]
-        );
+        setHasCreatorRelation($this->user->vertexid, $new_vid);
 
         // create page to store application database 
         $vertex = $this->nebula->insertVertex(
@@ -113,20 +103,10 @@ class ApplicationIA
         ]);
 
         // page / room relation
-        $this->nebula->insertEdge(
-            config('socializer.nebulagraph.edges.owned_by.name'), 
-            [
-                $page_vid.'->'.$vid => config('socializer.nebulagraph.edges.owned_by.props')
-            ]
-        );
+        setOwnedByRelation($page_vid, $vid);
 
         // page / application relation
-        $this->nebula->insertEdge(
-            config('socializer.nebulagraph.edges.published_in.name'), 
-            [
-                $page_vid.'->'.$new_vid => config('socializer.nebulagraph.edges.published_in.props')
-            ]
-        );
+        setPublishedInRelation($page_vid, $new_vid);
 
         return $new_vid;
     }

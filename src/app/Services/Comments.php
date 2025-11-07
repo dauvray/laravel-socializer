@@ -94,19 +94,10 @@ class Comments
                 $comment_id = $matches[1];
                 
                 // comment / article relation
-                $this->nebula->insertEdge(
-                    config('socializer.nebulagraph.edges.reply_of.name'), 
-                    [
-                        $comment_id.'->'.$vertexid => config('socializer.nebulagraph.edges.reply_of.props')
-                    ]
-                );
+                setReplyOfRelation($comment_id, $vertexid);
+
                 // comment / author relation    
-                $this->nebula->insertEdge(
-                    config('socializer.nebulagraph.edges.has_creator.name'), 
-                    [
-                        $comment_id.'->'.$author->vertexId => config('socializer.nebulagraph.edges.has_creator.props')
-                    ]
-                );
+                setHasCreatorRelation($author->vertexId, $comment_id);
             }
         } 
 

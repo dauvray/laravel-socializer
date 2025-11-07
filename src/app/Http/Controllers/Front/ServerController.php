@@ -256,7 +256,7 @@ class ServerController extends Controller
     {
         $questionnaire_id = revealIdentifier($request->get('questionnaire_id'));
         $options = $request->get('options', null);
-        $user =  revealIdentifier($options['identifier']);
+        $user = revealIdentifier($options['identifier']);
 
         if(!$options || !isset($options['roomId']) || !$options['roomId']) {
             abort(403);

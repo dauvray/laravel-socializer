@@ -64,6 +64,12 @@ const coreComponentMapping = Object.assign({
          name: 'Salle de conférence',
          selectable: true
        },
+      wall: {
+         component: 'Wall',
+         description: 'Fil d\'actualités',
+         name: 'Mur social',
+         selectable: true
+       },
 }, CustomRoomConfig.componentMapping)
 
 export {

@@ -259,3 +259,115 @@ if (!function_exists('getServerAdmin')) {
         return getRealIdFromVertexId($result[0]);
     }
 }
+
+/*---------------------------
+| Vertices & Edges Helpers
+|----------------------------*/
+
+if (!function_exists('setRegisteredRelation')) {
+    function setRegisteredRelation($user_vid, $vid)
+    {
+         app('nebulaGraph')->insertEdge(
+            config('socializer.nebulagraph.edges.registered_in.name'), 
+            [
+                $user_vid .'->'. $vid => config('socializer.nebulagraph.edges.registered_in.props')
+            ]
+        );
+    }
+}
+
+if (!function_exists('setHasCreatorRelation')) {
+    function setHasCreatorRelation($creator_vid, $vid)
+    {
+        app('nebulaGraph')->insertEdge(
+            config('socializer.nebulagraph.edges.has_creator.name'), 
+            [
+                $vid .'->'. $creator_vid => config('socializer.nebulagraph.edges.has_creator.props')
+            ]
+        );
+    }
+}
+
+if (!function_exists('setPublishedInRelation')) {
+    function setPublishedInRelation($from_vid, $to_vid)
+    {
+        app('nebulaGraph')->insertEdge(
+            config('socializer.nebulagraph.edges.published_in.name'), 
+            [
+                $from_vid .'->'. $to_vid => config('socializer.nebulagraph.edges.published_in.props')
+            ]
+        );
+    }
+}
+
+if (!function_exists('setFollowedByRelation')) {
+    function setFollowedByRelation($from_vid, $to_vid)
+    {
+        return app('nebulaGraph')->insertEdge(
+            config('socializer.nebulagraph.edges.followed_by.name'), 
+            [
+                $from_vid .'->'. $to_vid => config('socializer.nebulagraph.edges.followed_by.props')
+            ]
+        );
+    }
+}
+
+if (!function_exists('setOwnedByRelation')) {
+    function setOwnedByRelation($from_vid, $to_vid)
+    {
+        app('nebulaGraph')->insertEdge(
+            config('socializer.nebulagraph.edges.owned_by.name'), 
+            [
+                $from_vid .'->'. $to_vid => config('socializer.nebulagraph.edges.owned_by.props')
+            ]
+        );
+    }
+}
+
+if (!function_exists('setReplyOfRelation')) {
+    function setReplyOfRelation($from_vid, $to_vid)
+    {
+        app('nebulaGraph')->insertEdge(
+            config('socializer.nebulagraph.edges.reply_of.name'), 
+            [
+                $from_vid.'->'.$to_vid => config('socializer.nebulagraph.edges.reply_of.props')
+            ]
+        );
+    }
+}
+
+if (!function_exists('setSharingOfRelation')) {
+    function setSharingOfRelation($from_vid, $to_vid)
+    {
+        app('nebulaGraph')->insertEdge(
+            config('socializer.nebulagraph.edges.sharing_of.name'), 
+            [
+                $from_vid.'->'.$to_vid => config('socializer.nebulagraph.edges.sharing_of.props')
+            ]
+        );
+    }
+}
+
+if (!function_exists('setSharedByRelation')) {
+    function setSharedByRelation($from_vid, $to_vid)
+    {
+        app('nebulaGraph')->insertEdge(
+             config('socializer.nebulagraph.edges.shared_by.name'), 
+            [
+                $from_vid.'->'.$to_vid => config('socializer.nebulagraph.edges.shared_by.props')
+            ]
+        );
+    }
+}
+
+if (!function_exists('setSharedInRelation')) {
+    function setSharedInRelation($from_vid, $to_vid)
+    {
+        app('nebulaGraph')->insertEdge(
+            config('socializer.nebulagraph.edges.shared_in.name'), 
+            [
+                $from_vid.'->'.$to_vid => config('socializer.nebulagraph.edges.shared_in.props')
+            ]
+        );
+    }
+}

@@ -140,6 +140,7 @@
             }
 
             .adminpanel-filters {
+                @extend .btn-group;
                 position: absolute;
                 right: 15px;
                 top: 10px;

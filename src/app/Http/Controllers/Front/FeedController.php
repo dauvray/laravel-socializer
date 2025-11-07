@@ -6,7 +6,6 @@ use Illuminate\Http\Request;
 use App\Http\Controllers\Controller;
 use Dauvray\Socializer\app\Events\FeedActivity;
 use Dauvray\Socializer\app\Services\Feed as FeedService;
-use Illuminate\Support\Facades\Auth;
 
 class FeedController extends Controller
 {
