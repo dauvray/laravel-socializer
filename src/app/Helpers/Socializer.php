@@ -207,28 +207,13 @@ if (!function_exists('createUserAndNetwork')) {
         $userVertexId = $user->vertexid;
 
         // create user feed
-        $nebula->insertEdge(
-            config('socializer.nebulagraph.edges.owned_by.name'), 
-            [
-                $feedVertexId.'->'.$userVertexId => config('socializer.nebulagraph.edges.owned_by.props')
-            ]
-        );
+        setOwnedByRelation($feedVertexId, $userVertexId);
 
         // create user wall
-        $nebula->insertEdge(
-            config('socializer.nebulagraph.edges.owned_by.name'), 
-            [
-                $wallVertexId.'->'.$userVertexId => config('socializer.nebulagraph.edges.owned_by.props')
-            ]
-        );
+        setOwnedByRelation($wallVertexId, $userVertexId);
 
         // user follow his wall
-        $nebula->insertEdge(
-            config('socializer.nebulagraph.edges.followed_by.name'), 
-            [
-            $wallVertexId.'->'.$userVertexId => config('socializer.nebulagraph.edges.followed_by.props')
-            ]
-        );
+        setFollowedByRelation($wallVertexId, $userVertexId);
     }
 }
 

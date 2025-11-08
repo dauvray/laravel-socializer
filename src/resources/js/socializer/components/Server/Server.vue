@@ -60,10 +60,12 @@
             </div>
         </template>
 
-          
-        <section v-if="!isLoading" id="room-header" :style="setMainContentMargin">
-            <RoomHeader id="room-header-inner"></RoomHeader>
-        </section>
+        <RoomHeader 
+            v-if="!isLoading" id="room-header" :style="setMainContentMargin">
+            <template #tools>
+                <div id="room-header-tools"></div>
+            </template>
+        </RoomHeader>
 
         <section v-if="!isLoading" id="main-room" :style="setMainContentMargin">
             <PageComponent

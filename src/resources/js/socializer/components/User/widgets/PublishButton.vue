@@ -59,6 +59,11 @@
                 type: Number,
                 required: true
             },
+            userOwner: {
+                type: Boolean,
+                required: false,
+                default: true // if true, post will be published on user wall else on feed item ( room ...)
+            },
         },
         data() {
             return {
@@ -82,6 +87,9 @@
                 this.canValidate = isValid
             },
             async onSendPost(formData) {
+                if(!this.userOwner) {
+                    formData.append("owner", false)
+                }
                 const post = await this.sendFeedPost(formData)
                 this.$refs.postForm.afterValidation(post)
                 this.insertPost(post)

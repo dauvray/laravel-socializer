@@ -1,18 +1,16 @@
 <template>
     <div class="chat-wrapper">
-        <Teleport to="#system-socializer-tools">
-            <div id="room-stream-btn" role="group">
-                <StreamUserButton 
-                    ref="webcamBtn"
-                    :users="chatters"
-                    :room="currentConversationId"
-                ></StreamUserButton>
-                <CaptureUserButton
-                    ref="screenBtn"
-                    :users="chatters"
-                    :room="currentConversationId"
-                ></CaptureUserButton>
-            </div>
+        <Teleport to="#room-header-tools">
+            <StreamUserButton 
+                ref="webcamBtn"
+                :users="chatters"
+                :room="currentConversationId"
+            ></StreamUserButton>
+            <CaptureUserButton
+                ref="screenBtn"
+                :users="chatters"
+                :room="currentConversationId"
+            ></CaptureUserButton>
         </Teleport>
         <div class="chat-header" v-if="displayHeader">
             <RoomUsersList :users="chatters"></RoomUsersList>

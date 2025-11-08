@@ -6,8 +6,12 @@ const AjaxService = useAjaxService()
 const commentStore = useCommentStore()
 
 export default {
-    async loadFeed(identifier, type='wall') {
-        const feed = await AjaxService.load(`/owner-${type}/${identifier}`)
+    async loadFeed(identifier, type='wall', owner = null) {
+        let url = `/owner-${type}/${identifier}`
+        if(owner) {
+            url += `/${owner}`
+        }
+        const feed = await AjaxService.load(url)
         this.feedId = feed.id
         return feed
     },

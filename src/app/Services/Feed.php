@@ -23,10 +23,10 @@ class Feed
         $this->usersOnlineService = app('onlineUsers');
     }
 
-    public function getFeed($vertexid = null, $type = 'wall')
+    public function getFeed($vertexid = null, $type = 'wall', $owner = 'user')
     {
         $result = app('nebulaGraph')->execute("
-            MATCH (u:user)<-[:owned_by]-(f:$type) WHERE id(u) == '$vertexid' RETURN f
+            MATCH (u:$owner)<-[:owned_by]-(f:$type) WHERE id(u) == '$vertexid' RETURN f
         ");
 
         if(!count($result)) {
@@ -39,7 +39,7 @@ class Feed
         // dans le cas d'un type feed on recupere le questionnaire du wall correspondant a cet utilisateur
         if( $type == 'feed') {
             $result = app('nebulaGraph')->execute("
-                MATCH (u:user)<-[:owned_by]-(w:wall) WHERE id(u) == '$vertexid' RETURN w
+                MATCH (u:$owner)<-[:owned_by]-(w:wall) WHERE id(u) == '$vertexid' RETURN w
             ");
             $userWall = (object)$result[0];
         }
@@ -173,8 +173,10 @@ class Feed
         $model = $request->get('model');
         $formated = formatTextToContent($model['POST']);
         $model['POST'] = $formated['content'];
+        // always publish on user feed
         $feed_id = $this->user->feed();
-        $wall_id = $this->user->wall();
+        // if owner specified, publish on feed_id else publish on user wall
+        $wall_id = $request->get('owner') ? $request->get('feed_id') : $this->user->wall();
 
         $post = Post::create([
             'feed_id' => $feed_id,
@@ -227,7 +229,7 @@ class Feed
         $resource = $this->_formatPostToResource($post, $post_identifier);
 
         // to queue
-        SendPostToFollowers::dispatch($resource, $wall_id);
+        SendPostToFollowers::dispatch($resource, $wall_id, $this->user->id);
 
         return $resource;
     }

@@ -1,14 +1,16 @@
 <template>
-    <PostList
-        :posts="posts"
-        :pagination="true"
-        @load-posts="onLoadFeedPost"
-        @delete-post="onPostDelete"
-        @like-item="onLikeItem"
-        @share-item="onShareItem"
-        @comment-created="onCommentCreated"
-        @comment-deleted="onCommentDeleted"
-    ></PostList>
+    <div>
+        <PostList
+            :posts="posts"
+            :pagination="true"
+            @load-posts="onLoadFeedPost"
+            @delete-post="onPostDelete"
+            @like-item="onLikeItem"
+            @share-item="onShareItem"
+            @comment-created="onCommentCreated"
+            @comment-deleted="onCommentDeleted"
+        ></PostList>
+    </div>
 </template>
 
 <script>
@@ -36,7 +38,12 @@
                type: String,
                required: false,
                default: 'feed' // or wall 
-            }
+            },
+            owner: {
+                type: String,
+                required: false,
+                default: undefined
+            },
         },
         data() {
             return {
@@ -44,7 +51,8 @@
             }
         },
         mounted() {
-            this.loadFeed(this.user.identifier, this.type).then(resp => {
+            this.loadFeed(this.user.identifier, this.type, this.owner)
+            .then(resp => {
                 this.feedId = resp.id
                 this.$emit('feed-loaded', resp)
             })

@@ -2,7 +2,7 @@
     <template v-if="!callInprogress">
         <template v-if="!isStreaming">
             <div class="btn-group btn-group-sm" role="group">
-                <button class="btn btn-primary dropdown dropdown-toggle" 
+                <button class="btn btn-sm btn-primary dropdown-toggle" 
                     type="button" 
                     data-bs-toggle="dropdown" 
                     aria-expanded="false">
@@ -26,18 +26,17 @@
                 </ul>
             </div>
         </template>
-
         <template v-else >
             <button 
                 type="button" 
                 id="stop-stream-btn"
-                class="btn btn-danger"
+                class="btn btn-sm btn-danger"
                 @click="onStopBrodcastWebcam">
                 <IconWidget icon="window-close"></IconWidget> Terminer stream
             </button>
             <button 
                 type="button" 
-                class="btn"
+                class="btn btn-sm"
                 :class="[isMuted ? 'btn-secondary' : 'btn-primary']"
                 >
                 <IconWidget v-if="isMuted" icon="microphone" title="activer le son" @click="onManageAudio"></IconWidget>
@@ -46,7 +45,7 @@
             <button 
                 v-if="isVideoCall"
                 type="button" 
-                class="btn"
+                class="btn btn-sm"
                 :class="[isVideoEnabled ? 'btn-primary' : 'btn-secondary']"
                 >
                 <IconWidget v-if="!isVideoEnabled" icon="video" title="activer la caméra" @click="onManageVideo"></IconWidget>

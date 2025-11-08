@@ -42,7 +42,7 @@ Route::get('/owner-feed/{idenfifier}',
     config('socializer.controllers_front.feed').'@getOwnerFeed')
     ->name('feed.owner');
 
-Route::get('/owner-wall/{idenfifier}', 
+Route::get('/owner-wall/{idenfifier}/{owner?}', 
     config('socializer.controllers_front.feed').'@getOwnerWall')
     ->name('wall.owner2');
 

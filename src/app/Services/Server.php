@@ -623,6 +623,11 @@ class Server
             'content' => $result['content'],
         ];
 
+        // subcontent are posts for wall type, so do not need to send , they are fetched with feed service
+        if($result['content'][0]['content_type'] == 'wall') {
+            $with_subcontent = false;
+        }
+
         if($with_subcontent) {
             $response['subcontent'] = count($result['subcontent']) ? $result['subcontent'] : null;
         }
@@ -846,6 +851,10 @@ class Server
 
     public function createFeedWallVertice($vid, $new_content)
     {
+        if(!$new_content['questionnaire_id']) {
+            $new_content['questionnaire_id'] = config('socializer.posts.classic_form');
+        }
+
         $vertex = $this->nebula->insertVertex(
             config('socializer.nebulagraph.tags.wall.name'),
             $new_content
@@ -862,7 +871,8 @@ class Server
         }
 
         // wall / room relation
-       setPublishedInRelation($new_vid, $vid);
+       setOwnedByRelation($new_vid, $vid); // used for feed
+       setPublishedInRelation($new_vid, $vid); // used for room
 
         // owner/ wall relation
         setFollowedByRelation($this->user->vertexid, $new_vid);

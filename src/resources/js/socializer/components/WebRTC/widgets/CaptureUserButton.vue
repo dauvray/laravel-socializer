@@ -1,13 +1,13 @@
 <template>
     <button v-if="!isCapturing" 
         type="button" 
-        class="btn btn-primary"
+        class="btn btn-sm btn-primary"
         @click="onBrodcastScreen">
         <IconWidget icon="tv"></IconWidget> Partage
     </button>
-    <button v-if="isCapturing" 
+    <button v-else
         type="button" 
-        class="btn btn-danger"
+        class="btn btn-sm btn-danger"
         @click="onStopBrodcastScreen">
         <IconWidget icon="window-close"></IconWidget> Arrêter partage
     </button>

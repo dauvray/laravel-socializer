@@ -15,10 +15,7 @@
             @extend .btn;
             @extend .btn-sm;
             @extend .btn-primary;
-            position: absolute;
-            right: 5px;
             z-index: 10;
-            margin-top: 5px;
         }
         #room-sidebar {
             width: 100%
@@ -103,7 +100,7 @@
         @extend .align-items-center;
         grid-area: room-header; 
 
-        #room-header-inner {
+        h1 {
             @extend .flex-grow-1;
             @extend .ps-2;
             height: 100%;;

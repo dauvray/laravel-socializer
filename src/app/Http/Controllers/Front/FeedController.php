@@ -18,11 +18,17 @@ class FeedController extends Controller
         return response()->json($feed, 200);
     }
 
-    public function getOwnerWall(FeedService $service, $identifier)
+    // by default type is user, can be another vertexid type like 'room'
+    public function getOwnerWall(FeedService $service, $identifier, $owner = 'user')
     {
-        $user = revealIdentifier($identifier);
+        $item = revealIdentifier($identifier);
 
-        $feed = $service->getFeed($user->vertexid, 'wall');
+        // model eloquent or vertexid
+        if($item instanceof \Illuminate\Database\Eloquent\Model) {
+            $item = $item->vertexid;
+        }
+
+        $feed = $service->getFeed($item, 'wall', $owner);
 
         return response()->json($feed, 200);
     }

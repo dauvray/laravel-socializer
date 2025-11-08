@@ -26,13 +26,13 @@ class Users
 
         $query = "
             MATCH (u:user {active: 1}) where id(u) == '$user->vertexid' 
-            OPTIONAL MATCH (u)<-[:owned_by]-(:wall)-[nbf:followed_by]->(:user)
+            OPTIONAL MATCH (u)<-[:owned_by]-(w:wall)-[nbf:followed_by]->(:user)
             ";
 
         if(!$is_me) {
             $query .= "
             MATCH (current_user:user) where id(current_user) == '$me->vertexid'
-            OPTIONAL MATCH (u)-[f:followed_by]-(current_user)
+            OPTIONAL MATCH (w)-[f:followed_by]->(current_user)
             ";
         }
 
