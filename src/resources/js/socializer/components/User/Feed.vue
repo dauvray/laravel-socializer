@@ -1,5 +1,5 @@
 <template>
-    <div class="feed-user py-3">
+    <div class="feed-user">
         <PublishButton
             v-if="feed"
             :feedFormId="feed.questionnaire"

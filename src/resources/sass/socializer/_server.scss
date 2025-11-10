@@ -105,6 +105,13 @@
             @extend .ps-2;
             height: 100%;;
         }
+
+        #room-header-tools {
+            @extend .btn-group;
+            @extend .m-2;
+            @extend .shadow;
+            @extend .border;
+        }
     }
 
     #main-room {

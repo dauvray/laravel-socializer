@@ -46,7 +46,9 @@ class Feed
 
         return [
             'id' => $feed->id,
-            'questionnaire' => $type == 'wall' ? $feed->questionnaire_id : $userWall->questionnaire_id
+            'questionnaire' => $type == 'wall' 
+                            ? $feed->questionnaire_id ?? config('socializer.posts.classic_form') 
+                            : $userWall->questionnaire_id
         ];
     }
 
@@ -165,7 +167,6 @@ class Feed
             $order_by,
              route('feed.posts', $feed_id)
         );
-
     }
 
     public function sendFeedPost($request)
@@ -220,6 +221,11 @@ class Feed
 
         // post / author relation
         setHasCreatorRelation($this->user->vertexid, $vid);
+
+        if(!isFollowedBy($this->user->vertexid, $wall_id)) {
+            // post / author follow wall if not already following
+            setFollowedByRelation($wall_id, $this->user->vertexid);
+        }
 
         $post->vertexid = $vid;
         $post->type = 'original';
@@ -324,7 +330,7 @@ class Feed
         $resource = $this->_formatPostToResource($original_post , hideIdentifier($original_post), $original_post_author);
 
         // to queue
-        SendPostToFollowers::dispatch($resource, $feed_id);
+        SendPostToFollowers::dispatch($resource, $feed_id, $this->user->id);
 
         return $resource;
     }

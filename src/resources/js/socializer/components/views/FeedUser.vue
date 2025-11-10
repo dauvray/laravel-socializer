@@ -1,5 +1,5 @@
 <template>
-    <FeedWidget class="container"></FeedWidget>
+    <FeedWidget></FeedWidget>
 </template>
 
 <script>

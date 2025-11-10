@@ -32,10 +32,11 @@ class SendPostToFollowers implements ShouldQueue
 
         // send to followers
         $feed_followers = getFeedFollowers($this->feed_id);
+
         foreach($feed_followers as $feed) {
 
             try {
-               
+              
                 $feed_destination = $feed['feed_dest']['id'];
 
                 // publish post on feed follower
@@ -44,12 +45,14 @@ class SendPostToFollowers implements ShouldQueue
                 // broadcast new post to feed follower if connected
                 $follower_id = str_replace('user', '', $feed['user']['id']);
                 $is_connected = app('onlineUsers')->isOnlineUser($follower_id);
+
                 if($is_connected) {
                     $is_feed_active = app('onlineUsers')->hasUserItem('feed', $feed_destination, $follower_id); 
                     if($is_feed_active) {
                           event(new PostCreatedEvent($this->resource, $feed_destination));
                     }
                 }
+
             } catch (\Exception $e) {
                 continue; // skip if conversion fails
             }

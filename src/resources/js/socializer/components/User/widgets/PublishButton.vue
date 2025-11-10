@@ -1,7 +1,7 @@
 <template>
     <button
         type="button"
-        class="btn btn-primary btn-sm shadow-sm mb-2"
+        class="btn btn-primary btn-sm shadow-sm my-2"
         title="Configurer le questionnaire"
         @click="onShowModal"
         ><IconWidget icon='paper-plane'></IconWidget> Publier
@@ -25,7 +25,7 @@
                         'history': null,
                     }"
                     :deportSending="true"
-                    deportvalidation="true"
+                    :deportvalidation="true"
                     @questionnaire-isvalid="onQuestionnaireReady"
                     @deport-sending="onSendPost"
                     @deported-validation="onIsValidPost"

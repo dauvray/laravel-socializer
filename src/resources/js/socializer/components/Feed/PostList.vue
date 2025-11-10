@@ -1,5 +1,5 @@
 <template>
-    <div  v-if="posts.length === 0" class="alert alert-light" role="alert">
+    <div v-if="posts.length === 0" class="alert alert-light" role="alert">
         Votre fil d'actualité est vide
     </div>
     <TransitionGroup name="fade" tag="div">

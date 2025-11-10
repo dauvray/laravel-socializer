@@ -1,5 +1,5 @@
 <template>
-    <div>
+    <div v-if="loaded">
         <PostList
             :posts="posts"
             :pagination="true"
@@ -48,12 +48,16 @@
         data() {
             return {
                 feedId: null,
+                loaded: false,
             }
         },
         mounted() {
             this.loadFeed(this.user.identifier, this.type, this.owner)
             .then(resp => {
                 this.feedId = resp.id
+                setTimeout(() => {
+                    this.loaded = true
+                }, 100)
                 this.$emit('feed-loaded', resp)
             })
         },

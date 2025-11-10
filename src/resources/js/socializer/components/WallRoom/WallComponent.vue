@@ -19,7 +19,7 @@
 <script>
     import FeedWidget from '~socializer/components/Feed/Feed.vue'
     import PublishButton from '~socializer/components/User/widgets/PublishButton.vue'
-    import { mapActions, mapState } from 'pinia'
+    import { mapState } from 'pinia'
     import { useServerStore } from '~socializer/stores/server.js'
 
     export default {

@@ -875,7 +875,7 @@ class Server
        setPublishedInRelation($new_vid, $vid); // used for room
 
         // owner/ wall relation
-        setFollowedByRelation($this->user->vertexid, $new_vid);
+        setFollowedByRelation($new_vid, $this->user->vertexid);
 
         return $new_vid;
     }

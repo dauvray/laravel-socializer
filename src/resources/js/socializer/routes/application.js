@@ -72,7 +72,7 @@ export default [
         meta: {
             breadcrumb: [
                 { name: 'Accueil', link: '/'},
-                { name: 'Domaines', link: `/${router_base_url}/servers` },
+                { name: 'Domaines', link: 'serverList', internal: true},
                 { name: 'Server_name', link: null},
             ]
         },

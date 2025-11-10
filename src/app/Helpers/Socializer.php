@@ -249,6 +249,7 @@ if (!function_exists('getServerAdmin')) {
 | Vertices & Edges Helpers
 |----------------------------*/
 
+// SET RELATIONS
 if (!function_exists('setRegisteredRelation')) {
     function setRegisteredRelation($user_vid, $vid)
     {
@@ -354,5 +355,34 @@ if (!function_exists('setSharedInRelation')) {
                 $from_vid.'->'.$to_vid => config('socializer.nebulagraph.edges.shared_in.props')
             ]
         );
+    }
+}
+
+// GET RELATIONS
+if( !function_exists('isRegisteredIn')) {
+    function isRegisteredIn($source_vid, $target_vid)
+    {
+        $nebula = app('nebulaGraph');
+        $query = "
+            MATCH (u)-[:registered_in]->(r)
+            WHERE id(u) == '$source_vid' AND id(r) == '$target_vid'
+            RETURN count(*) > 0 as is_registered
+        ";
+        $result = $nebula->execute($query);
+        return $result[0];
+    }
+}
+
+if( !function_exists('isFollowedBy')) {
+    function isFollowedBy($source_vid, $target_vid)
+    {
+        $nebula = app('nebulaGraph');
+        $query = "
+            MATCH (u)-[:followed_by]->(r)
+            WHERE id(u) == '$source_vid' AND id(r) == '$target_vid'
+            RETURN count(*) > 0 as is_registered
+        ";
+        $result = $nebula->execute($query);
+        return $result[0];
     }
 }
