@@ -202,8 +202,6 @@ $message_width: 60%;
         .chatter-badge {
             @extend .d-flex;
             @extend .align-items-center;
-            @extend .badge;
-            @extend .text-bg-light;
             @extend .me-2;
         }
     }

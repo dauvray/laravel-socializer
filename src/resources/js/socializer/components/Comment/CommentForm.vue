@@ -10,7 +10,7 @@
 
     <template v-else >
         <form 
-            class="comment-form-wrapper mt-4" 
+            class="comment-form-wrapper" 
             v-on:submit.prevent>
             <div class="d-flex w-100">
                 <label for="sendComment">Votre commentaire</label>

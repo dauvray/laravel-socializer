@@ -3,7 +3,6 @@
         <li v-for="user in users" 
             :key="user.id"
             class="chatter">
-            <div class="chatter-badge">
                 <Gravatar
                     class="me-2"
                     size="small"
@@ -12,7 +11,6 @@
                     :showStatus="false"
                 ></Gravatar>
                 <UserWallLink :user="user"></UserWallLink>
-            </div>
         </li>
     </ul>
 </template>

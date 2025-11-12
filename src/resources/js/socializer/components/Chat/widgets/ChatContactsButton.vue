@@ -1,6 +1,7 @@
 <template>
-    <div class="dropdown" ref="dropdown">
-        <button class="btn" data-bs-toggle="dropdown">
+     <div class="btn-group" role="group"  ref="dropdown">
+ 
+        <button class="btn btn-primary dropdown-toggle" data-bs-toggle="dropdown">
             <IconWidget icon="user-friends"></IconWidget> {{ conversation.nb_contacts }}
         </button>
         <ul class="dropdown-menu">
@@ -32,6 +33,7 @@
                 @quit-chat="onQuitChat"
             ></ConversationActionsList>
         </ul>
+       
     </div>
 
     <ModalWidget

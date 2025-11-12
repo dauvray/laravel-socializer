@@ -1,5 +1,5 @@
 <template>
-    <div class="mt-2 mb-2">
+    <div>
         <CounterWidget
             v-if="totalComments > 0"
             data-bs-toggle="collapse" 

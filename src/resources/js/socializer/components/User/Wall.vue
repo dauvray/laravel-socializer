@@ -1,5 +1,5 @@
 <template>
-    <section id="socializer-wall" class="m-3"> 
+    <section id="socializer-wall"> 
         <CoverUser
             class="mb-5"
             :user="user"

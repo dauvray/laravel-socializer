@@ -69,7 +69,6 @@ namespace Dauvray\Socializer\app\Helpers;
 use Illuminate\Database\Connection;
 
 use Dauvray\Socializer\app\Helpers\NebulaGraphClient;
-use Illuminate\Container\Attributes\Log;
 use Illuminate\Support\Arr;
 
 class NebulaGraphConnection extends Connection {

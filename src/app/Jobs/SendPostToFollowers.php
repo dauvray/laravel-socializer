@@ -8,6 +8,7 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Dauvray\Socializer\app\Events\PostCreatedEvent;
+use Dauvray\Socializer\app\Helpers\NebulaGraphConnection;
 
 class SendPostToFollowers implements ShouldQueue
 {
@@ -27,6 +28,11 @@ class SendPostToFollowers implements ShouldQueue
      */
     public function handle(): void
     {
+        app()->forgetInstance('nebulaGraph');
+        app()->singleton('nebulaGraph', function () {
+            return new NebulaGraphConnection(config('database.connections.nebula'));
+        });
+
         // send to users present on the feed
         event(new PostCreatedEvent($this->resource, $this->feed_id));
 

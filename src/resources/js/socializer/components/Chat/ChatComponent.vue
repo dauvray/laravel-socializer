@@ -11,9 +11,6 @@
                 :users="chatters"
                 :room="currentConversationId"
             ></CaptureUserButton>
-        </Teleport>
-        <div class="chat-header" v-if="displayHeader">
-            <RoomUsersList :users="chatters"></RoomUsersList>
             <ChatContactsButtons
                 v-if="isContactBtnVisible"
                 class="chat-tools"
@@ -21,6 +18,9 @@
                 @add-contact="onAddContact"
                 @quit-chat="onQuitChat"
             ></ChatContactsButtons>
+        </Teleport>
+        <div class="chat-header" v-if="displayHeader">
+            <RoomUsersList :users="chatters"></RoomUsersList>
         </div>
         <div class="chat-messages-wrapper">
             <div class="chat-messages" ref="messageContainer">
