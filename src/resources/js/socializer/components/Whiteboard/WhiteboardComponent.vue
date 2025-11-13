@@ -114,14 +114,12 @@
               console.log('nouvelle connexion data board', conn.connectionId)
                 conn.on("data", (data) => {
                   data = JSON.parse(data)
+
                     switch(data.action) {
                         case 'update_scene':
-                          if (this.$refs.excalidrawElement?.updateScene) {
-                            this.$refs.excalidrawElement?.updateScene(data.details);
-                          } else {
-                            //console.error("updateScene() n'est pas encore disponible.");
-                          }
+                          this.updateScene(data.details)
                           break
+
                         case 'pointer_move':
                           this.pointers[data.from] = data.details;
                           break
@@ -167,15 +165,18 @@
               }
             }, this.whiteBoardId)
           },
-          handleFileUpload(event) {
+          async handleFileUpload(event) {
             const file = event.target.files[0];
-            if (file) {
-                const reader = new FileReader();
-                reader.onload = (e) => {
-                  this.$refs.excalidrawElement?.importLibrary(e.target.result);
-                };
-                reader.readAsText(file);
-            }
+            if (!file) return
+            
+            const reader = new FileReader();
+            // sert a importer une librairie d'éléments excalidraw
+            // voir si ça marche
+            // reader.onload = (e) => {
+            //   this.$refs.excalidrawElement?.importLibrary(e.target.result);
+            // };
+            reader.readAsText(file);
+              
           },
           loadScene() {
            this.loadWhiteBoard({
@@ -183,7 +184,7 @@
                 room_id: this.whiteBoardId,
                 vertex_id: this.whiteBoardId,
             }).then ( payload => {
-              this.$refs.excalidrawElement?.updateScene(payload);
+               this.updateScene(payload)              
             })
           },
           saveScene(data) {
@@ -193,15 +194,73 @@
                 vertex_id: this.whiteBoardId,
                 data
               })
+          },
+          updateScene(data) {
+            if (this.$refs.excalidrawElement?.updateScene) {
+
+              if(data.hasOwnProperty('files')) {
+                this.safeAddFilesToExcalidraw(this.$refs.excalidrawElement, data.files)
+              }
+
+              setTimeout(() => {
+                this.$refs.excalidrawElement?.updateScene(data)
+              }, 500);
+
+            } else {
+              console.error("updateScene() n'est pas encore disponible.");
+            }
+          },
+          // Gestion robuste de l'ajout de fichiers dans Excalidraw
+          safeAddFilesToExcalidraw(ref, files) {
+            if (!ref) {
+              console.error("Excalidraw ref introuvable.");
+              return;
+            }
+            const addFn = ref.addFiles ?? (ref.excalidrawAPI && ref.excalidrawAPI.addFiles);
+            if (typeof addFn !== "function") {
+              console.error("addFiles introuvable sur le ref Excalidraw :", addFn);
+              return;
+            }
+
+            // Normalise en plain object si c'est un objet (ex: Object.create(null) ou prototype custom)
+            let normalized = files;
+            if (files && typeof files === "object" && !Array.isArray(files)) {
+              normalized = Object.assign({}, files);
+            }
+
+            // Première tentative : envoyer tel quel (format attendu en 0.18 : objet indexé)
+            try {
+              addFn.call(ref, normalized);
+              console.log("addFiles: succès avec le format normalisé.");
+              return;
+            } catch (err) {
+              console.warn("addFiles a levé une erreur au premier essai :", err && err.message);
+              // si erreur reduce -> retenter avec un tableau de valeurs
+              if (err && /reduce is not a function/i.test(err.message)) {
+                try {
+                  const arr = Array.isArray(normalized) ? normalized : Object.values(normalized);
+                  addFn.call(ref, arr);
+                  console.log("addFiles: succès avec Object.values(normalized).");
+                  return;
+                } catch (err2) {
+                  console.error("addFiles a aussi échoué avec Object.values :", err2);
+                  throw err2;
+                }
+              } else {
+                // autre erreur : remonter (ou logguer)
+                console.error("addFiles error (non reduce) :", err);
+                throw err;
+              }
+            }
           }
-        }
+        },
     };
   </script>
   
   <style>
     .whiteboard {
       width: 100%;
-      height: 94%;
+      height: 100%;
     }
     .pointer {
       position: absolute;

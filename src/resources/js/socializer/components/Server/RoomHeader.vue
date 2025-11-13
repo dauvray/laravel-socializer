@@ -1,8 +1,8 @@
 <template>
-    <div :style="backgroundStyle">
+    <section :style="backgroundStyle">
         <h1 v-if="currentRoom">{{ currentRoom.name }}</h1>
         <slot name="tools"></slot>
-    </div>
+    </section>
 </template>
 
 <script>

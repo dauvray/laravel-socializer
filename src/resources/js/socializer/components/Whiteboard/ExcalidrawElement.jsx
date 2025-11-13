@@ -50,6 +50,8 @@ class ExcalidrawElement extends HTMLElement {
               this.attachPointerTracking();
             }
           },
+          theme: document.querySelector("html").dataset.bsTheme || "light",
+          gridModeEnabled: true,
         })
       );
     }
@@ -106,13 +108,32 @@ class ExcalidrawElement extends HTMLElement {
       });
     }
 
+    /*------------------------------------------------------
+    | excalidrawAPI : Méthodes accessibles depuis le parent |
+    --------------------------------------------------------*/
 
-    // Méthode accessible depuis Vue.js
     updateScene(data) {
       if (this.excalidrawAPI) {
         this.excalidrawAPI.updateScene({ elements: data.elements, appState: data.state, files: data.files });
       } else {
         console.error("Excalidraw API non encore disponible.");
+      }
+    }
+
+    addFiles(files) {
+      if (this.excalidrawAPI) {
+        this.excalidrawAPI.addFiles(files);
+      } else {
+        console.error("Excalidraw API non encore disponible.");
+      }
+    }
+
+    getFiles() {
+      if (this.excalidrawAPI) {
+        return this.excalidrawAPI.getFiles();
+      } else {
+        console.error("Excalidraw API non encore disponible.");
+        return {};
       }
     }
 

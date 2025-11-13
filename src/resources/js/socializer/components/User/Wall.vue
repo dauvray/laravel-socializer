@@ -1,10 +1,10 @@
 <template>
-    <section id="socializer-wall"> 
+    <Z id="socializer-wall"> 
         <CoverUser
             class="mb-5"
             :user="user"
         ></CoverUser>
-        <div class="row">
+        <section class="row">
             <div class="col-md-4">
                 <PublishButton
                     v-if="canIPublish"
@@ -19,8 +19,8 @@
                     @feed-loaded="onFeedLoaded"
                 ></FeedWidget>
             </div>
-        </div>
-    </section>
+        </section>
+    </Z>
 </template>
 
 <script>

@@ -1,5 +1,5 @@
 <template>
-    <div class="d-flex justify-content-end align-items-end border rounded-2 position-relative cover-wrapper"
+    <section class="d-flex justify-content-end align-items-end border rounded-2 position-relative cover-wrapper"
         style="background-size: cover;"
         :style="{backgroundImage: BackgroundImage}">
 
@@ -65,7 +65,7 @@
             </template>
         </modal-widget>
 
-    </div>
+    </section>
 </template>
 
 <script>
