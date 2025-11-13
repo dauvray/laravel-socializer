@@ -1,77 +1,84 @@
 export default {
-    mounted(el) {
-        let offsetX = 0;
-        let offsetY = 0;
-        let isDragging = false;
+  mounted(el) {
+    let startX = 0;
+    let startY = 0;
+    let offsetX = 0;
+    let offsetY = 0;
+    let isDragging = false;
 
-        const startDragging = (e) => {
-            e.preventDefault();
+    // Désactiver le comportement tactile natif (scroll) sur cet élément
+    // IMPORTANT : ajouter aussi en CSS `touch-action: none;` si possible.
+    el.style.touchAction = el.style.touchAction || 'none';
 
-            // Calculer l'offset relatif à la souris
-            const rect = el.getBoundingClientRect();
-            offsetX = e.clientX - rect.left;
-            offsetY = e.clientY - rect.top + 100;
+    const onPointerDown = (e) => {
+      // ignore les boutons secondaires / wheel click
+      if (e.button && e.button !== 0) return;
 
-            isDragging = true;
-            el.classList.add('dragging');
+      e.preventDefault();
+      (e.target || e).setPointerCapture?.(e.pointerId);
 
-            // Ajouter les écouteurs globaux pour le déplacement et l'arrêt
-            window.addEventListener('mousemove', dragElement);
-            window.addEventListener('mouseup', stopDragging);
-        };
+      const rect = el.getBoundingClientRect();
+      startX = e.clientX;
+      startY = e.clientY;
+      offsetX = startX - rect.left;
+      offsetY = startY - rect.top;
 
-        const dragElement = (e) => {
-            if (!isDragging) return;
+      isDragging = true;
+      el.classList.add('dragging');
 
-            // Dimensions de l'écran visible
-            const screenWidth = document.documentElement.clientWidth;
-            const screenHeight = document.documentElement.clientHeight;
+      window.addEventListener('pointermove', onPointerMove);
+      window.addEventListener('pointerup', onPointerUp);
+      window.addEventListener('pointercancel', onPointerUp);
+    };
 
-            // Dimensions de l'élément
-            const rect = el.getBoundingClientRect();
-            const elementWidth = rect.width;
-            const elementHeight = rect.height;
+    const onPointerMove = (e) => {
+      if (!isDragging) return;
+      e.preventDefault();
 
-            // Calculer la nouvelle position avec limites
-            let x = e.clientX - offsetX;
-            let y = e.clientY - offsetY;
+      const clientX = e.clientX;
+      const clientY = e.clientY;
 
-            // Limiter la position horizontale (gauche et droite)
-            x = Math.max(0, Math.min(x, screenWidth - elementWidth));
+      const screenWidth = document.documentElement.clientWidth;
+      const screenHeight = document.documentElement.clientHeight;
+      const rect = el.getBoundingClientRect();
+      const elementWidth = rect.width;
+      const elementHeight = rect.height;
 
-            // Limiter la position verticale (haut et bas)
-            y = Math.max(0, Math.min(y, screenHeight - elementHeight));
+      let x = clientX - offsetX;
+      let y = clientY - offsetY;
 
-            // Appliquer les nouvelles coordonnées à l'élément
-            el.style.position = 'fixed';
-            el.style.left = `${x}px`;
-            el.style.top = `${y}px`;
-        };
+      x = Math.max(0, Math.min(x, screenWidth - elementWidth));
+      y = Math.max(0, Math.min(y, screenHeight - elementHeight));
 
-        const stopDragging = () => {
-            if (!isDragging) return;
+      el.style.position = 'fixed';
+      el.style.left = `${x}px`;
+      el.style.top = `${y}px`;
+    };
 
-            isDragging = false;
-            el.classList.remove('dragging');
+    const onPointerUp = (e) => {
+      if (!isDragging) return;
+      isDragging = false;
+      el.classList.remove('dragging');
 
-            // Nettoyer les écouteurs globaux
-            window.removeEventListener('mousemove', dragElement);
-            window.removeEventListener('mouseup', stopDragging);
-        };
+      try { (e.target || e).releasePointerCapture?.(e.pointerId); } catch (err) {}
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', onPointerUp);
+    };
 
-        // Attacher les écouteurs locaux
-        el.addEventListener('mousedown', startDragging);
+    // Attacher
+    el.addEventListener('pointerdown', onPointerDown);
 
-        // Nettoyer lors du démontage
-        el._cleanupDraggable = () => {
-            el.removeEventListener('mousedown', startDragging);
-            window.removeEventListener('mousemove', dragElement);
-            window.removeEventListener('mouseup', stopDragging);
-        };
-    },
-    beforeUnmount(el) {
-        if (el._cleanupDraggable) {
-            el._cleanupDraggable();
-        }
-    },
+    // Cleanup
+    el._cleanupDraggable = () => {
+      el.removeEventListener('pointerdown', onPointerDown);
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', onPointerUp);
+    };
+  },
+
+  beforeUnmount(el) {
+    if (el._cleanupDraggable) el._cleanupDraggable();
+  },
 };

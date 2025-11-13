@@ -1,9 +1,6 @@
 <template>
     <RoomUsersList v-if="displayCollaborators" :users="users"></RoomUsersList>
-
-      <!-- <input type="file" @change="handleFileUpload" accept=".excalidrawlib" /> -->
-
-     <div class="whiteboard">
+     <div class="whiteboard" v-show="loaded">
         <excalidraw-element ref="excalidrawElement"></excalidraw-element>
         <div v-for="(pointer, id) in pointers" :key="id" 
             class="pointer" 
@@ -11,7 +8,6 @@
           👆 <span class="badge text-bg-light">{{ id }}</span>
         </div>
     </div>
-
     <DataUserPeerConnection 
         v-if="users && whiteBoardId"
         :users="users"
@@ -54,6 +50,7 @@
         data() {
           return {
             pointers: {},
+            loaded: false,
           };
         },
         computed: {
@@ -82,7 +79,6 @@
               }
               return this.room
             }
-           // return null
           }
         },
         created() {
@@ -94,6 +90,23 @@
          // this.$refs.excalidrawElement.addEventListener("excalidraw-change", this.handleExcalidrawChange);
           this.$refs.excalidrawElement.addEventListener("excalidraw-mouseup", this.handleExcalidrawMouseUp);
           this.$refs.excalidrawElement.addEventListener("excalidraw-pointer", this.handlePointerMove);
+
+          const myComponent = document.querySelector('excalidraw-element');
+          const shadow = myComponent.shadowRoot;
+          setTimeout(() => {
+            // v.0.18: break change position svgLayer ( dans le shadow room)
+            // a suivre
+            const el = shadow.querySelector('.SVGLayer');
+            el.style.position = 'absolute';
+            this.loaded = true;
+          }, 100);
+
+          setTimeout(() => {
+            // v.0.18: break change probleme avec le css de la modale
+            const el = shadow.querySelector('.layer-ui__wrapper__footer-right');
+            el.remove();
+          }, 1000);
+
         },
         beforeUnmount() {
         //  this.$refs.excalidrawElement.removeEventListener("excalidraw-change", this.handleExcalidrawChange);
@@ -211,6 +224,7 @@
             }
           },
           // Gestion robuste de l'ajout de fichiers dans Excalidraw
+          // bug fix mais trouver le vrai format attendu par excalidraw
           safeAddFilesToExcalidraw(ref, files) {
             if (!ref) {
               console.error("Excalidraw ref introuvable.");
