@@ -1,6 +1,6 @@
 <template>
     <div class="classroom-wrapper">
-        <RoomUsersList :users="users" class="ms-3 mt-2 mb-2"></RoomUsersList>
+        <RoomUsersList :users="users"></RoomUsersList>
         <div class="classroom">
              <ChatComponent
                 v-if="chatId && showChat"
@@ -11,7 +11,7 @@
                     callback: updateChatWidth
                 }"
                 :vertexId="chatId"
-                :displayHeader="false"
+                :displayUsers="false"
             ></ChatComponent>
            <WhiteboardComponent
                 v-if="showWhiteboard && whiteboardRoom"

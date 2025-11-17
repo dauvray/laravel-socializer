@@ -72,7 +72,6 @@
                 v-if="showServerPage"
                 :pageid="serverPage.id"
                 :editable="isOwner"
-                :isServerHome="showServerPage"
             ></PageComponent>
 
             <router-view 
@@ -84,6 +83,7 @@
     </div>
 
     <SettingsModal    
+        v-if="currentQuestionnaire"
         :questionnaireid="currentQuestionnaire"
         :isNew="isNewQuestionnaire"
         :modelPlaceholder="modelPlaceholder"

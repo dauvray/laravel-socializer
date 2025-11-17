@@ -56,7 +56,7 @@
                 required: true
             },
             feedId: {
-                type: Number,
+                type: String,
                 required: true
             },
             userOwner: {

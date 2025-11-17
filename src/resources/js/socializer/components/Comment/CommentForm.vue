@@ -1,5 +1,4 @@
 <template>
-
     <button 
         v-if="!showForm"
         type="button"
@@ -7,13 +6,12 @@
         @click="onShowCommentForm">
         <IconWidget icon="comments"></IconWidget> {{ btnLabel }}
     </button>
-
     <template v-else >
         <form 
             class="comment-form-wrapper" 
             v-on:submit.prevent>
             <div class="d-flex w-100">
-                <label for="sendComment">Votre commentaire</label>
+                <label for="textComment">Votre commentaire</label>
                 <div class="flex-grow-1">
                     <button
                         type="button" 
@@ -28,6 +26,7 @@
                 class="form-control"
                 ref="input"
                 rows="3"
+                id="textComment"
                 :autofocus="true"
                 :maxlength="max"
                 v-model="content"
@@ -56,10 +55,7 @@
                         >Envoyer</button>
                     </div>
                 </div>
-
             </div>
-
-
         </form>
     </template>
 </template>
@@ -109,9 +105,12 @@
             if(this.showForm){
                 this.$refs.input.focus()
             }
+
+            window.addEventListener('keydown', this.onKeydown);
         },
         unmounted() {
             this.eventBus.$off("close-comment-form", this.handleCloseReactFrom)
+            window.removeEventListener('keydown', this.onKeydown);
         },
         methods: {
             onShowCommentForm() {
@@ -147,6 +146,11 @@
             },
             clearContent() {
                 this.content = ''
+            },
+            onKeydown(event) {
+                if (event.key === "Escape" && this.showForm) {
+                    this.onShowCommentForm()
+                }
             },
         }
     }

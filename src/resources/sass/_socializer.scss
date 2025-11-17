@@ -1,9 +1,10 @@
 $message_width: 60%;
 
-@import './socializer/_post.scss';
-@import './socializer/_server.scss';
-@import './socializer/_chat.scss';
-@import './socializer/_buttons.scss';
+@import './_post.scss';
+@import './_server.scss';
+@import './_chat.scss';
+@import './_buttons.scss';
+@import './_comments.scss';
 
  .app-body {
 
@@ -14,11 +15,9 @@ $message_width: 60%;
             @extend .d-flex;
             @extend .align-items-center;
             @extend .me-3;
-            width: 50%;
             float: right;
         }
     }
-    
  }
 
 #system-socializer {
@@ -198,12 +197,6 @@ $message_width: 60%;
         @extend .d-flex;
         @extend .align-items-end;
         @extend .list-group-item;
-
-        .chatter-badge {
-            @extend .d-flex;
-            @extend .align-items-center;
-            @extend .me-2;
-        }
     }
 }
 

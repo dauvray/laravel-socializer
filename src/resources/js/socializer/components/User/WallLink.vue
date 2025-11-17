@@ -60,10 +60,6 @@ export default {
             type: Object,
             required: true
         },
-        reloadPage: {
-            type: Boolean,
-            required: true,
-        },
         dropdown: {
             type: Boolean,
             required: false,

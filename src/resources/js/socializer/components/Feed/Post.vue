@@ -7,8 +7,7 @@
         
         <div class="post-wrapper">
             <div class="post-header">
-                <div class="post-wrapper-inner">
-
+                <div class="post-header-inner">
                     <div class="post-user-wrapper">
                         <Gravatar
                             class="me-2"
@@ -22,16 +21,15 @@
                             <small>{{ item.author.function }}</small>
                         </div>
                     </div>
-
                     <div class="post-infos-wrapper">
                         <DateHelper
-                            class="date-message"
                             :date="item.post.created_at"
                             :format="'since'"
                         ></DateHelper>
-                        <span v-if="item.post.shares" class="ms-3" title="Republications"><IconWidget icon="retweet"></IconWidget>{{ item.post.shares }}</span>
+                        <span v-if="item.post.shares" class="shared" title="Republications">
+                            <IconWidget icon="retweet"></IconWidget>{{ item.post.shares }}
+                        </span>
                     </div>
-
                 </div>
             </div>
             <div class="post-body">

@@ -11,7 +11,6 @@
 
     <RoomParamsWrapper
         id="room-list"
-        :key="roomParamsKey"
         :currentServer="currentServer"
         :rooms="rooms"
         @delete-room="onDeleteRoom"

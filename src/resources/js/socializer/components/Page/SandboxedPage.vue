@@ -14,7 +14,7 @@
 </template>
 
 <script>
-    import { h, createApp } from 'vue';
+    import { h, createApp, markRaw } from 'vue';
     import { isStringifiedJSon } from '~estarter/services/helpers.js'
     import CommentsWidget from '../Comment/Comments.vue'
     import Picture from '~eblogger/components/widgets/Picture.vue'
@@ -35,8 +35,9 @@
             return {
                 pageLoaded: false,
                 componentMap: {
-                    'socializer-comments': CommentsWidget,
-                    'eblogger-picture': Picture,
+                    // un composant ne doit pas etre reactif, on utilise markRaw
+                    'socializer-comments': markRaw(CommentsWidget),
+                    'eblogger-picture': markRaw(Picture),
                     // ajoute ici d’autres SFC si besoin
                 },
                 mountedApps: [],
@@ -69,7 +70,7 @@
 
 
             // Prépare le contenu iframe
-            const srcdoc = `<!DOCTYPE html><html lang="en"><head>${headContent.join('')}</head><body style="overflow:hidden;"></body></html>`;
+            const srcdoc = `<!DOCTYPE html><html lang="en" data-bs-theme="${document.documentElement.getAttribute('data-bs-theme')}"><head>${headContent.join('')}</head><body style="overflow:hidden;"></body></html>`;
             iframe.srcdoc = srcdoc;
 
 
@@ -134,7 +135,8 @@
 
                     const props = {};
                     for (const { name, value } of el.attributes) {
-                        props[name.replace(/^:/, '')] = value;
+                        const cleanName = name.replace(/^:/, '');
+                        props[cleanName] = this.normalizeValue(value);
                     }
 
                     const mountNode = doc.createElement('div');
@@ -146,6 +148,18 @@
                     app.mount(mountNode);
                     this.mountedApps.push(app);
                 }
+            },
+            normalizeValue(value) {
+                if (value === 'true') return true;
+                if (value === 'false') return false;
+                if (value === 'null') return null;
+                if (value === 'undefined') return undefined;
+                if (!isNaN(value) && value.trim() !== '') return Number(value);
+                if ((value.startsWith('{') && value.endsWith('}')) ||
+                    (value.startsWith('[') && value.endsWith(']'))) {
+                    try { return JSON.parse(value); } catch {}
+                }
+                return value;
             },
             handleMessageFromIframe(event) {
                 let data = event.data;

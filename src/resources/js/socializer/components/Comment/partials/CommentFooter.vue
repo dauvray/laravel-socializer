@@ -1,18 +1,20 @@
 <template>
-    <CommentListWrapper
-        btn-label="Répondre"
-        counter-label="Réponse"
-        :logged="logged"
-        :commentable="commentable"
-        :vertexid="vertexid"
-        :formvisible="formvisible"
-        :nbcomments="commentsCounter"
-        :can-comment="!isAuthor"
-        urlload="/get-sub-comments"
-        urlsend="/send-sub-comment"
-        @comment-created="onCommentCreated"
-        @comment-deleted="onCommentDeleted"
-    ></CommentListWrapper> 
+    <div>
+        <CommentListWrapper
+            btn-label="Répondre"
+            counter-label="Réponse"
+            :logged="logged"
+            :commentable="commentable"
+            :vertexid="vertexid"
+            :formvisible="formvisible"
+            :nbcomments="commentsCounter"
+            :can-comment="!isAuthor"
+            urlload="/get-sub-comments"
+            urlsend="/send-sub-comment"
+            @comment-created="onCommentCreated"
+            @comment-deleted="onCommentDeleted"
+        ></CommentListWrapper> 
+    </div>
 </template>
 
 <script>

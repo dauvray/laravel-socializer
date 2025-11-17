@@ -1,5 +1,5 @@
 <template>
-    <Z id="socializer-wall"> 
+    <div id="socializer-wall"> 
         <CoverUser
             class="mb-5"
             :user="user"
@@ -7,7 +7,7 @@
         <section class="row">
             <div class="col-md-4">
                 <PublishButton
-                    v-if="canIPublish"
+                    v-if="canIPublish && loaded"
                     :feedFormId="feedOptions.feedFormId"
                     :feedId="feedOptions.feedId"
                 ></PublishButton>
@@ -20,7 +20,7 @@
                 ></FeedWidget>
             </div>
         </section>
-    </Z>
+    </div>
 </template>
 
 <script>
@@ -55,6 +55,7 @@
         data() {
             return {
                 feedOptions: {...feedOptions}, 
+                loaded: false,
             }
         },
         beforeUnmount() {
@@ -75,6 +76,7 @@
             onFeedLoaded(feed) {
                 this.feedOptions.feedId = feed.id
                 this.feedOptions.feedFormId = feed.questionnaire
+                this.loaded = true
             },
         }
     }

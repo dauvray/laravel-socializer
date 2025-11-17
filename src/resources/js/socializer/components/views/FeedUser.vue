@@ -1,5 +1,10 @@
 <template>
-    <FeedWidget></FeedWidget>
+    <div class="row">
+        <div class="col-4">
+            <FeedWidget></FeedWidget>
+        </div>
+    </div>
+   
 </template>
 
 <script>

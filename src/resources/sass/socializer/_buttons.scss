@@ -6,8 +6,6 @@
         @extend .btn;
         @extend .btn-sm;
         @extend .rounded;
-        @extend .p-2;
-
 
         &.thumbs-up-btn {
             @extend .btn-outline-success;

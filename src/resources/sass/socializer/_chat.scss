@@ -2,17 +2,6 @@
 
     @extend .container-fluid;
     
-    .chat-header {
-        @extend .d-flex;
-        @extend .border-bottom;
-        @extend .bg-auto;
-        @extend .my-2;
-        @extend .p-2;
-        position: sticky;
-        top: 0;
-        z-index: 3;
-    }
-
     .chat-messages-wrapper {
         position: relative;
         @extend .pe-0;
@@ -152,4 +141,10 @@
              background-color:rgba(0, 0, 0, 0.0);
         }
     }
+}
+
+.chatters-list {
+    @extend .ms-3;
+    @extend .mt-2;
+    @extend .mb-2;
 }

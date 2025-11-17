@@ -1,11 +1,10 @@
 <template>
-   <div v-if="canbecommented" 
-        class="comments-list">
-        <div class="d-flex" v-if="showTitleFilters">
-            <h2 class="fs-4">{{ commentTitle }}</h2>
+   <div v-if="canbecommented" class="comments-list">
+
+        <div class="comments-filters-wrapper" v-if="showTitleFilters">
+            <h2>{{ commentTitle }}</h2>
             <CommentsFilter
                 v-if="hasComments"
-                class="w-100"
                 :commentable="commentable"
                 :vertexid="vertexid">
             </CommentsFilter>

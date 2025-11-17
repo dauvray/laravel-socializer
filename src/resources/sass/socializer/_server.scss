@@ -94,7 +94,8 @@
         }
     }
 
-     #room-header {
+    #room-header {
+        @extend .border-bottom;
         @extend .d-flex;
         @extend .align-items-center;
         grid-area: room-header; 

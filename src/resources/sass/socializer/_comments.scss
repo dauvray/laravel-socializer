@@ -1,0 +1,19 @@
+.comments-list {
+    @extend .mx-2;
+
+    .comments-filters-wrapper {
+        @extend .d-flex;
+
+        h2 {
+            @extend .fs-4;
+        }
+
+        .comments-filter {
+            @extend .w-100;
+            @extend .d-grid;
+            @extend .justify-content-md-end;
+        }
+
+        
+    }
+}

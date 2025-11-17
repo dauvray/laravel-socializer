@@ -1,7 +1,6 @@
 <template>
-    <div class="d-grid  justify-content-md-end">
-        <div class="btn-group btn-group-sm" role="group" aria-label="Small button group">
-
+    <div class="comments-filter">
+        <div class="btn-group btn-group-sm" role="group" aria-label="sort comments">
             <button 
                 type="button" 
                 class="btn btn-outline-secondary btn-sm"
@@ -9,7 +8,6 @@
                 @click="setSortByFilter('likes DESC')"
                 >Top
             </button>
-
             <button 
                 type="button" 
                 class="btn btn-outline-secondary btn-sm" 
@@ -17,7 +15,6 @@
                 @click="setSortByFilter('createdAT DESC')"
                 >+ récents
             </button>
-
             <button 
                 type="button" 
                 class="btn btn-outline-secondary btn-sm"
@@ -25,7 +22,6 @@
                  @click="setSortByFilter('createdAT ASC')"
                 >- récents
             </button>
-
             <button 
                 v-if="me"
                 type="button" 

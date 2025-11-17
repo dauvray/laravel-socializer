@@ -1,7 +1,7 @@
 <template>
-    <Teleport to="#room-header-inner">
+    <!-- <Teleport to="#room-header-inner"> -->
         <h2>Gestion des questionnaires</h2>
-    </Teleport>
+    <!-- </Teleport> -->
 <div class="m-3">
     <div class="d-grid gap-2 d-md-block">
         <button 

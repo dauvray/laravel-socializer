@@ -104,7 +104,10 @@
           setTimeout(() => {
             // v.0.18: break change probleme avec le css de la modale
             const el = shadow.querySelector('.layer-ui__wrapper__footer-right');
-            el.remove();
+            if(el) {
+              el.remove();
+            }
+           
           }, 1000);
 
         },

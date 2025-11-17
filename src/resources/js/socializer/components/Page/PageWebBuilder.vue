@@ -1,11 +1,10 @@
 <template>
-   
-    <!-- <div class="generate-content" v-if="isBuilding">
-        <div class="generate-content-inner">
-            <Sprinner2 ></Sprinner2>
-            Contenu en cours de création...
-        </div>
-    </div> -->
+    <Teleport to="#fmd-editor-navigation-tools">
+        <button type="button" class="btn btn btn-outline-auto btn-sm" @click="showModal = true">
+            <IconWidget icon="robot"></IconWidget> IA
+        </button>
+    </Teleport>
+
     <div class="card-body m-3">
         <WebBuilder
             :html="html"
@@ -23,12 +22,6 @@
             @update-content="onUpdateContent"
         ></WebBuilder>
     </div>
-
-    <Teleport to="#fmd-editor-navigation-tools">
-        <button type="button" class="btn btn btn-outline-auto btn-sm" @click="showModal = true">
-            <IconWidget icon="robot"></IconWidget> IA
-        </button>
-    </Teleport>
 
     <ModalWidget
         v-if="showModal"
@@ -52,7 +45,6 @@
                 ></PromptWidget>
             </template>
     </ModalWidget>
-
 </template>
 
 <script>

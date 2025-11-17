@@ -19,9 +19,11 @@
                 @quit-chat="onQuitChat"
             ></ChatContactsButtons>
         </Teleport>
-        <div class="chat-header" v-if="displayHeader">
-            <RoomUsersList :users="chatters"></RoomUsersList>
-        </div>
+
+        <RoomUsersList v-if="displayUsers" 
+            :users="chatters"
+        ></RoomUsersList>
+
         <div class="chat-messages-wrapper">
             <div class="chat-messages" ref="messageContainer">
                 <div class="chat-messages-inner" ref="messageContainerInner">
@@ -157,7 +159,7 @@
                 required: false,
                 default: null,
             },
-            displayHeader: {
+            displayUsers: {
                 type: Boolean,
                 required: false,
                 default: true,
