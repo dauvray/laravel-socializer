@@ -89,7 +89,6 @@ class Feed
         // $posts_nebula = $this->_getFeedPosts($feed_id);
         // $shared_posts_nebula = $this->_getSharedPosts($feed_id);
 
-        
          // extract mongo Ids and prepare
         $mongo_ids = [];
         $final_list = [];

@@ -22,7 +22,21 @@ $message_width: 60%;
 
 #system-socializer {
     @extend .d-flex;
-    @extend .align-items-center;
+    @extend .align-items-end;
+
+    #main-socializer-navbar {
+        @extend .p-0;
+
+        .navbar-nav{
+            @extend .me-auto;
+            @extend .mb-2;
+            @extend .mb-lg-0;
+
+            i{
+                @extend .me-1;
+            }
+        }
+    }
 
     .reponse-rapide {
         @extend .card;
@@ -32,10 +46,6 @@ $message_width: 60%;
         width: 300px;
         z-index: 20;
     }
-}
-
-#main-socializer-navbar {
-    @extend .p-0;
 }
 
 .conversations-page {
@@ -184,19 +194,6 @@ $message_width: 60%;
         .dropdown-menu {
             margin-top: -2px!important;
         }
-    }
-}
-
-.chatters-list {
-    @extend .m-0;
-    @extend .p-0;
-    @extend .d-flex;
-    @extend .flex-grow-1;
-
-    .chatter {
-        @extend .d-flex;
-        @extend .align-items-end;
-        @extend .list-group-item;
     }
 }
 

@@ -144,7 +144,14 @@
 }
 
 .chatters-list {
-    @extend .ms-3;
-    @extend .mt-2;
-    @extend .mb-2;
+    @extend .m-0;
+    @extend .p-0;
+    @extend .d-flex;
+    @extend .flex-grow-1;
+
+    .chatter {
+        @extend .d-flex;
+        @extend .align-items-end;
+        @extend .list-group-item;
+    }
 }

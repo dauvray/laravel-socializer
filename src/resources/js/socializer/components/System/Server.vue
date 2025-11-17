@@ -4,15 +4,15 @@
             <NavBarWidget id="main-socializer-navbar" menuName="Menu Socializer"/>
         </div>
         <NotificationsSocializer></NotificationsSocializer>
-        <ServerEstarter
-            :themeactivated="themeactivated"
-            :theme="theme"
-            :notificationactived="notificationactived"
-            :a11yactivated="a11yactivated"
-            :navigationA11y="navigationA11y"
-            :logged="logged"
-        ></ServerEstarter>
     </div>
+    <ServerEstarter
+        :themeactivated="themeactivated"
+        :theme="theme"
+        :notificationactived="notificationactived"
+        :a11yactivated="a11yactivated"
+        :navigationA11y="navigationA11y"
+        :logged="logged"
+    ></ServerEstarter>
 </template>
 
 <script>
