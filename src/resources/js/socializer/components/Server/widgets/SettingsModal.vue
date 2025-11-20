@@ -48,7 +48,6 @@
         },
         props: {
             questionnaireid: {
-                type: Number,
                 required: true,
                 default: null
             },

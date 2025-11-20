@@ -1,19 +1,21 @@
 <template>
-    <RoomUsersList v-if="displayCollaborators" :users="users"></RoomUsersList>
-     <div class="whiteboard" v-show="loaded">
-        <excalidraw-element ref="excalidrawElement"></excalidraw-element>
-        <div v-for="(pointer, id) in pointers" :key="id" 
-            class="pointer" 
-            :style="{ left: pointer.x + 'px', top: pointer.y + 'px' }">
-          👆 <span class="badge text-bg-light">{{ id }}</span>
-        </div>
+    <div class="board-wrapper">
+      <RoomUsersList v-if="displayCollaborators" :users="users"></RoomUsersList>
+      <div class="whiteboard" v-show="loaded">
+          <excalidraw-element ref="excalidrawElement"></excalidraw-element>
+          <div v-for="(pointer, id) in pointers" :key="id" 
+              class="pointer" 
+              :style="{ left: pointer.x + 'px', top: pointer.y + 'px' }">
+            👆 <span class="badge text-bg-light">{{ id }}</span>
+          </div>
+      </div>
+      <DataUserPeerConnection 
+          v-if="users && whiteBoardId"
+          :users="users"
+          :roomId="whiteBoardId"
+          :callback-connection="connectionDataCallback"
+      ></DataUserPeerConnection>
     </div>
-    <DataUserPeerConnection 
-        v-if="users && whiteBoardId"
-        :users="users"
-        :roomId="whiteBoardId"
-        :callback-connection="connectionDataCallback"
-    ></DataUserPeerConnection>
 </template>
   
   <script>
@@ -275,6 +277,7 @@
   </script>
   
   <style>
+    .board-wrapper,
     .whiteboard {
       width: 100%;
       height: 100%;

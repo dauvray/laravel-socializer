@@ -11,13 +11,12 @@
                 :users="chatters"
                 :room="currentConversationId"
             ></CaptureUserButton>
-            <ChatContactsButtons
+            <ChatContactsButton
                 v-if="isContactBtnVisible"
-                class="chat-tools"
                 :conversation="currentConversation.general"
                 @add-contact="onAddContact"
                 @quit-chat="onQuitChat"
-            ></ChatContactsButtons>
+            ></ChatContactsButton>
         </Teleport>
 
         <RoomUsersList v-if="displayUsers" 
@@ -115,7 +114,7 @@
 
     import { defineAsyncComponent } from '@vue/runtime-core'
     import IconWidget from '~estarter/components/widgets/IconWidget.vue'
-    import ChatContactsButtons from './widgets/ChatContactsButton.vue'
+    import ChatContactsButton from './widgets/ChatContactsButton.vue'
     import MessageWidget from '~socializer/components/Chat/widgets/MessageWidget.vue'
     import { mapActions, mapState } from 'pinia'
     import { usePeerStore } from '~socializer/stores/peers.js'
@@ -137,7 +136,7 @@
         ],
         components: {
             IconWidget,
-            ChatContactsButtons,
+            ChatContactsButton,
             DataUserPeerConnection,
             StreamUserButton: defineAsyncComponent(() => import('~socializer/components/WebRTC/widgets/StreamUserButton.vue')),
             CaptureUserButton: defineAsyncComponent(() => import('~socializer/components/WebRTC/widgets/CaptureUserButton.vue')),

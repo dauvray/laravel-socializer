@@ -42,7 +42,7 @@
         name: 'PageComponent',
         components: {
             PageWebBuilder: defineAsyncComponent(() => import('./PageWebBuilder.vue')),
-            PageWidget: defineAsyncComponent(() => import('./SandboxedPage.vue')),
+            PageWidget: defineAsyncComponent(() => import('./SandboxedPageSecure.vue')),
        },
         props: {
             pageid: {

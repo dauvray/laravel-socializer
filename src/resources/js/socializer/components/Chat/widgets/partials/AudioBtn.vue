@@ -2,7 +2,6 @@
     <button 
         type="button" 
         class="btn btn-link audio-trigger" 
-        :class="iconColor"
         title="Audio" >
         <IconWidget icon="microphone-alt"></IconWidget>
     </button>

@@ -14,7 +14,7 @@
 </template>
 
 <script>
-    import { h, createApp } from 'vue';
+    import { h, createApp,markRaw } from 'vue';
     import { isStringifiedJSon } from '~estarter/services/helpers.js'
     import CommentsWidget from '../Comment/Comments.vue'
     import Picture from '~eblogger/components/widgets/Picture.vue'
@@ -49,11 +49,13 @@
 
             const iframe = this.$refs.sandboxFrame;
             const embedScript = `${import.meta.env.VITE_APP_URL}/vendor/estarter/embed-iframe.js`
+            const mountIframeScript = `${import.meta.env.VITE_APP_URL}/vendor/socializer/mountIframeComponents.js`
             const headContent = [
                 '<meta charset="UTF-8"/>',
                 '<meta name="viewport" content="width=device-width, initial-scale=1.0"/>',
                 '<script src="https://unpkg.com/vue@3/dist/vue.global.js"></scr' + 'ipt>',
                 '<script src="' + embedScript + '"></scr' + 'ipt>',
+                '<script src="' + mountIframeScript + '"></scr' + 'ipt>',
                 '<link href="https://cdnjs.cloudflare.com/ajax/libs/line-awesome/1.3.0/line-awesome/css/line-awesome.min.css" rel="stylesheet" />',
             ]
 
@@ -93,176 +95,6 @@
                     </head>
                     <body style="overflow:auto;">
                         <div id="__estarter_root__"></div>
-
-                        <script>
-                            // 
-                            // runtime inside the iframe:
-                            // - listens to messages from parent
-                            // - when receiving { action: 'mount', html, styles, script }, it injects them and mounts components
-                            // - expects embed-iframe.js (loaded in head) to fill window.__ESTARTER_COMPONENTS__ = "socializer-comments": (Vue) => ({ /* component definition factory */ })  }
-                            // 
-                            (function() {
-                                // Helper: send data to parent
-                                window.sendToParent = (data) => {
-                                    try {
-                                        parent.postMessage(JSON.stringify(data), "*");
-                                    } catch(e) {
-                                        // ignore
-                                    }
-                                };
-
-
-                                // Utility: mount components found as custom tags
-                                function mountCustomTags() {
-
-                                    if (!window.Vue || !window.Vue.createApp) {
-                                        console.warn('Vue runtime not available inside iframe');
-                                        return;
-                                    }
-
-                                    // __ESTARTER_COMPONENTS__ should be registered by embed-iframe.js
-                                    const registry = window.__ESTARTER_COMPONENTS__ || {};
-
-                                    // find custom element tags
-                                    const tags = Array.from(document.body.querySelectorAll('*')).filter(el => el.tagName.includes('-'));
-
-                                    tags.forEach(el => {
-                                        const tag = el.tagName.toLowerCase();
-                                        const factoryOrComp = registry[tag];
-
-                                        if (!factoryOrComp) {
-                                            // no component provided: leave the DOM as-is (or you can render a placeholder)
-                                            console.debug('no registered component for', tag);
-                                            return;
-                                        }
-
-                                        // build props from attributes
-                                        const props = {};
-                                        for (const { name, value } of Array.from(el.attributes)) {
-                                            props[name.replace(/^:/, '')] = value;
-                                        }
-
-                                        // Create mount node and replace
-                                        const mountNode = document.createElement('div');
-                                        el.replaceWith(mountNode);
-
-                                        // factoryOrComp can be:
-                                        //  - a function that receives Vue and returns a component options object
-                                        //  - a plain component object
-
-                                        let comp = null;
-
-                                        try {
-                                            if (typeof factoryOrComp === 'function') {
-                                                comp = factoryOrComp(window.Vue);
-                                            } else {
-                                                comp = factoryOrComp;
-                                            }
-                                        } catch (e) {
-                                            console.error('Error instantiating component for', tag, e);
-                                            return;
-                                        }
-
-                                        try {
-                                            const app = window.Vue.createApp({
-                                                render() { return window.Vue.h(comp, props); }
-                                            });
-
-                                            // Provide a minimal eventBus proxy to forward to parent if needed
-                                            app.provide('eventBus', {
-                                                emit: (name, payload) => window.sendToParent({ action: 'event', name, payload }),
-                                                on: () => {} // no-op for now
-                                            });
-
-                                            app.config.errorHandler = (err) => {
-                                                window.sendToParent({ action: 'error', message: String(err) });
-                                            };
-
-                                            app.mount(mountNode);
-
-                                            // keep reference on the mount node for potential unmounts if needed
-                                            mountNode.__estarter_app__ = app;
-                                            
-                                        } catch (err) {
-                                            console.error('Failed to mount component', tag, err);
-                                        }
-                                    });
-                                }
-
-                                // Execute inline module script safely: create a <scr type="module"> with the passed content
-                                function runModuleScript(code) {
-                                    try {
-                                        const s = document.createElement('script');
-                                        s.type = 'module';
-                                        s.textContent = code;
-                                        document.body.appendChild(s);
-                                    } catch (e) {
-                                        console.error('Failed to run module script', e);
-                                    }
-                                }
-
-                                // Handle mount payload from parent
-                                function handleMountPayload(payload) {
-                                    // styles
-                                    if (payload.styles) {
-                                        const style = document.createElement('style');
-                                        style.textContent = payload.styles;
-                                        document.head.appendChild(style);
-                                    }
-                                    // html
-                                    if (payload.html) {
-                                        // append into root container (so we don't stomp runtime)
-                                        const container = document.getElementById('__estarter_root__') || document.body;
-                                        container.innerHTML = payload.html;
-                                    }
-                                    // inline script (module)
-                                    if (payload.script) {
-                                        runModuleScript(payload.script);
-                                    }
-                                    // allow embed-iframe.js time to register components if it needs async work
-                                    // then mount custom tags
-                                    setTimeout(() => {
-                                        try {
-                                            mountCustomTags();
-                                        } catch (e) {
-                                            console.error(e);
-                                        }
-                                    }, 50);
-                                }
-
-                                // Listen to messages from parent
-                                window.addEventListener('message', (ev) => {
-                                    let data = ev.data;
-                                    try {
-                                        data = (typeof data === 'string' && data.startsWith('{')) ? JSON.parse(data) : data;
-                                    } catch (e) { /* not json */ }
-
-                                    if (!data || !data.action) return;
-
-                                    if (data.action === 'mount') {
-                                        handleMountPayload(data.payload || {});
-                                    } else if (data.action === 'eval') {
-                                        // debug / run small code (use carefully)
-                                        try { eval(data.code); } catch(e) { console.error(e); }
-                                    } else if (data.action === 'unmount') {
-                                        // unmount all mounted apps
-                                        const nodes = Array.from(document.body.querySelectorAll('[__estarter_app__]'));
-                                        nodes.forEach(n => {
-                                            const app = n.__estarter_app__;
-                                            try { app && app.unmount(); } catch(e){}
-                                        });
-                                        // clear root
-                                        const root = document.getElementById('__estarter_root__');
-                                        if (root) root.innerHTML = '';
-                                    }
-                                }, false);
-
-                                // notify parent iframe ready
-                                window.sendToParent({ action: 'iframe_ready' });
-
-                            })();
-                        </scr` + `ipt>
-
                     </body>
                 </html>
             `;
@@ -310,7 +142,7 @@
                 const payload = {
                     html: this.html || '',
                     styles: this.styles || '',
-                    script: this.script || ''
+                    script: this.script || '',
                 };
 
                 try {

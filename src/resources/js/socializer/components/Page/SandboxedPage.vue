@@ -70,7 +70,7 @@
 
 
             // Prépare le contenu iframe
-            const srcdoc = `<!DOCTYPE html><html lang="en" data-bs-theme="${document.documentElement.getAttribute('data-bs-theme')}"><head>${headContent.join('')}</head><body style="overflow:hidden;"></body></html>`;
+            const srcdoc = `<!DOCTYPE html><html lang="en" data-bs-theme="${document.documentElement.getAttribute('data-bs-theme') }"><head>${headContent.join('')}</head><body style="overflow:hidden;"></body></html>`;
             iframe.srcdoc = srcdoc;
 
 

@@ -104,6 +104,15 @@ Add to vite.config.js
         react(),
     ....
     ],
+    vue({
+    template: {
+    ....
+        compilerOptions: {
+            isCustomElement: (tag) => tag === 'excalidraw-element'
+        }
+    ....    
+    },
+}),
      alias: {
     ...
         'react': "react",

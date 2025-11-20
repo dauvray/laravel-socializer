@@ -12,7 +12,7 @@
                     :data-bs-target="`#collapser-${roomId}`" 
                     aria-expanded="false" 
                     :aria-controls="roomId">
-                    <IconWidget :icon="roomIcon"></IconWidget> {{ room.name }}
+                    {{ room.name }}
                     <IconWidget v-if="room.privacy === 1" :icon="lockIcon"></IconWidget>
                 </button>
             </router-link>
@@ -87,7 +87,7 @@
             'delete-room',
             'edit-room',
             'sort-up-room',
-            'sort-down-root',
+            'sort-down-room',
         ],
         components: {
             IconWidget,
@@ -129,15 +129,6 @@
             ...mapState(useMeStore, {
                 getMe: 'getMe',
             }),
-            roomIcon: function() {
-                const mapIcon = {
-                    'chat': 'hashtag',
-                    'data': 'table',
-                    'form': 'tasks',
-                    'page': 'pager',
-                }
-                return mapIcon[this.room.room_type]
-            },
             lockIcon: function() {
                 if(this.room.registered_in) {
                     return 'unlock'
