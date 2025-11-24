@@ -1,24 +1,25 @@
 <template>
-    <div>
-        <CounterWidget
-            v-if="totalComments > 0"
-            data-bs-toggle="collapse" 
-            aria-expanded="false" 
-            :data-bs-target="`#${targetId}`"
-            :aria-controls="targetId"
-            :aria-expanded="false"
-            :nbcomments="totalComments"
-            :counterLabel="counterLabel"
-            :loaded="loaded"
-            @load-comments="onLoadComments"
-        ></CounterWidget>
+    <div class="comments-list-tools">
         <CommentForm
             v-if="logged && canComment"
             :canberated="true"
             :btn-label="btnLabel"
+            :displayCommentBtn="displayCommentBtn"
             @submit-comment="onSubmitComment"
             @cancel-submit-comment="onCancelSubmitComment"
+            @signal-form-uniqid="onSignalFormUniqid"
         ></CommentForm>
+        <CounterWidget
+            v-if="total > 0"
+            data-bs-toggle="collapse" 
+            :data-bs-target="`#${targetId}`"
+            :aria-controls="targetId"
+            :aria-expanded="false"
+            :nbcomments="total"
+            :counterLabel="counterLabel"
+            :loaded="loaded"
+            @load-comments="onLoadComments"
+        ></CounterWidget>
     </div>
     <CommentList
         class="collapse"
@@ -60,6 +61,7 @@
             'comments-loaded',
             'comment-created',
             'comment-deleted',
+            'signal-form-uniqid',
         ],
         props: {
             logged: {
@@ -119,6 +121,11 @@
                 required: false,
                 default: false,   
             },
+            displayCommentBtn: {
+                type: Boolean,
+                required: false,
+                default: true
+            },
         },
         setup(props) {
 
@@ -176,9 +183,6 @@
             ...mapState(useCommentStore, {
                 commentables: 'getCommentables',
             }),
-            totalComments: function() {
-                return this.nbcomments || this.total
-            },
         },
         methods: {
             onCancelSubmitComment() {
@@ -232,6 +236,9 @@
             },
             onSubCommentCreated(comment) {
                 this.$emit('comment-created', comment)
+            },
+            onSignalFormUniqid(uniqid) {
+                this.$emit('signal-form-uniqid', uniqid)
             }
         }
     }

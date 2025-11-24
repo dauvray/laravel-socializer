@@ -7,8 +7,8 @@ trait VideoFormaters
 
     private const VIDEO_PROVIDERS = [
         'youtube' => [
-            'regex_html' => '~<a[^>]*href="(https?://(?:www\.)?(?:youtube(?:-nocookie)?\.com/(?:watch\?v=|embed/|v/)|youtu\.be/)([a-zA-Z0-9_-]{11}))"[^>]*>.*?</a>~i',
-            'regex_raw'  => '~(?<!["\'])\b(https?://(?:www\.)?(?:youtube(?:-nocookie)?\.com/(?:watch\?v=|embed/|v/)|youtu\.be/)([a-zA-Z0-9_-]{11}))\b(?!["\'])~i',
+            'regex_html' => '~<a[^>]*href="(https?://(?:www\.)?(?:youtube(?:-nocookie)?\.com/(?:watch\?v=|embed/|v/)|youtu\.be/)([a-zA-Z0-9_-]{11}))(?:\?[^"\s\']*)?"[^>]*>.*?</a>~i',
+            'regex_raw' => '~(?<!["\'])\b(https?://(?:www\.)?(?:youtube(?:-nocookie)?\.com/(?:watch\?v=|embed/|v/)|youtu\.be/)([a-zA-Z0-9_-]{11}))(?:\?[^"\s\']*)?\b(?!["\'])~i',
             'embed_url'  => 'https://www.youtube-nocookie.com/embed/%s',
         ],
         'vimeo' => [

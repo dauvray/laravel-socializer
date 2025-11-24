@@ -66,7 +66,6 @@
     import { useConversationsStore } from '~socializer/stores/conversations.js'
     import resizable from "~socializer/directives/resizable_vertical.js"
     import ConversationCreatorButton from '~socializer/components/Chat/widgets/ConversationCreatorButton.vue'
-    import { useBreadcrumbService } from '~estarter/services/BreadcrumbService.js'
 
     export default {
         name: 'Teams',
@@ -89,8 +88,6 @@
             }
         },
         created() {
-            const breadcrumbService = useBreadcrumbService()
-            breadcrumbService.setBreadcrumb()
             document.querySelector('body').classList.add("conversations-page")
             this.onLoadConversations()
         },

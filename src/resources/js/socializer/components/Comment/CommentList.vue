@@ -1,5 +1,5 @@
 <template>
-    <div>
+    <div class="comments-list-inner">
         <CommentItem
             v-for="(comment, idx) in comments"
             :key="comment.comment.id"

@@ -1,5 +1,6 @@
 .comments-list {
     @extend .mx-2;
+     @extend .mb-2;
 
     .comments-filters-wrapper {
         @extend .d-flex;
@@ -13,7 +14,64 @@
             @extend .d-grid;
             @extend .justify-content-md-end;
         }
+    }
 
-        
+    .comments-list-tools {
+
+        .comment-counter {
+            @extend .btn;
+            @extend .px-0;
+        }
+    }
+
+    .comments-list-inner{
+
+        .comment {
+            @extend .px-2;
+            @extend .d-flex;
+            @extend .border-start;
+            @extend .border-bottom;
+            @extend .rounded;
+            @extend .mb-2;
+
+            .author-image {
+                max-width: 25px;
+                max-height: 25px;
+            }
+
+           .comment-inner{
+                @extend .w-100;
+                @extend .ms-2;
+
+                .comment-header{
+                    @extend .d-flex;
+                    @extend .align-items-end;
+
+                    .date {
+                        @extend .ms-2;
+                        @extend .me-2;
+                        @extend .text-muted;
+                        @extend .fw-lighter;
+                        @extend .fst-italic;
+                    }
+                }
+
+                .comment-body {
+
+                    .comment-content {
+                        @extend .my-2;
+                    }
+
+                    .comment-tools {
+                        @extend .d-flex;
+                        @extend .justify-content-between;
+                    }
+                }
+
+                .comment-footer {
+                    @extend .mb-2;
+                }
+           }
+        }
     }
 }

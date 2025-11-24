@@ -1,30 +1,28 @@
 <template>
-    <section class="d-flex justify-content-end align-items-end border rounded-2 position-relative cover-wrapper"
-        style="background-size: cover;"
+    <section class="cover-wrapper"
         :style="{backgroundImage: BackgroundImage}">
 
-        <div class="d-flex align-items-end avatar-wall">
+        <div class="avatar-cover">
             <AvatarCropper 
                 :item="element"
                 :editable="element.is_me"
                 @update-avatar="onUpdateAvatar"
             ></AvatarCropper>
 
-            <div class="avatar-wall-info ms-2 me-2 rounded bg-opacity-dark-3 shadow-sm border border-1 border-light">
-                <h2 class="text-white m-0 p-2">{{ element.name }}</h2>
-                <i class="text-white p-2">{{ element.function }}</i>
+            <div class="avatar-cover-info">
+                <h2>{{ element.name }}</h2>
+                <i>{{ element.function }}</i>
             </div>
 
             <div>
-                Followers : {{ element.nb_followers - 1 }}
+                Abonnés : {{ element.nb_followers - 1 }}
             </div>
 
             <div v-if="!element.is_me" 
-                class="btn-group" 
+                class="tools-cover" 
                 role="group" 
                 aria-label="Social interaction">
                 <FollowButton
-                    class="ms-2"
                     style="--bs-btn-padding-y: .25rem; --bs-btn-padding-x: .5rem; --bs-btn-font-size: .70rem;"
                     :user="element"
                 ></FollowButton>
@@ -37,7 +35,7 @@
 
         <button v-if="element.is_me"
             type="button" 
-            class="btn-avatar-edition btn btn-secondary shadow float-right m-2"
+            class="cover-image-edit-btn"
             @click="onShowModal">
             <IconWidget icon="camera"></IconWidget>
         </button>   
@@ -154,21 +152,3 @@
         }
     }
 </script>
-
-<style lang="scss" scoped>
-
-.cover-wrapper {
-    height: 150px;
-
-    .avatar-wall {
-        position: absolute;
-        left: -10px;
-        bottom: -30px;
-
-        .avatar-wall-info {
-            min-width: 200px;
-        }
-    }
-}
-
-</style>

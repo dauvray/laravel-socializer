@@ -4,7 +4,7 @@
         height: 100%;
         display: grid;
         grid-template-columns: 200px 1fr;
-        grid-template-rows: 50px auto;
+        grid-template-rows: 45px 1fr;
         grid-template-areas: 
         "room-sidebar room-header"
         "room-sidebar main-room";
@@ -39,7 +39,6 @@
     }
 
     #room-sidebar {
-
         height: 100%;
         grid-area: room-sidebar; 
         position: sticky;

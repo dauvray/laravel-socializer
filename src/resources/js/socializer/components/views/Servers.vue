@@ -35,7 +35,9 @@
         <div v-for="server in servers" class="card col-md-4 col-lg-3" :key="server.id">
             <img :src="server.image || 'https://picsum.photos/200'" class="card-img-top" alt="...">
             <div class="card-body">
-                <h5 class="card-title"><IconWidget v-if="server.is_private" class="text-warning" icon="key"></IconWidget> {{ server.name }}</h5>
+                <h5 class="card-title">
+                    <IconWidget v-if="server.is_private" class="text-warning" icon="key"></IconWidget> {{ server.name }}
+                </h5>
                 <h6 class="card-subtitle mb-2 text-body-secondary">
                     <span class="badge text-bg-info">Catégorie</span>
                 </h6>
@@ -54,7 +56,7 @@
     import { useServerStore } from '~socializer/stores/server.js'
     import IconWidget from '~estarter/components/widgets/IconWidget.vue'
     import FormsSettingHelper from '~socializer/services/FormsSetting.js'
-    import { useBreadcrumbService } from '~estarter/services/BreadcrumbService.js'
+    import { checkServerAccess } from '~socializer/services/helpers.js'
 
     export default {
         name: 'Servers',
@@ -77,15 +79,12 @@
             })
         },
         created() {
-            const breadcrumbService = useBreadcrumbService()
-            breadcrumbService.setBreadcrumb()
             this.loadAllServers()
         },
         methods: {
             ...mapActions(useServerStore, [
                 'createServer',
                 'loadAllServers',
-                'checkServerAccess',
                 'requestServerAccess',
             ]),
             onCreateServer() {
@@ -133,7 +132,7 @@
             async onCheckAccess(serverId) {
                 this.currentServer = serverId
                 this.modalTitle = 'Demande d\'accès'
-                const hasAccess = await this.checkServerAccess(serverId)
+                const hasAccess = await checkServerAccess(serverId)
                 if(hasAccess) {
                     this.$router.push({ name: 'server', params: { serverId }})
                 } else {

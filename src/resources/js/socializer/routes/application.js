@@ -5,8 +5,8 @@ export default [
         component: () => import('~socializer/components/views/WallUser.vue'),
         meta: {
             breadcrumb: [
-                { name: 'Accueil', link: '/'},
-                { name: 'Mur', link: null },
+                { name: 'Accueil', id:'home', link: '/'},
+                { name: 'Mur', id:'wall', link: null },
             ]
         }
     },
@@ -16,8 +16,8 @@ export default [
         component: () => import('~socializer/components/views/FeedUser.vue'),
         meta: {
             breadcrumb: [
-                { name: 'Accueil', link: '/'},
-                { name: 'Fil', link: null },
+                { name: 'Accueil', id:'home', link: '/'},
+                { name: 'Fil', id:'feed', link: null },
             ]
         }
     },
@@ -27,8 +27,8 @@ export default [
         component: () => import('~socializer/components/views/Store.vue'),
         meta: {
             breadcrumb: [
-                { name: 'Accueil', link: '/'},
-                { name: 'Store', link: null },
+                { name: 'Accueil', id:'home', link: '/'},
+                { name: 'Store', id:'store', link: null },
             ]
         }
     },
@@ -38,8 +38,8 @@ export default [
         component: () => import('~socializer/components/views/Teams.vue'),
         meta: {
             breadcrumb: [
-                { name: 'Accueil', link: '/'},
-                { name: 'Conversations', link: null },
+                { name: 'Accueil', id:'home', link: '/'},
+                { name: 'Conversations', id:'teams', link: null },
             ]
         }
     },
@@ -49,8 +49,8 @@ export default [
         component: () => import('~socializer/components/views/UserList.vue'),
         meta: {
             breadcrumb: [
-                { name: 'Accueil', link: '/'},
-                { name: 'Membres', link: null },
+                { name: 'Accueil', id:'home', link: '/'},
+                { name: 'Membres', id:'members', link: null },
             ]
         }
     },
@@ -60,8 +60,8 @@ export default [
         component: () => import('~socializer/components/views/Servers.vue'),
         meta: {
             breadcrumb: [
-                { name: 'Accueil', link: '/'},
-                { name: 'Domaines', link: null },
+                { name: 'Accueil', id:'home', link: '/'},
+                { name: 'Domaines', id:'servers', link: null },
             ]
         },
     },
@@ -71,9 +71,9 @@ export default [
         component: () => import('~socializer/components/Server/Server.vue'),
         meta: {
             breadcrumb: [
-                { name: 'Accueil', link: '/'},
-                { name: 'Domaines', link: 'serverList', internal: true},
-                { name: 'Server_name', link: null},
+                { name: 'Accueil', id:'home', link: '/'},
+                { name: 'Domaines', id:'servers', link: {name :'serverList'}, internal: true},
+                { name: null, id:'server_name', link: null},
             ]
         },
         children: [
@@ -83,8 +83,10 @@ export default [
                 component: () => import('~socializer/components/Server/Room.vue'),
                 meta: {
                     breadcrumb: [
-                        { name: 'Accueil', link: '/'},
-                        { name: 'Salon', link: null },
+                        { name: 'Accueil', id:'home', link: '/'},
+                        { name: 'Domaines', id:'servers', link: {name :'serverList'}, internal: true},
+                        { name: null, id:'server_name', link: null},
+                        { name: null, id:'content', link: null },
                     ]
                 },
                 children: [
@@ -94,8 +96,10 @@ export default [
                         component: () => import('~socializer/components/Page/PageComponent.vue'),
                         meta: {
                             breadcrumb: [
-                                { name: 'Accueil', link: '/'},
-                                { name: 'Page', link: null },
+                                { name: 'Accueil', id:'home', link: '/'},
+                                { name: 'Domaines', id:'servers', link: {name :'serverList'}, internal: true},
+                                { name: null, id:'server_name', link: null},
+                                { name: null, id:'content', link: null },
                             ]
                         }
                     },
@@ -105,8 +109,10 @@ export default [
                         component: () => import('~socializer/components/AudioRoom/AudioComponent.vue'),
                         meta: {
                             breadcrumb: [
-                                { name: 'Accueil', link: '/'},
-                                { name: 'Salon audio', link: null },
+                                { name: 'Accueil', id:'home', link: '/'},
+                                { name: 'Domaines', id:'servers', link: {name :'serverList'}, internal: true},
+                                { name: null, id:'server_name', link: null},
+                                { name: null, id:'content', link: null },
                             ]
                         }
                     },
@@ -116,8 +122,10 @@ export default [
                         component: () => import('~socializer/components/Chat/ChatComponent.vue'),
                         meta: {
                             breadcrumb: [
-                                { name: 'Accueil', link: '/'},
-                                { name: 'Chat', link: null },
+                                { name: 'Accueil', id:'home', link: '/'},
+                                { name: 'Domaines', id:'servers', link: {name :'serverList'}, internal: true},
+                                { name: null, id:'server_name', link: null},   
+                                { name: null, id:'content', link: null },
                             ]
                         }
                     },
@@ -127,8 +135,10 @@ export default [
                         component: () => import('~socializer/components/Data/QuestionnaireComponent.vue'),
                         meta: {
                             breadcrumb: [
-                                { name: 'Accueil', link: '/'},
-                                { name: 'Formulaire', link: null },
+                                { name: 'Accueil', id:'home', link: '/'},
+                                { name: 'Domaines', id:'servers', link: {name :'serverList'}, internal: true},
+                                { name: null, id:'server_name', link: null},
+                                { name: null, id:'content', link: null },
                             ]
                         }
                     },
@@ -163,8 +173,10 @@ export default [
                         component: () => import('~socializer/components/Data/AdminComponent.vue'),
                         meta: {
                             breadcrumb: [
-                                { name: 'Accueil', link: '/'},
-                                { name: 'Adminstration data', link: null },
+                                { name: 'Accueil', id:'home', link: '/'},
+                                { name: 'Domaines', id:'servers', link: {name :'serverList'}, internal: true},
+                                { name: null, id:'server_name', link: null},
+                                { name: null, id:'content', link: null },
                             ]
                         },
                     },
@@ -174,8 +186,10 @@ export default [
                         component: () => import('~socializer/components/Whiteboard/WhiteboardComponent.vue'),
                         meta: {
                             breadcrumb: [
-                                { name: 'Accueil', link: '/'},
-                                { name: 'Tableau blanc', link: null },
+                                { name: 'Accueil', id:'home', link: '/'},
+                                 { name: 'Domaines', id:'servers', link: {name :'serverList'}, internal: true},
+                                { name: null, id:'server_name', link: null},
+                                { name: null, id:'content', link: null },
                             ]
                         }
                     },
@@ -185,8 +199,10 @@ export default [
                         component: () => import('~socializer/components/ClassRoom/ClassRoomComponent.vue'),
                         meta: {
                             breadcrumb: [
-                                { name: 'Accueil', link: '/'},
-                                { name: 'Conference', link: null },
+                                { name: 'Accueil', id:'home', link: '/'},
+                                { name: 'Domaines', id:'servers', link: {name :'serverList'}, internal: true},
+                                { name: null, id:'server_name', link: null},
+                                { name: null, id:'content', link: null },
                             ]
                         }
                     },
@@ -196,8 +212,10 @@ export default [
                         component: () => import('~socializer/components/Application/ApplicationComponent.vue'),
                         meta: {
                             breadcrumb: [
-                                { name: 'Accueil', link: '/'},
-                                { name: 'Application', link: null },
+                                { name: 'Accueil', id:'home', link: '/'},
+                                { name: 'Domaines', id:'servers', link: {name :'serverList'}, internal: true},
+                                { name: null, id:'server_name', link: null},
+                                { name: null, id:'content', link: null },
                             ]
                         }
                     },
@@ -207,8 +225,10 @@ export default [
                         component: () => import('~socializer/components/WallRoom/WallComponent.vue'),
                         meta: {
                             breadcrumb: [
-                                { name: 'Accueil', link: '/'},
-                                { name: 'Wall', link: null },
+                                { name: 'Accueil', id:'home', link: '/'},
+                                 { name: 'Domaines', id:'servers', link: {name :'serverList'}, internal: true},
+                                { name: null, id:'server_name', link: null},
+                                { name: null, id:'content', link: null },
                             ]
                         }
                     },
@@ -220,8 +240,8 @@ export default [
                 component: () => import('~socializer/components/Data/QuestionnaireManager.vue'),
                 meta: {
                     breadcrumb: [
-                        {name: 'Accueil', link: '/'},
-                        { name: 'Gestion des formulaires', link: null },
+                        {name: 'Accueil', id:'home', link: '/'},
+                        { name: 'Gestion des formulaires', id:'form_manager', link: null },
                     ]
                 }
             },

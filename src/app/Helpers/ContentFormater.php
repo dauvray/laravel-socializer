@@ -25,19 +25,19 @@ class ContentFormater {
                                                 </div>
                                             </div>';
 
-    private const HASHTAG_REGEX = '/(#[\p{L}\p{N}_-]+)/';
+    private const HASHTAG_REGEX = '/(?<!\w)#([\p{L}\p{N}_-]+)/u';
     private const HASHTAG_TEMPLATE = '<a href="#" class="fw-bold">%s</a>';
 
-    private const MENTIONS_REGEX = '/(@[a-zA-Z0-9._-]+)/';
+    private const MENTIONS_REGEX = '/(?<!\w)@([a-zA-Z0-9._-]+)/u';
     private const MENTIONS_TEMPLATE = '<a href="#" class="fw-bold">%s</a>';
 
 
-    private $content;
-    private $videoUrls = [];
-    private $links = [];
-    private $hashtags = [];
-    private $mentions = [];
-    private $thumbnails = [];
+    private string $content;
+    private array $videoUrls = [];
+    private array $links = [];
+    private array $hashtags = [];
+    private array $mentions = [];
+    private array $thumbnails = [];
 
     public function __construct($content)
     {

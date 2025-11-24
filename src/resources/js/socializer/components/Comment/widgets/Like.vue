@@ -1,5 +1,5 @@
 <template>
-    <div class="like-btn" role="group" aria-label="like buttons">
+    <div role="group" aria-label="like buttons">
         <button type="button" 
             class="thumbs-up-btn"
             :disabled="this.me ? false: true"
@@ -41,7 +41,7 @@
                 type: Number,
                 required: true,
                 default: 0
-            }
+            },
         },
         computed: {
             ...mapState(useMeStore, {

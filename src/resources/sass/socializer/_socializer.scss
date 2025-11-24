@@ -5,6 +5,7 @@ $message_width: 60%;
 @import './_chat.scss';
 @import './_buttons.scss';
 @import './_comments.scss';
+@import './_wall.scss';
 
  .app-body {
 
@@ -195,6 +196,13 @@ $message_width: 60%;
             margin-top: -2px!important;
         }
     }
+}
+
+// post and comments message
+.video-wrapper {
+    @extend .ratio;
+    @extend .ratio-16x9;
+    @extend .my-2;
 }
 
 #videoContainer{

@@ -15,7 +15,7 @@
 </template>
 
 <script>
-    import { mapActions, mapState } from 'pinia'
+    import { mapActions } from 'pinia'
     import { useCommunityStore } from '~socializer/stores/community.js'
     import IconWidget from '~estarter/components/widgets/IconWidget.vue'
 

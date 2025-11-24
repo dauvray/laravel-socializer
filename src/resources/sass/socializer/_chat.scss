@@ -1,6 +1,9 @@
 .chat-wrapper {
 
-    @extend .container-fluid;
+    display: grid;
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+    @extend .mx-2;
     
     .chat-messages-wrapper {
         position: relative;

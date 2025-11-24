@@ -24,11 +24,13 @@ class Users
 
         $is_me = $me->vertexid === $user->vertexid;
 
+        // recupere le user et le nombre de followers
         $query = "
             MATCH (u:user {active: 1}) where id(u) == '$user->vertexid' 
             OPTIONAL MATCH (u)<-[:owned_by]-(w:wall)-[nbf:followed_by]->(:user)
             ";
 
+        // si ce n'est pas moi, on verifie si je le suis
         if(!$is_me) {
             $query .= "
             MATCH (current_user:user) where id(current_user) == '$me->vertexid'

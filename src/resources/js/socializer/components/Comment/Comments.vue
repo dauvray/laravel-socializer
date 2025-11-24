@@ -1,17 +1,17 @@
 <template>
-   <div v-if="canbecommented" class="comments-list">
+   <div v-if="canbecommented" 
+        class="comments-list">
 
-        <div class="comments-filters-wrapper" v-if="showTitleFilters">
+        <div v-if="showTitleFilters" 
+            class="comments-filters-wrapper">
             <h2>{{ commentTitle }}</h2>
-            <CommentsFilter
-                v-if="hasComments"
+            <CommentsFilter v-if="hasComments"
                 :commentable="commentable"
                 :vertexid="vertexid">
             </CommentsFilter>
         </div>
 
-        <ConnectionBtn 
-            v-if="!logged"
+        <ConnectionBtn v-if="!logged"
             :label="commentBtnTitle"
         ></ConnectionBtn>
 
@@ -23,10 +23,13 @@
             :autoload="autoload"
             :pagination="pagination"
             :nbcomments="nbcomments"
+            :displayCommentBtn="displayCommentBtn"
             @comments-loaded="onCommentsLoaded"
             @comment-created="onCommentCreated"
             @comment-deleted="onCommentDeleted"
+            @signal-form-uniqid="onSignalFormUniqid"
         ></CommentListWrapper>
+        
     </div>
 </template>
 
@@ -45,6 +48,7 @@
             'comments-loaded',
             'comment-created',
             'comment-deleted',
+            'signal-form-uniqid',
         ],
         components: {
             CommentListWrapper,
@@ -105,6 +109,12 @@
                 required: false,
                 default: null
             },
+            // Display comment button to open the comment form or let parent component handle it
+            displayCommentBtn: {
+                type: Boolean,
+                required: false,
+                default: true
+            },
         },
         computed: {
             ...mapState(useMeStore, {
@@ -136,6 +146,9 @@
             onCommentDeleted(message) {
                 this.$emit('comment-deleted', message)
             },
+            onSignalFormUniqid(uniqid) {
+                this.$emit('signal-form-uniqid', uniqid)
+            }
         }
     }
 </script>

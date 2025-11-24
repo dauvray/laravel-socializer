@@ -30,6 +30,8 @@
     import { useServerStore } from '~socializer/stores/server.js'
     import { useMeStore } from '~estarter/stores/me.js'
     import { defineAsyncComponent } from '@vue/runtime-core'
+    import { useBreadcrumbService } from '~estarter/services/BreadcrumbService.js'
+    const breadcrumbService = useBreadcrumbService()
 
     export default {
         name: 'Room',
@@ -86,6 +88,7 @@
                         && !to.params.hasOwnProperty('vertexId')){
                   this.loadDefaultContent()
                 }
+                this.onUpdateBreadcrumb()
             },
             channel(newVal, oldVal) {
                 if(oldVal) {
@@ -140,12 +143,19 @@
                     const defaultContent = this.currentRoom.content[0]
                     this.$router.push({ name: defaultContent.content_type, params: { vertexId: defaultContent.id } })
                 }
+                this.onUpdateBreadcrumb()
             },
-
             resetRoomUsers() {
                 this.users = []
                 this.$emit('update-users-room', this.users)
-            }
+            },
+            onUpdateBreadcrumb() {
+                breadcrumbService.updateBreadcrumb({
+                    name: this.currentRoom.name,
+                    id: 'content',
+                    link: null,
+                })
+            },
 
         },
     }

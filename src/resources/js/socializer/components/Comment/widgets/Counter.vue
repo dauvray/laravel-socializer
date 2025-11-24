@@ -1,7 +1,7 @@
 <template>
     <button
         type="button"
-        class="btn btn_link"
+        class="comment-counter"
         @click="onLoadComments">
         <IconWidget :icon="currentArrow"></IconWidget>{{ nbCommentsTxt }}
     </button>

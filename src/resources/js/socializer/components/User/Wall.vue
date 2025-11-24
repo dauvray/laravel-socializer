@@ -1,24 +1,24 @@
 <template>
     <div id="socializer-wall"> 
-        <CoverUser
-            class="mb-5"
-            :user="user"
-        ></CoverUser>
-        <section class="row">
-            <div class="col-md-4">
+        <CoverUser :user="user"></CoverUser>
+        <section class="wall-wrapper">
+            <OwnedServers 
+                class="wall-owned-servers"
+                @check-server-access="onCheckServerAccess"
+            ></OwnedServers>
+            <div class="wall-tools">
                 <PublishButton
                     v-if="canIPublish && loaded"
                     :feedFormId="feedOptions.feedFormId"
                     :feedId="feedOptions.feedId"
                 ></PublishButton>
             </div>
-            <div class="col-md-8">
-                <FeedWidget
-                    :user="user"
-                    type="wall"
-                    @feed-loaded="onFeedLoaded"
-                ></FeedWidget>
-            </div>
+            <FeedWidget
+                class="feed-wrapper"
+                :user="user"
+                type="wall"
+                @feed-loaded="onFeedLoaded"
+            ></FeedWidget>
         </section>
     </div>
 </template>
@@ -45,6 +45,7 @@
             FeedWidget,
             IconWidget,
             PublishButton: defineAsyncComponent(() => import('~socializer/components/User/widgets/PublishButton.vue')),
+            OwnedServers: defineAsyncComponent(() => import('~socializer/components/User/widgets/OwnedServers.vue')),
         },
         props: {
             user: {
@@ -78,6 +79,11 @@
                 this.feedOptions.feedFormId = feed.questionnaire
                 this.loaded = true
             },
+            onCheckServerAccess(hasAccess) {
+                if(!hasAccess) {
+                    this.$toast.error("Vous n'avez pas accès à ce domaine.")
+                }
+            }
         }
     }
 

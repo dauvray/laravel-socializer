@@ -1,5 +1,5 @@
 <template>
-    <div>
+    <div class="comment-footer">
         <CommentListWrapper
             btn-label="Répondre"
             counter-label="Réponse"
@@ -9,10 +9,12 @@
             :formvisible="formvisible"
             :nbcomments="commentsCounter"
             :can-comment="!isAuthor"
+            :displayCommentBtn="displayCommentBtn"
             urlload="/get-sub-comments"
             urlsend="/send-sub-comment"
             @comment-created="onCommentCreated"
             @comment-deleted="onCommentDeleted"
+            @signal-form-uniqid="onSignalFormUniqid"
         ></CommentListWrapper> 
     </div>
 </template>
@@ -34,6 +36,7 @@
         emits: [
             'comment-created',
             'comment-deleted',
+            'signal-form-uniqid',
         ],
         props: {
             comment: {
@@ -80,6 +83,11 @@
                 required: false,
                 default: ''
             },
+            displayCommentBtn: {
+                type: Boolean,
+                required: false,
+                default: false
+            },
         },
         computed: {
             ...mapState(useMeStore, {
@@ -101,6 +109,10 @@
             },
             onCommentDeleted(message, status) {
                 this.$emit('comment-deleted', message, status)
+            },
+            onSignalFormUniqid(uniqid) {
+                console.log("emit signal-form-uniqid from CommentFooter", uniqid)
+                 this.$emit('signal-form-uniqid', uniqid)
             },
         }
     }

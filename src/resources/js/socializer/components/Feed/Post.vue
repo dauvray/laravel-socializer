@@ -38,10 +38,17 @@
             <div class="post-footer">
                 <div class="post-footer-inner-left">
                     <LikeButtons
+                        class="like-btn"
                         :likes="item.post.likes"
                         :dislikes="item.post.dislikes"
                         @like-item="onLikeItem"
                     ></LikeButtons>
+                    <button 
+                        type="button"
+                        class="comment-btn"
+                        @click="onShowCommentForm">
+                        <IconWidget icon="comments"></IconWidget>
+                    </button>
                 </div>
                 <div class="post-footer-inner-right">
                     <button
@@ -68,8 +75,10 @@
             :nbcomments="item.post.nb_comments"
             :vertexid="`post${item.post.id}`"
             :commentable="item.post.identifier"
+            :displayCommentBtn="false"
             @comment-created="onCommentCreated"
             @comment-deleted="onCommentDeleted"
+            @signal-form-uniqid="onSignalFormUniqid"
         ></socializer-comments>
     </div>
 </template>
@@ -88,7 +97,10 @@
 
     export default {
         name: 'Post',
-        inject: ['AWN'],
+        inject: [
+            'AWN',
+            'eventBus'
+        ],
         emits: [
             'delete-post',
             'comment-created',
@@ -109,6 +121,11 @@
             item: {
                 type: Object,
                 required: true
+            }
+        },
+        data() {
+            return { 
+                commentFormId: null
             }
         },
         computed: {
@@ -156,6 +173,12 @@
             onSharePost() {
                 this.$emit('share-item', this.item.post.vertexid)
             },
+            onShowCommentForm() {
+                this.eventBus.$emit("open-comment-form", this.commentFormId)
+            },
+            onSignalFormUniqid(uniqid) {
+                this.commentFormId = uniqid
+            }
         }
     }
 </script>

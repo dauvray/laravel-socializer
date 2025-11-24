@@ -21,8 +21,10 @@ class User extends JsonResource
         $baseData = (new EstarterUserResource($this->resource))->toArray($request);
 
         // Ensuite, on définit les données spécifiques à cette ressource (Socializer)
-        $user_id = revealIdentifier($this->resource->identifier)->id;
+        $current_user = revealIdentifier($this->resource->identifier);
+        $user_id = $current_user->id ?? null;
         $is_me = $user_id === Auth::user()?->id;
+
         $currentData = [
             'id' => $this->resource->id,
             'slug' => $this->resource->slug,
@@ -38,6 +40,9 @@ class User extends JsonResource
             'vertexid' => isset($this->resource->vertexid) ? $this->resource->vertexid : null,
             'channel' => $this->when($is_me, function () use ($user_id) {
                 return 'App.Models.User.' . $user_id;
+            }),
+            'servers' => $this->when($current_user->ownedServers(), function () use ($current_user){
+                return $current_user->ownedServers();
             }),
         ];
 

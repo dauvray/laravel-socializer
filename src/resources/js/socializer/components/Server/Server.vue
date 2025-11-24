@@ -111,6 +111,8 @@
     import { useAjaxService } from '~estarter/services/AjaxService.js'
     import { useBreakpoints } from '~socializer/composables/useBreakpoints'
     const AjaxService = useAjaxService()
+    import { useBreadcrumbService } from '~estarter/services/BreadcrumbService.js'
+    const breadcrumbService = useBreadcrumbService()
 
     export default {
         name: 'Server',
@@ -213,6 +215,7 @@
                 if( to.params.hasOwnProperty('serverId') && to.params.serverId != from.params.serverId ) {
                     this.initLoadServer(to.params.serverId)
                 }
+                this.onUpdateBreadcrumb()
             },
             currentServer(value) {
                 if(value) {
@@ -244,6 +247,8 @@
                     if(!res) {
                         this.$router.push({ name: 'serverList'})
                     }
+
+                    this.onUpdateBreadcrumb()
                 }) 
             },
             onChangeServer(serverId) {
@@ -389,6 +394,14 @@
             },
             updateSidebarWidth(newWidth){
                 this.sidebarWidth = newWidth;
+            },
+            onUpdateBreadcrumb() {
+                breadcrumbService.updateBreadcrumb({
+                    name: this.currentServer.name,
+                    id: 'server_name',
+                    link: { name: 'server', params: { serverId: this.currentServer.id } },
+                    internal: true
+                })
             },
         }
     }

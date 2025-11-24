@@ -1,46 +1,47 @@
 <template>
-    <div class="d-flex align-items-start">
-
+    <div class="comment">
         <Gravatar
-            class="me-3"
             :user="comment.author"
             size="small"
         ></Gravatar>
-
-        <div class="comment flex-grow-1">
-            <div class="post-wrapper">
-                <CommentHeader
-                    class="post-header"
-                    :message="comment"
-                    :commentable="commentable"
-                    :vertexid="vertexid"
-                    @delete-comment="onDeleteComment"
-                ></CommentHeader>
-                <CommentBody
-                    class="post-body"
-                    :item="comment.comment"
-                ></CommentBody>
-                <div class="post-footer">
+        <div class="comment-inner">
+            <CommentHeader
+                :message="comment"
+                :commentable="commentable"
+                :vertexid="vertexid"
+                @delete-comment="onDeleteComment"
+            ></CommentHeader>
+            <div class="comment-body">
+                <div class="comment-content" v-html="comment.comment.content"></div>
+                <div class="comment-tools">
                     <div class="post-footer-inner-left">
                         <LikeButtons
+                            class="like-comment-btn"
                             :likes="comment.likes"
                             :dislikes="comment.dislikes"
                             @like-item="onLikeItem"
                         ></LikeButtons>
+                        <button 
+                            v-if="!isAuthor"
+                            type="button"
+                            class="btn"
+                            @click="onShowCommentForm">
+                            <IconWidget icon="comments"></IconWidget>
+                        </button>
                     </div>
                     <div class="post-footer-inner-right">
                         <button
-                            v-if="canDelete"
+                            v-if="isAuthor"
                             type="button" 
-                            class="delete-btn"
+                            class="delete-comment-btn"
                             @click="onDeleteComment"
                             ><IconWidget icon="trash-alt" title="supprimer"></IconWidget>
                         </button>
                     </div>
                 </div>
             </div>
+        
             <CommentFooter
-                class="post-footer"
                 :logged="logged"
                 :comment="comment"
                 :commentable="commentable"
@@ -48,6 +49,7 @@
                 :formvisible="formvisible"
                 @comment-created="onCommentCreated"
                 @comment-deleted="onDeleteComment"
+                @signal-form-uniqid="onSignalFormUniqid"
             ></CommentFooter>
         </div>
     </div>
@@ -56,23 +58,24 @@
 <script>
 
     import CommentHeader from '~socializer/components/Comment/partials/CommentHeader.vue'
-    import CommentBody from '~socializer/components/Comment/partials/CommentBody.vue'
     import CommentFooter from '~socializer/components/Comment/partials/CommentFooter.vue'
-    import Gravatar from '~estarter/components/widgets/Gravatar.vue'
     import LikeButtons from '~socializer/components/Comment/widgets/Like.vue'
     import IconWidget from '~estarter/components/widgets/IconWidget.vue'
     import { mapState } from 'pinia'
     import { useMeStore } from '~estarter/stores/me.js'
+     import Gravatar from '~estarter/components/widgets/Gravatar.vue'
 
     export default {
         name: 'Comment',
+        inject: [
+            'eventBus'
+        ],
         components: {
             CommentHeader,
-            CommentBody,
             CommentFooter,
-            Gravatar,
             LikeButtons,
             IconWidget,
+            Gravatar,
         },
         emits: [
             'delete-comment',
@@ -82,6 +85,7 @@
         data() {
             return {
                 formvisible: false,
+                 commentFormId: null,
             }
         },
         props: {
@@ -106,7 +110,7 @@
             ...mapState(useMeStore, {
                 me: 'getMe',
             }),
-            canDelete: function() {
+            isAuthor: function() {
                 if(this.me) {
                     return this.me.vertexid == this.comment.author.id
                 }
@@ -123,6 +127,12 @@
             onLikeItem(value) {
                 this.$emit('like-item', { value , itemVid: this.comment.comment.id })
             },
+            onSignalFormUniqid(uniqid) {
+                this.commentFormId = uniqid
+            },
+            onShowCommentForm() {
+                this.eventBus.$emit("open-comment-form", this.commentFormId)
+            }
         },
     }
 </script>

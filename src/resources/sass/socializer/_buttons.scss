@@ -16,6 +16,21 @@
     }
 }
 
+.like-comment-btn {
+    @extend .like-btn;
+
+    button {
+        @extend .p-1;
+
+        &.thumbs-up-btn {
+            @extend .btn-link;
+        }
+        &.thumbs-down-btn {
+            @extend .btn-link;
+        }
+    }
+}
+
 .delete-btn {
     @extend .btn;
     @extend .btn-sm;
@@ -23,9 +38,38 @@
     @extend .btn-outline-danger;
 }
 
+.delete-comment-btn {
+    @extend .delete-btn;
+    @extend .btn-link;
+}
+
 .share-btn {
     @extend .btn;
     @extend .btn-sm;
     @extend .rounded;
     @extend .btn-outline-primary;
+}
+
+.comment-btn {
+    @extend .btn;
+    @extend .btn-sm;
+    @extend .rounded;
+    @extend .btn-outline-secondary;
+}
+
+.cover-image-edit-btn {
+    @extend .btn;
+    @extend .btn-secondary;
+    @extend .shadow;
+    @extend .float-right !optional;
+    @extend .m-2;
+}
+
+.publish-btn {
+    @extend .btn;
+    @extend .btn-primary;
+    @extend .rounded;
+    @extend .btn-sm;
+    @extend .shadow-sm; 
+    @extend .my-2;
 }

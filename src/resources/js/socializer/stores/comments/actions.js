@@ -1,5 +1,5 @@
 import { useAjaxService } from '~estarter/services/AjaxService.js'
-import { isEmpty } from '~estarter/services/helpers.js'
+import { isEmpty, findDeepValue } from '~estarter/services/helpers.js'
 
 const AjaxService = useAjaxService()
 
@@ -76,6 +76,19 @@ export default {
 
         if(!this.commentables.hasOwnProperty(storeId)) {
             this.commentables[storeId] = {...commentTemplate}
+        }
+
+       // le commentaire existe déjà ?
+       let isExisting = false;
+
+       this.commentables[storeId].data.forEach((item, idx) => {
+            if(item.comment.id == comment.comment.id) {
+                isExisting = true;
+            }
+        });
+
+        if(isExisting) {
+            return null;
         }
 
         // Clonage profond du commentaire pour éviter les effets de bord

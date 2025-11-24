@@ -181,8 +181,6 @@ trait Socializable
         return false;
     }
 
-
-
     /*
     |--------------------------------------------------------------------------
     | RELATIONS
@@ -236,11 +234,21 @@ trait Socializable
 
     public function servers()
     {
-        $conversations = app('nebulaGraph')->execute("
-            MATCH (s:server)-[:registered_in]-(u:user) WHERE id(u)=='$this->vertexid' RETURN s
+        $servers = app('nebulaGraph')->execute("
+            MATCH (s:server)<-[:registered_in]-(u:user) WHERE id(u)=='$this->vertexid' RETURN s
         ");
 
-        return $conversations;
+        return $servers;
+    }
+
+    
+    public function ownedServers()
+    {
+        $servers = app('nebulaGraph')->execute("
+            MATCH (s:server)-[:has_creator]-(u:user) WHERE id(u)=='$this->vertexid' RETURN s
+        ");
+
+        return $servers;
     }
 
     /*

@@ -2,7 +2,6 @@
 
 namespace Dauvray\Socializer\app\Services;
 
-use Dauvray\Socializer\app\Events\CommentCreated;
 use Dauvray\Socializer\app\Jobs\SendCommentToUsers;
 use Dauvray\Socializer\app\Events\CommentDeleted;
 use Dauvray\Socializer\app\Events\CommentCalculated;

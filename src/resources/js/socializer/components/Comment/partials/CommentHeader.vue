@@ -1,15 +1,16 @@
 <template>
-    <div class="comment-header p-2">
-        <div class="d-flex">
-            <UserWallLink
-                :user="message.author"
-            ></UserWallLink>
-            <DateHelper
-                class="ms-2 me-2 text-muted fw-light"
-                :date="message.comment.created_at"
-                :format="'since'"
-            ></DateHelper>
-        </div>
+    <div class="comment-header">
+        <!-- <Gravatar
+            :user="message.author"
+            size="small"
+        ></Gravatar> -->
+        <UserWallLink
+            :user="message.author"
+        ></UserWallLink>
+        <DateHelper
+            :date="message.comment.created_at"
+            :format="'since'"
+        ></DateHelper>
     </div>
 </template>
 
@@ -19,13 +20,15 @@
     import DateHelper from '~estarter/components/widgets/DateHelper.vue'
     import IconWidget from '~estarter/components/widgets/IconWidget.vue'
     import UserWallLink from '~socializer/components/User/WallLink.vue'
-
+    import Gravatar from '~estarter/components/widgets/Gravatar.vue'
+    
     export default {
         name: 'CommentHeader',
         emits: [
             'delete-comment',
         ],
         components: {
+            Gravatar,
             DateHelper,
             IconWidget,
             UserWallLink,
