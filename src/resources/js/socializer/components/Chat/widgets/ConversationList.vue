@@ -2,10 +2,8 @@
     <div class="conversations-list">
 
         <ul class="list-group list-group-flush">
-            <template v-for="conversation in conversations">
-                <li v-if="conversation.name"
-                    :key="conversation.id" 
-                    class="list-group-item">
+            <template v-for="conversation in conversations" :key="conversation.id">
+                <li class="list-group-item">
                     <ConversationSelector
                         :conversation="conversation"
                         @join-chat="onJoinChat"

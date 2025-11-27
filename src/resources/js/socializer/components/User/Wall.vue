@@ -2,10 +2,6 @@
     <div id="socializer-wall"> 
         <CoverUser :user="user"></CoverUser>
         <section class="wall-wrapper">
-            <OwnedServers 
-                class="wall-owned-servers"
-                @check-server-access="onCheckServerAccess"
-            ></OwnedServers>
             <div class="wall-tools">
                 <PublishButton
                     v-if="canIPublish && loaded"
@@ -13,6 +9,10 @@
                     :feedId="feedOptions.feedId"
                 ></PublishButton>
             </div>
+            <OwnedServers 
+                class="wall-owned-servers"
+                @check-server-access="onCheckServerAccess"
+            ></OwnedServers>
             <FeedWidget
                 class="feed-wrapper"
                 :user="user"

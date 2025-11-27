@@ -1,62 +1,48 @@
 .post-wrapper {
-    @extend .card;
-    @extend .p-2;
-
-    box-shadow: 0 8px 30px rgba(0,0,0,.05)!important;
+    padding: 0.5rem!important;
 
     .post-header {
-        @extend .card-body;
-        @extend .p-0;
+        padding: 0;
         width: 100%;
 
         .post-header-inner {
-            @extend .d-flex;
+            display: flex;
             width: 100%;
 
             .post-user-wrapper {
-                @extend .d-flex;
-                @extend .flex-grow-1;
-
-                .post-user-infos {
-                    @extend .d-flex; 
-                    @extend .flex-column;
-                }
+                display: flex;
+                flex-grow: 1;
             }
 
             .post-infos-wrapper {
-                @extend .d-flex; 
+                display: flex;
                 text-align: right;
-                @extend .flex-column;
+                flex-direction: column ;
 
                 .date {
-                    @extend .flex-grow-1;
+                    flex-grow: 1;
                 }
 
                 .shared {
-                    @extend .ms-3;
+                    margin-left: map-get($spacers, 3);
                 }
             }
         }
     }
 
     .post-body {
-        @extend .my-2;
+        margin: map-get($spacers, 2) 0;
 
-        .post-text {
-            @extend .card-text;
-            @extend .border;
-            @extend .rounded;
-            @extend .p-2;
+        .post-content {
+            border: $border-width $border-style $border-color;
+            border-radius: $border-radius;
+            padding: map-get($spacers, 2);
         }
     }
 
     .post-footer {
-        @extend .card-body;
-        @extend .d-flex;
-        @extend .p-0;
-
-        .post-footer-inner-left {
-            @extend .flex-grow-1;
-        }
+        display: flex;
+        justify-content: space-between;
+        padding: 0 map-get($spacers, 1);
     }
 }

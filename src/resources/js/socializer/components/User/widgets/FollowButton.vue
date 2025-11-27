@@ -2,13 +2,14 @@
     <button 
        v-if="!followed"
         type="button" 
-        class="btn btn-primary btn-sm flex-grow-1"
+        class="btn follow-btn"
         @click="onFollow"
         ><IconWidget icon="splotch"></IconWidget> Suivre
     </button>
     <button v-else
         type="button" 
-        class="btn btn-warning btn-sm flex-grow-1"
+        class="btn follow-btn"
+        :class="{followed: 'followed'}"
         @click="onUnfollow"
         ><IconWidget icon="splotch"></IconWidget> Ne plus suivre
     </button>

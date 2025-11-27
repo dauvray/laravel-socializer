@@ -1,75 +1,73 @@
 .like-btn {
-  @extend .btn-group;
-  @extend .btn-sm;
-
     button{
-        @extend .btn;
-        @extend .btn-sm;
-        @extend .rounded;
+        @include button-size($btn-padding-y-sm, $btn-padding-x-sm, $btn-font-size-sm, $btn-border-radius-sm);
 
         &.thumbs-up-btn {
-            @extend .btn-outline-success;
+            @include button-outline-variant($success,$success);
+            &:hover {
+                color: color-contrast($success);
+            }
         }
         &.thumbs-down-btn {
-            @extend .btn-outline-danger;
+            @include button-outline-variant($danger,$danger);
+            &:hover {
+                color: color-contrast($danger);
+            }
         }
     }
 }
 
 .like-comment-btn {
-    @extend .like-btn;
-
     button {
-        @extend .p-1;
-
+        padding: 2px;
         &.thumbs-up-btn {
-            @extend .btn-link;
+           color: $success;
         }
         &.thumbs-down-btn {
-            @extend .btn-link;
+            color:$danger;
         }
     }
 }
 
 .delete-btn {
-    @extend .btn;
-    @extend .btn-sm;
-    @extend .rounded;
-    @extend .btn-outline-danger;
-}
-
-.delete-comment-btn {
-    @extend .delete-btn;
-    @extend .btn-link;
+    @include button-outline-variant($danger, $danger);
+    @include button-size($btn-padding-y-sm, $btn-padding-x-sm, $btn-font-size-sm, $btn-border-radius-sm);
+    &:hover {
+        color: color-contrast($danger);
+    }
 }
 
 .share-btn {
-    @extend .btn;
-    @extend .btn-sm;
-    @extend .rounded;
-    @extend .btn-outline-primary;
+    @include button-outline-variant($primary, $primary);
+    @include button-size($btn-padding-y-sm, $btn-padding-x-sm, $btn-font-size-sm, $btn-border-radius-sm);
+    &:hover {
+        color: color-contrast($primary);           // Texte → lisible automatiquement
+    }
 }
 
 .comment-btn {
-    @extend .btn;
-    @extend .btn-sm;
-    @extend .rounded;
-    @extend .btn-outline-secondary;
+    @include button-outline-variant($secondary, $secondary);
+    @include button-size($btn-padding-y-sm, $btn-padding-x-sm, $btn-font-size-sm, $btn-border-radius-sm);
+    &:hover {
+        color: color-contrast($secondary);
+    }
 }
 
 .cover-image-edit-btn {
-    @extend .btn;
-    @extend .btn-secondary;
-    @extend .shadow;
-    @extend .float-right !optional;
-    @extend .m-2;
+    @include button-variant($secondary, $secondary);
+    box-shadow: var(--bs-box-shadow);
 }
 
 .publish-btn {
-    @extend .btn;
-    @extend .btn-primary;
-    @extend .rounded;
-    @extend .btn-sm;
-    @extend .shadow-sm; 
-    @extend .my-2;
+    @include button-variant($primary, $primary);
+    box-shadow: var(--bs-box-shadow-sm);
+}
+
+.follow-btn {
+    @include button-variant($primary, $primary);
+    @include button-size($btn-padding-y-sm, $btn-padding-x-sm, $btn-font-size-sm, $btn-border-radius-sm);
+
+    &.followed {
+        @include button-variant($warning, $warning);
+    }
 }

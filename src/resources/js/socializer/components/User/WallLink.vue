@@ -15,10 +15,10 @@
                 @mouseleave="hideDropdown">
                 <div class="dropdown-content">
 
-                    <CoverUser
+                    <!-- <CoverUser
                         class="mb-5"
                         :user="user"
-                    ></CoverUser>
+                    ></CoverUser> -->
 
                     <div class="user-info">
                         <h4 class="user-name">{{ user.name }}</h4>
@@ -50,7 +50,7 @@
 import { mapState } from 'pinia'
 import { useApplicationStore } from '~estarter/stores/application.js'
 import { computePosition, offset, flip, shift } from '@floating-ui/dom'
-import CoverUser from '~socializer/components/User/Cover.vue'
+//import CoverUser from '~socializer/components/User/Cover.vue'
 import IconWidget from '~estarter/components/widgets/IconWidget.vue'
 
 export default {
@@ -67,7 +67,7 @@ export default {
         }
     },
     components: {
-       CoverUser,
+     //  CoverUser,
        IconWidget,
     },
     data() {

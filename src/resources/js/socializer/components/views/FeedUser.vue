@@ -1,10 +1,9 @@
 <template>
-    <div class="row">
-        <div class="col-4">
+    <div class="feed-user-wrapper">
+        <div class="feed-user-inner">
             <FeedWidget></FeedWidget>
         </div>
     </div>
-   
 </template>
 
 <script>

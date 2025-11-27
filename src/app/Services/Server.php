@@ -262,7 +262,7 @@ class Server
     public function getAllServers()
     {
         $result = app('nebulaGraph')->execute("
-            MATCH (s:server)-[:registered_in]-(u:user) RETURN s
+            MATCH (o:user{active: 1})<-[:has_creator]-(s:server)<-[:registered_in]-(u:user) RETURN s,o
         ");
 
         $paginator = makePaginationCollection(collect($result), route(Route::currentRouteName()));

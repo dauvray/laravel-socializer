@@ -541,11 +541,11 @@
     }
 </script>
 
-<style>
+<!-- <style>
     .thumbnail {
         width: 80px;
         height: 80px;
         object-fit: cover;
         border-radius: 4px;
     }
-</style>
+</style> -->

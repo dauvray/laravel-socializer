@@ -1,0 +1,37 @@
+.conversations-wrapper {
+    @extend .h-100;
+    display: grid!important;
+    grid-template-areas:
+    "nav head"
+    "nav main"
+    "nav main";
+    grid-template-columns: 1fr 5fr;
+
+    #room-header-tools {
+        grid-area: head;
+        @extend .d-flex;
+        @extend .justify-content-end;
+        @extend .align-items-center;
+    }
+
+    .conversations-list-wrapper {
+        grid-area: nav;
+        @extend .border-end;
+        z-index: 1;
+
+        .conversation-creator-button {
+            @extend .d-flex;
+            @extend .align-items-center;
+            @extend .px-2;
+        }
+        
+        .conversations-list {
+            position: sticky;
+            top: 0;
+        }
+    }
+
+    .chat-wrapper {
+        grid-area: main;
+    }
+}

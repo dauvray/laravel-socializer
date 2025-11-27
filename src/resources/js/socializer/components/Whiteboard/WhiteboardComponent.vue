@@ -66,7 +66,7 @@
             if(this.whiteboardRoom) {
               return this.whiteboardRoom.save_board == 1
             }
-           return 0
+           return false
           },
           whiteBoardId: function() {
             if(this.whiteboardRoom) {
@@ -101,7 +101,7 @@
             const el = shadow.querySelector('.SVGLayer');
             el.style.position = 'absolute';
             this.loaded = true;
-          }, 100);
+          }, 500);
 
           setTimeout(() => {
             // v.0.18: break change probleme avec le css de la modale
@@ -129,23 +129,38 @@
 
           /*------  DATA CONNECTION ----------*/
           connectionDataCallback(conn) {
-              console.log('nouvelle connexion data board', conn.connectionId)
-                conn.on("data", (data) => {
-                  data = JSON.parse(data)
+                  conn.on("open", () => {
 
-                    switch(data.action) {
-                        case 'update_scene':
-                          this.updateScene(data.details)
-                          break
+                    conn.on("data", (data) => {
+                      data = JSON.parse(data)
 
-                        case 'pointer_move':
-                          this.pointers[data.from] = data.details;
-                          break
+                        switch(data.action) {
+                            case 'update_scene':
+                              this.updateScene(data.details)
+                              break
+
+                            case 'pointer_move':
+                              this.pointers[data.from] = data.details;
+                              break
+                        }
+                    });
+
+                    // envoyer le contenu actuel du tableau blanc lors de la connexion
+                    if(!this.isSavable) {
+                      const elements = this.$refs.excalidrawElement.getSceneElements()
+
+                      if(elements.length > 0) {
+                        const current = {
+                            elements,
+                            appState: this.$refs.excalidrawElement.getAppState(),
+                            files: this.$refs.excalidrawElement.getFiles(),
+                        }
+
+                        this.handleExcalidrawMouseUp({ detail: current });
+                      }
                     }
                 });
-                conn.on("open", () => {
-                    console.log('connection data board ouverte')
-                });
+
                 conn.on("close", () => {
                     console.log('connection data board fermée')
                 });

@@ -5,21 +5,11 @@
             :user="item.post.shared_by">
         </SharedThumbnail>
         
-        <div class="post-wrapper">
+        <div class="card post-wrapper">
             <div class="post-header">
                 <div class="post-header-inner">
                     <div class="post-user-wrapper">
-                        <Gravatar
-                            class="me-2"
-                            :user="item.author"
-                            size="small"
-                        ></Gravatar>
-                        <div class="post-user-infos">
-                            <UserWallLink
-                                :user="item.author"
-                            ></UserWallLink>
-                            <small>{{ item.author.function }}</small>
-                        </div>
+                        <UserBadge :user="item.author"></UserBadge>
                     </div>
                     <div class="post-infos-wrapper">
                         <DateHelper
@@ -33,28 +23,28 @@
                 </div>
             </div>
             <div class="post-body">
-                <div class="post-text" v-html="item.post.content"></div>
+                <div class="post-content" v-html="item.post.content"></div>
             </div>
             <div class="post-footer">
-                <div class="post-footer-inner-left">
+                <div class="btn-group post-footer-inner-left">
                     <LikeButtons
-                        class="like-btn"
+                        class="btn-group like-btn"
                         :likes="item.post.likes"
                         :dislikes="item.post.dislikes"
                         @like-item="onLikeItem"
                     ></LikeButtons>
                     <button 
                         type="button"
-                        class="comment-btn"
+                        class="btn comment-btn"
                         @click="onShowCommentForm">
-                        <IconWidget icon="comments"></IconWidget>
+                        <IconWidget icon="comments"></IconWidget> Commenter
                     </button>
                 </div>
-                <div class="post-footer-inner-right">
+                <div class="btn-group post-footer-inner-right">
                     <button
                         v-if="canDelete"
                         type="button" 
-                        class="delete-btn"
+                        class="btn delete-btn"
                         @click="onPostDelete"
                         ><IconWidget icon="trash-alt" title="supprimer"></IconWidget>
                     </button>
@@ -90,8 +80,7 @@
     import { defineAsyncComponent } from 'vue'
     import LikeButtons from '~socializer/components/Comment/widgets/Like.vue'
     import ShareButton from '~socializer/components/Feed/widgets/ShareButton.vue'
-    import Gravatar from '~estarter/components/widgets/Gravatar.vue'
-    import UserWallLink from '~socializer/components/User/WallLink.vue'
+    import UserBadge from '~socializer/components/User/Badge.vue'
     import DateHelper from '~estarter/components/widgets/DateHelper.vue'
     import IconWidget from '~estarter/components/widgets/IconWidget.vue'
 
@@ -109,8 +98,7 @@
             'share-item',
         ],
         components: {
-            Gravatar,
-            UserWallLink,
+            UserBadge,
             DateHelper,
             IconWidget,
             LikeButtons,

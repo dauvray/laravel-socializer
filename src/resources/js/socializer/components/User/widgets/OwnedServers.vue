@@ -5,8 +5,8 @@
         <ul>
           <li v-for="(server, idx) in ownedServers" :key="server.id">
             <button type="button" @click="onCheckAccess(server.id)">
-               <IconWidget v-if="server.privacy ===1" class="icon-widget" icon="key"></IconWidget> 
                {{ server.name }}
+                <IconWidget v-if="server.privacy ===1" class="icon-widget" icon="key"></IconWidget> 
             </button>
           </li>
         </ul>

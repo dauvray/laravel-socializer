@@ -1,8 +1,8 @@
 <template>
     <button
         type="button"
-        class="publish-btn"
-        title="Configurer le questionnaire"
+        class="btn publish-btn"
+        title="Publier"
         @click="onShowModal"
         ><IconWidget icon='paper-plane'></IconWidget> Publier
     </button>
@@ -62,7 +62,7 @@
             userOwner: {
                 type: Boolean,
                 required: false,
-                default: true // if true, post will be published on user wall else on feed item ( room ...)
+                default: true // if true, post will be published on user wall and feed item ( room ...)
             },
         },
         data() {
@@ -87,6 +87,7 @@
                 this.canValidate = isValid
             },
             async onSendPost(formData) {
+                // TODO a corriger: il faudrait plutot le gerer cote serveur
                 if(!this.userOwner) {
                     formData.append("owner", false)
                 }

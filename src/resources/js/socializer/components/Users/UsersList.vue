@@ -1,9 +1,11 @@
 <template>
-    <ThumbnailUserWidget 
-        v-for="user in users" 
-        :key="user.slug"
-        :user="user"
-    ></ThumbnailUserWidget>
+    <div class="users-list-wrapper">
+        <ThumbnailUserWidget 
+            v-for="user in users" 
+            :key="user.slug"
+            :user="user"
+        ></ThumbnailUserWidget>
+    </div>
 </template>
 
 <script>

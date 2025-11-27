@@ -28,6 +28,7 @@ class User extends JsonResource
         $currentData = [
             'id' => $this->resource->id,
             'slug' => $this->resource->slug,
+            'function' => $this->resource->function,
             'identifier' => $this->resource->identifier,
             'auth_provider' => Auth::user()?->name,
             'is_me' => $is_me,

@@ -137,6 +137,24 @@ class ExcalidrawElement extends HTMLElement {
       }
     }
 
+    getSceneElements() {
+      if (this.excalidrawAPI) {
+        return this.excalidrawAPI.getSceneElements();
+      } else {
+        console.error("Excalidraw API non encore disponible.");
+        return [];
+      }
+    }
+
+    getAppState() {
+      if (this.excalidrawAPI) {
+        return this.excalidrawAPI.getAppState();
+      } else {
+        console.error("Excalidraw API non encore disponible.");
+        return {};
+      }
+    }
+
     // todo Méthode pour importer des libraries
     async importLibrary(fileContent) {
         const parsedContent = JSON.parse(fileContent);

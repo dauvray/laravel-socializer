@@ -1,14 +1,14 @@
 <template>
     <div role="group" aria-label="like buttons">
         <button type="button" 
-            class="thumbs-up-btn"
+            class="btn thumbs-up-btn"
             :disabled="this.me ? false: true"
             :aria-disabled="this.me ? false: true"
             @click="onLike">
             <IconWidget icon="thumbs-up"></IconWidget> {{ likes }}
         </button>
         <button type="button" 
-            class="thumbs-down-btn"
+            class="btn thumbs-down-btn"
             :disabled="this.me ? false: true"
             :aria-disabled="this.me ? false: true"
             @click="onDislike">

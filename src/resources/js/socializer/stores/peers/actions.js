@@ -111,11 +111,8 @@ export default {
                 if(!ignoredDataConnections.includes(type)) {
                     delete payload.options.stream
                     payload.options.metadata.callback = `${type}PlayerDataCallback` // custom callback
-console.log('Creating data connection for', type, payload.options.metadata.callback)
                     conn = this.localPeer.connect(peerID, payload.options )
-
                     this.connections[room][slug][type].push(conn)  
-
                 }
 
                 return {call , conn}
@@ -127,7 +124,7 @@ console.log('Creating data connection for', type, payload.options.metadata.callb
             return false
         }
 
-        if( peerID) {
+        if(peerID) {
             return this.connections[room][slug][type].some(conn => {
 
                 if (!conn) return false

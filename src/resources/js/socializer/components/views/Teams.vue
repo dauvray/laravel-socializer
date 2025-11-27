@@ -1,6 +1,8 @@
 <template>
     <div class="conversations-wrapper">
-        <Teleport to="#system-socializer-tools">
+
+         <div id="room-header-tools"></div>
+        <!-- <Teleport to="#system-socializer-tools">
             <div v-if="isStreamable" 
                 id="room-stream-btn" 
                 role="group">
@@ -19,7 +21,7 @@
                     @stoped-stream="onStopedStream"
                 ></CaptureUserButton>
             </div>
-        </Teleport> 
+        </Teleport>  -->
 
         <div class="conversations-list-wrapper"
             v-resizable="{
@@ -48,7 +50,6 @@
             @update-chatters="onUpdateChatters"
             @update-conversation-title="onUpdatedConversationTitle"
         ></ChatComponent>
-
         <template v-else >
            <span class="p-3"> Aucune conversation sélectionnée.</span>
         </template>

@@ -1,6 +1,6 @@
 <template>
     <button 
-        class="btn btn-primary"
+        class="btn btn-primary btn-sm"
         @click="onCreateServer"
         ><IconWidget icon="plus"></IconWidget> Créer un domaine
     </button>
@@ -33,10 +33,11 @@
     <h1>Domaines</h1>
     <div class="d-flex">
         <div v-for="server in servers" class="card col-md-4 col-lg-3" :key="server.id">
+             <UserBadge :user="server.owner"></UserBadge>
             <img :src="server.image || 'https://picsum.photos/200'" class="card-img-top" alt="...">
             <div class="card-body">
                 <h5 class="card-title">
-                    <IconWidget v-if="server.is_private" class="text-warning" icon="key"></IconWidget> {{ server.name }}
+                    {{ server.name }} <IconWidget v-if="server.is_private" class="text-warning" icon="key"></IconWidget>
                 </h5>
                 <h6 class="card-subtitle mb-2 text-body-secondary">
                     <span class="badge text-bg-info">Catégorie</span>
@@ -57,12 +58,14 @@
     import IconWidget from '~estarter/components/widgets/IconWidget.vue'
     import FormsSettingHelper from '~socializer/services/FormsSetting.js'
     import { checkServerAccess } from '~socializer/services/helpers.js'
+    import UserBadge from '~socializer/components/User/Badge.vue'
 
     export default {
         name: 'Servers',
         components: {
             IconWidget,
             ModalWidget: defineAsyncComponent(() => import('~estarter/components/widgets/ModalLazy.js')),
+            UserBadge,
         },
         data() {
             return {

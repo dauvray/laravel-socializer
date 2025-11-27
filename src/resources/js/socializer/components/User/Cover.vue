@@ -1,18 +1,18 @@
 <template>
     <section class="cover-wrapper"
         :style="{backgroundImage: BackgroundImage}">
-
         <div class="avatar-cover">
-            <AvatarCropper 
-                :item="element"
-                :editable="element.is_me"
-                @update-avatar="onUpdateAvatar"
-            ></AvatarCropper>
-
-            <div class="avatar-cover-info">
-                <h2>{{ element.name }}</h2>
-                <i>{{ element.function }}</i>
-            </div>
+            <UserBadge 
+                size="medium"
+                :user="element">
+                <template #badge>
+                    <AvatarCropper 
+                        :item="element"
+                        :editable="element.is_me"
+                        @update-avatar="onUpdateAvatar"
+                    ></AvatarCropper>
+                </template>
+            </UserBadge>
 
             <div>
                 Abonnés : {{ element.nb_followers - 1 }}
@@ -35,7 +35,7 @@
 
         <button v-if="element.is_me"
             type="button" 
-            class="cover-image-edit-btn"
+            class="btn cover-image-edit-btn"
             @click="onShowModal">
             <IconWidget icon="camera"></IconWidget>
         </button>   
@@ -71,19 +71,21 @@
     import { defineAsyncComponent } from 'vue'
     import { mapActions } from 'pinia'
     import { useWallStore } from '~socializer/stores/wall.js'
-    import AvatarCropper from '~estarter/components/widgets/AvatarCropper.vue'
     import FollowButton from '~socializer/components/User/widgets/FollowButton.vue'
     import CallUserButton from '~socializer/components/WebRTC/widgets/CallUserButton.vue'
+
+    import UserBadge from '~socializer/components/User/Badge.vue'
 
     export default {
         name: 'Cover',
         components: {
-            AvatarCropper,
+            AvatarCropper: defineAsyncComponent(() => import('~estarter/components/widgets/AvatarCropper.vue')),
             IconWidget: defineAsyncComponent(() => import('~estarter/components/widgets/IconWidgetLazy.js')),
             ModalWidget: defineAsyncComponent(() => import('~estarter/components/widgets/ModalLazy.js')),
             CropperWidget: defineAsyncComponent(() => import('~estarter/components/widgets/CropperWidget.vue')),
             FollowButton,
             CallUserButton,
+            UserBadge,
         },
         props: {
             user: {

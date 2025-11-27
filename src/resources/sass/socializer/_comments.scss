@@ -1,6 +1,10 @@
 .comments-list {
-    @extend .mx-2;
-     @extend .mb-2;
+    margin: 0 map-get($spacers, 2);
+    @extend .border-end;
+
+    & > .comments-list-inner {
+        @extend .border-top;
+    }
 
     .comments-filters-wrapper {
         @extend .d-flex;
@@ -18,6 +22,33 @@
 
     .comments-list-tools {
 
+        .comment-form-wrapper {
+
+            .comment-form-inner {
+
+                .comment-form-header {
+                    display: flex;
+                    width: 100%;
+
+                    label {
+                        margin: 0.5rem;
+                    }
+
+                    .comment-form-tools {
+                        flex-grow: 1;
+
+                        .close-btn {
+                            float: right
+                        }
+                    }
+                }
+
+                .comment-form-body {
+                     margin: 0 0.5rem;
+                }
+            }
+        }
+
         .comment-counter {
             @extend .btn;
             @extend .px-0;
@@ -27,7 +58,9 @@
     .comments-list-inner{
 
         .comment {
+            backdrop-filter: brightness(60%);
             @extend .px-2;
+            @extend .pt-2;
             @extend .d-flex;
             @extend .border-start;
             @extend .border-bottom;
@@ -63,8 +96,11 @@
                     }
 
                     .comment-tools {
-                        @extend .d-flex;
-                        @extend .justify-content-between;
+                        // @extend .d-flex;
+                        // @extend .justify-content-between;
+                        display: flex;
+                        justify-content: space-between;
+                        padding: 0 0.25rem;
                     }
                 }
 

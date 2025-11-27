@@ -1,5 +1,5 @@
 <template>
-    <button class="share-btn" 
+    <button class="btn share-btn" 
         type="button"
         @click="onShare">
         <IconWidget icon="share"></IconWidget> Partager

@@ -1,15 +1,15 @@
 <template>
     <div class="d-flex align-items-end justify-content-start">
-        <Gravatar
+        <!-- <Gravatar
             :user="user"
             size="small"
             style="width:35px"
             image-class="img-fluid"
-        ></Gravatar>
+        ></Gravatar> -->
         <button class="btn flex-grow-1" 
             style="text-align:start;"
             @click="onJoinChat"
-            >{{ conversation.name }}
+            >{{ conversationName }}
         </button>
         <div class="dropdown">
             <button class="btn" data-bs-toggle="dropdown">
@@ -48,9 +48,9 @@
             }
         },
         computed: {
-            // conversationName: function() {
-            //     return this.conversation.name || this.conversation.id
-            // }
+            conversationName: function() {
+                return this.conversation.name || 'Conversation ' + this.conversation.id
+            }
         },
         methods: {
             onJoinChat() {

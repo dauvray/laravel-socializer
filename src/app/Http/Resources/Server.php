@@ -19,23 +19,25 @@ class Server extends JsonResource
      * @return array
      */
     public function toArray($request)
-    { 
-        $image = json_decode($this->resource['image'])[0] ?? null;
+    {
+        $server = $this->resource['s'];
+        $owner = $this->resource['o'];
+
+        $image = json_decode($server['image'])[0] ?? null;
 
         return [
-            'name' => $this->resource['name'],
-            'id' => $this->resource['id'],
-            // 'slug' => $this->slug,
-            // 'type' => $this->type,
-            // 'users' => UserResource::collection($this->users),
-            // 'owner' => new UserResource($this->user),
-            // 'summary' => $this->summary,
+            'name' => $server['name'],
+            'id' => $server['id'],
             'image' => $image?->name ? '/serve-thumbnail/'. $image?->name .'/large' : null,
-        //     'link' => route('networks.show', $this->slug),
-            'description' => $this->resource['description'],
-            'is_private' => $this->resource['privacy'] == 1 ? true : false,
-        //    // 'rooms' => new RoomCollection($this->rooms()->where('status', 1)->get()),
-        //     'rooms' => RoomResource::collection($this->whenLoaded('rooms')),
+            'description' => $server['description'],
+            'is_private' => $server['privacy'] == 1 ? true : false,
+            'owner' => [
+                'connected' => $owner['connected'],
+                'name' => $owner['name'],
+                'slug' => $owner['slug'],
+                'image' => $owner['image'],
+                'function' => $owner['function'],
+            ],
         ];
     }
 }

@@ -14,9 +14,9 @@
             <div class="comment-body">
                 <div class="comment-content" v-html="comment.comment.content"></div>
                 <div class="comment-tools">
-                    <div class="post-footer-inner-left">
+                    <div class="btn-group post-footer-inner-left">
                         <LikeButtons
-                            class="like-comment-btn"
+                            class="btn-group like-comment-btn"
                             :likes="comment.likes"
                             :dislikes="comment.dislikes"
                             @like-item="onLikeItem"
@@ -26,14 +26,14 @@
                             type="button"
                             class="btn"
                             @click="onShowCommentForm">
-                            <IconWidget icon="comments"></IconWidget>
+                            <IconWidget icon="comments"></IconWidget> Répondre
                         </button>
                     </div>
-                    <div class="post-footer-inner-right">
+                    <div class="btn-group post-footer-inner-right">
                         <button
                             v-if="isAuthor"
                             type="button" 
-                            class="delete-comment-btn"
+                            class="btn delete-btn"
                             @click="onDeleteComment"
                             ><IconWidget icon="trash-alt" title="supprimer"></IconWidget>
                         </button>

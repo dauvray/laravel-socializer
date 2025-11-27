@@ -16,6 +16,7 @@
         emits: [
             'load-comments'
         ],
+        inject: ["eventBus"],
         components: {
             IconWidget,
         },
@@ -56,6 +57,9 @@
         },
         methods: {
             onLoadComments() {
+                
+                this.eventBus.$emit("close-comment-form", 'all')
+
                 if(this.loaded) {
                     this.collapsed = !this.collapsed
                 } else {

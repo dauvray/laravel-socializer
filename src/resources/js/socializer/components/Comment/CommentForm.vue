@@ -8,53 +8,54 @@
             <IconWidget icon="comments"></IconWidget> {{ btnLabel }}
         </button>
         <template v-if="showForm" >
-            <form 
-                class="comment-form-inner"
+            <form class="comment-form-inner"
                 v-on:submit.prevent>
-                <div class="d-flex w-100">
-                    <label for="textComment" class="m-2">Votre commentaire</label>
-                    <div class="flex-grow-1">
+                <div class="comment-form-header">
+                    <label for="textComment">Votre commentaire</label>
+                    <div class="comment-form-tools">
                         <button
                             type="button" 
-                            class="btn btn-link float-end" 
+                            class="btn close-btn" 
                             aria-label="Fermer"
                             @click="onShowCommentForm">
                             <IconWidget icon="window-close"></IconWidget> Fermer
                         </button>
                     </div>
                 </div>
-                <textarea
-                    class="form-control"
-                    ref="input"
-                    rows="3"
-                    id="textComment"
-                    :autofocus="true"
-                    :maxlength="max"
-                    v-model="content"
-                ></textarea>
-                <div class="d-flex align-items-center">
-                    <EmojiBtn 
-                        class="mt-2 me-2"
-                        btnClass="btn btn-outline-primary btn-sm"
-                        @selected-emoji="onSelectedEmoji"
-                    ></EmojiBtn>
-                    <small id="length_comment" class="form-text text-muted">
-                        {{ max - content.length }} caractères restants
-                    </small>
-                    <div class="flex-grow-1">
-                        <div v-if="content.length"
-                            class="btn-group float-end mt-2" 
-                            role="group" >
-                            <button
-                                type="buttton"
-                                class="btn btn-secondary btn-sm"
-                                @click="onCancelSubmitComment"
-                            >Annuler</button>
-                            <button
-                                type="buttton"
-                                class="btn btn-primary btn-sm"
-                                @click="onSubmitComment"
-                            >Envoyer</button>
+                <div class="comment-form-body">
+                    <textarea
+                        class="form-control"
+                        ref="input"
+                        rows="3"
+                        id="textComment"
+                        :autofocus="true"
+                        :maxlength="max"
+                        v-model="content"
+                    ></textarea>
+                    <div class="d-flex align-items-center">
+                        <EmojiBtn 
+                            class="mt-2 me-2"
+                            btnClass="btn btn-outline-primary btn-sm"
+                            @selected-emoji="onSelectedEmoji"
+                        ></EmojiBtn>
+                        <small id="length_comment" class="form-text text-muted">
+                            {{ max - content.length }} caractères restants
+                        </small>
+                        <div class="flex-grow-1">
+                            <div v-if="content.length"
+                                class="btn-group float-end mt-2" 
+                                role="group" >
+                                <button
+                                    type="buttton"
+                                    class="btn btn-secondary btn-sm"
+                                    @click="onCancelSubmitComment"
+                                >Annuler</button>
+                                <button
+                                    type="buttton"
+                                    class="btn btn-primary btn-sm"
+                                    @click="onSubmitComment"
+                                >Envoyer</button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -109,7 +110,7 @@
         },
         created() {
             this.eventBus.$on("close-comment-form", this.handleCloseReactFrom)
-
+            // gerer par un autre composant
             if(!this.displayCommentBtn){
                 this.eventBus.$on("open-comment-form", this.handleOpenReactFrom)
             }

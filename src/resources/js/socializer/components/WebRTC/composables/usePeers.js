@@ -596,6 +596,15 @@ export function usePeers(props, type = 'data', room = 'app') {
          coupe tous les flux et connections quand on quitte le salon */
 
         for (const userSlug in connections.value[onAirRoom.value]) {
+            
+            if(!connections.value[onAirRoom.value].hasOwnProperty(userSlug)) {
+                continue
+            }
+
+            if(!connections.value[onAirRoom.value][userSlug].hasOwnProperty(currentType.value)) {
+                continue
+            }
+
             connections.value[onAirRoom.value][userSlug][currentType.value].forEach (conn => {
                 closeRemotePeerId(userSlug, currentType.value, onAirRoom.value, true)
             })

@@ -1,11 +1,13 @@
 $message_width: 60%;
 
+@import './_buttons.scss';
 @import './_post.scss';
 @import './_server.scss';
 @import './_chat.scss';
-@import './_buttons.scss';
 @import './_comments.scss';
 @import './_wall.scss';
+@import './_conversations.scss';
+@import './_users_list.scss';
 
  .app-body {
 
@@ -46,41 +48,6 @@ $message_width: 60%;
         right: 20px;
         width: 300px;
         z-index: 20;
-    }
-}
-
-.conversations-page {
-
-    #main-content {
-        overflow-y: auto;
-        overflow-x: hidden;
-
-        #main-content-wrapper {
-            overflow: hidden;
-
-            .conversations-wrapper {
-                @extend .h-100;
-                display: grid!important;
-                grid-template-columns: 1fr 5fr;
-    
-                .conversations-list-wrapper {
-                    @extend .border-end;
-                    z-index: 1;
-
-                    .conversation-creator-button {
-                        @extend .d-flex;
-                        @extend .align-items-center;
-                        @extend .px-2;
-                    }
-                    
-                    .conversations-list {
-                        position: sticky;
-                        top: 0;
-                    }
-                }
-            }
-
-        }
     }
 }
 
@@ -198,11 +165,14 @@ $message_width: 60%;
     }
 }
 
-// post and comments message
 .video-wrapper {
     @extend .ratio;
     @extend .ratio-16x9;
     @extend .my-2;
+
+    iframe {
+        @extend .rounded;
+    }
 }
 
 #videoContainer{
@@ -342,6 +312,37 @@ $message_width: 60%;
     }
 }
 
+.feed-user-wrapper {
+    @include layout-container;
+    
+    .feed-user-inner {
+      .feed-user {
+        .publish-btn {
+            position: fixed;
+            right: 1rem;
+            bottom: 1rem;
+            z-index: 3;
+            @include large-btn;
+        }
+      }
+    }
+}
+
+.user-badge {
+    display: flex;
+    align-items: end;
+
+    .user-badge-infos {
+        display: flex;
+        flex-direction: column;
+        margin-left: map-get($spacers, 2);
+
+        .user-link {
+            padding: 0;
+        }
+    }
+}
+
 /*--------------------------
 | Bootstrap
 ---------------------------*/
@@ -351,7 +352,6 @@ $message_width: 60%;
     @extend .bg-auto;
     z-index: 11;
 }
-
 
 /*--------------------------
 | Uppy
