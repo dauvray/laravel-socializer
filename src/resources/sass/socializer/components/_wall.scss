@@ -1,0 +1,124 @@
+#socializer-wall {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: 1fr; // simple
+
+    .cover-wrapper {
+        container-type: inline-size;
+        container-name: cover-user;
+        width: 100%;
+        
+        display: flex;
+        justify-content: end;
+        align-items: end;
+        border: $card-border-width solid $card-border-color;
+        border-radius: $card-border-radius;
+        position: relative;
+        margin-bottom: map-get($spacers, 5);
+        height: 150px;
+        background-size: cover;
+
+        .avatar-cover {
+            display: flex;
+            align-items: end;
+           
+            .user-badge {
+                display: flex;
+                align-items: end;
+
+                .gravatar-wrapper {
+                    img {
+                        width: fit-content;
+                        height: fit-content;
+                    }
+                }
+
+                .user-badge-infos {
+                    margin: 0 map-get($spacers, 2);
+                    padding: map-get($spacers, 2);
+                    background-color: rgba(0,0,0,0.5);
+                    @include box-shadow($box-shadow-sm);
+                    border: $border-width $border-style $border-color;
+                    border-radius: $border-radius;
+                    min-width: 200px;
+                    height: fit-content;
+
+                    .user-link {
+                        color: $white;
+                        font-size: $h2-font-size;
+                        line-height: $line-height-sm;
+                    }
+
+                    small {
+                        font-size: $h6-font-size;
+                    }
+                }
+            }
+        }
+
+        .tools-cover {
+            @extend .btn-group;
+            @extend .ms-3;
+        }
+    }
+
+    .wall-wrapper {
+
+        grid-column: 1 / -1;
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 1rem;
+
+        .wall-owned-servers {
+            
+            grid-column: 1;
+
+            &.owned-servers-widget {
+                @extend .card-body;
+                height: fit-content;
+
+                ul {
+                    @extend .list-group;
+                    @extend .list-group-flush;
+
+                    li {
+                        @extend .list-group-item;
+                        @extend .px-0;
+
+                        button {
+                            @extend .btn;
+                            @extend .btn-link;
+                            @extend .p-0;
+
+                            .icon-widget {
+                                @extend .text-warning;
+                            }   
+                        }
+                    }
+                }
+            }
+        }
+
+        .feed-wrapper {
+             grid-column: 2 / -1;
+        }
+    }
+}
+
+
+@container cover-user (width > 600px) {
+    .avatar-cover {
+        left: -10px;
+        bottom: -30px;
+        position: absolute;
+        .user-badge {
+            .gravatar-wrapper {
+                img {
+                    width: 300px;
+                    height: 300px;
+                }
+            }
+            
+        }
+    }
+}

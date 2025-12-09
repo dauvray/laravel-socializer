@@ -2,8 +2,9 @@
     <button
         type="button"
         class="comment-counter"
-        @click="onLoadComments">
-        <IconWidget :icon="currentArrow"></IconWidget>{{ nbCommentsTxt }}
+        @click="onDisplayComments">
+        <IconWidget icon="comments" class="icon"></IconWidget>{{ nbCommentsTxt }}
+        <IconWidget :icon="currentArrow" class="icon"></IconWidget>
     </button>
 </template>
 
@@ -14,7 +15,7 @@
     export default {
         name: "Counter",
         emits: [
-            'load-comments'
+            'display-comments'
         ],
         inject: ["eventBus"],
         components: {
@@ -25,21 +26,16 @@
                 type: Number,
                 required: true,
             },
-            loaded: {
+            collapsed: {
                 type: Boolean,
                 required: false,
-                default: false,
+                default: true,
             },
             counterLabel: {
                 type: String,
                 required: false,
                 default: 'Commentaire'
             },
-        },
-        data() {
-            return {
-                collapsed : true,
-            } 
         },
         computed: {
             nbCommentsTxt: function() {
@@ -50,21 +46,10 @@
                 return this.collapsed ? 'chevron-down' : 'chevron-up'
             }
         },
-        watch: {
-            loaded() {
-               this.collapsed = !this.collapsed
-            }
-        },
         methods: {
-            onLoadComments() {
-                
+            onDisplayComments() {
                 this.eventBus.$emit("close-comment-form", 'all')
-
-                if(this.loaded) {
-                    this.collapsed = !this.collapsed
-                } else {
-                    this.$emit('load-comments')
-                }
+                this.$emit('display-comments')
             }
         }
     }

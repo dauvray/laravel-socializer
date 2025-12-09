@@ -1,18 +1,16 @@
 .chat-wrapper {
-
     display: grid;
     grid-template-columns: 1fr;
     grid-template-rows: auto 1fr;
-    @extend .mx-2;
+    margin: 0 map-get($spacers, 2);
     
     .chat-messages-wrapper {
         position: relative;
-        @extend .pe-0;
 
         .chat-messages {
             @extend .card;
-            @extend .border-0;
-            @extend .mb-2;
+            border: none;
+            margin-bottom: map-get($spacers, 2);
             @extend .bg-opacity-dark-4;
             min-height: 68vh;
             max-height: 68vh;

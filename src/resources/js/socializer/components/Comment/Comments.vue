@@ -23,6 +23,7 @@
             :autoload="autoload"
             :pagination="pagination"
             :nbcomments="nbcomments"
+            :isParent="true"
             :displayCommentBtn="displayCommentBtn"
             @comments-loaded="onCommentsLoaded"
             @comment-created="onCommentCreated"

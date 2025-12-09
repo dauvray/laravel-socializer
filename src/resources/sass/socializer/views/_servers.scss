@@ -1,0 +1,74 @@
+/*-------------------
+| servers view
+--------------------*/
+
+.servers-view {
+    grid-column: content;
+    grid-template-rows: max-content max-content;
+    display: grid;
+
+    .publish-btn {
+        @include large-btn;
+        position: fixed;
+        right: map-get($spacers, 4);
+        bottom: map-get($spacers, 3);
+        z-index: 10;
+    }
+
+    .servers-view-list {
+        display: grid;
+        grid-template-columns: repeat(var(--es-grid-columns), 1fr);
+        gap: map-get($spacers, 3);
+
+        article {
+            display: grid;
+            grid-template-rows: max-content 1fr;
+            grid-column: span 3; 
+
+            .user-badge {
+                position: absolute;
+                left: map-get($spacers, 1);
+                top: map-get($spacers, 1);
+                background-color: rgba(0, 0, 0, 0.7);
+                padding: map-get($spacers, 1);
+                border-radius: $border-radius;
+            }
+            
+            .server-img {
+                width: 100%;
+                max-height: 150px;
+                object-fit: cover;
+            }
+
+            .server-inner {
+                padding: map-get($spacers, 2);
+                display: flex;
+                flex-direction: column;
+
+                h2 {
+                    font-size: $h4-font-size;
+                }
+
+                .server-content {
+                    flex-grow: 1;
+                }
+            }
+        }
+
+        @container main-content (width < 1200px) {
+            article {
+                grid-column: span 4;
+            }
+        }
+        @container main-content (width < 992px) {
+            article {
+                grid-column: span 6;
+            }
+        }
+        @container main-content (width < 768px) {
+            article {
+                grid-column: 1 / -1; 
+            }
+        }
+    }
+}

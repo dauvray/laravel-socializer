@@ -1,9 +1,31 @@
 <template>
-    <button 
-        class="btn btn-primary btn-sm"
-        @click="onCreateServer"
-        ><IconWidget icon="plus"></IconWidget> Créer un domaine
-    </button>
+    <div class="view-wrapper es-container">
+        <section class="servers-view">
+            <button 
+                class="btn publish-btn"
+                @click="onCreateServer"
+                ><IconWidget icon="plus"></IconWidget> Créer un domaine
+            </button>
+            <h1>Domaines</h1>
+            <div class="servers-view-list">
+                <article v-for="server in servers" 
+                    class="card" 
+                    :key="server.id">
+                        <img :src="server.image || 'https://picsum.photos/200'" class="server-img" alt="...">
+                        <UserBadge :user="server.owner"></UserBadge>
+                        <div class="server-inner">
+                            <h2>
+                                {{ server.name }} <IconWidget v-if="server.is_private" icon="key"></IconWidget>
+                            </h2>
+                            <p class="server-content">{{ server.description }}</p>
+                            <button class="btn primary-btn" @click="onCheckAccess(server.id)">
+                                visiter
+                            </button>
+                        </div>
+                </article>            
+            </div>
+        </section>
+    </div>
     <ModalWidget
         data-test="fmd-modal-plugin"
         v-if="showModal"
@@ -29,26 +51,6 @@
                 ></questionnaire-component>
             </template>
     </ModalWidget>
-
-    <h1>Domaines</h1>
-    <div class="d-flex">
-        <div v-for="server in servers" class="card col-md-4 col-lg-3" :key="server.id">
-             <UserBadge :user="server.owner"></UserBadge>
-            <img :src="server.image || 'https://picsum.photos/200'" class="card-img-top" alt="...">
-            <div class="card-body">
-                <h5 class="card-title">
-                    {{ server.name }} <IconWidget v-if="server.is_private" class="text-warning" icon="key"></IconWidget>
-                </h5>
-                <h6 class="card-subtitle mb-2 text-body-secondary">
-                    <span class="badge text-bg-info">Catégorie</span>
-                </h6>
-                <p class="card-text">{{ server.description }}</p>
-                <button class="btn btn-primary" @click="onCheckAccess(server.id)">
-                    visiter
-                </button>
-            </div>
-        </div>
-    </div>
 </template>
 
 <script>

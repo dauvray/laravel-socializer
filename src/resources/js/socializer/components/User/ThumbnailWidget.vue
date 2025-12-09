@@ -1,5 +1,5 @@
 <template>      
-    <div class="user-thumbnail-wrapper">
+    <div class="card user-thumbnail-wrapper">
         <div class="user-thumbnail-inner">
             <UserBadge :user="user"></UserBadge>
             <span class="followers-count">

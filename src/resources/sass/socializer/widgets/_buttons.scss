@@ -19,7 +19,7 @@
 
 .like-comment-btn {
     button {
-        padding: 2px;
+        padding: map-get($spacers, 1);
         &.thumbs-up-btn {
            color: $success;
         }
@@ -69,5 +69,15 @@
 
     &.followed {
         @include button-variant($warning, $warning);
+    }
+}
+
+.notification-btn {
+    @include button-size($btn-padding-y-sm, $btn-padding-x-sm, $btn-font-size-sm, $btn-border-radius-sm);
+    padding: 0;
+
+    .notification-badge {
+        border-radius: $border-radius-pill;
+        background-color: $danger;
     }
 }

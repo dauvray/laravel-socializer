@@ -1,0 +1,20 @@
+.user-badge {
+    display: flex;
+    align-items: end;
+
+    .user-badge-infos {
+        display: flex;
+        flex-direction: column;
+        margin-left: map-get($spacers, 2);
+
+        .user-link {
+            padding: 0;
+        }
+    }
+}
+
+// @container (width < 100px) {
+//     .user-badge {
+//         flex-direction: column;
+//     }
+// }

@@ -1,5 +1,10 @@
 <template>
-    <div v-if="loaded">
+    <section class="feed-wrapper" v-if="loaded">
+        <PublishButton
+            v-if="feed && canPublish"
+            :feedFormId="feed.questionnaire"
+            :feedId="feed.id"
+        ></PublishButton>
         <PostList
             :posts="posts"
             :pagination="true"
@@ -10,7 +15,7 @@
             @comment-created="onCommentCreated"
             @comment-deleted="onCommentDeleted"
         ></PostList>
-    </div>
+    </section>
 </template>
 
 <script>
@@ -20,6 +25,7 @@
     import { useMeStore } from '~estarter/stores/me.js'
     import PostList from './PostList.vue'
     import { useLikesStore } from '~socializer/stores/likes.js'
+    import { defineAsyncComponent } from 'vue'
 
     export default {
         name: 'Feed',
@@ -28,6 +34,7 @@
         ],
         components: {
             PostList,
+            PublishButton: defineAsyncComponent(() => import('~socializer/components/User/widgets/PublishButton.vue')),
         },
         props: {
             user: {
@@ -42,11 +49,17 @@
             owner: {
                 type: String,
                 required: false,
-                default: undefined
+                default: undefined // user by default ( can be room ...)
+            },
+            canPublish: {
+                type: Boolean,
+                required: false,
+                default: false,
             },
         },
         data() {
             return {
+                feed: null,
                 feedId: null,
                 loaded: false,
             }
@@ -58,7 +71,8 @@
                 setTimeout(() => {
                     this.loaded = true
                 }, 100)
-                this.$emit('feed-loaded', resp)
+                this.feed = resp
+               // this.$emit('feed-loaded', resp)
             })
         },
         beforeUnmount() {

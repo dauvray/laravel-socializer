@@ -11,8 +11,10 @@
         :notificationactived="notificationactived"
         :a11yactivated="a11yactivated"
         :navigationA11y="navigationA11y"
-        :logged="logged"
-    ></ServerEstarter>
+        :logged="logged">
+            <slot></slot>
+    </ServerEstarter>
+    
 </template>
 
 <script>

@@ -1,6 +1,5 @@
 .comments-list {
     margin: 0 map-get($spacers, 2);
-    @extend .border-end;
 
     & > .comments-list-inner {
         @extend .border-top;
@@ -56,6 +55,8 @@
     }
 
     .comments-list-inner{
+        position: relative;
+        z-index: 1;
 
         .comment {
             backdrop-filter: brightness(60%);

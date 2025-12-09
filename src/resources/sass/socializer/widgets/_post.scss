@@ -1,9 +1,10 @@
 .post-wrapper {
-    padding: 0.5rem!important;
+    padding: map-get($spacers, 2)!important;
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    z-index: 2;
 
     .post-header {
-        padding: 0;
-        width: 100%;
 
         .post-header-inner {
             display: flex;
@@ -34,9 +35,10 @@
         margin: map-get($spacers, 2) 0;
 
         .post-content {
-            border: $border-width $border-style $border-color;
-            border-radius: $border-radius;
+            border: $card-border-width solid $card-border-color;
+            border-radius: $card-border-radius;
             padding: map-get($spacers, 2);
+            margin: 0 map-get($spacers, 2);
         }
     }
 
@@ -44,5 +46,6 @@
         display: flex;
         justify-content: space-between;
         padding: 0 map-get($spacers, 1);
+        margin: 0 map-get($spacers, 2);
     }
 }

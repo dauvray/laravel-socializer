@@ -63,7 +63,7 @@
     import IconWidget from '~estarter/components/widgets/IconWidget.vue'
     import { mapState } from 'pinia'
     import { useMeStore } from '~estarter/stores/me.js'
-     import Gravatar from '~estarter/components/widgets/Gravatar.vue'
+    import Gravatar from '~estarter/components/widgets/Gravatar.vue'
 
     export default {
         name: 'Comment',

@@ -1,0 +1,39 @@
+/*-------------------
+| feed view
+--------------------*/
+
+.feed-user-view {
+    grid-column: 5 / span 5;
+
+    .feed-wrapper {
+
+        .publish-btn {
+            @include large-btn;
+            position: fixed;
+            right: 2rem;
+            bottom: 1rem;
+            z-index: 10;
+        }
+    }
+}
+
+@container main-content (width < 1400px) {
+    .feed-user-view {
+        grid-column: 4 / -4;
+    }
+}
+@container main-content (width < 1200px) {
+    .feed-user-view {
+        grid-column: 3 / -3;
+    }
+}
+@container main-content (width < 992px) {
+    .feed-user-view {
+        grid-column: 2 / -2;
+    }
+}
+@container main-content (width < 768px) {
+    .feed-user-view {
+        grid-column: 1 / -1;
+    }
+}

@@ -1,25 +1,18 @@
 <template>
     <div id="socializer-wall"> 
         <CoverUser :user="user"></CoverUser>
-        <section class="wall-wrapper">
-            <div class="wall-tools">
-                <PublishButton
-                    v-if="canIPublish && loaded"
-                    :feedFormId="feedOptions.feedFormId"
-                    :feedId="feedOptions.feedId"
-                ></PublishButton>
-            </div>
+        <div class="wall-wrapper">
             <OwnedServers 
                 class="wall-owned-servers"
                 @check-server-access="onCheckServerAccess"
             ></OwnedServers>
             <FeedWidget
-                class="feed-wrapper"
                 :user="user"
                 type="wall"
+                :canPublish="canPublish"
                 @feed-loaded="onFeedLoaded"
             ></FeedWidget>
-        </section>
+        </div>
     </div>
 </template>
 
@@ -69,7 +62,7 @@
             ...mapState(useWallStore, {
                 wallOwner: 'getOwner',
             }),
-            canIPublish: function() {
+            canPublish: function() {
                 return this.me.vertexid === this.wallOwner.vertexid
             },
         },

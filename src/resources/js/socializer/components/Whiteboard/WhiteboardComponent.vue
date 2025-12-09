@@ -147,17 +147,19 @@
 
                     // envoyer le contenu actuel du tableau blanc lors de la connexion
                     if(!this.isSavable) {
-                      const elements = this.$refs.excalidrawElement.getSceneElements()
+                      setTimeout(() => {
+                        const elements = this.$refs.excalidrawElement.getSceneElements()
 
-                      if(elements.length > 0) {
-                        const current = {
-                            elements,
-                            appState: this.$refs.excalidrawElement.getAppState(),
-                            files: this.$refs.excalidrawElement.getFiles(),
+                        if(elements.length > 0) {
+                          const current = {
+                              elements,
+                              appState: this.$refs.excalidrawElement.getAppState(),
+                              files: this.$refs.excalidrawElement.getFiles(),
+                          }
+
+                          this.handleExcalidrawMouseUp({ detail: current });
                         }
-
-                        this.handleExcalidrawMouseUp({ detail: current });
-                      }
+                      }, 1000); // attendre que excalidraw soit prêt
                     }
                 });
 

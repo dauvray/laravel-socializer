@@ -11,32 +11,31 @@
         ></CommentForm>
         <CounterWidget
             v-if="total > 0"
-            data-bs-toggle="collapse" 
-            :data-bs-target="`#${targetId}`"
             :aria-controls="targetId"
             :aria-expanded="false"
             :nbcomments="total"
             :counterLabel="counterLabel"
-            :loaded="loaded"
-            @load-comments="onLoadComments"
+            :collapsed="collapsed"
+            @display-comments="onDisplayComments"
         ></CounterWidget>
     </div>
-    <CommentList
-        class="collapse"
-        :id="targetId"
-        :key="componentKey"
-        :class="{show: loaded}"
-        :comments="comments"
-        :logged="logged"
-        :commentable="commentable"
-        :vertexid="vertexid"
-        :pagination="pagination"
-        @delete-comment="onDeleteComment"
-        @comment-created="onSubCommentCreated"
-        @trigger-intersected="onTriggerObserver"
-        @load-pagination="onLoadPagination"
-        @like-item="onSubmitLike"
-    ></CommentList>
+    <Transition>
+        <CommentList
+            v-show="!collapsed"
+            :id="targetId"
+            :comments="comments"
+            :logged="logged"
+            :commentable="commentable"
+            :vertexid="vertexid"
+            :pagination="pagination"
+            @delete-comment="onDeleteComment"
+            @comment-created="onSubCommentCreated"
+            @trigger-intersected="onTriggerObserver"
+            @load-pagination="onLoadPagination"
+            @like-item="onSubmitLike"
+        ></CommentList>
+    </Transition>
+
     <SpinnerWidget v-if="loading"></SpinnerWidget>
 </template>
 
@@ -63,6 +62,7 @@
             'comment-deleted',
             'signal-form-uniqid',
         ],
+        inject: ['eventBus'],
         props: {
             logged: {
                 type: Boolean,
@@ -126,6 +126,11 @@
                 required: false,
                 default: true
             },
+            isParent:  {
+                type: Boolean,
+                required: false,
+                default: false
+            }
         },
         setup(props) {
 
@@ -145,6 +150,7 @@
 
             const showForm = ref(props.formvisible)
             const targetId = uniqueId('collapse')
+            const collapsed = ref(true)
 
             return { 
                 channel,
@@ -155,6 +161,7 @@
                 loaded,
                 nextUrl,
                 total,
+                collapsed,
                 loadComments, 
                 reloadComments,
                 submitComment,
@@ -164,7 +171,7 @@
         },
         data() {
             return {
-                componentKey: 0,
+               
             }
         },
         watch: {
@@ -176,8 +183,12 @@
         },
         mounted() {
             if(this.autoload) {
-                this.onLoadComments()
+                this.onDisplayComments()
             }
+            this.eventBus.$on("close-comments-collapse", this.closeCollapse)
+        },
+        beforeUnmount() {
+            this.eventBus.$off("close-comments-collapse", this.closeCollapse)
         },
         computed: {
             ...mapState(useCommentStore, {
@@ -192,8 +203,24 @@
                const comment = await this.submitComment(this.urlsend, payload)
                this.$emit('comment-created', comment)
             },
-            onLoadComments(url = null) {
-                this.loadComments(url || this.urlload)
+            onDisplayComments(url = null) {
+                if(!this.loaded) {
+                    this.loadComments(url || this.urlload) 
+                }
+                // only close other if parent ( not responses )
+                if(this.isParent) {
+                    this.eventBus.$emit("close-comments-collapse", this.targetId)
+                }
+                
+                this.toggleCollapse()
+            },
+            toggleCollapse() {
+                this.collapsed = !this.collapsed
+            },
+            closeCollapse(targetId) {
+                if(this.targetId !== targetId && this.isParent) {
+                    this.collapsed = true
+                }
             },
             onDeleteComment(message, status = false) {
 
@@ -242,5 +269,16 @@
             }
         }
     }
-
 </script>
+<style>
+    .v-enter-active,
+    .v-leave-active {
+        transition: all 0.5s ease;
+    }
+
+    .v-enter-from,
+    .v-leave-to {
+        opacity: 0;
+        transform: translateY(-100px);
+    }
+</style>

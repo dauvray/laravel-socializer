@@ -1,17 +1,15 @@
 <template>
-  <div class="owned-servers-widget" v-if="hasServers">
-    <div class="owned-servers-inner">
+  <section class="owned-servers-widget" v-if="hasServers">
     <h2>Domaines</h2>
-        <ul>
-          <li v-for="(server, idx) in ownedServers" :key="server.id">
-            <button type="button" @click="onCheckAccess(server.id)">
-               {{ server.name }}
-                <IconWidget v-if="server.privacy ===1" class="icon-widget" icon="key"></IconWidget> 
-            </button>
-          </li>
-        </ul>
-    </div>
-  </div>
+    <ul>
+      <li v-for="(server, idx) in ownedServers" :key="server.id">
+        <button type="button" @click="onCheckAccess(server.id)">
+            {{ server.name }}
+            <IconWidget v-if="server.privacy ===1" class="icon-widget" icon="key"></IconWidget> 
+        </button>
+      </li>
+    </ul>
+  </section>
 </template>
 
 <script>

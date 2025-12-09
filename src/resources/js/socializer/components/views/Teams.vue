@@ -1,59 +1,41 @@
 <template>
-    <div class="conversations-wrapper">
+    <div class="view-wrapper es-container-fluid">
+        <div class="conversations-view">
 
-         <div id="room-header-tools"></div>
-        <!-- <Teleport to="#system-socializer-tools">
-            <div v-if="isStreamable" 
-                id="room-stream-btn" 
-                role="group">
-                <StreamUserButton 
-                    ref="webcamBtn"
-                    :users="chatters"
-                    :room="currentConversationId"
-                    @started-stream="onStartedStream"
-                    @stoped-stream="onStopedStream"
-                ></StreamUserButton>
-                <CaptureUserButton
-                    ref="screenBtn"
-                    :users="chatters"
-                    :room="currentConversationId"
-                    @started-stream="onStartedStream"
-                    @stoped-stream="onStopedStream"
-                ></CaptureUserButton>
+            <div id="room-header-tools"></div>
+
+            <div class="conversations-list-wrapper"
+                v-resizable="{
+                    min: initialSidebarWidth,
+                    max: 600,
+                    callback: updateSidebarWidth
+                }">
+
+                <ConversationCreatorButton
+                    :conversation-type="conversationType"
+                    @create-chat="onCreateChat"
+                    @set-conversation-type="conversationType = $event"
+                ></ConversationCreatorButton>
+
+                <ConversationList
+                    :conversations="conversations"
+                    @join-chat="onJoinChat"
+                ></ConversationList>
+
             </div>
-        </Teleport>  -->
 
-        <div class="conversations-list-wrapper"
-            v-resizable="{
-                min: initialSidebarWidth,
-                max: 600,
-                callback: updateSidebarWidth
-            }">
-
-            <ConversationCreatorButton
-                :conversation-type="conversationType"
-                @create-chat="onCreateChat"
-                @set-conversation-type="conversationType = $event"
-            ></ConversationCreatorButton>
-
-            <ConversationList
-                :conversations="conversations"
-                @join-chat="onJoinChat"
-            ></ConversationList>
+            <ChatComponent 
+                v-if="currentConversation"
+                ref="chatWidget"
+                :display-separator="conversationType != 'agents'"
+                @update-chatters="onUpdateChatters"
+                @update-conversation-title="onUpdatedConversationTitle"
+            ></ChatComponent>
+            <template v-else >
+            <span class="p-3"> Aucune conversation sélectionnée.</span>
+            </template>
 
         </div>
-
-        <ChatComponent 
-            v-if="currentConversation"
-            ref="chatWidget"
-            :display-separator="conversationType != 'agents'"
-            @update-chatters="onUpdateChatters"
-            @update-conversation-title="onUpdatedConversationTitle"
-        ></ChatComponent>
-        <template v-else >
-           <span class="p-3"> Aucune conversation sélectionnée.</span>
-        </template>
-
     </div>
 </template>
 

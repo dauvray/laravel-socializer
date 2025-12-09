@@ -1,9 +1,5 @@
 <template>
     <div class="comment-header">
-        <!-- <Gravatar
-            :user="message.author"
-            size="small"
-        ></Gravatar> -->
         <UserWallLink
             :user="message.author"
         ></UserWallLink>

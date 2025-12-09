@@ -1,0 +1,21 @@
+.users-list-wrapper {
+    @include layout-container;
+    padding-bottom: map-get($spacers, 2);
+
+    .user-thumbnail-wrapper {
+        border-radius: $card-border-radius;
+        margin-bottom: map-get($spacers, 2);
+
+        .user-thumbnail-inner {
+            padding: map-get($spacers, 2);
+            display: grid;
+            grid-template-columns: 1fr auto auto;
+            column-gap: map-get($spacers, 1);
+            align-items: center; 
+
+            .followers-count {
+                margin: 0 map-get($spacers, 2);
+            }
+        }
+    }
+}

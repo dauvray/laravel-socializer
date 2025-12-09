@@ -1,8 +1,12 @@
 <template>
-   <WallWidget 
-        v-if="owner" 
-        :user="owner"
-    ></WallWidget>
+    <div class="view-wrapper es-container">
+        <div class="wall-user-view">
+            <WallWidget 
+                v-if="owner" 
+                :user="owner"
+            ></WallWidget>
+        </div>
+    </div>
 </template>
 
 <script>

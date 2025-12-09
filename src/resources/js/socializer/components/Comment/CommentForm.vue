@@ -11,7 +11,7 @@
             <form class="comment-form-inner"
                 v-on:submit.prevent>
                 <div class="comment-form-header">
-                    <label for="textComment">Votre commentaire</label>
+                    <label for="textComment" class="preserve-access">Votre commentaire</label>
                     <div class="comment-form-tools">
                         <button
                             type="button" 
@@ -28,6 +28,7 @@
                         ref="input"
                         rows="3"
                         id="textComment"
+                        :placeholder="`Votre commentaire ( max. ${max} caractères)`"
                         :autofocus="true"
                         :maxlength="max"
                         v-model="content"

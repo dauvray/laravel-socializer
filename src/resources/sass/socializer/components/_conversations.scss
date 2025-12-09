@@ -1,6 +1,7 @@
-.conversations-wrapper {
-    @extend .h-100;
+.conversations-view {
+    height: 100%;
     display: grid!important;
+    grid-column: content;
     grid-template-areas:
     "nav head"
     "nav main"

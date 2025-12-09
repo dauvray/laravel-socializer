@@ -14,12 +14,6 @@
                 @mouseenter="keepDropdown" 
                 @mouseleave="hideDropdown">
                 <div class="dropdown-content">
-
-                    <!-- <CoverUser
-                        class="mb-5"
-                        :user="user"
-                    ></CoverUser> -->
-
                     <div class="user-info">
                         <h4 class="user-name">{{ user.name }}</h4>
                         <p v-if="user.email" class="user-email">{{ user.email }}</p>
@@ -50,7 +44,6 @@
 import { mapState } from 'pinia'
 import { useApplicationStore } from '~estarter/stores/application.js'
 import { computePosition, offset, flip, shift } from '@floating-ui/dom'
-//import CoverUser from '~socializer/components/User/Cover.vue'
 import IconWidget from '~estarter/components/widgets/IconWidget.vue'
 
 export default {
@@ -67,7 +60,6 @@ export default {
         }
     },
     components: {
-     //  CoverUser,
        IconWidget,
     },
     data() {
