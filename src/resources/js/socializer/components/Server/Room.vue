@@ -2,7 +2,11 @@
     <div v-if="currentRoom"
         class="room-wrapper">
         <div id="room-navigation"></div>
-        <Teleport :to="`#collapser-${currentRoom.id}`" >
+
+        <!-- une room peut contenir plusieurs pages donc ici navigation 
+         mais l'ajout d'un chat dans chaque room à changé la donne 
+         ( TODO : a refacto et a déplacer ailleurs ) -->
+        <!-- <Teleport :to="`#collapser-${currentRoom.id}`" >
             <ul class="list-group list-group-flush">
                 <li class="list-group-item" v-for="(content, index) in roomContent"  >
                     <router-link 
@@ -12,15 +16,36 @@
                     </router-link>
                 </li>
             </ul>
-        </Teleport>
+        </Teleport> -->
 
-        <router-view
-            v-if="!roomLocked"
-            :editable="isOwner"
-            :users="users"
-            :room="currentRoom"
-        ></router-view>
-        <LockedRoom v-else></LockedRoom>
+        <div class="room-content-layout">
+            <div class="room-content-main">
+                <router-view
+                    v-if="!roomLocked"
+                    :editable="isOwner"
+                    :users="users"
+                    :room="currentRoom"
+                ></router-view>
+                <LockedRoom v-else></LockedRoom>
+            </div>
+
+            <ChatComponent
+                v-show="roomChatVisible"
+                ref="chat"
+                class="room-chat"
+                :style="{ width: `${chatWidth}px` }"
+                v-resizable="{
+                    min: 400,
+                    max: 800,
+                    handle: 'left',
+                    callback: updateChatWidth
+                }"
+                :vertexId="currentConversationId"
+                :displayUsers="false"
+                :autoload="false"
+            ></ChatComponent>
+        </div>
+
 
     </div>
 </template>
@@ -32,6 +57,9 @@
     import { defineAsyncComponent } from '@vue/runtime-core'
     import { useBreadcrumbService } from '~estarter/services/BreadcrumbService.js'
     const breadcrumbService = useBreadcrumbService()
+    import ChatComponent from '~socializer/components/Chat/ChatComponent.vue'
+    import { useChatStore } from '~socializer/stores/chat.js'
+    import resizable from "~socializer/directives/resizable_vertical.js";
 
     export default {
         name: 'Room',
@@ -42,11 +70,17 @@
         ],
         components: {
             LockedRoom: defineAsyncComponent(() => import('./widgets/LockedRoom.vue')),
+            ChatComponent,
+        },
+        directives: {
+            resizable,
         },
         data() {
             return {
                 users: [],
                 roomLocked: false,
+                chatWidth: 420,
+                isChatVisible: false,
             }
         },
         async created() {
@@ -67,6 +101,10 @@
                 currentRoom: 'getCurrentRoom',
                 ownerId: 'getOwnerId',
                 roomContent: 'getCurrentRoomContent',
+                roomChatVisible: 'getRoomChatVisible',
+            }),
+            ...mapState(useChatStore, {
+                currentConversationId: 'getCurrentConversationId',
             }),
             ...mapState(useMeStore, {
                 getMe: 'getMe',
@@ -155,6 +193,9 @@
                     id: 'content',
                     link: null,
                 })
+            },
+            updateChatWidth(newWidth) {
+                this.chatWidth = newWidth
             },
 
         },

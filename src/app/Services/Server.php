@@ -64,8 +64,8 @@ class Server
             case 'administrateur':
                 $admin_id = getServerAdmin($server_vid);
                 $admin = config('estarter.models.user')::where('id', $admin_id)->first();
-                $server = $this->getServer($server_vid, false);
                     if($admin) {
+                        $server = $this->getServer($server_vid, false);
                         $admin->notify(new serverAccessRequest($this->user, $server));
                     }
                     $success = true;
@@ -88,17 +88,17 @@ class Server
             return false;
         }
 
-        // $accepted_user = config('estarter.models.user')::where('id', $user_id)->first();
-        // $server = $this->getServer($server_vid, false);
+        $request_user = config('estarter.models.user')::where('id', $user_id)->first();
+        $server = $this->getServer($server_vid, false);
 
-        // if($response) {
-        //     // server / user relation
-        //     setRegisteredRelation($accepted_user->vertexid, $server_vid);
-        // }
+        if($response) {
+            // server / user relation
+            setRegisteredRelation($request_user->vertexid, $server_vid);
+        }
 
-        // $accepted_user->notify(new serverAccessResponse($this->user, $server, $response));
+        $request_user->notify(new serverAccessResponse($this->user, $server, $response));
        
-        // deleteNotification($this->user, $notification_id);
+        deleteNotification($this->user, $notification_id);
 
         return true;
     }
@@ -262,7 +262,7 @@ class Server
     public function getAllServers()
     {
         $result = app('nebulaGraph')->execute("
-            MATCH (o:user{active: 1})<-[:has_creator]-(s:server)<-[:registered_in]-(u:user) RETURN s,o
+            MATCH (o:user{active: 1})<-[:has_creator]-(s:server)<-[:registered_in]-(u:user) RETURN  DISTINCT s,o
         ");
 
         $paginator = makePaginationCollection(collect($result), route(Route::currentRouteName()));

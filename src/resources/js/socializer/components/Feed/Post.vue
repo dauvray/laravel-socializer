@@ -1,5 +1,5 @@
 <template>
-    <div>
+    <div class="post-wrapper-outer">
         <SharedThumbnail 
             v-if="item.post.type == 'shared'"
             :user="item.post.shared_by">

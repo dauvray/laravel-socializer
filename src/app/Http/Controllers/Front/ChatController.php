@@ -130,4 +130,19 @@ class ChatController extends Controller
     {
         return $service->getFile($vertex_id, $filename);
     }
+
+    public function getOrcreateChatVertice(Request $request, ChatService $service)
+    {
+        $request->validate([
+            'identifier' => 'required',
+        ]);
+
+        $result = $service->getOrCreateChatVertice($request->identifier);
+
+        if($result) {
+            return response()->json($result, 200);
+        }
+
+       return response()->json(['message' => 'Impossible de trouver ou créer une conversation'], 500);
+    }
 }

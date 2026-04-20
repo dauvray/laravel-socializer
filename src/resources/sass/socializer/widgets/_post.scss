@@ -1,51 +1,56 @@
-.post-wrapper {
-    padding: map-get($spacers, 2)!important;
-    display: grid;
-    grid-template-rows: auto 1fr auto;
-    z-index: 2;
+.post-wrapper-outer {
+    position: relative;
+    margin-bottom: map-get($spacers, 3);
 
-    .post-header {
+    .post-wrapper {
+        padding: map-get($spacers, 2)!important;
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+        z-index: 2;
 
-        .post-header-inner {
-            display: flex;
-            width: 100%;
+        .post-header {
 
-            .post-user-wrapper {
+            .post-header-inner {
                 display: flex;
-                flex-grow: 1;
-            }
+                width: 100%;
 
-            .post-infos-wrapper {
-                display: flex;
-                text-align: right;
-                flex-direction: column ;
-
-                .date {
+                .post-user-wrapper {
+                    display: flex;
                     flex-grow: 1;
                 }
 
-                .shared {
-                    margin-left: map-get($spacers, 3);
+                .post-infos-wrapper {
+                    display: flex;
+                    text-align: right;
+                    flex-direction: column ;
+
+                    .date {
+                        flex-grow: 1;
+                    }
+
+                    .shared {
+                        margin-left: map-get($spacers, 3);
+                    }
                 }
             }
         }
-    }
 
-    .post-body {
-        margin: map-get($spacers, 2) 0;
+        .post-body {
+            margin: map-get($spacers, 2) 0;
 
-        .post-content {
-            border: $card-border-width solid $card-border-color;
-            border-radius: $card-border-radius;
-            padding: map-get($spacers, 2);
+            .post-content {
+                border: $card-border-width solid $card-border-color;
+                border-radius: $card-border-radius;
+                padding: map-get($spacers, 2);
+                margin: 0 map-get($spacers, 2);
+            }
+        }
+
+        .post-footer {
+            display: flex;
+            justify-content: space-between;
+            padding: 0 map-get($spacers, 1);
             margin: 0 map-get($spacers, 2);
         }
-    }
-
-    .post-footer {
-        display: flex;
-        justify-content: space-between;
-        padding: 0 map-get($spacers, 1);
-        margin: 0 map-get($spacers, 2);
     }
 }

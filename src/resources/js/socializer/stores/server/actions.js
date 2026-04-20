@@ -122,6 +122,7 @@ export default {
     },
     resetCurrentRoom() {
         this.currentRoom = null
+        this.roomChatVisible = false
     },
     async deleteRoom(roomId, isEvent = false) {
         let result = null 
@@ -155,7 +156,10 @@ export default {
             type: payload.get('model'),
             server_id: this.currentServer.server.id,
         })
-    },  
+    },
+    setRoomChatVisible(value) {
+        this.roomChatVisible = value
+    }, 
 
     /*-----------------------------------
     | QUESTIONNAIRES

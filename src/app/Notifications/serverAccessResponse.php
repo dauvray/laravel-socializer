@@ -67,6 +67,7 @@ class serverAccessResponse extends Notification implements ShouldQueue
             'server' => [
                 'id' => $this->server['id'],
                 'name' => $this->server['name'],
+                'has_access' => $this->response,
             ],
         ];
     }

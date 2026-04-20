@@ -32,7 +32,7 @@
                 @update-conversation-title="onUpdatedConversationTitle"
             ></ChatComponent>
             <template v-else >
-            <span class="p-3"> Aucune conversation sélectionnée.</span>
+            <span class="p-3 text-center">Aucune conversation sélectionnée.</span>
             </template>
 
         </div>

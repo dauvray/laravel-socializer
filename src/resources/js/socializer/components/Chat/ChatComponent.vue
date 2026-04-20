@@ -168,6 +168,11 @@
                 required: false,
                 default: true,
             },
+            autoload: {
+                type: Boolean,
+                required: false,
+                default: true,
+            },
         },
         data() {
             return {
@@ -216,7 +221,7 @@
                 this.agentBot = settings.coreAgentSettings.agents.find(agent => agent.bot_id == this.currentConversation.general.chat.bot_id)
             }
 
-            if(!this.currentConversation) {
+            if(!this.currentConversation && this.autoload) {
                 this.loadConversation(this.vertexId || this.$route.params.vertexId)
             } 
         },

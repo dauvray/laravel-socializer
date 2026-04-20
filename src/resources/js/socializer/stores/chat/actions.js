@@ -1,3 +1,4 @@
+import { format } from 'fecha'
 import { useAjaxService } from '~estarter/services/AjaxService.js'
 const AjaxService = useAjaxService()
 
@@ -8,11 +9,27 @@ export default {
         } else {
             this.currentConversation = await AjaxService.load(`/load-conversation/${vertexid}`)
         }
-        
-        this.messages = this.currentConversation.messages.data.slice().reverse().concat(this.messages)
+
+        // If conversation not found, we create a room conversation with the vertexid as identifier
+        if(this.currentConversation.hasOwnProperty('status') && this.currentConversation.status === 'not_found') {
+            this.createRoomConversation(vertexid)
+        } else {
+            this.formatConversationMessages()
+        }
+    },
+    async getOrCreateRoomConversation(roomIdentifier) {
+
+        this.currentConversation = await AjaxService.load('/get-or-create-chat-room', 'post', {
+            identifier: roomIdentifier
+        })
+
+        this.formatConversationMessages()
     },
     async resetConversation() {
         this.$reset()
+    },
+    formatConversationMessages(date) {
+       this.messages = this.currentConversation.messages.data.slice().reverse().concat(this.messages)
     },
     leaveCurrentConversation() {
         this.currentConversation = null

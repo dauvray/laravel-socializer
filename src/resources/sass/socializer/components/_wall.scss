@@ -1,7 +1,7 @@
 #socializer-wall {
-    grid-column: 1 / -1;
-    display: grid;
-    grid-template-columns: 1fr; // simple
+    // grid-column: 1 / -1;
+    // display: grid;
+    // grid-template-columns: 1fr; // simple
 
     .cover-wrapper {
         container-type: inline-size;
@@ -74,16 +74,17 @@
             grid-column: 1;
 
             &.owned-servers-widget {
-                @extend .card-body;
-                height: fit-content;
 
                 ul {
+                    @extend .rounded;
+                    @extend .border;
                     @extend .list-group;
                     @extend .list-group-flush;
 
                     li {
                         @extend .list-group-item;
-                        @extend .px-0;
+                        padding: map-get($spacers, 2);
+                      // @extend .px-0;
 
                         button {
                             @extend .btn;

@@ -19,9 +19,10 @@
             @display-comments="onDisplayComments"
         ></CounterWidget>
     </div>
-    <Transition>
+
         <CommentList
             v-show="!collapsed"
+            ref="commentsList"
             :id="targetId"
             :comments="comments"
             :logged="logged"
@@ -34,7 +35,7 @@
             @load-pagination="onLoadPagination"
             @like-item="onSubmitLike"
         ></CommentList>
-    </Transition>
+
 
     <SpinnerWidget v-if="loading"></SpinnerWidget>
 </template>
@@ -217,9 +218,16 @@
             toggleCollapse() {
                 this.collapsed = !this.collapsed
             },
-            closeCollapse(targetId) {
+            async closeCollapse(targetId) {
                 if(this.targetId !== targetId && this.isParent) {
                     this.collapsed = true
+                } 
+                // scroll to comments
+                if(this.targetId === targetId && this.isParent) {
+                    await this.$nextTick()
+                    setTimeout(() => {
+                        this.$refs.commentsList.scrollToMe()
+                    }, 300)
                 }
             },
             onDeleteComment(message, status = false) {
@@ -271,7 +279,7 @@
     }
 </script>
 <style>
-    .v-enter-active,
+    /* .v-enter-active,
     .v-leave-active {
         transition: all 0.5s ease;
     }
@@ -280,5 +288,5 @@
     .v-leave-to {
         opacity: 0;
         transform: translateY(-100px);
-    }
+    } */
 </style>

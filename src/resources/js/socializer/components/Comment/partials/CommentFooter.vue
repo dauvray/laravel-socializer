@@ -111,7 +111,6 @@
                 this.$emit('comment-deleted', message, status)
             },
             onSignalFormUniqid(uniqid) {
-                console.log("emit signal-form-uniqid from CommentFooter", uniqid)
                  this.$emit('signal-form-uniqid', uniqid)
             },
         }

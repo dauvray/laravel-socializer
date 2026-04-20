@@ -1,6 +1,10 @@
 import { streamableComponents } from '~socializer/components/Server/roomSettings.js'
 
 export default {
+    /*-----------------------------------
+    | SERVER
+    |-----------------------------------*/
+
     getServers() {
         return this.servers.data
     },
@@ -37,6 +41,11 @@ export default {
         }
         return null
     },
+
+    /*-----------------------------------
+    | ROOM
+    |-----------------------------------*/
+
     getCurrentRoom() {
         if(this.currentRoom) {
             return this.currentRoom
@@ -67,5 +76,8 @@ export default {
             return this.currentRoom.id
         }
         return null
+    },
+    getRoomChatVisible() {
+        return this.roomChatVisible
     },
 }

@@ -1,5 +1,6 @@
 <template>
     <div class="board-wrapper">
+      <ChatCreatorButton></ChatCreatorButton>
       <RoomUsersList v-if="displayCollaborators" :users="users"></RoomUsersList>
       <div class="whiteboard" v-show="loaded">
           <excalidraw-element ref="excalidrawElement"></excalidraw-element>
@@ -27,12 +28,14 @@
     import { mapActions, mapState } from 'pinia'
     import { useMeStore } from '~estarter/stores/me.js'
     import { useServerStore } from '~socializer/stores/server.js'
+    import ChatCreatorButton from '~socializer/components/Chat/widgets/ChatCreatorButton.vue'
 
     export default {
         name: "Whiteboard",
         components: {
           DataUserPeerConnection,
           RoomUsersList: defineAsyncComponent(() => import('~socializer/components/Server/widgets/RoomUsersList.vue')),
+          ChatCreatorButton,
         },
         props: {
           users: {

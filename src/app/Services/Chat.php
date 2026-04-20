@@ -475,18 +475,29 @@ class Chat
         ;
     }
 
-    public function createChatVertice($room_id = null, $values = [])
+    public function getOrcreateChatVertice($room_id = null, $values = [])
     {
-        $result = $this->createConversation($values, $room_id);
-        $chat_vid = $result['general']['chat']['id'];
+        $query =  "
+                    MATCH (r:room) WHERE id(r) == '$room_id'
+                    OPTIONAL MATCH (r:room)<-[:published_in]-(c:chat)
+                    RETURN c as chat
+                ";
+        $result =  $this->nebula->execute($query);
 
-        // chat / room relation
-        setPublishedInRelation($chat_vid, $room_id);
+        if(!count($result[0])) {
+            $result = $this->createConversation($values, $room_id);
+            $chat_vid = $result['general']['chat']['id'];
 
-        // chat / user registered
-        setRegisteredRelation($this->user->vertexid, $chat_vid);
+            // chat / room relation
+            setPublishedInRelation($chat_vid, $room_id);
 
-        return $chat_vid;
+            // chat / user registered
+            setRegisteredRelation($this->user->vertexid, $chat_vid);
+
+            return $this->getConversation($chat_vid);
+        }
+
+       return $this->getConversation($result[0]['id']);
     }
 
     public function deleteConversation( $vertex_id = null )

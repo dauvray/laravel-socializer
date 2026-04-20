@@ -22,14 +22,15 @@
                         </UserWallLink>
                         <small>{{ notification.data.from.function }}</small>
                     </div>
-                    <p class="card-text">Souhaite un accès au serveur privé.</p>
+                    <p v-if="notification.data.server.has_access" class="card-text">Vous autorise à accéder au serveur:</p>
+                    <p v-else class="card-text">Ne vous autorise pas à accéder au serveur:</p>
                     <p class="fs-4">{{ notification.data.server.name }}</p>
                 </div>
 
             </div>
             <div class="btn-group btn-group-sm d-flex" role="group">
-                <button type="button" class="btn btn-success" @click="onAccept">Accepter</button>
-                <button type="button" class="btn btn-danger" @click="onRefuse">Refuser</button>
+                <button v-if="notification.data.server.has_access" type="button" class="btn btn-success" @click="onVisit">Visiter</button>
+                <button type="button" class="btn btn-danger" @click="onDelete">Supprimer</button>
             </div>
 
         </div>
@@ -39,11 +40,9 @@
 <script>
     import Gravatar from '~estarter/components/widgets/Gravatar.vue'
     import UserWallLink from '~socializer/components/User/WallLink.vue'
-    import { mapActions } from 'pinia'
-    import { useServerStore } from '~socializer/stores/server.js'
 
     export default {
-        name: "ServerAccessRequest",
+        name: "ServerAccessResponse",
         props: {
             notification: {
                 type: Object,
@@ -58,23 +57,12 @@
             UserWallLink,
         },
         methods: {
-            ...mapActions(useServerStore, [
-                'responseServerAccess',
-            ]),
-            onAccept() {
-                this.sendResponse(true)
+            onVisit() {
+                this.$router.push({ name: 'server', params: { serverId: this.notification.data.server.id } })
+                this.onDelete()
             },
-            onRefuse() {
-                this.sendResponse()
-            },
-            sendResponse(response = false) {
-                this.responseServerAccess({
-                    notification_id: this.notification.data.notification_id,
-                    server_vid: this.notification.data.server.id,
-                    user_id: this.notification.data.from.id,
-                    response: response
-                })
-                this.$emit('remove-unread-notification', this.notification.data.notification_id)
+            onDelete() {
+                this.$emit('remove-unread-notification', this.notification.data.notification_id, true)
             }
         }
     }

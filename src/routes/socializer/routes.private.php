@@ -86,6 +86,10 @@ Route::post('/create-new-conversations',
     config('socializer.controllers_front.chat').'@createConversation')
     ->name('chat.create.conversation');
 
+Route::post('/get-or-create-chat-room', 
+    config('socializer.controllers_front.chat').'@getOrcreateChatVertice')
+    ->name('chat.create.room');
+
 Route::get('/delete-conversation/{vertex_id}', 
     config('socializer.controllers_front.chat').'@deleteConversation')
     ->name('chat.delete.conversation');

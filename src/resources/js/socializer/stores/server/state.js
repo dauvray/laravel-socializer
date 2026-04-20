@@ -6,5 +6,6 @@ export default () => {
     registeredServers: [],
     currentServer: null,
     currentRoom: null,
+    roomChatVisible: false,
   }
 }

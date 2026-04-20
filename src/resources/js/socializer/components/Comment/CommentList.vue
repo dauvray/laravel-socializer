@@ -1,5 +1,5 @@
 <template>
-    <div class="comments-list-inner">
+    <div ref="root" class="comments-list-inner">
         <CommentItem
             v-for="(comment, idx) in comments"
             :key="comment.comment.id"
@@ -86,6 +86,12 @@
             },
             onLoadPagination(url) {
                 this.$emit('load-pagination', url)
+            },
+            scrollToMe() {
+                this.$refs.root.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'start'
+                })
             }
         }
     }
