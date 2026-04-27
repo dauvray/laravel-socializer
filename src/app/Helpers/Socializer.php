@@ -53,7 +53,6 @@ if (!function_exists('broadcastEventbusNotification')) {
     }
 }
 
-
 /*---------------------------
 | NEBULAGRAPH
 |----------------------------*/
@@ -173,6 +172,7 @@ if (!function_exists('createUserAndNetwork')) {
         | VERTEX
         */
 
+        // create user vertex
         $nebula->insertVertex(
             config('socializer.nebulagraph.tags.user.name'), 
             array_merge(
@@ -186,11 +186,13 @@ if (!function_exists('createUserAndNetwork')) {
             )
         );
 
+        // create user feed vertex
         $result = $nebula->insertVertex(
             config('socializer.nebulagraph.tags.feed.name'),
             []
         );
 
+        // create user wall vertex
         $result2 = $nebula->insertVertex(
             config('socializer.nebulagraph.tags.wall.name'),
                 [
@@ -214,7 +216,64 @@ if (!function_exists('createUserAndNetwork')) {
 
         // user follow his wall
         setFollowedByRelation($wallVertexId, $userVertexId);
+
+        // user registered in his groups
+        foreach ($user->groups as $group) {
+            setRegisteredRelation($userVertexId, getVertexId($group));
+        }
     }
+}
+
+// 26/04/2026 : deplacé dans le service Server pour etre utilisé aussi à la création de groupe
+// if(!function_exists('createGroupInNebula')) {
+//     function createGroupInNebula($group) {
+//         $nebula = app('nebulaGraph');
+
+//         return $nebula->insertVertex(
+//             config('socializer.nebulagraph.tags.group.name'), 
+//             array_merge(
+//                 $nebula->populatePropsFromPattern(
+//                     $group, 
+//                     config('socializer.nebulagraph.vertices.group')
+//                 ),
+//                 [
+//                     'identifier' => hideIdentifier($group),
+//                     'id' => getVertexId($group)
+//                 ]
+//             )
+//         );
+//     }
+// }
+
+if(!function_exists('setGroupHasParentRelation')) {
+    function setGroupHasParentRelation($group) {
+        if (!empty($group->parent_id)) {
+            setRegisteredRelation(
+                config('socializer.nebulagraph.tags.group.name').$group->id,
+                config('socializer.nebulagraph.tags.group.name').$group->parent_id
+            );
+        } else {
+            $nebula = app('nebulaGraph');
+            // if parent_id is empty, we need to delete the relation with the previous parent if exists
+            $query = "
+                MATCH (g:group)-[r:registered_in]->(parent:group)
+                WHERE id(g) == '".getVertexId($group)."'
+                RETURN id(g) AS src, id(parent) AS dst;
+            ";
+            $result = $nebula->execute($query);
+
+            foreach ($result as $row) {
+                $src = $row['src'];
+                $dst = $row['dst'];
+
+                $deleteQuery = "
+                    DELETE EDGE registered_in '$src' -> '$dst';
+                ";
+
+                $nebula->execute($deleteQuery);
+            }
+        }
+    } 
 }
 
 // SERVER HELPERS
@@ -222,8 +281,8 @@ if (!function_exists('checkServerAccess')) {
     function checkServerAccess($vertex_id, $user_vertexid, $tag='server') {
         $nebula = app('nebulaGraph');
         $query = "
-            MATCH (o:user)<-[:has_creator]-(s:".$tag.")<-[:registered_in]-(u:user) 
-            WHERE id(s) == '$vertex_id' AND (s.".$tag.".privacy == 0 OR (s.".$tag.".privacy == 1 AND id(u) == '$user_vertexid') OR (s.".$tag.".privacy == 2 AND id(o) == '$user_vertexid')) 
+            MATCH (creator:user)<-[:has_creator]-(g:group)<-[:owned_by]-(s:".$tag."), (u:user)-[:registered_in]->(g)
+            WHERE id(s) == '$vertex_id' AND (s.".$tag.".privacy == 0 OR (s.".$tag.".privacy == 1 AND id(u) == '$user_vertexid') OR (s.".$tag.".privacy == 2 AND id(creator) == '$user_vertexid')) 
             RETURN id(s) as server_id
         ";
         $result = $nebula->execute($query);
@@ -263,7 +322,7 @@ if (!function_exists('setRegisteredRelation')) {
 }
 
 if (!function_exists('setHasCreatorRelation')) {
-    function setHasCreatorRelation($creator_vid, $vid)
+    function setHasCreatorRelation($vid, $creator_vid)
     {
         app('nebulaGraph')->insertEdge(
             config('socializer.nebulagraph.edges.has_creator.name'), 

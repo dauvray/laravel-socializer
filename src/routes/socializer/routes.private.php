@@ -129,12 +129,13 @@ Route::post('/add-contact-to-conversation',
 Route::get('/chat/file/{vertex_id}/{filename}',
     config('socializer.controllers_front.chat').'@getFile')
     ->name('chat.get.file');
+    
 /*----------------------------------------------------------------------
 | Servers
 |----------------------------------------------------------------------*/
 
-Route::post('/create-server', 
-    config('socializer.controllers_front.server').'@createServer')
+Route::post('/create-user-server', 
+    config('socializer.controllers_front.server').'@createUserServer')
     ->name('server.create');
 
 Route::post('/update-server', 
@@ -145,8 +146,8 @@ Route::post('/update-server-rooms',
     config('socializer.controllers_front.server').'@updateServerRooms')
     ->name('server.update.rooms');
 
-Route::get('/delete-server/{vertex_id}', 
-    config('socializer.controllers_front.server').'@deleteServer')
+Route::get('/delete-user-server/{vertex_id}', 
+    config('socializer.controllers_front.server').'@deleteUserServer')
     ->name('server.delete');
 
 Route::get('/get-registered-servers', 

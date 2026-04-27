@@ -30,7 +30,7 @@
             </div>
 
             <ChatComponent
-                v-show="roomChatVisible"
+                v-if="roomChatVisible"
                 ref="chat"
                 class="room-chat"
                 :style="{ width: `${chatWidth}px` }"

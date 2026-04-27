@@ -69,36 +69,40 @@
         grid-template-columns: auto 1fr;
         gap: 1rem;
 
-        .wall-owned-servers {
-            
-            grid-column: 1;
+        .wall-sidebar {
 
-            &.owned-servers-widget {
+            .wall-owned-servers {
+                
+                grid-column: 1;
 
-                ul {
-                    @extend .rounded;
-                    @extend .border;
-                    @extend .list-group;
-                    @extend .list-group-flush;
+                &.owned-servers-widget {
 
-                    li {
-                        @extend .list-group-item;
-                        padding: map-get($spacers, 2);
-                      // @extend .px-0;
+                    ul {
+                        @extend .rounded;
+                        @extend .border;
+                        @extend .list-group;
+                        @extend .list-group-flush;
 
-                        button {
-                            @extend .btn;
-                            @extend .btn-link;
-                            @extend .p-0;
+                        li {
+                            @extend .list-group-item;
+                            padding: map-get($spacers, 2);
+                        // @extend .px-0;
 
-                            .icon-widget {
-                                @extend .text-warning;
-                            }   
+                            button {
+                                @extend .btn;
+                                @extend .btn-link;
+                                @extend .p-0;
+
+                                .icon-widget {
+                                    @extend .text-warning;
+                                }   
+                            }
                         }
                     }
                 }
             }
         }
+
 
         .feed-wrapper {
              grid-column: 2 / -1;

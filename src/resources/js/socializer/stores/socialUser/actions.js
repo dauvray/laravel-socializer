@@ -8,4 +8,7 @@ export default {
     async sendSearchAlert(questionnaire_id, filters, hash) {
         await AjaxService.load('/feed-subscribe-alert', 'post', {questionnaire_id , filters, hash})
     },
+    async loadAllUserGroups() {
+        this.groups = await AjaxService.load('/get-user-groups')
+    }
 }

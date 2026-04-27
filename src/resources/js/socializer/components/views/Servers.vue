@@ -1,18 +1,20 @@
 <template>
     <div class="view-wrapper es-container">
         <section class="servers-view">
-            <button 
+            <!-- un user pouvait créer un serveur. maintenant, seul un groupe peut créer un serveur, 
+             du coup on affiche plus le bouton de création de serveur ici, 
+             mais on peut le remettre si besoin en créant un serveur "personnel" lié à l'utilisateur
+             <button 
                 class="btn publish-btn"
                 @click="onCreateServer"
                 ><IconWidget icon="plus"></IconWidget> Créer un domaine
-            </button>
+            </button> -->
             <h1>Domaines</h1>
             <div class="servers-view-list">
                 <article v-for="server in servers" 
                     class="card" 
                     :key="server.id">
                         <img :src="server.image || 'https://picsum.photos/200'" class="server-img" alt="...">
-                        <UserBadge :user="server.owner"></UserBadge>
                         <div class="server-inner">
                             <h2>
                                 {{ server.name }} <IconWidget v-if="server.is_private" icon="key"></IconWidget>
@@ -60,14 +62,12 @@
     import IconWidget from '~estarter/components/widgets/IconWidget.vue'
     import FormsSettingHelper from '~socializer/services/FormsSetting.js'
     import { checkServerAccess } from '~socializer/services/helpers.js'
-    import UserBadge from '~socializer/components/User/Badge.vue'
 
     export default {
         name: 'Servers',
         components: {
             IconWidget,
             ModalWidget: defineAsyncComponent(() => import('~estarter/components/widgets/ModalLazy.js')),
-            UserBadge,
         },
         data() {
             return {
@@ -88,7 +88,7 @@
         },
         methods: {
             ...mapActions(useServerStore, [
-                'createServer',
+                'createUserServer',
                 'loadAllServers',
                 'requestServerAccess',
             ]),
@@ -101,7 +101,7 @@
                 // create  serve
                 if(this.currentQuestionnaire === FormsSettingHelper.questionnaires.createServer) {
                     this.$refs.serverQuestionnaire.setUnsavedStatus(false)
-                    this.createServer(formData.get('model'))
+                    this.createUserServer(formData.get('model'))
                     .then(server => {
                         this.showModal = false
                         this.$router.push({ name: 'server', params: { serverId: server.id }})

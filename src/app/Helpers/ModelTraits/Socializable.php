@@ -109,7 +109,7 @@ trait Socializable
     public function canJoinServer($vertex_id)
     {
        $result = app('nebulaGraph')->execute("
-            MATCH (s:server)<-[:registered_in]-(u:user) 
+            MATCH (u:user)-[:registered_in]->(g:group)<-[:owned_by]-(s:server) 
             WHERE id(s) == '$vertex_id' AND (s.server.privacy == 0 OR (s.server.privacy == 1 AND id(u) == '$this->vertexid')) 
             RETURN id(u)
         ");
@@ -144,7 +144,7 @@ trait Socializable
 
     public function isServerOwner($server_id)
     {
-        $result = app('nebulaGraph')->execute("MATCH (s:server)-[:has_creator]->(u:user) WHERE id(s) == '$server_id' RETURN id(u)");
+        $result = app('nebulaGraph')->execute("MATCH (s:server)-[:owned_by]->(:group)-[:has_creator]->(u:user) WHERE id(s) == '$server_id' RETURN id(u)");
         return $this->_checkIsOwner($result); 
     }
 

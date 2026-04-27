@@ -1,5 +1,6 @@
 export default () => {
     return {
-       users: null
+       users: null,
+       groups: null
     }
 }

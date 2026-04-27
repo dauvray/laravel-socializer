@@ -229,7 +229,7 @@
                 'createRoom',
                 'createSubContent',
                 'resetServer',
-                'deleteServer',
+                'deleteUserServer',
                 'deleteRoom',
                 'removeRoom',
                 'resetCurrentRoom',
@@ -314,7 +314,7 @@
                 this.currentQuestionnaire = FormsSettingHelper.questionnaires.createServer
             },
             onDeleteServer(serverId) {
-               this.deleteServer(serverId)
+               this.deleteUserServer(serverId)
                .then( () => {
                     this.$router.push({ name: 'serverList'})
                })
@@ -339,7 +339,6 @@
             },
             kickFromRoom(roomId) {
                 if(this.currentRoom && this.currentRoom.id === roomId) {
-                    this.resetCurrentRoom()
                     this.$router.push({ name: 'server', params: { serverId: this.currentServer.id } })
                 }
             },

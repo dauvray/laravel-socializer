@@ -2,10 +2,10 @@
     <div id="socializer-wall"> 
         <CoverUser :user="user"></CoverUser>
         <div class="wall-wrapper">
-            <OwnedServers 
-                class="wall-owned-servers"
-                @check-server-access="onCheckServerAccess"
-            ></OwnedServers>
+            <div class="wall-sidebar">
+                <UserGroups :groups="groups"></UserGroups>
+            </div>
+
             <FeedWidget
                 :user="user"
                 type="wall"
@@ -26,6 +26,7 @@
     import { mapState } from 'pinia'
     import { defineAsyncComponent } from 'vue'
 
+
     const feedOptions = {
         feedId: null,
         feedFormId: null,
@@ -39,6 +40,7 @@
             IconWidget,
             PublishButton: defineAsyncComponent(() => import('~socializer/components/User/widgets/PublishButton.vue')),
             OwnedServers: defineAsyncComponent(() => import('~socializer/components/User/widgets/OwnedServers.vue')),
+            UserGroups: defineAsyncComponent(() => import('~socializer/components/User/widgets/UserGroups.vue')),
         },
         props: {
             user: {
@@ -58,6 +60,7 @@
         computed: {
             ...mapState(useMeStore, {
                 me: 'getMe',
+                groups: 'getGroups',
             }),
             ...mapState(useWallStore, {
                 wallOwner: 'getOwner',
@@ -72,11 +75,6 @@
                 this.feedOptions.feedFormId = feed.questionnaire
                 this.loaded = true
             },
-            onCheckServerAccess(hasAccess) {
-                if(!hasAccess) {
-                    this.$toast.error("Vous n'avez pas accès à ce domaine.")
-                }
-            }
         }
     }
 

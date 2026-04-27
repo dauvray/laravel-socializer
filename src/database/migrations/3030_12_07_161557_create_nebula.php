@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Database\Migrations\Migration;
+use Dauvray\Socializer\app\Services\Server as ServerService;
 
 return new class extends Migration
 {
@@ -10,6 +11,7 @@ return new class extends Migration
     public function up(): void
     {
         $nebula = app('nebulaGraph');
+        $serverService = new ServerService();
 
         /*
         | SPACE
@@ -25,6 +27,7 @@ return new class extends Migration
         */
 
         $nebula->createTag(config('socializer.nebulagraph.tags.user'));
+        $nebula->createTag(config('socializer.nebulagraph.tags.group'));
         $nebula->createTag(config('socializer.nebulagraph.tags.comment'));
         $nebula->createTag(config('socializer.nebulagraph.tags.post'));
         $nebula->createTag(config('socializer.nebulagraph.tags.share'));
@@ -63,6 +66,7 @@ return new class extends Migration
         */
 
         $nebula->createTagIndex('user', 'user_index');
+        $nebula->createTagIndex('group', 'group_index');
         $nebula->createTagIndex('feed', 'feed_index');
         $nebula->createTagIndex('post', 'post_index');
         $nebula->createTagIndex('server', 'server_index');
@@ -72,8 +76,47 @@ return new class extends Migration
         sleep(config('socializer.nebulagraph.sleeping_duration'));
 
         /*
+        | GROUPS
+        */
+        foreach(config('estarter.models.group')::all() as $group) {
+            $serverService->createGroupServer(
+                [
+                    'name' => $group->name,
+                    'privacy' => 1,
+                ], 
+                getVertexId($group)
+            );
+        }
+
+        foreach(config('estarter.models.group')::all() as $group) {
+           setGroupHasParentRelation($group);
+        }
+
+        /*
+        | USERS
+        */
+        foreach(config('estarter.models.user')::all() as $user) {
+            createUserAndNetwork($user);
+        }
+
+        /*
         | VERTEX
         */
+
+        foreach(config('eblogger.models.article')::all() as $article) {
+            $nebula->insertVertex(
+                config('socializer.nebulagraph.tags.article.name'), 
+                array_merge(
+                    $nebula->populatePropsFromPattern(
+                        $article, 
+                        config('socializer.nebulagraph.vertices.article')
+                    ),
+                    [
+                        'identifier' => hideIdentifier($article)
+                    ]
+                )
+            );
+        }
 
         $nebula->insertVertex(
             config('socializer.nebulagraph.tags.marketplace.name'),
@@ -87,7 +130,13 @@ return new class extends Migration
         | RELATIONSHIP
         */
 
-
+        foreach(config('eblogger.models.article')::all() as $article) {
+            // relie article et auteur
+            setHasCreatorRelation(
+                config('socializer.nebulagraph.tags.article.name').$article->id,
+                config('socializer.nebulagraph.tags.user.name').$article->author->id
+            );
+        }
         
     }
 

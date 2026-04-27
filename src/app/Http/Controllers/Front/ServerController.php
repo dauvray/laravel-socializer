@@ -42,28 +42,28 @@ class ServerController extends Controller
         return response()->json(['message' => 'Impossible d\'enregistrer la réponse'], 500);
     }
 
-    public function createServer(Request $request,ServerService $service)
+    public function createUserServer(Request $request, ServerService $service)
     {
-        if( $result = $service->createServer($request)) {
+        if( $result = $service->createUserServer( $request->all()['data'] )) {
             return response()->json(['id' => $result, 'message' => "serveur crée"], 200);
-           } 
+        } 
     
-           return response()->json(['message' => 'Impossible de créer le serveur'], 500);
+        return response()->json(['message' => 'Impossible de créer le serveur'], 500);
     }
 
-    public function updateServer(Request $request,ServerService $service)
+    public function updateServer(Request $request, ServerService $service)
     {
         return $service->updateServer($request);
     }
 
-    public function updateServerRooms(Request $request,ServerService $service)
+    public function updateServerRooms(Request $request, ServerService $service)
     {
         return $service->updateServerRooms($request);
     }
 
-    public function deleteServer(ServerService $service, $vertex_id)
+    public function deleteUserServer(ServerService $service, $vertex_id)
     {
-        return $service->deleteServer($vertex_id);
+        return $service->deleteUserServer($vertex_id);
     }
 
     public function getAllServers(ServerService $service)

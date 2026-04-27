@@ -46,8 +46,8 @@ class Page
             return false;
         }
 
-        // page / creator relation
-        setHasCreatorRelation($this->user->vertexid, $vid);
+        // page / creator relation ( voir si utile )
+       // setHasCreatorRelation($vid, $this->user->vertexid);
         
         $page->vertexid = $vid;
         $page->save();

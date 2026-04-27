@@ -219,7 +219,7 @@ class Feed
         setPublishedInRelation($vid, $wall_id);
 
         // post / author relation
-        setHasCreatorRelation($this->user->vertexid, $vid);
+        setHasCreatorRelation($vid, $this->user->vertexid);
 
         if(!isFollowedBy($this->user->vertexid, $wall_id)) {
             // post / author follow wall if not already following

@@ -69,7 +69,7 @@ class Users
             MATCH (current_user:user) where id(current_user) == '".$this->user->vertexid."'
             OPTIONAL MATCH (u)<-[:owned_by]-(:wall)-[f:followed_by]->(current_user) 
             OPTIONAL MATCH (u)<-[:owned_by]-(:wall)-[nbf:followed_by]->(:user)
-            RETURN u AS user, CASE WHEN f IS NULL THEN NULL ELSE 'followed' END AS follow_status, COUNT(nbf) as nb_followers 
+            RETURN u AS user, CASE WHEN f IS NULL THEN NULL ELSE 'followed' END AS follow_status, COUNT(nbf) as nb_followers
         ");
 
         foreach( $results as $res) {
@@ -114,5 +114,36 @@ class Users
        }
 
        return false;
+    }
+
+    public function createGroup($group) 
+    {
+        $group_id = getVertexId($group);
+
+        $this->nebula->insertVertex(
+            config('socializer.nebulagraph.tags.group.name'), 
+            array_merge(
+                $this->nebula->populatePropsFromPattern(
+                    $group, 
+                    config('socializer.nebulagraph.vertices.group')
+                ),
+                [
+                    'identifier' => hideIdentifier($group),
+                    'id' => $group_id
+                ]
+            )
+        );
+
+        // groupe / parent groupe relation
+        setGroupHasParentRelation($group);
+
+        // groupe / creator relation
+        setHasCreatorRelation($group_id, $this->user->vertexid);
+
+        return $group_id;
+    }
+
+    public function deleteGroup($group) {
+        return app('nebulaGraph')->deleteVertex([getVertexId($group)], true);
     }
 }

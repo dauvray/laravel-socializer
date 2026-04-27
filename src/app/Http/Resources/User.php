@@ -42,12 +42,24 @@ class User extends JsonResource
             'channel' => $this->when($is_me, function () use ($user_id) {
                 return 'App.Models.User.' . $user_id;
             }),
-            'servers' => $this->when($current_user->ownedServers(), function () use ($current_user){
-                return $current_user->ownedServers();
+            // todo : a revoir, créé un bug N+1
+            // 'servers' => $this->when($current_user->ownedServers(), function () use ($current_user){
+            //     return $current_user->ownedServers();
+            // }),
+            // 'servers' => [], // temporaire, pour éviter le bug N+1, à revoir une fois que la partie serveur sera stabilisée
+            // end todo
+            'groups' => $current_user->groups->map(function($group) {
+                return [
+                    'name' => $group['name'] ?? null,
+                    'is_leader' => $group->pivot->is_leader ?? false,
+                    'server_id' => $group->extras['socializer_server_vid'] ?? null,
+                ];
             }),
         ];
 
+       // unset($baseData['groups']); // on unset les données qui sont déjà présentes dans la ressource de base pour éviter les doublons
+//dd(array_merge( $baseData, $currentData));
         // Fusion des données
-        return array_merge($baseData, $currentData);
+        return array_merge( $baseData, $currentData);
     }
 }

@@ -103,15 +103,13 @@ class Server
         return true;
     }
 
-    public function createServer(Request $request)
+    public function createServer(array $server_data = [])
     {
-        $new_server = $request->get('server');
-
         $vertex = $this->nebula->insertVertex(
             config('socializer.nebulagraph.tags.server.name'),
             [
-                'name' => $new_server['name'],
-                'privacy' => (int)$new_server['privacy'],
+                'name' => $server_data['name'],
+                'privacy' => (int)$server_data['privacy'],
             ]
         );
 
@@ -125,17 +123,35 @@ class Server
             return false;
         }
 
-        // server / user relation
-        setRegisteredRelation($this->user->vertexid, $vid);
-
-        // server / creator relation
-        setHasCreatorRelation($this->user->vertexid, $vid);
-
-        // server page
+         // server page
         $page_vid = $this->servicePage->createPageVertice($vid);
 
         // page / server relation
         setPublishedInRelation($page_vid, $vid);
+
+        return $vid;
+    }
+
+    // cette notion a été abandonnée au profit de serveurs liés à des groupes
+    public function createUserServer(array $server_data = [])
+    {
+        $vid = $this->createServer($server_data);
+
+        // server / user relation
+        setRegisteredRelation($this->user->vertexid, $vid);
+
+        // server / creator relation
+        setHasCreatorRelation( $vid, $this->user->vertexid);
+
+        return $vid;
+    }
+
+    public function createGroupServer(array $server_data = [], $group_vid = null)
+    {
+        $vid = $this->createServer($server_data);
+
+        // server / group relation
+        setOwnedByRelation($vid, $group_vid);
 
         return $vid;
     }
@@ -223,10 +239,6 @@ class Server
 
     public function deleteServer($server_id = null)
     {
-        if(!$this->user->isServerOwner($server_id)) {
-            return response()->json(['message' => 'Non autorisé'], 401);
-        }
-
         $result = $this->nebula->execute("
             MATCH (p:page)-[:published_in]-(s:server) WHERE id(s) == '$server_id' 
             OPTIONAL MATCH (s)-[:published_in]-(r:room)
@@ -255,14 +267,33 @@ class Server
         // delete storage files
         Storage::deleteDirectory(storage_path('app/public/servers/' . $server_id));
         Storage::deleteDirectory(storage_path('app/servers/' . $server_id));
-        
-        return response()->json(['message' => 'Le serveur a été supprimé'], 200);
+
+        return true;
+
+    }
+
+    public function deleteUserServer($server_id = null)
+    {
+        if(!$this->user->isServerOwner($server_id)) {
+            return response()->json(['message' => 'Non autorisé'], 401);
+        }
+
+        if($this->deleteServer($server_id)) {
+            return response()->json(['message' => 'Le serveur a été supprimé'], 200);
+        }
+    }
+
+    public function deleteGroupServer($server_id = null)
+    {
+        if($this->deleteServer($server_id)) {
+            return response()->json(['message' => 'Le serveur a été supprimé'], 200);
+        }
     }
 
     public function getAllServers()
     {
         $result = app('nebulaGraph')->execute("
-            MATCH (o:user{active: 1})<-[:has_creator]-(s:server)<-[:registered_in]-(u:user) RETURN  DISTINCT s,o
+            MATCH (o:user{active: 1})-[:registered_in]->(g:group)<-[:owned_by]-(s:server) WHERE id(o) == '{$this->user->vertexid}' RETURN  DISTINCT s,o
         ");
 
         $paginator = makePaginationCollection(collect($result), route(Route::currentRouteName()));
@@ -277,17 +308,16 @@ class Server
 
     public function getServer($vertex_id = null, $with_relations = true)
     {
-        $query = "MATCH (o:user)<-[:has_creator]-(s:server)<-[:registered_in]-(u:user) WHERE id(s) == '$vertex_id' ";
+        $query = "MATCH (o:user)<-[:has_creator]-(g:group)<-[:owned_by]-(s:server), (u:user)-[:registered_in]->(g) WHERE id(s) == '$vertex_id' ";
 
             if($with_relations) {
 
                 $user_vertexid = $this->user->vertexid;
 
                 $query .= "AND (s.server.privacy == 0 OR (s.server.privacy == 1 AND id(u) == '$user_vertexid')) 
-                    MATCH (s)<-[:registered_in]-(us:user) 
                     MATCH (s)<-[:published_in]-(p:page) 
                     OPTIONAL MATCH (s)<-[:published_in]-(r:room)
-                    WITH s as server, properties(s) AS server_props, count(distinct us) as nb_users, collect(r) as rooms , o as owner, p as page
+                    WITH s as server, properties(s) AS server_props, count(distinct u) as nb_users, collect(r) as rooms , o as owner, p as page
                     RETURN server, owner, nb_users, rooms, page
                 ";
             } else {
@@ -496,7 +526,7 @@ class Server
         setPublishedInRelation($vid, $server_id);
 
         // room / creator relation
-        setHasCreatorRelation($this->user->vertexid, $vid);
+        setHasCreatorRelation($vid, $this->user->vertexid);
 
         // room / user relation
         setRegisteredRelation($this->user->vertexid, $vid);
@@ -817,9 +847,9 @@ class Server
         setPublishedInRelation($new_vid, $vid);
 
         // classroom / creator relation
-        setHasCreatorRelation($this->user->vertexid, $new_vid);
+        setHasCreatorRelation( $new_vid, $this->user->vertexid);
 
-        $this->serviceChat->createChatVertice($new_vid, $new_content['privacy']);
+        $this->serviceChat->getOrcreateChatVertice($new_vid, $new_content['privacy']);
         $this->createBoardVertice($new_vid, $new_content);
 
         return $new_vid;

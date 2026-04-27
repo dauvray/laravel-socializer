@@ -11,6 +11,7 @@ class PageController extends Controller
     public function loadPage(PageService $service, $page_id = null)
     {
         $page = $service->loadPage($page_id);
+        
         if($page) {
             return response()->json([
                 'page' => renderContentToBlade($page->content),

@@ -17,8 +17,8 @@ export default {
         let result = await AjaxService.load('/response-server-access', 'post', payload)
         return result
     },
-    async createServer(payload) {
-         let result = await AjaxService.load('/create-server', 'post', {server: payload})
+    async createUserServer(payload) {
+         let result = await AjaxService.load('/create-user-server', 'post', {data : payload})
          return result
     },
     async loadAllServers() {
@@ -38,8 +38,8 @@ export default {
     resetServer() {
         this.currentServer = null
     },
-    async deleteServer(serverId) {
-        let result = await AjaxService.load(`/delete-server/${serverId}`)
+    async deleteUserServer(serverId) {
+        let result = await AjaxService.load(`/delete-user-server/${serverId}`)
         return result
     },
     async updateServer(payload, isEvent = false) {

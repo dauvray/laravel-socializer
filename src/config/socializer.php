@@ -229,6 +229,13 @@ return [
                     'is_bot int NULL',
                 ]
             ],
+            'group' => [
+                'name' => 'group',
+                'props' => [
+                    'name string NOT NULL',
+                    'identifier string NULL',
+                ]
+            ],
             'comment' => [
                 'name' => 'comment',
                 'props' => [
@@ -365,6 +372,10 @@ return [
                 "identifier" => null,
                 "slug" => null,
                 "is_bot" => 0,
+            ],
+            'group' => [
+                "name" => null,
+                "identifier" => null,
             ],
             'comment' => [
                 'content' => null,

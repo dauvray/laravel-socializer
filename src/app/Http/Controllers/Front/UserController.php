@@ -26,6 +26,12 @@ class UserController extends Controller
 
     public function getUsersList(Request $request, UserService $service)
     {
+        $user = Auth::user();
+
+        // if(!$user->can('list_users')) {
+        //     return response()->json(['message' => 'Vous n\'avez pas la permission de lister les utilisateurs'], 403);
+        // }
+
         return response()->json( $service->getUsersList($request->route()->getName()), 200);
     }
 

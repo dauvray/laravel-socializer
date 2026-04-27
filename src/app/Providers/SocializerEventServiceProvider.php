@@ -43,6 +43,24 @@ class SocializerEventServiceProvider extends ServiceProvider
         'Dauvray\Socializer\app\Events\CommentDeleted' => [
             'Dauvray\Socializer\app\Listeners\CommentDeletedListener',
         ],
+        /*-------------------------------
+        | Group Events / Listeners
+        |-------------------------------*/
+        'Dauvray\Estarter\app\Events\GroupCreated' => [
+            'Dauvray\Socializer\app\Listeners\GroupCreatedListener',
+        ],
+        'Dauvray\Estarter\app\Events\GroupDeleted' => [
+            'Dauvray\Socializer\app\Listeners\GroupDeletedListener',
+        ],
+        'Dauvray\Estarter\app\Events\GroupUpdated' => [
+            'Dauvray\Socializer\app\Listeners\GroupUpdatedListener',
+        ],
+        'Dauvray\Estarter\app\Events\GroupUserCreated' => [
+            'Dauvray\Socializer\app\Listeners\GroupUserCreatedListener',
+        ],
+        'Dauvray\Estarter\app\Events\GroupUserDeleted' => [
+            'Dauvray\Socializer\app\Listeners\GroupUserDeletedListener',
+        ],
     ];
 
     public function __construct($app)

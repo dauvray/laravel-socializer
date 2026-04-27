@@ -231,8 +231,9 @@ class NebulaGraphConnection extends Connection {
      * @param string $stmt
      */
     public function execute(string $stmt)
-    {   $res = $this->responseJson($this->nebula->executeJson($stmt));
-       // \Log::debug('NebulaGraph Query: '. $stmt.' Result: '.json_encode($res));
+    {  
+         $res = $this->responseJson($this->nebula->executeJson($stmt));
+        //\Log::debug('NebulaGraph Query: '. $stmt.' Result: '.json_encode($res));
         return $res;
     }
 
