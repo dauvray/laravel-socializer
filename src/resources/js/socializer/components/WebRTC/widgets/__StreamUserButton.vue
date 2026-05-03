@@ -64,7 +64,7 @@
     import { ref } from 'vue'
     import { setContext, logError } from '~estarter/services/logger.js'
 
-    const streamPeerCallback = import(`~socializer/callbacks/streamPlayerCallback.js`)
+    import streamPeerCallback from '~socializer/callbacks/streamPlayerCallback.js'
 
     export default {
         name: 'StreamUserButton',

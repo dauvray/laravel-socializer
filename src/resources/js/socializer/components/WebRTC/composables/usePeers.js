@@ -1,10 +1,11 @@
-import { ref, reactive, computed, onMounted ,onBeforeUnmount, h, createApp, inject } from 'vue'
+import { ref, reactive, computed, onMounted ,onUnmounted, onBeforeUnmount, h, createApp, inject } from 'vue'
 import { useAjaxService } from '~estarter/services/AjaxService.js'
 import { usePeerStore } from '~socializer/stores/peers.js'
 import { useServerStore } from '~socializer/stores/server.js'
 import { useMeStore } from '~estarter/stores/me.js'
 import { deepGet } from '~estarter/services/helpers.js'
 import Draggable from '~socializer/directives/draggable.js'
+import { normalizePeerMetadata } from '~socializer/services/helpers.js'
 
 export function usePeers(props, type = 'data', room = 'app') {
 
@@ -133,26 +134,41 @@ export function usePeers(props, type = 'data', room = 'app') {
     // envoi le peerId a l'utilisateur distant et attent le sien en retour
     const getRemotePeerId = (toUserSlug) => {
 
-        const room = currentRoom.value || deepGet(serverStore, 'currentRoom.id', null)
+        const room = onAirRoom.value
         const peerId = peerStore.localPeer._id
-        const payload = {
-                peerId: peerStore.localPeer._id,
-                toUserSlug: toUserSlug,
-                room: onAirRoom.value,
-                type: currentType.value
-            }
+        const type = currentType.value
 
-        if(room && peerId && toUserSlug) {
-            AjaxService.load('/ask-to-peer-id', 'post', payload) 
+        const payload = {
+            peerId: peerId,
+            toUserSlug: toUserSlug,
+            room: room,
+            type: type
         }
 
-        isConnecting.value = true
+        const remotePeerID = peerStore.getRemotePeerId(toUserSlug)
+
+        if(!remotePeerID && room && peerId && toUserSlug) {
+
+            AjaxService.load('/ask-to-peer-id', 'post', payload) 
+            isConnecting.value = true
+
+        } else {
+
+            connectToQueuedConnections({
+                peerId: remotePeerID,
+                userSlug: toUserSlug,
+                room: room,
+                type: type,
+            })
+        }
     }
 
     // repond a une demande de peer id
     const sendLocalPeerId = (fromUserSlug, custom_type= null, custom_room = null) => {
 
+        // ici c'est chelou ( A ou B)
         isConnecting.value = false
+
         const payload = {
             peerId: peerStore.localPeer._id,
             type: custom_type || currentType.value,
@@ -167,30 +183,36 @@ export function usePeers(props, type = 'data', room = 'app') {
 
     const connectToQueuedConnections = async (payload) => {
 
-        const defaultConf = {
-            peerId: payload.peerId,
+        const connectionConf = {
+            peerId: String(payload.peerId),
             options: { 
                 metadata: { 
-                    slug: payload.userSlug,
-                    from: meStore.getMe.slug,
-                    source: payload.type,
-                    room: payload.room,
+                    slug: String(payload.userSlug),
+                    from: String(meStore.getMe.slug),
+                    source: String(payload.type),
+                    room: String(payload.room),
                 }, 
             },
-            room: payload.room,
-            type: payload.type,
+            room: String(payload.room),
+            type: String(payload.type),
         }
 
         if(payload.type === 'data') {
+
             // Whether the underlying data channels should be reliable (e.g. for large file transfers) 
             // or not (e.g. for gaming or streaming).
-            defaultConf.options.reliable = true
-        } else {
-            // add local stream to connection
-            defaultConf.stream = peerStore.getStream(payload.room, payload.type)
-        }
+            connectionConf.options.reliable = true
 
-        const connection = peerStore.openPeerConnection(defaultConf)
+        } else {
+
+            // add local stream to connection
+            connectionConf.stream = peerStore.getStream(payload.room, payload.type)
+        }
+        // TODO ( voir si vraiment  pour eviter de redemander le peerId à l'utilisateur distant, 
+        // mais faut savoir le maintenir à jour et le supprimer à la fin de la connexion ,ce qui n'est pas le cas actuellement )
+        peerStore.setRemotePeerId(payload.peerId, payload.userSlug)
+
+        const connection = peerStore.openPeerConnection(connectionConf)
 
         if(payload.type !== 'data' && connection && connection.call) { 
 
@@ -218,14 +240,21 @@ export function usePeers(props, type = 'data', room = 'app') {
                     console.log('ended stream remote')
 
                     removeVideoElement(connection.call.connectionId)
-                    removeRemoteStream(connection.metadata.room, connection.metadata.from, connection.call.metadata.source)
+                    removeRemoteStream(connection.call.metadata.room, connection.call.metadata.from, connection.call.metadata.source)
 
-                    if(!connections.value.hasOwnProperty(onAirRoom.value)) {
+                    if(!peerStore.getConnections.hasOwnProperty(onAirRoom.value)) {
                         console.log('le salon est vide')
                     }
 
                 })
-            })            
+            })    
+            
+            connection.call.on('close', () => {
+                console.log('close stream remote by remote peer', connection.call)
+                setTimeout(() => {
+                    peerStore.clearRoom(connection.call.metadata.room, connection.call.metadata.slug, connection.call.metadata.source)
+                }, 1000) // to wait for stream to be really closed
+            })
         }
     }
 
@@ -243,9 +272,17 @@ export function usePeers(props, type = 'data', room = 'app') {
         )
     }
 
-    const syncUsersConnections = ([...users]) => {
+    /**
+     *  Synchronise les connexions pour une liste d'utilisateurs donnée pour le type de flux actuel et la salle actuelle. 
+     *  Une demande de peerId est envoyée pour établir la connexion et recevoir le flux.
+     * 
+     * @param users : [ liste des utilisateurs à synchroniser ]
+     */
+    const syncUsersConnections = (users = []) => {
+
         users.forEach( user => {
-            if(user.slug !== meStore.getMe.slug && !deepGet(connections, `${onAirRoom.value}.${user.slug}.${currentType.value}`, false)) {
+            // if user is not me and i don't have connection with him for the current stream type in the current room
+            if(user.slug !== meStore.getMe.slug && !deepGet(peerStore.getConnections, `${onAirRoom.value}.${user.slug}.${currentType.value}`, false)) {
                 getRemotePeerId(user.slug)
             }
         })
@@ -297,13 +334,32 @@ export function usePeers(props, type = 'data', room = 'app') {
         peerStore.setLocalVideoPeer(context, callback)
     } 
 
+    /**
+     *  Démarre un flux webcam avec les options spécifiées et le marque comme local si nécessaire pour éviter l'écho.
+     * 
+     * @param options : {
+     *      audio: boolean,
+     *      video: boolean
+     * }
+     * @param isLocal : boolean, if true the stream will be marked as local to mute sound in player and avoid echo
+     */
     const startWebcamStream = async (options, isLocal = false) => {
+
+        // set isStreamingWebcam flag to true
         peerStore.startVideoStream()
+
+        // set current room for stream
         onAirRoom.value = currentRoom.value || deepGet(serverStore, 'currentRoom.id', null)
+
+        // get user media stream with options and set it to currentStream
         const newStream = await navigator.mediaDevices.getUserMedia(options)
         newStream.isLocal = isLocal // to mute local sound in player
         currentStream.value = newStream
+
+        // save stream in peer store with current room and type
         peerStore.saveStream(onAirRoom.value, currentStream.value, currentType.value)
+        
+        // update video states for local stream
         updateVideoProps({
             isVideoEnabled: options.video,
             isMuted: options.audio
@@ -335,7 +391,7 @@ export function usePeers(props, type = 'data', room = 'app') {
         const connections = peerStore.getConnections
         const currentCallRoomId = peerStore.getCurrenCallRoomId
 
-        if (connections[currentCallRoomId][userSlug] && connections[currentCallRoomId][userSlug].hasOwnProperty(type)) {
+        if (connections[currentCallRoomId]?.[userSlug] && connections[currentCallRoomId][userSlug].hasOwnProperty(type)) {
 
             connections[currentCallRoomId][userSlug][type].forEach (peer => {
                 console.log('stopUserVisioStream', peer, type, userSlug, currentCallRoomId)
@@ -349,7 +405,7 @@ export function usePeers(props, type = 'data', room = 'app') {
 
         await peerStore.stopVideoStream(currentCallRoomId, type)
         
-        // // if no one in room stop my stream
+         // if no one in room stop my stream
         if(!connections.hasOwnProperty(currentCallRoomId)) {
             removeVideoElement(`local-${type}`)
         }
@@ -365,7 +421,7 @@ export function usePeers(props, type = 'data', room = 'app') {
         const connections = peerStore.getConnections
         const currentCallRoomId = peerStore.getCurrenCallRoomId
 
-        if (connections[currentCallRoomId]) {
+        if (connections[currentCallRoomId] && typeof connections[currentCallRoomId] === 'object') {
 
             Object.keys(connections[currentCallRoomId]).forEach(userSlug => {
 
@@ -481,6 +537,10 @@ export function usePeers(props, type = 'data', room = 'app') {
     }
 
     const updateVideoProps = (props) => {
+        if(!props || typeof props !== 'object') {
+            return
+        }
+
         const keys = Object.keys(props)
         keys.forEach( key => {
             videoStates[key] = props[key]
@@ -496,7 +556,7 @@ export function usePeers(props, type = 'data', room = 'app') {
         } else {
             // stop remote stream just for me and signal remote streamer
             if(peer) {
-                peerStore.signalRemoteToClosePeer(peer.metadata)
+                peerStore.signalRemoteToClosePeer(normalizePeerMetadata(peer.metadata))
                 removeVideoElement(peer.connectionId)
                 if(stream) {
                     stream.getTracks().forEach(track => track.stop())
@@ -518,6 +578,11 @@ export function usePeers(props, type = 'data', room = 'app') {
     // check if call is running with a user
     const ConnectionsHasTypeInRoom = (userSlug, type ) => {
         const connections = peerStore.getConnections
+
+        if(!connections || typeof connections !== 'object') {
+            return false
+        }
+
         for (const room in connections) {
             if (connections[room][userSlug] && connections[room][userSlug].hasOwnProperty(type)) {
                 return true
@@ -532,6 +597,35 @@ export function usePeers(props, type = 'data', room = 'app') {
 
     const removeRemoteStream = (room, userSlug, type) => {
         peerStore.removeRemoteStream(room, userSlug, type)
+    }
+
+    const resolveAnswerStream = (room = null, type = null) => {
+        const targetType = type || currentType.value || 'stream'
+        const candidateRooms = [
+            room,
+            onAirRoom.value,
+            currentRoom.value,
+            currentCallRoomId.value,
+        ].filter(Boolean)
+
+        if (currentStream.value instanceof MediaStream) {
+            const hasMatchingTracks = targetType === 'screen'
+                ? currentStream.value.getVideoTracks().length > 0
+                : currentStream.value.getAudioTracks().length > 0 || currentStream.value.getVideoTracks().length > 0
+
+            if (hasMatchingTracks) {
+                return currentStream.value
+            }
+        }
+
+        for (const candidateRoom of candidateRooms) {
+            const stream = peerStore.getStream(candidateRoom, targetType)
+            if (stream instanceof MediaStream) {
+                return stream
+            }
+        }
+
+        return null
     }
 
     /*******************************
@@ -588,26 +682,30 @@ export function usePeers(props, type = 'data', room = 'app') {
      * LIFE CYCLE
      * *****************************/
 
-    onBeforeUnmount(() => {
+    onUnmounted(() => {
 
         unregisterIncomingPeerCallback()
 
         /***********************************************************
          coupe tous les flux et connections quand on quitte le salon */
 
-        for (const userSlug in connections.value[onAirRoom.value]) {
-            
-            if(!connections.value[onAirRoom.value].hasOwnProperty(userSlug)) {
-                continue
-            }
+        const roomConnections = peerStore.getConnections?.[onAirRoom.value]
 
-            if(!connections.value[onAirRoom.value][userSlug].hasOwnProperty(currentType.value)) {
-                continue
-            }
+        if(roomConnections && typeof roomConnections === 'object') {
+            for (const userSlug in roomConnections) {
+                
+                if(!roomConnections.hasOwnProperty(userSlug)) {
+                    continue
+                }
 
-            connections.value[onAirRoom.value][userSlug][currentType.value].forEach (conn => {
-                closeRemotePeerId(userSlug, currentType.value, onAirRoom.value, true)
-            })
+                if(!roomConnections[userSlug].hasOwnProperty(currentType.value)) {
+                    continue
+                }
+
+                roomConnections[userSlug][currentType.value].forEach (conn => {
+                    closeRemotePeerId(userSlug, currentType.value, onAirRoom.value, true)
+                })
+            }
         }
         
         eventBus.$off("closeStream", closeEventBusStream)
@@ -661,6 +759,7 @@ export function usePeers(props, type = 'data', room = 'app') {
         deleteRemoteOpenedConnections,
         saveRemoteStream,
         removeRemoteStream,
+        resolveAnswerStream,
         localPeer,
         localPeerId,
         isConnecting,

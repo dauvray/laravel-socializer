@@ -145,13 +145,14 @@
 }
 
 .chatters-list {
-    @extend .m-0;
-    @extend .p-0;
-    @extend .d-flex;
-    @extend .flex-grow-1;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-grow: 1;
 
     .chatter {
-        @extend .d-flex;
+        padding: map-get($spacers, 2);
+        display: flex;
         @extend .align-items-end;
         @extend .list-group-item;
     }

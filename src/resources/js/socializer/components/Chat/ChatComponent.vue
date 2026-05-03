@@ -1,16 +1,21 @@
 <template>
     <div class="chat-wrapper">
         <Teleport to="#room-header-tools">
-            <StreamUserButton 
-                ref="webcamBtn"
+            <MediaBroadcastProvider
                 :users="chatters"
                 :room="currentConversationId"
-            ></StreamUserButton>
-            <CaptureUserButton
-                ref="screenBtn"
+                v-slot="stream"
+                ><StreamDefaultUserButtonUI v-bind="stream" />
+            </MediaBroadcastProvider>
+
+            <MediaBroadcastProvider
                 :users="chatters"
                 :room="currentConversationId"
-            ></CaptureUserButton>
+                mode="screen"
+                v-slot="screen"
+                ><CaptureDefaultUserButtonUI v-bind="screen" />
+            </MediaBroadcastProvider>
+
             <ChatContactsButton
                 v-if="isContactBtnVisible"
                 :conversation="currentConversation.general"
@@ -138,8 +143,6 @@
             IconWidget,
             ChatContactsButton,
             DataUserPeerConnection,
-            StreamUserButton: defineAsyncComponent(() => import('~socializer/components/WebRTC/widgets/StreamUserButton.vue')),
-            CaptureUserButton: defineAsyncComponent(() => import('~socializer/components/WebRTC/widgets/CaptureUserButton.vue')),
             IntersectionObserver,
             MessageWidget,
             SpinnerTextWriting,
@@ -148,6 +151,9 @@
             ModalWidget: defineAsyncComponent(() => import('~estarter/components/widgets/ModalLazy.js')),
             TextareaMessage,
             UploadFilesTable: defineAsyncComponent(() => import('~socializer/components/Chat/widgets/partials/UploadFilesTable.vue')),
+            MediaBroadcastProvider: defineAsyncComponent(() => import('~socializer/components/WebRTC/widgets/MediaBroadcastProvider.vue')),
+            StreamDefaultUserButtonUI: defineAsyncComponent(() => import('~socializer/components/WebRTC/widgets/ui/StreamDefaultUserButtonUI.vue')),
+            CaptureDefaultUserButtonUI: defineAsyncComponent(() => import('~socializer/components/WebRTC/widgets/ui/CaptureDefaultUserButtonUI.vue')),
         },
         directives: {
             resizable,
@@ -262,6 +268,7 @@
                 }, 1000)
             },
             chatters(newVal) {
+                console.log('chatters changed', newVal)
                 this.$emit('update-chatters', newVal)
             }
         },
@@ -284,13 +291,14 @@
             ]),
             ...mapActions(usePeerStore, [
                 'sendData',
+                'closePeerConnection',
             ]),
             iniChatEvents() {
                 if(this.channel) {
                     Echo.leave(this.channel)
                     Echo.join(this.channel)
                         .here((users) => {
-                            this.chatters = users
+                            this.chatters.splice(0, this.chatters.length, ...users)
 
                             if(this.isBot){
                                 this.chatters.push(this.agentBot)
@@ -303,9 +311,8 @@
                             }
                         })
                         .leaving((user) => {
-                            this.chatters = this.chatters.filter( chatter => {
-                                return chatter.id != user.id
-                            })
+                            const index = this.chatters.findIndex(c => c.id == user.id)
+                            if (index !== -1) this.chatters.splice(index, 1)
                         })
                         .listen('.receivedMsg', (event) => {
                             if(event.is_bot_answer) {
@@ -487,6 +494,7 @@
                     console.log('connection data chat ouverte', conn.connectionId)
                 });
                 conn.on("close", () => {
+                    this.closePeerConnection(conn.metadata.from, conn.metadata.source, conn.metadata.room)
                     console.log('connection data chat fermée dans chat', conn.connectionId)
                 });
 
@@ -545,12 +553,3 @@
         }
     }
 </script>
-
-<!-- <style>
-    .thumbnail {
-        width: 80px;
-        height: 80px;
-        object-fit: cover;
-        border-radius: 4px;
-    }
-</style> -->

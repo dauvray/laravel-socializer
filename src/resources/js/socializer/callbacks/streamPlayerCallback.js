@@ -1,9 +1,8 @@
 export default (call, context) => {
     const receivedStreams = new Set()
 
-    // ici ne renvoi rien car sens unique
     call.answer()
-
+    
     call.on('stream', async(stream) => {
 
         if (receivedStreams.has(stream.id)) {
@@ -15,20 +14,26 @@ export default (call, context) => {
         if (stream instanceof MediaStream) {
 
             if(typeof context.saveRemoteStream === 'function') {
+
                 console.log('Enregistrement du flux distant:', call.metadata.from, stream, call.metadata.source)
                 context.saveRemoteStream(call.metadata.room, call.metadata.from, stream, call.metadata.source)
+
+            } else {
+                console.warn('saveRemoteStream indisponible sur le contexte du callback entrant')
             }
 
-            await context.createVideoElement(
-                {
-                    videoId: call.connectionId, 
-                    nickname: call.metadata.from,
-                    peer: call,
-                    source: call.metadata.source,
-                    roomId: call.metadata.room,
-                },
-                stream
-            )
+            if (typeof context.createVideoElement === 'function') {
+                await context.createVideoElement(
+                    {
+                        videoId: call.connectionId, 
+                        nickname: call.metadata.from,
+                        peer: call,
+                        source: call.metadata.source,
+                        roomId: call.metadata.room,
+                    },
+                    stream
+                )
+            }
 
             if(stream.getVideoTracks().length > 0) {
                 stream.getVideoTracks()[0].addEventListener('ended', () => {
@@ -49,11 +54,19 @@ export default (call, context) => {
     })
 
     call.on('close', () => {
-        context.removeVideoElement(call.connectionId)
-        context.deleteRemoteOpenedConnections(call)
+
+        if (typeof context.removeVideoElement === 'function') {
+            context.removeVideoElement(call.connectionId)
+        }
+
+        if (typeof context.deleteRemoteOpenedConnections === 'function') {
+            context.deleteRemoteOpenedConnections(call.connectionId)
+        }
 
         if(typeof context.removeRemoteStream === 'function') {
             context.removeRemoteStream(call.metadata.room, call.metadata.from, call.metadata.source)
+        } else {
+            console.warn('removeRemoteStream indisponible sur le contexte du callback entrant')
         }
 
     })

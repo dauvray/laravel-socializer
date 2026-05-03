@@ -48,7 +48,6 @@
     import { mapActions, mapState } from 'pinia'
     import resizeDirective from '~socializer/directives/resizable.js';    
 
-
     const peerStore = usePeerStore()
 
     export default {
@@ -86,7 +85,7 @@
                 default: null,
             },
              peer: {
-                type: RTCPeerConnection,
+                type: Object,
                 required: false,
                 default: null,
              },

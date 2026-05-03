@@ -4,7 +4,6 @@
             :key="user.id"
             class="chatter">
                 <Gravatar
-                    class="me-2"
                     size="small"
                     style="width: 30px;"
                     :user="user"

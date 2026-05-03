@@ -26,7 +26,6 @@
     import { mapState } from 'pinia'
     import { defineAsyncComponent } from 'vue'
 
-
     const feedOptions = {
         feedId: null,
         feedFormId: null,
@@ -39,7 +38,6 @@
             FeedWidget,
             IconWidget,
             PublishButton: defineAsyncComponent(() => import('~socializer/components/User/widgets/PublishButton.vue')),
-            OwnedServers: defineAsyncComponent(() => import('~socializer/components/User/widgets/OwnedServers.vue')),
             UserGroups: defineAsyncComponent(() => import('~socializer/components/User/widgets/UserGroups.vue')),
         },
         props: {

@@ -56,8 +56,6 @@
             ConversationList,
             ConversationCreatorButton,
             ChatComponent,
-            StreamUserButton: defineAsyncComponent(() => import('~socializer/components/WebRTC/widgets/StreamUserButton.vue')),
-            CaptureUserButton: defineAsyncComponent(() => import('~socializer/components/WebRTC/widgets/CaptureUserButton.vue')),
         },
         directives: {
             resizable,

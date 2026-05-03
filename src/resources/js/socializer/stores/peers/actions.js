@@ -1,9 +1,20 @@
 import { Peer } from "peerjs"
 import { useAjaxService } from '~estarter/services/AjaxService.js'
 import { useMeStore } from '~estarter/stores/me.js'
-import { isEmpty } from '~estarter/services/helpers.js'
+import { isEmpty, safeStringify } from '~estarter/services/helpers.js'
+import { normalizePeerMetadata } from '~socializer/services/helpers.js'
 
 const AjaxService = useAjaxService()
+
+const buildPeerOptions = (options = {}, metadataOverrides = {}) => {
+    return {
+        ...options,
+        metadata: normalizePeerMetadata({
+            ...(options?.metadata || {}),
+            ...metadataOverrides,
+        }),
+    }
+}
 
 export default {
    
@@ -55,33 +66,35 @@ export default {
         const room = payload.room
         const type = payload.type
 
-        // init room
-        if(!this.connections.hasOwnProperty(room)) {
-            this.connections[room] = {}
+        const connections = { ...this.connections }
+
+        if (!connections[room]) {
+            connections[room] = {}
         }
 
-
-        // init user
-        if(!this.connections[room].hasOwnProperty(userSlug)) {
-            this.connections[room][userSlug] ={}
+        if (!connections[room][userSlug]) {
+            connections[room][userSlug] = {}
         }
 
-
-        // init type
-        if(!this.connections[room][userSlug].hasOwnProperty(type)) {
-            this.connections[room][userSlug][type] = []
+        if (!connections[room][userSlug][type]) {
+            connections[room][userSlug][type] = []
+        } else {
+            return
         }
+
+        this.connections = connections
     },
     // add when you call
     openPeerConnection(payload) {
 
-        const slug = payload.options.metadata.slug
+        const options = payload.options
+        const slug = options.metadata.slug
         const peerID = payload.peerId
         const room = payload.room
         const type = payload.type
         const ignoredDataConnections = [] // put here video types without dataPeerConnection
 
-        this.initConnection(payload)
+        this.initConnection( payload )
 
         // create connection
         if (!this.hasActiveConnection(room, slug, type, peerID)) {
@@ -91,27 +104,30 @@ export default {
 
             if(type === 'data') {
 
-                payload.options.metadata.callbackKey = `${type}-${room}`
-                call = this.localPeer.connect(peerID, payload.options )
+                const dataOptions = buildPeerOptions(options, {
+                    callbackKey: `${type}-${room}`,
+                })
+                call = this.localPeer.connect(peerID, dataOptions )
 
                 this.connections[room][slug][type].push(call) 
                 
             } else {
 
-                let streamOptions = { ...payload.options, metadata: { ...payload.options.metadata } }
+                const streamOptions = buildPeerOptions(options, {
+                    callback: `${type}PlayerCallback`,
+                })
 
-                // custom callbacks
-                streamOptions.metadata.callback = `${type}PlayerCallback`
-
+                // send stream to peer (webrtc connection)
                 call = this.localPeer.call(peerID, payload.stream, streamOptions)
 
                 this.connections[room][slug][type].push(call) 
 
                 // join data connection
                 if(!ignoredDataConnections.includes(type)) {
-                    delete payload.options.stream
-                    payload.options.metadata.callback = `${type}PlayerDataCallback` // custom callback
-                    conn = this.localPeer.connect(peerID, payload.options )
+                    const dataOptions = buildPeerOptions(options, {
+                        callback: `${type}PlayerDataCallback`,
+                    })
+                    conn = this.localPeer.connect(peerID, dataOptions )
                     this.connections[room][slug][type].push(conn)  
                 }
 
@@ -144,14 +160,23 @@ export default {
     },
     // add when you are called
     setRemoteConnection(call, payload) {
-        
-       const slug = payload.options.metadata.slug
-       const type = payload.type
-       const room = payload.room
+        const normalizedPayload = { ...payload, options: buildPeerOptions(payload.options) }
+        const slug = normalizedPayload.options.metadata.slug
+        const type = normalizedPayload.type
+        const room = normalizedPayload.room
 
-       this.initConnection(payload)
+        this.initConnection(normalizedPayload)
 
-       this.connections[room][slug][type].push(call) 
+        this.connections[room][slug][type].push(call) 
+    },
+    setRemotePeerId(peerId, userSlug) {
+        this.remotePeersId.set(userSlug, peerId)
+    },
+    getRemotePeerId(userSlug) {
+        return this.remotePeersId.get(userSlug)
+    },
+    removeRemotePeerId(userSlug) {
+        this.remotePeersId.delete(userSlug)
     },
     closePeerConnection(toUserSlug, type = 'data', room = 'default', notify = false) {
 
@@ -174,7 +199,7 @@ export default {
         this.connections[room][toUserSlug][type].forEach((conn, idx) => {
 
             // is emitter ?
-            if(conn.hasOwnProperty('peer')) {
+            if(conn && conn.hasOwnProperty('peer')) {
                 switch(type) {
                     case 'data':
                         conn.close()
@@ -193,15 +218,22 @@ export default {
 
         })
 
-        this.connections[room][toUserSlug][type] = []
+       delete this.connections[room][toUserSlug][type]
 
         // clear rooms
         this.clearRoom(room, toUserSlug, type)
     },
     clearRoom(room, toUserSlug, type) {
 
-        if(this.connections[room][toUserSlug].hasOwnProperty(type) 
-            && this.connections[room][toUserSlug][type].length === 0) {
+        if(!this.connections.hasOwnProperty(room)) {
+           return
+        }
+
+        if(!this.connections[room].hasOwnProperty(toUserSlug)) {
+           return
+        }
+
+        if(this.connections[room][toUserSlug].hasOwnProperty(type)) {
             delete this.connections[room][toUserSlug][type]
         }
 
@@ -215,11 +247,12 @@ export default {
     },
     signalRemoteToClosePeer(metadata){
         const meStore = useMeStore()
+        const normalizedMetadata = normalizePeerMetadata(metadata)
         AjaxService.load('/close-connection-to-peer-id', 'post', {
-            toUserSlug: metadata.from,
-            fromUserSlug: meStore.getMe.slug,
-            room: metadata.room,
-            type: metadata.source,
+            toUserSlug: normalizedMetadata.from,
+            fromUserSlug: meStore.getMe?.slug != null ? String(meStore.getMe.slug) : '',
+            room: normalizedMetadata.room,
+            type: normalizedMetadata.source,
         })
     },
     putToPendingRequests(toUserSlug, data) {
@@ -229,12 +262,12 @@ export default {
         delete this.pendingRequests[toUserSlug]
     },
     deleteRemoteOpenedConnections(conn) {
-        this.remoteOpenedConnections.delete(conn.connectionId)
-        this.signalRemoteToClosePeer({
-            from: conn.metadata.from,
-            room: conn.metadata.room,
-            source: conn.metadata.source,
-        })
+        this.remoteOpenedConnections.delete(conn)
+        // this.signalRemoteToClosePeer({
+        //     from: conn.metadata.from,
+        //     room: conn.metadata.room,
+        //     source: conn.metadata.source,
+        // })
     },
 
      /*******************************
@@ -255,6 +288,7 @@ export default {
             this.createLocalPeer()
         }
 
+        // if the connection listener is already set, we don't need to set it again
         if (this.connectionListenerSet) return
 
         this.localPeer.on('connection', async(conn) => {
@@ -299,6 +333,10 @@ export default {
     },
     sendData(message, room = 'default') {
 
+        if(!this.connections?.[room] || typeof this.connections[room] !== 'object') {
+            return
+        }
+
         if(!isEmpty(this.connections)) {
 
             for (const userSlug in this.connections[room]) {
@@ -312,7 +350,13 @@ export default {
                 }
 
                 this.connections[room][userSlug]['data'].forEach(conn => {
-                    conn.send(JSON.stringify(message.data))
+                    const serializedData = safeStringify(message.data)
+
+                    if(serializedData === null) {
+                        return
+                    }
+
+                    conn.send(serializedData)
                 })
             }
         }
@@ -347,10 +391,13 @@ export default {
             // });
 
             if(call.options.metadata.hasOwnProperty('callback')) {
+
                 const customCallbacks = await import(`~socializer/callbacks/${call.options.metadata.callback}.js`)
+
                 if (typeof customCallbacks.default === 'function' && !this.remoteOpenedConnections.has(call.connectionId)) {
                     this.remoteOpenedConnections.add(call.connectionId)
                     customCallbacks.default(call, context)
+
                 } else {
                     console.error(`Le module ${call.options.metadata.callback}.js n'a pas d'exportation par défaut valide.`);
                 }
@@ -389,11 +436,13 @@ export default {
         this.removeStream(room, source)
 
         for (const slug in this.connections[room]) {
+
             if(this.connections[room][slug].hasOwnProperty(source)) {
 
                 for (let i = 0; i < this.connections[room][slug][source].length; i++) {
                     this.connections[room][slug][source][i].close()
                 }
+
                 delete this.connections[room][slug][source]
                 this.clearRoom(room, slug, source)
             }
@@ -449,6 +498,12 @@ export default {
     },
     saveRemoteStream(room = 'default', userSlug, stream = null, type = 'stream') {
 
+        // Rejeter tout payload non MediaStream
+        if (!(stream instanceof MediaStream)) {
+            console.warn('saveRemoteStream: payload ignoré (non MediaStream)', stream)
+            return
+        }
+
         // init room
         if(!this.remoteStreams.hasOwnProperty(room)) {
             this.remoteStreams[room] = {}
@@ -456,7 +511,7 @@ export default {
 
         // init user
         if(!this.remoteStreams[room].hasOwnProperty(userSlug)) {
-            this.remoteStreams[room][userSlug] ={}
+            this.remoteStreams[room][userSlug] = {}
         }
 
         // init type
@@ -464,7 +519,14 @@ export default {
             this.remoteStreams[room][userSlug][type] = []
         }
 
-        this.remoteStreams[room][userSlug][type].push(stream)
+        // Nettoyer les entrées invalides et dédoublonner par stream.id
+        const existing = this.remoteStreams[room][userSlug][type].filter(s => s instanceof MediaStream)
+        if (existing.some(s => s.id === stream.id)) {
+            console.log('saveRemoteStream: stream déjà présent, ignoré', stream.id)
+            return
+        }
+        existing.push(stream)
+        this.remoteStreams[room][userSlug][type] = existing
     },
     removeRemoteStream(room = 'default', userSlug, type = 'stream') {
 
@@ -476,11 +538,11 @@ export default {
             delete this.remoteStreams[room][userSlug][type];
         }
 
-        if (Object.keys(this.remoteStreams[room][userSlug]).length === 0) {
+        if (this.remoteStreams[room][userSlug] && Object.keys(this.remoteStreams[room][userSlug]).length === 0) {
             delete this.remoteStreams[room][userSlug];
         }
 
-        if (Object.keys(this.remoteStreams[room]).length === 0) {
+        if (this.remoteStreams[room] && Object.keys(this.remoteStreams[room]).length === 0) {
             delete this.remoteStreams[room];
         }
     }

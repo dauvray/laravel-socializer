@@ -47,76 +47,53 @@
 
             // ne rien supprimer ici, le context est utilisé dans les callbacks de certains composants
 
-            const {
-                sendLocalPeerId,
-                getAuthorizationRemotePeerId,
-                closeRemotePeerId,
-                sendAuthorizationRemotePeerId,
-                receiveAuthorizationRemotePeerId,
-                setLocalVideoPeer,
-                setLocalDataPeer,
-                storeConnection,
-                createVideoElement,
-                connectToQueuedConnections,
-                removeVideoElement,
-                deleteRemoteOpenedConnections,
-                startVisioStream,
-                stopUserVisioStream,
-                stopAllVisioStream,
-                currentStream,
-                updateCurrentRoom,
-                updateCurrentType,
-                localPeerId,
-                localPeer,
-                connections,
-                onResponseCallError,
-                callInprogress,
-                setCallInProgress,
-                setCurrentCallRoomId,
-                saveRemoteStream,
-                removeRemoteStream,
+            // const {
+            //     sendLocalPeerId,
+            //     getAuthorizationRemotePeerId,
+            //     closeRemotePeerId,
+            //     sendAuthorizationRemotePeerId,
+            //     receiveAuthorizationRemotePeerId,
+            //     setLocalVideoPeer,
+            //     setLocalDataPeer,
+            //     storeConnection,
+            //     createVideoElement,
+            //     connectToQueuedConnections,
+            //     removeVideoElement,
+            //     deleteRemoteOpenedConnections,
+            //     startVisioStream,
+            //     stopUserVisioStream,
+            //     stopAllVisioStream,
+            //     currentStream,
+            //     updateCurrentRoom,
+            //     updateCurrentType,
+            //     localPeerId,
+            //     localPeer,
+            //     connections,
+            //     onResponseCallError,
+            //     callInprogress,
+            //     setCallInProgress,
+            //     setCurrentCallRoomId,
+            //     saveRemoteStream,
+            //     removeRemoteStream,
 
-            } = usePeers()
+            // } = usePeers()
 
             const notificationComponent = ref(null)
             const notificationComponentProps = ref(null)
             const NewMessageNotification= ref(null)
             const queueProcesing = ref(false)
             const currentCallUsers = ref([])
+
+             const peers = usePeers()
         
             return {
-                sendLocalPeerId,
-                getAuthorizationRemotePeerId,
-                closeRemotePeerId,
-                sendAuthorizationRemotePeerId,
-                receiveAuthorizationRemotePeerId,
+                ...peers,
+
                 notificationComponent,
                 notificationComponentProps,
-                setLocalVideoPeer,
-                setLocalDataPeer,
-                storeConnection,
-                createVideoElement,
-                removeVideoElement,
-                deleteRemoteOpenedConnections,
-                startVisioStream,
-                stopUserVisioStream,
-                stopAllVisioStream,
-                currentStream,
-                updateCurrentRoom,
-                updateCurrentType,
-                localPeerId,
-                localPeer,
-                connections,
-                onResponseCallError,
-                callInprogress,
-                setCallInProgress,
-                setCurrentCallRoomId,
                 NewMessageNotification,
-                connectToQueuedConnections,
                 queueProcesing,
                 currentCallUsers,
-                saveRemoteStream,
-                removeRemoteStream,
             }
         },
         watch: {

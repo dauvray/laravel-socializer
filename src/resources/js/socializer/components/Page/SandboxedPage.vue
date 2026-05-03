@@ -1,5 +1,5 @@
 <template>
-  <div >
+
     <div class="card-body h-100">
       <iframe
             ref="sandboxFrame"
@@ -10,7 +10,7 @@
             <Sprinner2 class="spinner"></Sprinner2>
         </div>
     </div>
-  </div>
+ 
 </template>
 
 <script>

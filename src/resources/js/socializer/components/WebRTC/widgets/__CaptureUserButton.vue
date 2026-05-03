@@ -19,8 +19,7 @@
     import { useMeStore } from '~estarter/stores/me.js'
     import { mapState } from 'pinia'
     import { ref } from 'vue'
-
-    const screenPeerCallback =  import(`~socializer/callbacks/screenPlayerCallback.js`)
+    import screenPeerCallback from '~socializer/callbacks/screenPlayerCallback.js'
 
     export default {
         name: 'CaptureUserButton',

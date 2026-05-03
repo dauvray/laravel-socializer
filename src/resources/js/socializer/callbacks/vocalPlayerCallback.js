@@ -1,12 +1,10 @@
-import EventBus from '~estarter/services/eventBus'
-
 export default async (call, context) => {
     console.log('nouvelle connexion Call')
     console.log('Appel entrant reçu');
 
     context.startWebcamStream({
-        audio: false,
-        video: true,
+        audio: true,
+        video: false,
     }).then(() => {
 
         console.log(context)

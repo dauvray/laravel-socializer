@@ -34,8 +34,11 @@
                 handler(newStreams, oldStreams) {
                     if(!newStreams) newStreams = []
                     if(!oldStreams) oldStreams = []
-                    // Met à jour les sources audio en fonction des streams
-                    this.updateStreams(newStreams, oldStreams)
+                    if(this.audioContext) {
+                        // Met à jour les sources audio en fonction des streams
+                        this.updateStreams(newStreams, oldStreams)
+                    }
+                    
                 }
             }
         },

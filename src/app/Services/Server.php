@@ -587,7 +587,7 @@ class Server
     {
         switch($new_content['content_type']) {
             case 'chat':
-                $new_vid = $this->serviceChat->createChatVertice($room_id, $new_content);
+                $new_vid = $this->serviceChat->getOrcreateChatVertice($room_id, $new_content);
                 break;
             case 'data':
             case 'admin':
