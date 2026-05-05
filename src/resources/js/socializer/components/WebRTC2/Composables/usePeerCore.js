@@ -17,7 +17,7 @@
  * - préparer les informations nécessaires aux connexions
  * 
  * 
- * Fonctions concernées :
+ * Fonctions concernées dans l'ancien code :
  * ----------------------
  * getAuthorizationRemotePeerId
  * sendAuthorizationRemotePeerId
@@ -37,7 +37,7 @@
 
 export function usePeerCore(ctx) {
 
-    const getRemotePeerId = (user) => {
+    const requestRemotePeerConnection = (user) => {
 
         const room = ctx.session.onAirRoom
         const type = ctx.session.currentType
@@ -65,19 +65,17 @@ export function usePeerCore(ctx) {
         }
     }
 
-    const sendLocalPeerId = (fromUserSlug) => {
-        ctx.isConnecting.value = false
-
+    const responseRemotePeerConnection = (fromUserSlug, type, room) => {
         ctx.AjaxService.load('/response-to-peer-id', 'post', {
             peerId: ctx.peerStore.localPeer._id,
             toUserSlug: fromUserSlug,
-            room: ctx.onAirRoom.value,
-            type: ctx.currentType.value
+            room: room,
+            type: type
         })
     }
 
     return {
-        getRemotePeerId,
-        sendLocalPeerId,
+        requestRemotePeerConnection,
+        responseRemotePeerConnection,
     }
 }

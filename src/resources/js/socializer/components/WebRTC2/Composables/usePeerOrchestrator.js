@@ -20,7 +20,7 @@
  * - façade technique unifiée
  * - éviter que les couches supérieures manipulent directement les sous-modules
  * 
- * Fonctions concernées :
+ * Fonctions concernées dans l'ancien code :
  * ----------------------
  * createVideoElement
  * removeVideoElement
@@ -50,44 +50,67 @@ export function usePeerOrchestrator( type = 'data', room = 'app') {
     const transport = usePeerTransport(context)
 
     /**
-     * 🔥 Glue logique (SEUL endroit où tu mixes les couches)
+     * 🔥 Glue logique (SEUL endroit où on mixe les couches)
      */
-    // const startCall = async (userSlug) => {
-    //     await media.startWebcamStream({ video: true, audio: true })
-
-    //     core.getRemotePeerId(userSlug)
-    // }
-
-    // const handleRemotePeer = (payload) => {
-    //     connections.connectToPeer({
-    //         ...payload,
-    //         stream: context.currentStream.value
-    //     })
-    // }
 
     const initializePeerConnection = (callbacks) => {
 
-        const type = context.currentType
+        const type = context.currentType.value
+        const room = context.currentRoom.value
 
-        switch(type) {
-            case 'stream':
-            case 'screen':
-                transport.setLocalVideoPeer(callbacks)
-                break
-            case 'call':
-                // pour les appels, on attend d’avoir le stream avant de créer le peer (car besoin du stream dans la connexion)
-                // c’est géré dans usePeerMedia.startCallStream → createVideoPeer
-                break
-            default:
-                transport.setLocalDataPeer(callbacks)
-        }
+        // TODO : attendant d’avoir une vraie gestion des événements (eventBus), on stocke les callbacks dans le context pour qu’ils soient accessibles dans le transport (pour les enregistrer auprès de PeerJS)
+        context.storeEventCallback(callbacks)
+        console.log('storeEventCallback - context id:', context.contextId)
+
+        transport.setLocalPeer()
+
+        // if the connection listener is already set, we don't need to set it again
+        if(context.peerStore.hasIncomingPeerCallbacks(`${type}-${room}`)) return
+
+        // enregistrer les callbacks entrants pour ce type/room
+        transport.registerIncomingPeerCallbacks(callbacks)
+
+        
+    
+
+        // todo : on en est là
+      //  connections.setLocalDataPeer(type)
+
+        // switch(type) {
+        //     case 'stream':
+        //     case 'screen':
+        //         transport.setLocalVideoPeer(callbacks)
+        //         break
+        //     case 'call':
+        //         // pour les appels, on attend d’avoir le stream avant de créer le peer (car besoin du stream dans la connexion)
+        //         // c’est géré dans usePeerMedia.startCallStream → createVideoPeer
+        //         break
+        //     default:
+        //         transport.setLocalDataPeer(callbacks)
+        // }
+    }
+
+    const cleanupPeerConnection = () => {
+
     }
 
     const syncUsersConnections = async (users) => {
        const newUsers = await connections.getNewUsersInRoom(users)
        newUsers.forEach(user => {
-            core.getRemotePeerId(user)
+            core.requestRemotePeerConnection(user)
        })
+    }
+
+    const answerToRemotePeerConnection = (fromUserSlug, type, room) => {
+        core.responseRemotePeerConnection(fromUserSlug, type, room)
+    }
+
+    const connectToQueuedConnection = (payload) => {
+        connections.connectToPeer(payload)
+    }
+
+    const sendDataToPeer = (data, destUserSlugs = null) => {
+        transport.sendData(data, destUserSlugs)
     }
 
     return {
@@ -97,26 +120,26 @@ export function usePeerOrchestrator( type = 'data', room = 'app') {
         ...transport,
 
         // API métier exposée aux features (useMediaBroadcast)
-        // startCall,
-        // handleRemotePeer,
         initializePeerConnection,
         syncUsersConnections,
+        answerToRemotePeerConnection,
+        connectToQueuedConnection,
+        sendDataToPeer,
 
+        /*---------------------------------
+        | COMPUTED
+        ----------------------------------*/
 
-        // currentStream: context.currentStream,
-        // isConnecting: context.isConnecting,
-
-         // expose state
-        // session: context.session,
-        // mediaState: context.media,
-        // connectionState: context.connection,
-        // uiState: context.ui,
-
-        // computed
-        // localPeerId: context.localPeerId,
-        // connections: context.connections,
-        currentMode: context.currentMode,
+        // session
+        currentType: context.currentType,
         currentRoom: context.currentRoom,
         onAirRoom: context.onAirRoom,
+
+        // connection
+        usersInRoom: context.usersInRoom,
+
+        // meStore
+        mySlug: context.mySlug,
+        myName: context.myName,
     }
 }

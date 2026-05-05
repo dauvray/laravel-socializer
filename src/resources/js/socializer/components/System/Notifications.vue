@@ -27,7 +27,8 @@
     import { mapActions, mapState } from 'pinia'
     import { ref } from 'vue'
     import { useMeStore } from '~estarter/stores/me.js'
-    import { usePeers } from '~socializer/components/WebRTC/composables/usePeers.js'
+ //   import { usePeers } from '~socializer/components/WebRTC/composables/usePeers.js'
+    import { useMediaBroadcast } from '~socializer/components/WebRTC2/Composables/useMediaBroadcast.js'
     import { useConversationsStore } from '~socializer/stores/conversations.js'
     import { defineAsyncComponent } from 'vue'
     import IconWidget from '~estarter/components/widgets/IconWidget.vue'
@@ -84,7 +85,7 @@
             const queueProcesing = ref(false)
             const currentCallUsers = ref([])
 
-             const peers = usePeers()
+            const peers = useMediaBroadcast()
         
             return {
                 ...peers,
@@ -119,12 +120,13 @@
             }
         },
         async mounted() {
-            const visioCallCallback = await import(`~socializer/callbacks/visioPlayerCallback.js`)
-            const visioPlayerDataCallback = await import(`~socializer/callbacks/visioPlayerDataCallback.js`)
-            this.setLocalVideoPeer(this, visioCallCallback.default)
-            this.setLocalDataPeer(this, visioPlayerDataCallback.default)
+            // TODO : revoir toute la logique de ce composant, elle est devenue un peu le fourre-tout de tout ce qui concerne les notifications et la communication avec les autres composants (via eventBus) et les autres utilisateurs (via Echo), il faudrait peut-être la scinder en plusieurs composants plus spécialisés
+            // const visioCallCallback = await import(`~socializer/callbacks/visioPlayerCallback.js`)
+            // const visioPlayerDataCallback = await import(`~socializer/callbacks/visioPlayerDataCallback.js`)
+            // this.setLocalVideoPeer(this, visioCallCallback.default)
+            // this.setLocalDataPeer(this, visioPlayerDataCallback.default)
 
-            this.eventBus.$on('call-user', this.onStartCall)
+            // this.eventBus.$on('call-user', this.onStartCall)
             
             setInterval(() => { 
                 this.setOnlineStatus() 
@@ -157,12 +159,12 @@
                         // connect to caller user and send localPeerId
                         .listen('.AskToPeerID', (event) => {
                             // store request connection
-                            this.sendLocalPeerId(event.fromUserSlug, event.type, event.room)
+                            this.sendLocalPeerData(event.fromUserSlug, event.type, event.room)
                         })
                         // receive remotePeerId and connect to called user
                         .listen('.ResponseToPeerID', (event) => {
                             // store response connection
-                            this.connectToQueuedConnections({
+                            this.connectToPeer({
                                 peerId: event.peerId, 
                                 userSlug: event.fromUserSlug, 
                                 type: event.type, 

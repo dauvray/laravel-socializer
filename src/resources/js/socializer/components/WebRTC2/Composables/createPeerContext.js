@@ -27,6 +27,8 @@ import { useMeStore } from '~estarter/stores/me.js'
 
 export function createPeerContext({ type, room, eventBus }) {
 
+    const contextId = `${type}-${room}`
+
     // STORES (infra)
     const peerStore = usePeer2Store()
     const meStore = useMeStore()
@@ -59,14 +61,48 @@ export function createPeerContext({ type, room, eventBus }) {
     // CONNECTION STATE
     const connection = reactive({
         // isConnecting: false,
-        previousUsersInRoom: [],
+        usersInRoom: [],
     })
+
+    // CONNECTION EVENTS
+   const connectionEvents = reactive({
+       onConnectionOpen: {
+            callbacks: [],
+            isActive: false,
+        },
+        onConnectionClose: {
+            callbacks: [],
+            isActive: false,
+        },
+        onConnectionError: {
+            callbacks: [],
+            isActive: false,
+        },
+        onDataReceived: {
+            callbacks: [],
+            isActive: false,
+        },
+        onStreamReceived: {
+            callbacks: [],
+            isActive: false,
+        },
+        onStreamClosed: {
+            callbacks: [],
+            isActive: false,
+       },
+    })
+
 
     // COMPUTED (read-only projections)
     const computedState = {
-        currentMode: computed(() => session.currentType),
+        currentType: computed(() => session.currentType),
         currentRoom: computed(() => session.currentRoom),
         onAirRoom: computed(() => session.onAirRoom),
+
+        usersInRoom: computed(() => connection.usersInRoom),
+
+        mySlug: computed(() => meStore.getMe?.slug),
+        myName: computed(() => meStore.getMe?.name),
         // localPeer: computed(() => peerStore.getLocalPeer),
         // localPeerId: computed(() => peerStore.getLocalPeerId),
         // connections: computed(() => peerStore.getConnections),
@@ -92,9 +128,22 @@ export function createPeerContext({ type, room, eventBus }) {
             }
             checkPeer()
         })
-    }   
+    }  
+    
+    const storeEventCallback = (callbacks) => {
+        Object.entries(callbacks).forEach(([event, callback]) => {
+            if(connectionEvents[event]) {
+                connectionEvents[event].callbacks.push(callback)
+                connectionEvents[event].isActive = true
+            } else {
+                console.warn(`Event ${event} is not defined in connectionEvents`)
+            }
+        })
+        console.log('storeEventCallback', connectionEvents)
+    }
 
     return {
+        contextId,
         // infra
         peerStore,
         meStore,
@@ -107,11 +156,13 @@ export function createPeerContext({ type, room, eventBus }) {
         media,
         ui,
         connection,
+        connectionEvents,
 
         // computed
         ...computedState,
 
         // helpers
         waitForMeReady,
+        storeEventCallback,
     }
 }
