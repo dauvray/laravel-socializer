@@ -64,30 +64,40 @@ export function createPeerContext({ type, room, eventBus }) {
         usersInRoom: [],
     })
 
+    // SIGNALS reçus pour la room (ex: peerId à connecter, demande d’autorisation, etc.)
+    const roomSignals = computed(() =>
+        peerStore.getQueueForRoom(contextId)
+    )
+
+    const lastRoomSignal = computed(() => {
+        const q = peerStore.getQueueForRoom(contextId)
+        return q?.at(-1) ?? null
+    })
+
     // CONNECTION EVENTS
    const connectionEvents = reactive({
        onConnectionOpen: {
-            callbacks: [],
+            callback: () => {},
             isActive: false,
         },
         onConnectionClose: {
-            callbacks: [],
+            callback: () => {},
             isActive: false,
         },
         onConnectionError: {
-            callbacks: [],
+            callback: () => {},
             isActive: false,
         },
         onDataReceived: {
-            callbacks: [],
+            callback: () => {},
             isActive: false,
         },
         onStreamReceived: {
-            callbacks: [],
+            callback: () => {},
             isActive: false,
         },
         onStreamClosed: {
-            callbacks: [],
+            callback: () => {},
             isActive: false,
        },
     })
@@ -130,20 +140,12 @@ export function createPeerContext({ type, room, eventBus }) {
         })
     }  
     
-    const storeEventCallback = (callbacks) => {
-        Object.entries(callbacks).forEach(([event, callback]) => {
-            if(connectionEvents[event]) {
-                connectionEvents[event].callbacks.push(callback)
-                connectionEvents[event].isActive = true
-            } else {
-                console.warn(`Event ${event} is not defined in connectionEvents`)
-            }
-        })
-        console.log('storeEventCallback', connectionEvents)
-    }
+
 
     return {
         contextId,
+        roomSignals,
+        lastRoomSignal,
         // infra
         peerStore,
         meStore,
@@ -163,6 +165,6 @@ export function createPeerContext({ type, room, eventBus }) {
 
         // helpers
         waitForMeReady,
-        storeEventCallback,
+        
     }
 }

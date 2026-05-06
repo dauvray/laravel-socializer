@@ -27,6 +27,7 @@
     import { mapActions, mapState } from 'pinia'
     import { ref } from 'vue'
     import { useMeStore } from '~estarter/stores/me.js'
+    import { usePeer2Store } from '~socializer/stores/peers2.js'
  //   import { usePeers } from '~socializer/components/WebRTC/composables/usePeers.js'
     import { useMediaBroadcast } from '~socializer/components/WebRTC2/Composables/useMediaBroadcast.js'
     import { useConversationsStore } from '~socializer/stores/conversations.js'
@@ -85,6 +86,7 @@
             const queueProcesing = ref(false)
             const currentCallUsers = ref([])
 
+            // bientot inutile
             const peers = useMediaBroadcast()
         
             return {
@@ -143,6 +145,9 @@
             ...mapActions(useMeStore, [
                 'addUnreadNotifications',
             ]),
+            ...mapActions(usePeer2Store, [
+                'dispatchSignal',
+            ]),
             initUserChannel() {
                 if(this.userChannel) {
                     Echo.leave(this.userChannel)
@@ -159,16 +164,29 @@
                         // connect to caller user and send localPeerId
                         .listen('.AskToPeerID', (event) => {
                             // store request connection
-                            this.sendLocalPeerData(event.fromUserSlug, event.type, event.room)
+                          // this.sendLocalPeerData(event.fromUserSlug, event.type, event.room) 
+                            this.dispatchSignal({ 
+                                emitter: 'Notifications',
+                                roomId: `${event.type}-${event.room}`,
+                                type: 'sendLocalPeerData', 
+                                payload: { fromUserSlug: event.fromUserSlug, type: event.type, room: event.room }
+                            })
                         })
                         // receive remotePeerId and connect to called user
                         .listen('.ResponseToPeerID', (event) => {
-                            // store response connection
-                            this.connectToPeer({
-                                peerId: event.peerId, 
-                                userSlug: event.fromUserSlug, 
-                                type: event.type, 
-                                room: event.room 
+                            console.log('ResponseToPeerID', event)
+                            // // store response connection
+                            // this.connectToPeer({
+                            //     peerId: event.peerId, 
+                            //     userSlug: event.fromUserSlug, 
+                            //     type: event.type, 
+                            //     room: event.room 
+                            // })
+                            this.dispatchSignal({ 
+                                emitter: 'Notifications',
+                                roomId: `${event.type}-${event.room}`,
+                                type: 'connectToPeer', 
+                                payload: { peerId: event.peerId, userSlug: event.fromUserSlug, type: event.type, room: event.room }
                             })
                         })
                         // receive authorization to peer connection
@@ -227,6 +245,7 @@
                     userId: this.me.id,
                 });
             },
+            // ne doit pas etre ici.
             onStopCall() {
                 this.stopAllVisioStream('visio')
                 this.eventBus.$emit('close-call', this.currentCallUsers)

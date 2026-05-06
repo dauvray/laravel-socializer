@@ -148,12 +148,21 @@ export default {
         }
     },
 
-    // Gérer les callbacks pour les connexions entrantes
-    registerIncomingPeerCallbacks(callbackKey, callbackFn) {
-        this.incomingConnectionCallbacks.set(callbackKey, callbackFn)
-    },
-    unregisterIncomingPeerCallbacks(callbackKey) {
-        this.incomingConnectionCallbacks.delete(callbackKey)
+
+    dispatchSignal(signal) {
+        const s = { ...signal, ts: Date.now() }
+        this.lastSignal = s
+        const key = s.roomId
+
+        if (!this.signalQueues[key]) {
+            this.signalQueues[key] = []
+        }
+        this.signalQueues[key].push(s)
+
+         // Garde un historique limité par room
+        if (this.signalQueues[s.roomId].length > 10) {
+            this.signalQueues[s.roomId].shift()
+        }
     },
 
 

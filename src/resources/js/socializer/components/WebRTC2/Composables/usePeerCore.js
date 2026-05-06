@@ -34,6 +34,7 @@
  * updateCurrentType
  * 
  */
+import { watch } from 'vue'
 
 export function usePeerCore(ctx) {
 
@@ -73,6 +74,16 @@ export function usePeerCore(ctx) {
             type: type
         })
     }
+
+    watch(ctx.lastRoomSignal, async (signal) => {
+        if (!signal) return
+
+        switch (signal.type) {
+            case 'sendLocalPeerData':
+                await responseRemotePeerConnection(signal.payload.fromUserSlug, signal.payload.type, signal.payload.room)
+                break
+        }
+    })
 
     return {
         requestRemotePeerConnection,

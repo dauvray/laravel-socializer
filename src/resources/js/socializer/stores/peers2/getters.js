@@ -13,14 +13,23 @@ export default {
         return this.localPeer ? this.localPeer.id : null
     },
 
-    hasIncomingPeerCallbacks: (state) => {
-        return (callbackKey) => {
-            return state.incomingConnectionCallbacks.has(callbackKey)
+
+    getQueueForRoom: (state) => {
+        return (roomId) => {
+            if (!state.signalQueues[roomId]) {
+                state.signalQueues[roomId] = []
+            }
+            return state.signalQueues[roomId]
         }
     },
-    getIncomingPeerCallbacks: (state) => {
-        return (callbackKey) => {
-            return state.incomingConnectionCallbacks.get(callbackKey)
-        }
-    }
+    clearSignalQueueRoom(roomId) {
+        delete this.signalQueues[roomId]
+    },
+    getLastSignal() {
+        return this.lastSignal
+    },
+
+
+
+
 }

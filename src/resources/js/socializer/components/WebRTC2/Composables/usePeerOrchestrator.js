@@ -49,7 +49,7 @@ export function usePeerOrchestrator( type = 'data', room = 'app') {
     const connections = usePeerConnections(context)
     const transport = usePeerTransport(context)
 
-    /**
+   /**
      * 🔥 Glue logique (SEUL endroit où on mixe les couches)
      */
 
@@ -58,20 +58,17 @@ export function usePeerOrchestrator( type = 'data', room = 'app') {
         const type = context.currentType.value
         const room = context.currentRoom.value
 
-        // TODO : attendant d’avoir une vraie gestion des événements (eventBus), on stocke les callbacks dans le context pour qu’ils soient accessibles dans le transport (pour les enregistrer auprès de PeerJS)
-        context.storeEventCallback(callbacks)
-        console.log('storeEventCallback - context id:', context.contextId)
-
         transport.setLocalPeer()
 
-        // if the connection listener is already set, we don't need to set it again
-        if(context.peerStore.hasIncomingPeerCallbacks(`${type}-${room}`)) return
+        // une boucle pour stocker les calbbacks dans createPeerContext et éviter les dépendances circulaires (core → transport → peerStore)
+        Object.keys(callbacks).forEach(callbackKey => {
+            if(!context.connectionEvents[callbackKey].isActive) {
+                context.connectionEvents[callbackKey].callback = callbacks[callbackKey]
+                context.connectionEvents[callbackKey].isActive = true
+            }
+        })
 
-        // enregistrer les callbacks entrants pour ce type/room
-        transport.registerIncomingPeerCallbacks(callbacks)
 
-        
-    
 
         // todo : on en est là
       //  connections.setLocalDataPeer(type)
@@ -101,14 +98,6 @@ export function usePeerOrchestrator( type = 'data', room = 'app') {
        })
     }
 
-    const answerToRemotePeerConnection = (fromUserSlug, type, room) => {
-        core.responseRemotePeerConnection(fromUserSlug, type, room)
-    }
-
-    const connectToQueuedConnection = (payload) => {
-        connections.connectToPeer(payload)
-    }
-
     const sendDataToPeer = (data, destUserSlugs = null) => {
         transport.sendData(data, destUserSlugs)
     }
@@ -122,13 +111,12 @@ export function usePeerOrchestrator( type = 'data', room = 'app') {
         // API métier exposée aux features (useMediaBroadcast)
         initializePeerConnection,
         syncUsersConnections,
-        answerToRemotePeerConnection,
-        connectToQueuedConnection,
         sendDataToPeer,
 
         /*---------------------------------
         | COMPUTED
         ----------------------------------*/
+        contextId: context.contextId,
 
         // session
         currentType: context.currentType,

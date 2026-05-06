@@ -26,16 +26,9 @@
  */
 
 import { Peer } from "peerjs"
+import { watch } from 'vue'
 
 export function usePeerTransport(ctx) {
-
-    const registerIncomingPeerCallbacks = (callbacks) => {
-        ctx.peerStore.registerIncomingPeerCallbacks(`${ctx.session.currentType}-${ctx.session.onAirRoom}`, callbacks)
-    }
-
-    const unregisterIncomingPeerCallbacks = (callbacks) => {
-        ctx.peerStore.unregisterIncomingPeerCallbacks(`${ctx.session.currentType}-${ctx.session.onAirRoom}`)
-    }
 
     const setLocalPeer = () => {
 
@@ -94,7 +87,5 @@ export function usePeerTransport(ctx) {
     return {
         setLocalPeer,
         sendData,
-        registerIncomingPeerCallbacks,
-        unregisterIncomingPeerCallbacks,
     }
 }

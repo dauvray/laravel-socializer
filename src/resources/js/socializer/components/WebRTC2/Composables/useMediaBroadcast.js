@@ -19,11 +19,14 @@
  * - rester découplé de l’infrastructure
  */
 
+import { inject } from 'vue'
 import { usePeerOrchestrator } from '~socializer/components/WebRTC2/Composables/usePeerOrchestrator.js'
 
 export function useMediaBroadcast(type = 'data', room = 'app') {
     
     const {
+        contextId, // id du contexte (type-room) 
+
         // session
         currentType, // type de broadcast (stream, screen, audio/video call)
         currentRoom, // room "logique" (peut différer de onAirRoom si on gère plusieurs rooms)
@@ -43,6 +46,7 @@ export function useMediaBroadcast(type = 'data', room = 'app') {
         connectToQueuedConnection, // Connexion aux peer dont les identifiants ont été reçus mais pour lesquels la connexion n’a pas encore été établie
         sendDataToPeer, // fonction pour envoyer des données via une connexion data
     } = usePeerOrchestrator( type, room)
+
 
     /*---------------------
         * Logique métier
@@ -69,28 +73,18 @@ export function useMediaBroadcast(type = 'data', room = 'app') {
         }
     }
 
-    // Envoi des données du peer local à un peer distant pour initier une connexion 
-    // (ex: en réponse à une demande de peerId)
-    function sendLocalPeerData(fromSlug, type, room) {
-        answerToRemotePeerConnection(fromSlug, type, room)
-    }
-
-    // Connexion à un peer distant dont l’identifiant a été reçu 
-    function connectToPeer(payload) {
-        connectToQueuedConnection(payload)
-    }
-
     // Envoi de données via une connexion data à un ou plusieurs peers distants
     function sendData(data, destUserSlugs = null) {
         sendDataToPeer(data, destUserSlugs)
     }
 
+
+
     return {
         // system
         initialize,
         watchUsers,
-        sendLocalPeerData,
-        connectToPeer,
+
         // // stream
 
 

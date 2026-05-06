@@ -34,8 +34,11 @@
  * saveRemoteStream
  * removeRemoteStream
  */
+import { watch } from 'vue'
 
 export function usePeerConnections(ctx) {
+
+    let connectionInitialized = false
 
     const getNewUsersInRoom = async (users = []) => {
 
@@ -76,7 +79,11 @@ export function usePeerConnections(ctx) {
 
             const connection = ctx.peerStore.getLocalPeer.connect(config.peerId, config.options)
             _storeRoomConnection(config, connection)
-            _setDataEventsConnectionListener(payload)
+
+
+            if(!connectionInitialized) {
+                 _setDataEventsConnectionListener(payload)
+            }
 
         } else {
             // pour les connexions de type media, on attend d’avoir le stream avant d’ouvrir la connexion (car besoin du stream dans la connexion)
@@ -86,8 +93,8 @@ export function usePeerConnections(ctx) {
 
     const _setDataEventsConnectionListener = (payload) => {
 
-        const callbacks = ctx.peerStore.getIncomingPeerCallbacks(`${payload.type}-${payload.room}`)
-
+       const callbacks = ctx.connectionEvents
+console.log('callbacks pour la connexion entrante', callbacks)
         ctx.peerStore.getLocalPeer.on('connection', async (conn) => { 
 
             //------------------
@@ -98,7 +105,7 @@ export function usePeerConnections(ctx) {
             })
 
             conn.on("close", function () {
-                // todo : gérer la fermeture d’une connexion data 
+                
                 console.log('connection data fermée dans usePeerConnections')
                 // virer connections[room][slug][type] de peerStore
                 ctx.peerStore.removePeerConnection(
@@ -113,30 +120,29 @@ export function usePeerConnections(ctx) {
                 ctx.peerStore.removeRemotePeerId(payload.userSlug)
             })
 
-console.log('usePeerConnections - context id:', ctx.contextId)
-console.log('connectionEvents:', ctx.connectionEvents)
-console.log('onConnectionOpen.callbacks length:', ctx.connectionEvents.onConnectionOpen.callbacks.length)
             //------------------
             // custom events
             //------------------
             // handle connection open
-            if(callbacks && callbacks.onConnectionOpen) {
-                conn.on("open", callbacks.onConnectionOpen)
+            if(callbacks && callbacks.onConnectionOpen.isActive) {
+                conn.on("open", callbacks.onConnectionOpen.callback)
             }
 
             // Receive data
-            if(callbacks && callbacks.onConnectionData) {
-                conn.on("data", callbacks.onConnectionData)
+            if(callbacks && callbacks.onDataReceived.isActive) {
+                conn.on("data", callbacks.onDataReceived.callback)
             }
             // Handle connection close
-            if(callbacks && callbacks.onConnectionClose) {
-                conn.on("close", callbacks.onConnectionClose)
+            if(callbacks && callbacks.onConnectionClose.isActive) {
+                conn.on("close", callbacks.onConnectionClose.callback)
             }
 
             // Handle connection error
-            if(callbacks && callbacks.onConnectionError) {
-                conn.on("error", callbacks.onConnectionError)
+            if(callbacks && callbacks.onConnectionError.isActive) {
+                conn.on("error", callbacks.onConnectionError.callback)
             }
+
+            connectionInitialized = true
         })
     }
 
@@ -181,6 +187,16 @@ console.log('onConnectionOpen.callbacks length:', ctx.connectionEvents.onConnect
         const type = options.metadata.type
         const ignoredDataConnections = [] // put here video types without dataPeerConnection
     }
+
+    watch(ctx.lastRoomSignal, async (signal) => {
+        if (!signal) return
+
+        switch (signal.type) {
+            case 'connectToPeer':
+                await connectToPeer(signal.payload)
+                break
+        }
+    })
 
     return {
         getNewUsersInRoom,
