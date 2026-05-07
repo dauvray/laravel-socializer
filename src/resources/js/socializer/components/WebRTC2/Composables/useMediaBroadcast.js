@@ -19,7 +19,6 @@
  * - rester découplé de l’infrastructure
  */
 
-import { inject } from 'vue'
 import { usePeerOrchestrator } from '~socializer/components/WebRTC2/Composables/usePeerOrchestrator.js'
 
 export function useMediaBroadcast(type = 'data', room = 'app') {
@@ -35,16 +34,21 @@ export function useMediaBroadcast(type = 'data', room = 'app') {
         // connection
         usersInRoom, // liste des utilisateurs présents dans la room 
 
+        // media
+        currentStream, // flux média local (MediaStream) créé par getUserMedia ou getDisplayMedia
+
         // meStore
         mySlug,
         myName,
 
         // actions
         initializePeerConnection, // Initialisation de la connexion PeerJS
+        closePeerConnection, // Nettoyage des connexions et ressources associées
         syncUsersConnections, // Synchronisation des connexions lorsque de nouveaux utilisateurs rejoignent la room
-        answerToRemotePeerConnection, // Réponse à une demande de connexion d'un peer distant
-        connectToQueuedConnection, // Connexion aux peer dont les identifiants ont été reçus mais pour lesquels la connexion n’a pas encore été établie
         sendDataToPeer, // fonction pour envoyer des données via une connexion data
+
+        startWebcamStream, // fonction pour démarrer un stream webcam
+
     } = usePeerOrchestrator( type, room)
 
 
@@ -52,8 +56,13 @@ export function useMediaBroadcast(type = 'data', room = 'app') {
         * Logique métier
     ----------------------*/
 
+    // Initialisation de la connexion et des ressources nécessaires pour le broadcast
     function initialize(callbacks) {
         initializePeerConnection(callbacks)
+    }
+    // Nettoyage des ressources
+    function cleanup() {
+        closePeerConnection()
     }
     // watch users list to sync connections when new user join the room
     function watchUsers(newVal) {
@@ -72,21 +81,23 @@ export function useMediaBroadcast(type = 'data', room = 'app') {
             console.error(e)
         }
     }
-
     // Envoi de données via une connexion data à un ou plusieurs peers distants
     function sendData(data, destUserSlugs = null) {
         sendDataToPeer(data, destUserSlugs)
     }
-
-
+    // Démarrage d’un stream webcam
+    function getWebcamStream(isLocal = false) {
+        startWebcamStream(isLocal)
+    }
 
     return {
         // system
         initialize,
+        cleanup,
         watchUsers,
 
-        // // stream
-
+        // stream
+        getWebcamStream,
 
         // // screen
 
@@ -104,6 +115,9 @@ export function useMediaBroadcast(type = 'data', room = 'app') {
 
         // connection
         usersInRoom,
+
+        // media
+        currentStream,
 
         // meStore
         mySlug,

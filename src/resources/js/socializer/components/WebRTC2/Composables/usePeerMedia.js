@@ -36,22 +36,27 @@ import { watch } from 'vue'
 
 export function usePeerMedia(ctx) {
 
-    const startWebcamStream = async (options) => {
-        const stream = await navigator.mediaDevices.getUserMedia(options)
+    const startWebcamStream = async (is_local = false) => {
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video: ctx.ui.streamStates.isVideoEnabled,
+            audio: !ctx.ui.streamStates.isMuted,
+        })
 
-        ctx.currentStream.value = stream
-        ctx.onAirRoom.value = ctx.currentRoom.value
+        stream.isLocal = is_local // to mute local sound in player
 
-        ctx.peerStore.saveStream(
-            ctx.onAirRoom.value,
-            stream,
-            ctx.currentType.value
-        )
+        ctx.media.currentStream = stream
+       
+
+        // ctx.peerStore.saveStream(
+        //     ctx.onAirRoom.value,
+        //     stream,
+        //     ctx.currentType.value
+        // )
     }
 
     const stopCurrentStream = () => {
-        ctx.currentStream.value?.getTracks().forEach(t => t.stop())
-        ctx.currentStream.value = null
+        ctx.media.currentStream?.getTracks().forEach(t => t.stop())
+        ctx.media.currentStream = null
     }
 
     return {

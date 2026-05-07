@@ -88,11 +88,7 @@ export default {
     storePeerConnection(room, slug, type, connection) {
         this.connections[room][slug][type].push(connection)
     },
-    removePeerConnection(room, slug, type, connectionId) {
-
-        // const connections = this.connections[room][slug][type]
-        // this.connections[room][slug][type] = connections.filter(conn => conn.connectionId !== connectionId)
-
+    removePeerConnection(room, slug, type) {
         
         if(!this.connections.hasOwnProperty(room) 
             || !this.connections[room].hasOwnProperty(slug)
@@ -149,7 +145,9 @@ export default {
     },
 
 
+    // Gérer les signaux provenant des autres composants (Notifications.vue)
     dispatchSignal(signal) {
+
         const s = { ...signal, ts: Date.now() }
         this.lastSignal = s
         const key = s.roomId
@@ -164,15 +162,12 @@ export default {
             this.signalQueues[s.roomId].shift()
         }
     },
+    clearSignalQueueRoom(roomId) {
+        delete this.signalQueues[roomId]
+    },
 
 
     // Enregistrer l’id d’un peer distant lorsqu’il est reçu
-    hasRemotePeerId(userSlug) {
-        return this.remotePeersId.has(userSlug)
-    },
-    getRemotePeerId(userSlug) {
-        return this.remotePeersId.get(userSlug)
-    },
     removeRemotePeerId(userSlug) {
         this.remotePeersId.delete(userSlug)
     },
@@ -182,10 +177,11 @@ export default {
 
     // Gérer les connexions en attente d’un peer id distant
     addWaitingRemotePeerId(userSlug, { room, type }) {
-        this.waitingRemotePeerId.set(userSlug, { room, type })
-    },
-    hasWaitingRemotePeerId(userSlug) {
-        return this.waitingRemotePeerId.has(userSlug)
+        this.waitingRemotePeerId.set(userSlug, {
+            room,
+            type,
+            createdAt: Date.now(),
+        })
     },
     removeWaitingRemotePeerId(userSlug) {
         this.waitingRemotePeerId.delete(userSlug)

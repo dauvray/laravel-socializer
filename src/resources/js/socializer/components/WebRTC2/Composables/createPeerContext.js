@@ -41,21 +41,23 @@ export function createPeerContext({ type, room, eventBus }) {
         currentRoom: room || 'app',
         onAirRoom: room || 'app',
         // currentCallRoomId: peerStore.getCurrenCallRoomId || null,
+        isStreaming: false,
+        isCapturing: false,
     })
 
     // MEDIA STATE
     const media = reactive({
-        // currentStream: null,
+        currentStream: null,
         // isStreaming: false,
         // isCapturing: false,
     })
 
     // UI STATE
     const ui = reactive({
-        // videoStates: {
-        //     isMuted: false,
-        //     isVideoEnabled: true,
-        // }
+        streamStates: {
+            isMuted: false,
+            isVideoEnabled: true,
+        }
     })
 
     // CONNECTION STATE
@@ -64,11 +66,22 @@ export function createPeerContext({ type, room, eventBus }) {
         usersInRoom: [],
     })
 
-    // SIGNALS reçus pour la room (ex: peerId à connecter, demande d’autorisation, etc.)
+    // SIGNAUX DISPOS
+    const SIGNAL_TYPES = {
+        core: [
+            'PEER_CONNECTION_REQUEST',
+        ],
+        connections: [
+            'PEER_CONNECT_TO_REMOTE_PEER',
+        ], 
+    }
+
+    // SIGNAUX reçus pour la room
     const roomSignals = computed(() =>
         peerStore.getQueueForRoom(contextId)
     )
 
+    // dernier signal reçu pour la room
     const lastRoomSignal = computed(() => {
         const q = peerStore.getQueueForRoom(contextId)
         return q?.at(-1) ?? null
@@ -100,7 +113,16 @@ export function createPeerContext({ type, room, eventBus }) {
             callback: () => {},
             isActive: false,
        },
-    })
+       onStreamStarted: {
+            callback: () => {},
+            isActive: false,
+       },
+       onStreamStopped: {
+            callback: () => {},
+            isActive: false,
+       },
+   })
+
 
 
     // COMPUTED (read-only projections)
@@ -110,6 +132,8 @@ export function createPeerContext({ type, room, eventBus }) {
         onAirRoom: computed(() => session.onAirRoom),
 
         usersInRoom: computed(() => connection.usersInRoom),
+
+        currentStream: computed(() => media.currentStream),
 
         mySlug: computed(() => meStore.getMe?.slug),
         myName: computed(() => meStore.getMe?.name),
@@ -158,6 +182,7 @@ export function createPeerContext({ type, room, eventBus }) {
         media,
         ui,
         connection,
+        SIGNAL_TYPES,
         connectionEvents,
 
         // computed

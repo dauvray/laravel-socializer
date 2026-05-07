@@ -91,17 +91,37 @@ export function usePeerConnections(ctx) {
         } 
     }
 
+    const closePeerConnection = () => {
+        const currentType = ctx.session.currentType
+        const currentRoom = ctx.session.currentRoom
+        const roomConnections = ctx.peerStore.getConnections?.[currentRoom]
+
+         if(roomConnections && typeof roomConnections === 'object') {
+            for (const userSlug in roomConnections) {
+                ctx.peerStore.removePeerConnection(
+                    currentRoom,
+                    userSlug,
+                    currentType
+                )
+                console.log(ctx.peerStore)
+                ctx.peerStore.clearConnectionsRoom(currentRoom, userSlug, currentType)
+                ctx.peerStore.clearSignalQueueRoom(ctx.contextId)
+                ctx.peerStore.removeRemotePeerId(userSlug)
+            }
+        }
+    }
+
     const _setDataEventsConnectionListener = (payload) => {
 
        const callbacks = ctx.connectionEvents
-console.log('callbacks pour la connexion entrante', callbacks)
+
         ctx.peerStore.getLocalPeer.on('connection', async (conn) => { 
 
             //------------------
             // core events
             //------------------
             conn.on("open", function () {
-               //
+               console.log('connection data ouverte dans usePeerConnections avec', conn.peer, 'et metadata', conn.metadata)
             })
 
             conn.on("close", function () {
@@ -163,7 +183,7 @@ console.log('callbacks pour la connexion entrante', callbacks)
             // Whether the underlying data channels should be reliable (e.g. for large file transfers) 
             // or not (e.g. for gaming or streaming).
             config.options.reliable = true
-            config.options.metadata.callbackKey = `${payload.type}-${payload.room}`
+            config.options.metadata.callbackKey = ctx.contextId
         } else {
            // todo : a examnier quand on fera du streaming
            // config.stream = ctx.peerStore.getStream(payload.room, payload.type)
@@ -181,18 +201,18 @@ console.log('callbacks pour la connexion entrante', callbacks)
         )
     }
 
-    const _openPeerMediaConnection = (config) => {
-        const slug = options.metadata.slug
-        const room = options.metadata.room
-        const type = options.metadata.type
-        const ignoredDataConnections = [] // put here video types without dataPeerConnection
-    }
+    // const _openPeerMediaConnection = (config) => {
+    //     const slug = options.metadata.slug
+    //     const room = options.metadata.room
+    //     const type = options.metadata.type
+    //     const ignoredDataConnections = [] // put here video types without dataPeerConnection
+    // }
 
     watch(ctx.lastRoomSignal, async (signal) => {
-        if (!signal) return
+        if (!signal || !ctx.SIGNAL_TYPES.connections.includes(signal.type)) return
 
         switch (signal.type) {
-            case 'connectToPeer':
+            case 'PEER_CONNECT_TO_REMOTE_PEER':
                 await connectToPeer(signal.payload)
                 break
         }
@@ -201,5 +221,6 @@ console.log('callbacks pour la connexion entrante', callbacks)
     return {
         getNewUsersInRoom,
         connectToPeer,
+        closePeerConnection,
     }
 }

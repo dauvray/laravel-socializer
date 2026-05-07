@@ -3,7 +3,6 @@
  * 
  * abstraction du transport DATA (PeerJS data connections)
  * 
- *
  * 👉 gère :
  * - communication via datachannel (send / receive)
  * - enregistrement des callbacks entrants
@@ -74,7 +73,6 @@ export function usePeerTransport(ctx) {
             peerStore.localPeer._lastServerId = peerStore.lastLocalPeerId
             peerStore.localPeer.reconnect()
         })
-
     }
 
     const sendData = (data, destUserSlugs = null) => {

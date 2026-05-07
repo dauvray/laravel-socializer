@@ -7,7 +7,7 @@ import { ref } from 'vue'
 // tant qu'elles utilisent le même nom de room pour accéder à la map
 const chats = new Map()
 
-export function useChatSimple(room) {
+export function useChatSimple(room = '_default_', api = {}) {
 
     /*----------------------
         * State
@@ -18,7 +18,7 @@ export function useChatSimple(room) {
             messages: ref([])
         })
     }
-
+ 
     const chat = chats.get(room)
     const messageToSend = ref('')
 
@@ -30,9 +30,26 @@ export function useChatSimple(room) {
         chat.messages.value.push(msg)
     }
 
+    const send = () => {
+
+        if (!messageToSend.value.trim()) return
+
+        const msg = {
+            message: messageToSend.value,
+            fromSlug: api.mySlug?.value,
+            fromName: api.myName?.value,
+            timestamp: Date.now(),
+        }
+
+        addMessage(msg)
+        api.sendData(msg) // passé en argument, permet d'utiliser des méthodes de useMediaBroadcast (ex: sendDataToPeer) ou d'autres méthodes de transport selon les besoins
+        messageToSend.value = ''
+    }
+
     return {
         messages: chat.messages,
-        addMessage,
+        addMessage,   // toujours utile pour injecter des messages entrants
         messageToSend,
+        send,
     }
 }

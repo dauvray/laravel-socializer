@@ -42,31 +42,18 @@ export function usePeerCore(ctx) {
 
         const room = ctx.session.onAirRoom
         const type = ctx.session.currentType
-        const loacalPeerId = ctx.peerStore.localPeer._id
-        const remotePeerID = ctx.peerStore.hasRemotePeerId(user.slug)
-
-        if (!remotePeerID) {
-            // éviter les requêtes redondantes pour un même utilisateur tant que sa réponse n’est pas reçue
-            if(!ctx.peerStore.hasWaitingRemotePeerId(user.slug)) {
-                ctx.AjaxService.load('/ask-to-peer-id', 'post', {
-                    peerId: loacalPeerId,
-                    toUserSlug: user.slug,
-                    room: room,
-                    type: type
-                })
-                ctx.peerStore.addWaitingRemotePeerId(user.slug, { room, type })
-            }
-        } else {
-            // connectToQueuedConnections({
-            //     peerId: remotePeerID,
-            //     userSlug: user.slug,
-            //     room: room,
-            //     type: type,
-            // })
-        }
+        const localPeerId = ctx.peerStore.localPeer._id
+        ctx.AjaxService.load('/ask-to-peer-id', 'post', {
+            peerId: localPeerId,
+            toUserSlug: user.slug,
+            room: room,
+            type: type
+        })
+        ctx.peerStore.addWaitingRemotePeerId(user.slug, { room, type })
     }
 
     const responseRemotePeerConnection = (fromUserSlug, type, room) => {
+
         ctx.AjaxService.load('/response-to-peer-id', 'post', {
             peerId: ctx.peerStore.localPeer._id,
             toUserSlug: fromUserSlug,
@@ -76,10 +63,10 @@ export function usePeerCore(ctx) {
     }
 
     watch(ctx.lastRoomSignal, async (signal) => {
-        if (!signal) return
+        if (!signal || !ctx.SIGNAL_TYPES.core.includes(signal.type)) return
 
         switch (signal.type) {
-            case 'sendLocalPeerData':
+            case 'PEER_CONNECTION_REQUEST':
                 await responseRemotePeerConnection(signal.payload.fromUserSlug, signal.payload.type, signal.payload.room)
                 break
         }

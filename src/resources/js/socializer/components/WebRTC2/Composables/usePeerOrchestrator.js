@@ -61,12 +61,16 @@ export function usePeerOrchestrator( type = 'data', room = 'app') {
         transport.setLocalPeer()
 
         // une boucle pour stocker les calbbacks dans createPeerContext et éviter les dépendances circulaires (core → transport → peerStore)
-        Object.keys(callbacks).forEach(callbackKey => {
-            if(!context.connectionEvents[callbackKey].isActive) {
-                context.connectionEvents[callbackKey].callback = callbacks[callbackKey]
-                context.connectionEvents[callbackKey].isActive = true
-            }
-        })
+        try {
+            Object.keys(callbacks).forEach(callbackKey => {
+                if(!context.connectionEvents[callbackKey].isActive) {
+                    context.connectionEvents[callbackKey].callback = callbacks[callbackKey]
+                    context.connectionEvents[callbackKey].isActive = true
+                }
+            })
+        } catch(e) {
+            console.log('Erreur lors de l\'initialisation des callbacks de connexion', e)
+        }
 
 
 
@@ -88,18 +92,32 @@ export function usePeerOrchestrator( type = 'data', room = 'app') {
     }
 
     const cleanupPeerConnection = () => {
-
+        connections.closePeerConnection()
     }
 
     const syncUsersConnections = async (users) => {
-       const newUsers = await connections.getNewUsersInRoom(users)
-       newUsers.forEach(user => {
-            core.requestRemotePeerConnection(user)
-       })
+       const newUserConnections = await connections.getNewUsersInRoom(users)
+       newUserConnections.forEach(user => {
+            let hasRemotePeerID = context.peerStore.hasRemotePeerId(user.slug)
+            if (!hasRemotePeerID) {
+                core.requestRemotePeerConnection(user)
+            } else {
+                connections.connectToPeer({
+                    userSlug: user.slug,
+                    peerId: context.peerStore.getRemotePeerId(user.slug),
+                    type: context.currentType.value,
+                    room: context.currentRoom.value,
+                })
+            }  
+        })
     }
 
     const sendDataToPeer = (data, destUserSlugs = null) => {
         transport.sendData(data, destUserSlugs)
+    }
+
+    const startWebcamStream = (is_local = false) => {
+       media.startWebcamStream(is_local)
     }
 
     return {
@@ -113,6 +131,8 @@ export function usePeerOrchestrator( type = 'data', room = 'app') {
         syncUsersConnections,
         sendDataToPeer,
 
+        startWebcamStream,
+
         /*---------------------------------
         | COMPUTED
         ----------------------------------*/
@@ -125,6 +145,9 @@ export function usePeerOrchestrator( type = 'data', room = 'app') {
 
         // connection
         usersInRoom: context.usersInRoom,
+
+        // media
+        currentStream: context.currentStream,
 
         // meStore
         mySlug: context.mySlug,

@@ -162,30 +162,20 @@
                             this.notificationComponent = 'AlertComponent'
                         })
                         // connect to caller user and send localPeerId
-                        .listen('.AskToPeerID', (event) => {
-                            // store request connection
-                          // this.sendLocalPeerData(event.fromUserSlug, event.type, event.room) 
+                        .listen('.AskToPeerID', (event) => { 
                             this.dispatchSignal({ 
                                 emitter: 'Notifications',
                                 roomId: `${event.type}-${event.room}`,
-                                type: 'sendLocalPeerData', 
+                                type: 'PEER_CONNECTION_REQUEST', 
                                 payload: { fromUserSlug: event.fromUserSlug, type: event.type, room: event.room }
                             })
                         })
                         // receive remotePeerId and connect to called user
                         .listen('.ResponseToPeerID', (event) => {
-                            console.log('ResponseToPeerID', event)
-                            // // store response connection
-                            // this.connectToPeer({
-                            //     peerId: event.peerId, 
-                            //     userSlug: event.fromUserSlug, 
-                            //     type: event.type, 
-                            //     room: event.room 
-                            // })
                             this.dispatchSignal({ 
                                 emitter: 'Notifications',
                                 roomId: `${event.type}-${event.room}`,
-                                type: 'connectToPeer', 
+                                type: 'PEER_CONNECT_TO_REMOTE_PEER', 
                                 payload: { peerId: event.peerId, userSlug: event.fromUserSlug, type: event.type, room: event.room }
                             })
                         })

@@ -5,7 +5,7 @@
 <script setup>
 
     import { useMediaBroadcast } from '~socializer/components/WebRTC2/Composables/useMediaBroadcast.js'
-    import { onMounted, watch } from 'vue'
+    import { onBeforeUnmount, onMounted, watch } from 'vue'
 
     const props = defineProps({
         // identifiant de la room de diffusion
@@ -23,7 +23,7 @@
     //     'started-stream'
     // ])
 
-    const api = useMediaBroadcast(props.mode, props.room)
+    const api = useMediaBroadcast(props.mode, props.room ?? 'app')
 
     // exemples d’émissions d’événements vers le parent (à adapter selon les besoins)
     // les emits sont uniquement ici
@@ -37,6 +37,10 @@
 
     onMounted(() => {
        api.initialize(props.callbacks)
+    })
+
+    onBeforeUnmount(() => {
+        api.cleanup()
     })
 
     watch(
