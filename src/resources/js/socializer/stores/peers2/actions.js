@@ -88,8 +88,8 @@ export default {
     storePeerConnection(room, slug, type, connection) {
         this.connections[room][slug][type].push(connection)
     },
-    removePeerConnection(room, slug, type) {
-        
+    closePeerConnection(room, slug, type) {
+ 
         if(!this.connections.hasOwnProperty(room) 
             || !this.connections[room].hasOwnProperty(slug)
             || !this.connections[room][slug].hasOwnProperty(type)
@@ -118,8 +118,6 @@ export default {
             }
 
         })
-
-        delete this.connections[room][slug][type]
     },  
     clearConnectionsRoom(room, slug, type) {
 
@@ -164,6 +162,9 @@ export default {
     },
     clearSignalQueueRoom(roomId) {
         delete this.signalQueues[roomId]
+    },
+    createSignalQueueRoom(roomId) {
+        this.signalQueues[roomId] = []
     },
 
 

@@ -14,25 +14,7 @@
  *
  * 👉 rôle :
  * - agir comme serveur de signalisation côté client
- * - préparer les informations nécessaires aux connexions
- * 
- * 
- * Fonctions concernées dans l'ancien code :
- * ----------------------
- * getAuthorizationRemotePeerId
- * sendAuthorizationRemotePeerId
- * receiveAuthorizationRemotePeerId
- * onResponseCallError
- *
- * getRemotePeerId
- * sendLocalPeerId
- *
- * setCallInProgress
- * setCurrentCallRoomId
- *
- * updateCurrentRoom
- * updateCurrentType
- * 
+ * - préparer les informations nécessaires aux connexions 
  */
 import { watch } from 'vue'
 

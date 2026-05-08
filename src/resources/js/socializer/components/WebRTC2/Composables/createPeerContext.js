@@ -123,8 +123,6 @@ export function createPeerContext({ type, room, eventBus }) {
        },
    })
 
-
-
     // COMPUTED (read-only projections)
     const computedState = {
         currentType: computed(() => session.currentType),
@@ -163,9 +161,57 @@ export function createPeerContext({ type, room, eventBus }) {
             checkPeer()
         })
     }  
+
+    const setUpConnectionListeners = (conn) => {
+
+        //------------------
+        // core events
+        //------------------
+        conn.on("open", function () {
+            console.log('connection data ouverte dans Context', conn.metadata)
+        })
+
+        conn.on("close", function () {
+            console.log('connection data fermée dans Context', conn.metadata)
+            const room = conn.metadata?.room
+            const type = conn.metadata?.type
+            const slug = conn.metadata?.from
+        
+            // virer connections[room][slug][type] de peerStore
+            peerStore.closePeerConnection(
+                room,
+                slug,
+                type,
+            )
+            // clear rooms
+            peerStore.clearConnectionsRoom(room, slug, type)
+            // virer remotePeerID[slug] de peerStore
+            peerStore.removeRemotePeerId(slug)
+        })
+
+        //------------------
+        // custom events
+        //------------------
+        // handle connection open
+        if(connectionEvents && connectionEvents.onConnectionOpen.isActive) {
+            conn.on("open", connectionEvents.onConnectionOpen.callback)
+        }
+
+        // Receive data
+        if(connectionEvents && connectionEvents.onDataReceived.isActive) {
+            conn.on("data", connectionEvents.onDataReceived.callback)
+        }
+        // Handle connection close
+        if(connectionEvents && connectionEvents.onConnectionClose.isActive) {
+            conn.on("close", connectionEvents.onConnectionClose.callback)
+        }
+
+        // Handle connection error
+        if(connectionEvents && connectionEvents.onConnectionError.isActive) {
+            conn.on("error", connectionEvents.onConnectionError.callback)
+        }
+    }
     
-
-
     return {
         contextId,
         roomSignals,
@@ -190,6 +236,7 @@ export function createPeerContext({ type, room, eventBus }) {
 
         // helpers
         waitForMeReady,
+        setUpConnectionListeners,
         
     }
 }

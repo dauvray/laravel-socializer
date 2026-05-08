@@ -98,8 +98,7 @@ export function usePeerOrchestrator( type = 'data', room = 'app') {
     const syncUsersConnections = async (users) => {
        const newUserConnections = await connections.getNewUsersInRoom(users)
        newUserConnections.forEach(user => {
-            let hasRemotePeerID = context.peerStore.hasRemotePeerId(user.slug)
-            if (!hasRemotePeerID) {
+            if (!context.peerStore.hasRemotePeerId(user.slug)) {
                 core.requestRemotePeerConnection(user)
             } else {
                 connections.connectToPeer({
@@ -130,7 +129,7 @@ export function usePeerOrchestrator( type = 'data', room = 'app') {
         initializePeerConnection,
         syncUsersConnections,
         sendDataToPeer,
-
+        cleanupPeerConnection,
         startWebcamStream,
 
         /*---------------------------------

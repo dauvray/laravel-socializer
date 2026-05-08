@@ -26,7 +26,7 @@ export default {
     getQueueForRoom: (state) => {
         return (roomId) => {
             if (!state.signalQueues[roomId]) {
-                state.signalQueues[roomId] = []
+                state.createSignalQueueRoom(roomId)
             }
             return state.signalQueues[roomId]
         }

@@ -54,6 +54,7 @@ export function usePeerTransport(ctx) {
             }
         })
 
+        // a la création du Peer
         peerStore.localPeer.on('open', id => {
             // Workaround for peer.reconnect deleting previous id
             if (id === null) {
@@ -72,6 +73,10 @@ export function usePeerTransport(ctx) {
             peerStore.localPeer.id = peerStore.lastLocalPeerId
             peerStore.localPeer._lastServerId = peerStore.lastLocalPeerId
             peerStore.localPeer.reconnect()
+        })
+
+        peerStore.localPeer.on('connection', async (conn) => { 
+            ctx.setUpConnectionListeners(conn)
         })
     }
 

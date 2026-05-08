@@ -19,26 +19,12 @@
  * 👉 rôle :
  * - orchestrer le réseau WebRTC entre les peers
  * 
- * Fonctions concernées dans l'ancien code :
- * ----------------------
- * connectToQueuedConnections
- * storeConnection
- * closeRemotePeerId
- * deleteRemoteOpenedConnections
- *
- * __syncUsersConnections
- * syncJoingingUsers
- *
- * ConnectionsHasTypeInRoom
- *
- * saveRemoteStream
- * removeRemoteStream
  */
 import { watch } from 'vue'
 
 export function usePeerConnections(ctx) {
 
-    let connectionInitialized = false
+   // let connectionInitialized = false
 
     const getNewUsersInRoom = async (users = []) => {
 
@@ -77,18 +63,21 @@ export function usePeerConnections(ctx) {
 
         if(config.options.metadata.type === 'data') {
 
-            const connection = ctx.peerStore.getLocalPeer.connect(config.peerId, config.options)
-            _storeRoomConnection(config, connection)
+            const conn = ctx.peerStore.getLocalPeer.connect(config.peerId, config.options)
+            ctx.setUpConnectionListeners(conn)
+            _storeRoomConnection(config, conn)
 
 
-            if(!connectionInitialized) {
-                 _setDataEventsConnectionListener(payload)
-            }
+            // if(!connectionInitialized) {
+            //      _setDataEventsConnectionListener(payload)
+            // }
 
         } else {
             // pour les connexions de type media, on attend d’avoir le stream avant d’ouvrir la connexion (car besoin du stream dans la connexion)
             // c’est géré dans usePeerMedia.startCallStream → createVideoPeer
         } 
+
+
     }
 
     const closePeerConnection = () => {
@@ -98,72 +87,16 @@ export function usePeerConnections(ctx) {
 
          if(roomConnections && typeof roomConnections === 'object') {
             for (const userSlug in roomConnections) {
-                ctx.peerStore.removePeerConnection(
+                ctx.peerStore.closePeerConnection(
                     currentRoom,
                     userSlug,
                     currentType
                 )
-                console.log(ctx.peerStore)
                 ctx.peerStore.clearConnectionsRoom(currentRoom, userSlug, currentType)
                 ctx.peerStore.clearSignalQueueRoom(ctx.contextId)
                 ctx.peerStore.removeRemotePeerId(userSlug)
             }
         }
-    }
-
-    const _setDataEventsConnectionListener = (payload) => {
-
-       const callbacks = ctx.connectionEvents
-
-        ctx.peerStore.getLocalPeer.on('connection', async (conn) => { 
-
-            //------------------
-            // core events
-            //------------------
-            conn.on("open", function () {
-               console.log('connection data ouverte dans usePeerConnections avec', conn.peer, 'et metadata', conn.metadata)
-            })
-
-            conn.on("close", function () {
-                
-                console.log('connection data fermée dans usePeerConnections')
-                // virer connections[room][slug][type] de peerStore
-                ctx.peerStore.removePeerConnection(
-                    payload.room,
-                    payload.userSlug,
-                    payload.type,
-                    conn.connectionId
-                )
-                 // clear rooms
-                ctx.peerStore.clearConnectionsRoom(payload.room, payload.userSlug, payload.type)
-                // virer remotePeerID[slug] de peerStore
-                ctx.peerStore.removeRemotePeerId(payload.userSlug)
-            })
-
-            //------------------
-            // custom events
-            //------------------
-            // handle connection open
-            if(callbacks && callbacks.onConnectionOpen.isActive) {
-                conn.on("open", callbacks.onConnectionOpen.callback)
-            }
-
-            // Receive data
-            if(callbacks && callbacks.onDataReceived.isActive) {
-                conn.on("data", callbacks.onDataReceived.callback)
-            }
-            // Handle connection close
-            if(callbacks && callbacks.onConnectionClose.isActive) {
-                conn.on("close", callbacks.onConnectionClose.callback)
-            }
-
-            // Handle connection error
-            if(callbacks && callbacks.onConnectionError.isActive) {
-                conn.on("error", callbacks.onConnectionError.callback)
-            }
-
-            connectionInitialized = true
-        })
     }
 
     const _buildPeerConnectionConfig = (payload) => {

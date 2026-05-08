@@ -43,7 +43,7 @@ export function useMediaBroadcast(type = 'data', room = 'app') {
 
         // actions
         initializePeerConnection, // Initialisation de la connexion PeerJS
-        closePeerConnection, // Nettoyage des connexions et ressources associées
+        cleanupPeerConnection, // Nettoyage des connexions et ressources associées
         syncUsersConnections, // Synchronisation des connexions lorsque de nouveaux utilisateurs rejoignent la room
         sendDataToPeer, // fonction pour envoyer des données via une connexion data
 
@@ -62,7 +62,7 @@ export function useMediaBroadcast(type = 'data', room = 'app') {
     }
     // Nettoyage des ressources
     function cleanup() {
-        closePeerConnection()
+        cleanupPeerConnection()
     }
     // watch users list to sync connections when new user join the room
     function watchUsers(newVal) {
