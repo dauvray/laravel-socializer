@@ -22,7 +22,7 @@ class GroupUserCreatedListener {
     * @return void
     */
     public function handle(GroupUserCreated $event) {
-       // \Log::info("Le groupe_user {$event->group_user->id} a été créé avec le group_id {$event->group_user->group_id} et le user_id {$event->group_user->user_id}");
+        \Log::info("Le groupe_user {$event->group_user->id} a été créé avec le group_id {$event->group_user->group_id} et le user_id {$event->group_user->user_id}");
         app('nebulaGraph')->insertEdge(
             config('socializer.nebulagraph.edges.registered_in.name'), 
             [

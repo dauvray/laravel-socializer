@@ -67,11 +67,6 @@ export function usePeerConnections(ctx) {
             ctx.setUpConnectionListeners(conn)
             _storeRoomConnection(config, conn)
 
-
-            // if(!connectionInitialized) {
-            //      _setDataEventsConnectionListener(payload)
-            // }
-
         } else {
             // pour les connexions de type media, on attend d’avoir le stream avant d’ouvrir la connexion (car besoin du stream dans la connexion)
             // c’est géré dans usePeerMedia.startCallStream → createVideoPeer

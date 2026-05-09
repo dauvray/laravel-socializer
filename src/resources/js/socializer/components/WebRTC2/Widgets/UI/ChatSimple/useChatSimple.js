@@ -26,7 +26,7 @@ export function useChatSimple(room = '_default_', api = {}) {
         * Logique métier
     ----------------------*/
 
-    const addMessage = (msg) => {
+    const addNewMessage = (msg) => {
         chat.messages.value.push(msg)
     }
 
@@ -41,14 +41,14 @@ export function useChatSimple(room = '_default_', api = {}) {
             timestamp: Date.now(),
         }
 
-        addMessage(msg)
+        addNewMessage(msg)
         api.sendData(msg) // passé en argument, permet d'utiliser des méthodes de useMediaBroadcast (ex: sendDataToPeer) ou d'autres méthodes de transport selon les besoins
         messageToSend.value = ''
     }
 
     return {
         messages: chat.messages,
-        addMessage,   // toujours utile pour injecter des messages entrants
+        addNewMessage,   // toujours utile pour injecter des messages entrants
         messageToSend,
         send,
     }

@@ -26,7 +26,7 @@
     // le même état de chat entre plusieurs composants.
     const { 
             messages, 
-            addMessage, 
+            addNewMessage, 
             messageToSend,
             send,
         } = useChatSimple(

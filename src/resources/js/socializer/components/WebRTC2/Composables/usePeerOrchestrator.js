@@ -58,8 +58,6 @@ export function usePeerOrchestrator( type = 'data', room = 'app') {
         const type = context.currentType.value
         const room = context.currentRoom.value
 
-        transport.setLocalPeer()
-
         // une boucle pour stocker les calbbacks dans createPeerContext et éviter les dépendances circulaires (core → transport → peerStore)
         try {
             Object.keys(callbacks).forEach(callbackKey => {
@@ -71,6 +69,10 @@ export function usePeerOrchestrator( type = 'data', room = 'app') {
         } catch(e) {
             console.log('Erreur lors de l\'initialisation des callbacks de connexion', e)
         }
+
+        transport.setLocalPeer()
+
+
 
 
 

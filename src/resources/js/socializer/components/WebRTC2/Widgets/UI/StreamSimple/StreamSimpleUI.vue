@@ -10,7 +10,7 @@
 
 <script setup>
 
-import VideoComponent from '~socializer/components/WebRTC2/Widgets/Widgets/VideoComponent.vue' 
+    import VideoComponent from '~socializer/components/WebRTC2/Widgets/Widgets/VideoComponent.vue' 
 
     const props = defineProps({
         api: Object,

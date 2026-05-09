@@ -1,5 +1,7 @@
 <template>
-    <slot :api="api"></slot>
+    <div>
+        <slot :api="api"></slot>
+    </div>
 </template>
 
 <script setup>
@@ -18,22 +20,7 @@
         callbacks: { type: Object, default: null },
     })
 
-    // const emit = defineEmits([
-    //     'stoped-stream', 
-    //     'started-stream'
-    // ])
-
     const api = useMediaBroadcast(props.mode, props.room ?? 'app')
-
-    // exemples d’émissions d’événements vers le parent (à adapter selon les besoins)
-    // les emits sont uniquement ici
-    // api.onStartedStream.value = (payload) => {
-    //     emit('started-stream', payload.type, payload.playerId)
-    // }
-
-    // api.onStoppedStream.value = (payload) => {
-    //     emit('stoped-stream', payload.type, payload.playerId)
-    // }
 
     onMounted(() => {
        api.initialize(props.callbacks)
@@ -47,7 +34,6 @@
         () => props.users,
         (newVal) => {
             api.watchUsers(newVal)
-            // api.syncUsersConnections(newVal)
         },
         { immediate: true }
     )

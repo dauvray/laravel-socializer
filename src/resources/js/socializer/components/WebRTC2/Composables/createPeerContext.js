@@ -108,19 +108,7 @@ export function createPeerContext({ type, room, eventBus }) {
         onStreamReceived: {
             callback: () => {},
             isActive: false,
-        },
-        onStreamClosed: {
-            callback: () => {},
-            isActive: false,
-       },
-       onStreamStarted: {
-            callback: () => {},
-            isActive: false,
-       },
-       onStreamStopped: {
-            callback: () => {},
-            isActive: false,
-       },
+        }
    })
 
     // COMPUTED (read-only projections)
@@ -201,6 +189,11 @@ export function createPeerContext({ type, room, eventBus }) {
         if(connectionEvents && connectionEvents.onDataReceived.isActive) {
             conn.on("data", connectionEvents.onDataReceived.callback)
         }
+        // Receive stream
+        if(connectionEvents && connectionEvents.onStreamReceived.isActive) {
+            conn.on("stream", connectionEvents.onStreamReceived.callback)
+        }
+
         // Handle connection close
         if(connectionEvents && connectionEvents.onConnectionClose.isActive) {
             conn.on("close", connectionEvents.onConnectionClose.callback)
@@ -211,7 +204,7 @@ export function createPeerContext({ type, room, eventBus }) {
             conn.on("error", connectionEvents.onConnectionError.callback)
         }
     }
-    
+        
     return {
         contextId,
         roomSignals,
