@@ -18,9 +18,14 @@
         mode: { type: String, default: 'data' },
         // callback pour la gestion des événements de connexion
         callbacks: { type: Object, default: null },
+        // options de configuration pour la diffusion
+        options: { type: Object, default: () => ({
+            topology: 'mesh', // topologie de diffusion : 'mesh' (pair à pair), 'star' (étoile) ou 'sfu' (serveur de diffusion)
+            hubSlug: null, // slug du hub de diffusion (si topologie 'star', qui joue le role de centralisateur des connexions)
+        })},
     })
 
-    const api = useMediaBroadcast(props.mode, props.room ?? 'app')
+    const api = useMediaBroadcast(props.mode, props.room ?? 'app', props.options)
 
     onMounted(() => {
        api.initialize(props.callbacks)

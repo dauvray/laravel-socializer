@@ -25,7 +25,7 @@ import { usePeer2Store } from '~socializer/stores/peers2.js'
 import { useServerStore } from '~socializer/stores/server.js'
 import { useMeStore } from '~estarter/stores/me.js'
 
-export function createPeerContext({ type, room, eventBus }) {
+export function createPeerContext({ type, room, eventBus, options }) {
 
     const contextId = `${type}-${room}`
 
@@ -43,6 +43,9 @@ export function createPeerContext({ type, room, eventBus }) {
         // currentCallRoomId: peerStore.getCurrenCallRoomId || null,
         isStreaming: false,
         isCapturing: false,
+        topology: options.topology || 'mesh', // topologie de diffusion : 'mesh' (pair à pair), 'star' (étoile) ou 'sfu' (serveur de diffusion)
+        hubSlug: options.hubSlug || null, // slug du hub de diffusion (si utilisé)
+        isHub: null, // le peer est-il le hub de diffusion ? (si hubSlug fourni)
     })
 
     // MEDIA STATE
@@ -116,8 +119,11 @@ export function createPeerContext({ type, room, eventBus }) {
         currentType: computed(() => session.currentType),
         currentRoom: computed(() => session.currentRoom),
         onAirRoom: computed(() => session.onAirRoom),
-
         usersInRoom: computed(() => connection.usersInRoom),
+
+        topology: computed(() => session.topology),
+        hubSlug: computed(() => session.hubSlug),
+        isHub: computed(() => session.isHub),
 
         currentStream: computed(() => media.currentStream),
 
@@ -141,6 +147,10 @@ export function createPeerContext({ type, room, eventBus }) {
         return new Promise((resolve) => {
             const checkPeer = () => {
                 if (meStore.getMe?.slug && peerStore.localPeer?._id) {
+
+                    // init context state
+                    session.isHub = (meStore.getMe.slug === session.hubSlug)
+                    
                     resolve('ready')
                 } else {
                     setTimeout(checkPeer, 100)

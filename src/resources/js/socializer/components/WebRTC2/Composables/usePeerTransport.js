@@ -81,10 +81,19 @@ export function usePeerTransport(ctx) {
     }
 
     const sendData = (data, destUserSlugs = null) => {
-        const users = destUserSlugs || ctx.connection.usersInRoom
-        users.forEach(userSlug => {
-            ctx.peerStore.getConnections[ctx.session.onAirRoom][userSlug]['data'][0].send(data)
-        })
+
+        // si mesh : on envoie à tous les users connectés (ou à ceux ciblés si destUserSlugs fourni)
+        // si star : on envoie uniquement au hub (si hubSlug fourni)
+        // si sfu : la logique d’envoi dépend de l’implémentation du serveur SFU (généralement, les clients envoient au serveur SFU, pas entre eux)
+        if(ctx.topology.value === 'mesh') {
+            const users = destUserSlugs || ctx.connection.usersInRoom
+            users.forEach(userSlug => {
+                ctx.peerStore.getConnections[ctx.session.onAirRoom][userSlug]['data'][0].send(data)
+            })
+        } 
+        else if (ctx.topology.value === 'star' && ctx.hubSlug.value) {
+            ctx.peerStore.getConnections[ctx.session.onAirRoom][ctx.hubSlug.value]['data'][0].send(data)
+        }
     }
 
     return {

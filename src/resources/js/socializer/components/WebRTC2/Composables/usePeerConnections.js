@@ -59,7 +59,7 @@ export function usePeerConnections(ctx) {
 
         const config = _buildPeerConnectionConfig(payload)
 
-        ctx.peerStore.initConnection(config)
+        ctx.peerStore.prepareRoomConnection(config)
 
         if(config.options.metadata.type === 'data') {
 

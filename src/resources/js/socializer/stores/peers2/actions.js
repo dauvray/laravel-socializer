@@ -61,7 +61,7 @@ export default {
         this.localPeerReady = true
     },
 
-    initConnection(payload) {
+    prepareRoomConnection(payload) {
 
         const userSlug = payload.options.metadata.slug
         const room = payload.options.metadata.room

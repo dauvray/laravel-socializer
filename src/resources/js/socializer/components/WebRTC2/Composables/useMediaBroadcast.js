@@ -21,7 +21,7 @@
 
 import { usePeerOrchestrator } from '~socializer/components/WebRTC2/Composables/usePeerOrchestrator.js'
 
-export function useMediaBroadcast(type = 'data', room = 'app') {
+export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
     
     const {
         contextId, // id du contexte (type-room) 
@@ -30,6 +30,9 @@ export function useMediaBroadcast(type = 'data', room = 'app') {
         currentType, // type de broadcast (stream, screen, audio/video call)
         currentRoom, // room "logique" (peut différer de onAirRoom si on gère plusieurs rooms)
         onAirRoom, // room dans laquelle le peer est actif (peut différer de currentRoom si on gère plusieurs rooms)
+        topology, // topologie de diffusion : 'mesh' (pair à pair), 'star' (étoile) ou 'sfu' (serveur de diffusion)
+        hubSlug, // slug du hub de diffusion (si applicable)
+        isHub, // le peer est-il le hub de diffusion ?
 
         // connection
         usersInRoom, // liste des utilisateurs présents dans la room 
@@ -49,7 +52,7 @@ export function useMediaBroadcast(type = 'data', room = 'app') {
 
         startWebcamStream, // fonction pour démarrer un stream webcam
 
-    } = usePeerOrchestrator( type, room)
+    } = usePeerOrchestrator( type, room, options)
 
 
     /*---------------------
@@ -65,7 +68,7 @@ export function useMediaBroadcast(type = 'data', room = 'app') {
         cleanupPeerConnection()
     }
     // watch users list to sync connections when new user join the room
-    function watchUsers(newVal) {
+    const watchUsers = (newVal) => {
         try {
             if(newVal && newVal.length === 0) {
                 return
@@ -112,6 +115,9 @@ export function useMediaBroadcast(type = 'data', room = 'app') {
         currentType,
         currentRoom,
         onAirRoom,
+        topology,
+        hubSlug,
+        isHub,
 
         // connection
         usersInRoom,

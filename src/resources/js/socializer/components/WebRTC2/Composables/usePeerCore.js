@@ -20,18 +20,18 @@ import { watch } from 'vue'
 
 export function usePeerCore(ctx) {
 
-    const requestRemotePeerConnection = (user) => {
+    const requestRemotePeerConnection = (userSlug) => {
 
         const room = ctx.session.onAirRoom
         const type = ctx.session.currentType
         const localPeerId = ctx.peerStore.localPeer._id
         ctx.AjaxService.load('/ask-to-peer-id', 'post', {
             peerId: localPeerId,
-            toUserSlug: user.slug,
+            toUserSlug: userSlug,
             room: room,
             type: type
         })
-        ctx.peerStore.addWaitingRemotePeerId(user.slug, { room, type })
+        ctx.peerStore.addWaitingRemotePeerId(userSlug, { room, type })
     }
 
     const responseRemotePeerConnection = (fromUserSlug, type, room) => {

@@ -34,14 +34,15 @@ import { usePeerMedia } from '~socializer/components/WebRTC2/Composables/usePeer
 import { usePeerConnections } from '~socializer/components/WebRTC2/Composables/usePeerConnections.js'
 import { usePeerTransport } from '~socializer/components/WebRTC2/Composables/usePeerTransport.js'
 
-export function usePeerOrchestrator( type = 'data', room = 'app') {
+export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) {
 
     const eventBus = inject('eventBus')
 
     const context = createPeerContext({
         type,
         room,
-        eventBus
+        eventBus,
+        options,
     })
 
     const core = usePeerCore(context)
@@ -98,21 +99,54 @@ export function usePeerOrchestrator( type = 'data', room = 'app') {
     }
 
     const syncUsersConnections = async (users) => {
+
+       await context.waitForMeReady()
+
        const newUserConnections = await connections.getNewUsersInRoom(users)
-       newUserConnections.forEach(user => {
-            if (!context.peerStore.hasRemotePeerId(user.slug)) {
-                core.requestRemotePeerConnection(user)
-            } else {
-                connections.connectToPeer({
-                    userSlug: user.slug,
-                    peerId: context.peerStore.getRemotePeerId(user.slug),
-                    type: context.currentType.value,
-                    room: context.currentRoom.value,
+       
+        //ATENTION : la logique est validée pour une topologie mesh, 
+        // mais doit être adaptée pour les autres topologies (star, sfu)
+        // ne pas prendre cette logique comme une vérité universelle pour toutes les topologies, mais plutôt comme un exemple de ce qui peut être fait dans une topologie mesh.
+       // - mesh : on se connecte à tous les nouveaux utilisateurs
+       // - star : on se connecte uniquement au hub (si hubSlug fourni)
+       // - sfu : la logique de connexion dépend de l’implémentation du serveur SFU (généralement, les clients se connectent au serveur SFU, pas entre eux)
+        if(context.topology.value === 'mesh') {
+            newUserConnections.forEach(user => {
+                _requestOrConnectPeer(user.slug)  
+            })
+        } 
+        else if (context.topology.value === 'star' && context.hubSlug.value) {
+            // Si je suis hub: je me connecte à tous les nouveaux users.
+            // Si je suis client: je me connecte uniquement au hub.
+            if(context.isHub.value) {
+                newUserConnections.forEach(user => {
+                     _requestOrConnectPeer(user.slug) 
                 })
-            }  
-        })
+            } else {
+                const hubSlugName = context.hubSlug.value
+                if(hubSlugName) {
+                     _requestOrConnectPeer(hubSlugName)
+                } else {
+                    console.warn('Hub peer ID not found for hubSlug', context.hubSlug.value)
+                }
+            }
+        }
+        // pour une topologie SFU, la logique de connexion dépend de l’implémentation du serveur SFU et n’est généralement pas gérée côté client
     }
 
+    const _requestOrConnectPeer = (userSlug) => {
+        if (!context.peerStore.hasRemotePeerId(userSlug)) {
+            core.requestRemotePeerConnection(userSlug)
+        } else {
+            connections.connectToPeer({
+                userSlug: userSlug,
+                peerId: context.peerStore.getRemotePeerId(userSlug),
+                type: context.currentType.value,
+                room: context.currentRoom.value,
+            })
+        } 
+    }
+    
     const sendDataToPeer = (data, destUserSlugs = null) => {
         transport.sendData(data, destUserSlugs)
     }
@@ -122,10 +156,12 @@ export function usePeerOrchestrator( type = 'data', room = 'app') {
     }
 
     return {
+        // on pourrait ne pas exposer tout ça
         ...core,
         ...media,
         ...connections,
         ...transport,
+        //
 
         // API métier exposée aux features (useMediaBroadcast)
         initializePeerConnection,
@@ -143,6 +179,9 @@ export function usePeerOrchestrator( type = 'data', room = 'app') {
         currentType: context.currentType,
         currentRoom: context.currentRoom,
         onAirRoom: context.onAirRoom,
+        topology: context.topology,
+        hubSlug: context.hubSlug,
+        isHub: context.isHub,
 
         // connection
         usersInRoom: context.usersInRoom,
