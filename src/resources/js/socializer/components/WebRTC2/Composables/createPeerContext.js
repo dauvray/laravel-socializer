@@ -120,10 +120,18 @@ export function createPeerContext({ type, room, eventBus, options }) {
         currentRoom: computed(() => session.currentRoom),
         onAirRoom: computed(() => session.onAirRoom),
         usersInRoom: computed(() => connection.usersInRoom),
+        allUsersInRoom: computed(() => {
+            const hub = session.hubSlug ? [session.hubSlug] : []
+            const others = connection.usersInRoom.filter(slug => slug !== session.hubSlug)
+            return [...connection.usersInRoom, meStore.getMe?.slug]
+        }),
 
         topology: computed(() => session.topology),
         hubSlug: computed(() => session.hubSlug),
         isHub: computed(() => session.isHub),
+        isHubConnected: computed(() => {
+            return session.hubSlug && computedState.allUsersInRoom.value.includes(session.hubSlug)
+        }),
 
         currentStream: computed(() => media.currentStream),
 

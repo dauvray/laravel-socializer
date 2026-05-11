@@ -33,6 +33,7 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
         topology, // topologie de diffusion : 'mesh' (pair à pair), 'star' (étoile) ou 'sfu' (serveur de diffusion)
         hubSlug, // slug du hub de diffusion (si applicable)
         isHub, // le peer est-il le hub de diffusion ?
+        isHubConnected, // le hub de diffusion est-il présent dans la room (utile pour les clients en topologie star)
 
         // connection
         usersInRoom, // liste des utilisateurs présents dans la room 
@@ -118,6 +119,7 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
         topology,
         hubSlug,
         isHub,
+        isHubConnected,
 
         // connection
         usersInRoom,

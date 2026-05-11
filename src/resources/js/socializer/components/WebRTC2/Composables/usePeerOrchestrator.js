@@ -279,6 +279,7 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         topology: context.topology,
         hubSlug: context.hubSlug,
         isHub: context.isHub,
+        isHubConnected: context.isHubConnected,
 
         // connection
         usersInRoom: context.usersInRoom,
