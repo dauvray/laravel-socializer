@@ -80,24 +80,147 @@ export function usePeerTransport(ctx) {
         })
     }
 
+    const _getOpenDataConnection = (room, userSlug) => {
+        const roomConnections = ctx.peerStore.getConnections?.[room]?.[userSlug]?.data ?? []
+        
+        if (!Array.isArray(roomConnections) || roomConnections.length === 0) {
+            return null
+        }
+
+        return roomConnections.find(conn => conn?.open) ?? null
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // 🔁 _forwardStarMessage — utilisée UNIQUEMENT par le hub en topologie star
+    //
+    // Quand le hub reçoit un message d'un client avec __starRoute: true,
+    // il appelle cette fonction pour le retransmettre aux bons destinataires.
+    //
+    // Paramètres de l'enveloppe :
+    //   envelope.from    → slug de l'expéditeur (exclu de la retransmission)
+    //   envelope.to      → liste de slugs ciblés, ou null pour "tout le monde"
+    //   envelope.payload → les vraies données à livrer
+    // ─────────────────────────────────────────────────────────────────────────────
+    const _forwardStarMessage = (envelope) => {
+        const room = ctx.session.onAirRoom
+
+        // Si `to` est fourni, on cible ces slugs. Sinon, on prend tous les users de la room.
+        // Dans les deux cas, on exclut l'expéditeur (inutile de lui renvoyer son propre message).
+        const targets = (envelope.to || ctx.connection.usersInRoom)
+            .filter(slug => slug !== envelope.from)
+
+        targets.forEach(userSlug => {
+            const conn = _getOpenDataConnection(room, userSlug)
+            if (!conn) {
+                console.warn('[Hub] Retransmission ignorée: connexion indisponible pour', userSlug)
+                return
+            }
+            // On envoie uniquement le payload (sans l'enveloppe de routage)
+            conn.send(envelope.payload)
+        })
+    }
+/** 
     const sendData = (data, destUserSlugs = null) => {
+
+        const users = destUserSlugs || ctx.connection.usersInRoom
+        const room = ctx.session.onAirRoom
 
         // si mesh : on envoie à tous les users connectés (ou à ceux ciblés si destUserSlugs fourni)
         // si star : on envoie uniquement au hub (si hubSlug fourni)
         // si sfu : la logique d’envoi dépend de l’implémentation du serveur SFU (généralement, les clients envoient au serveur SFU, pas entre eux)
         if(ctx.topology.value === 'mesh') {
-            const users = destUserSlugs || ctx.connection.usersInRoom
             users.forEach(userSlug => {
-                ctx.peerStore.getConnections[ctx.session.onAirRoom][userSlug]['data'][0].send(data)
+                const conn = _getOpenDataConnection(room, userSlug)
+                if (!conn) {
+                    console.warn('Envoi data ignoré: connexion indisponible pour', userSlug)
+                    return
+                }
+                conn.send(data)
             })
         } 
         else if (ctx.topology.value === 'star' && ctx.hubSlug.value) {
-            ctx.peerStore.getConnections[ctx.session.onAirRoom][ctx.hubSlug.value]['data'][0].send(data)
+            const conn = _getOpenDataConnection(room, ctx.hubSlug.value)
+            if (!conn) {
+                console.warn('Envoi data ignoré: connexion indisponible pour le hub', ctx.hubSlug.value)
+                return
+            }
+            conn.send(data)
         }
     }
+*/
+// ─────────────────────────────────────────────────────────────────────────────
+// 📤 sendData — envoie des données à un ou plusieurs peers
+//
+// Comportement selon la topologie :
+//
+//   MESH : envoi direct à chaque peer connecté (via leur connexion datachannel respective)
+//
+//   STAR hub    : envoi direct aux destinataires (le hub a une connexion avec tout le monde)
+//   STAR client : envoi au hub dans une "enveloppe" → le hub se chargera de retransmettre
+//
+//   SFU : non géré ici (le serveur SFU fait le routage lui-même)
+// ─────────────────────────────────────────────────────────────────────────────
+const sendData = (data, destUserSlugs = null) => {
+
+    const room = ctx.session.onAirRoom
+
+    // ── TOPOLOGIE MESH ──────────────────────────────────────────────────────
+    // Chaque peer est connecté à tous les autres → on envoie directement à chacun.
+    if (ctx.topology.value === 'mesh') {
+        const targets = destUserSlugs || ctx.connection.usersInRoom
+        targets.forEach(userSlug => {
+            const conn = _getOpenDataConnection(room, userSlug)
+            if (!conn) {
+                console.warn('[Mesh] Envoi ignoré: connexion indisponible pour', userSlug)
+                return
+            }
+            conn.send(data)
+        })
+        return
+    }
+
+    // ── TOPOLOGIE STAR ──────────────────────────────────────────────────────
+    if (ctx.topology.value === 'star' && ctx.hubSlug.value) {
+
+        // CAS 1 — Je suis le hub
+        // Le hub est connecté à tout le monde → envoi direct aux destinataires.
+        if (ctx.isHub.value) {
+            const targets = destUserSlugs || ctx.connection.usersInRoom
+            targets.forEach(userSlug => {
+                const conn = _getOpenDataConnection(room, userSlug)
+                if (!conn) {
+                    console.warn('[Hub] Envoi ignoré: connexion indisponible pour', userSlug)
+                    return
+                }
+                conn.send(data)
+            })
+            return
+        }
+
+        // CAS 2 — Je suis un client
+        // Je suis uniquement connecté au hub.
+        // Je lui envoie une "enveloppe" contenant les destinataires voulus + mes données.
+        // Le hub interceptera cette enveloppe et retransmettra lui-même.
+        const envelope = {
+            __starRoute: true,          // 🚩 marqueur : "hub, retransmet ce message"
+            to: destUserSlugs || null,  // destinataires cibles (null = tout le monde sauf moi)
+            from: ctx.mySlug.value,     // mon slug → le hub m'exclura de la retransmission
+            payload: data,              // les vraies données à livrer
+        }
+
+        const conn = _getOpenDataConnection(room, ctx.hubSlug.value)
+        if (!conn) {
+            console.warn('[Client] Envoi ignoré: connexion hub indisponible', ctx.hubSlug.value)
+            return
+        }
+        conn.send(envelope)
+    }
+}
+
 
     return {
         setLocalPeer,
         sendData,
+        forwardStarMessage: _forwardStarMessage, // exposé pour l'orchestrateur (routage star hub)
     }
 }

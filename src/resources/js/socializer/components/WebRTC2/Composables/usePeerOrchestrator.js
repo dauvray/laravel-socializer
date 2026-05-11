@@ -33,44 +33,141 @@ import { usePeerCore } from '~socializer/components/WebRTC2/Composables/usePeerC
 import { usePeerMedia } from '~socializer/components/WebRTC2/Composables/usePeerMedia.js'
 import { usePeerConnections } from '~socializer/components/WebRTC2/Composables/usePeerConnections.js'
 import { usePeerTransport } from '~socializer/components/WebRTC2/Composables/usePeerTransport.js'
+import { usePeerRetry } from '~socializer/components/WebRTC2/Composables/usePeerRetry.js'
 
 export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) {
 
     const eventBus = inject('eventBus')
+    let syncUsersConnectionsLock = false
 
+    // 1. Initialisation du Contexte et des Sous-Modules
     const context = createPeerContext({
         type,
         room,
         eventBus,
         options,
     })
-
     const core = usePeerCore(context)
     const media = usePeerMedia(context)
     const connections = usePeerConnections(context)
     const transport = usePeerTransport(context)
+
+    // 2. Initialisation du moteur de Retry
+    const retryManager = usePeerRetry(context)
+
+    /**
+     * LOGIQUE DE TENTATIVE (Callback pour le RetryManager)
+     * Détermine si on doit continuer à essayer de se connecter à un user.
+     */
+    const _handleConnectionAttempt = async (userSlug) => {
+        // 1. Succès ultime : connexion établie
+        if (connections.hasOpenConnection(userSlug)) return true
+
+        const remotePeerId = context.peerStore.getRemotePeerId(userSlug)
+        const waiting = context.peerStore.getWaitingRemotePeerId(userSlug)
+
+        // 2. Sécurité : Si on n'a plus d'ID ET plus d'intention (waiting), l'user est vraiment parti.
+        if (!remotePeerId && !waiting) return true
+
+        // 3. Si on a un ID, on tente la connexion (même si waiting a sauté)
+        if (remotePeerId) {
+            const connected = connections.connectToPeer({
+                userSlug,
+                peerId: remotePeerId,
+                type: context.currentType.value,
+                room: context.currentRoom.value,
+            })
+            if (connected) return true
+        }
+
+        // 4. Signalisation stale : On ne demande l'ID que si on est toujours en attente (waiting)
+        if (waiting) {
+            // Si la demande est "stale" (périmée), on relance une demande via le serveur
+            const STALE_MS = 12000
+            const age = Date.now() - (waiting.createdAt ?? 0)
+            if (age >= STALE_MS) {
+                core.requestRemotePeerConnection(userSlug)
+            }
+        }
+
+        return false // Échec de cette tentative -> le manager replanifiera
+    }
+
+
+    /**
+     * Tente de se connecter à un peer distant ou de demander une connexion si nécessaire.
+     *
+     * @param {string} userSlug - L'identifiant de l'utilisateur pour lequel la connexion est tentée.
+     * @returns {void}
+     */
+    const _requestOrConnectPeer = (userSlug) => {
+        if (!userSlug) return
+        if (connections.hasOpenConnection(userSlug)) return
+
+        const remotePeerId = context.peerStore.getRemotePeerId(userSlug)
+        const waiting = context.peerStore.getWaitingRemotePeerId(userSlug)
+        
+        if (remotePeerId) {
+            connections.connectToPeer({
+                userSlug,
+                peerId: remotePeerId,
+                type: context.currentType.value,
+                room: context.currentRoom.value,
+            })
+        } else if (!waiting) {
+            // On ne demande que si on n'est pas déjà en train d'attendre
+            core.requestRemotePeerConnection(userSlug)
+        }
+
+        // On lance le moteur de retry (qui surveillera l'évolution vers 'open')
+        retryManager.scheduleRetry(userSlug, 0, _handleConnectionAttempt)
+    }
 
    /**
      * 🔥 Glue logique (SEUL endroit où on mixe les couches)
      */
 
     const initializePeerConnection = (callbacks) => {
+    // ── En topologie star, on intercepte le callback onDataReceived ──────────
+    //
+    // Pourquoi ? Quand le hub reçoit un message d'un client avec __starRoute: true,
+    // ce n'est PAS un message "métier" → c'est une instruction de routage.
+    // Le hub doit retransmettre le payload aux vrais destinataires, sans remonter
+    // le message brut à la couche feature (useMediaBroadcast).
+    //
+    // On wrappe donc le callback onDataReceived AVANT de le stocker dans le contexte.
+    // ─────────────────────────────────────────────────────────────────────────
+    const wrappedCallbacks = { ...callbacks }
 
-        const type = context.currentType.value
-        const room = context.currentRoom.value
+        if (context.topology.value === 'star' && typeof callbacks.onDataReceived === 'function') {
+            const originalOnDataReceived = callbacks.onDataReceived
 
-        // une boucle pour stocker les calbbacks dans createPeerContext et éviter les dépendances circulaires (core → transport → peerStore)
-        try {
-            Object.keys(callbacks).forEach(callbackKey => {
-                if(!context.connectionEvents[callbackKey].isActive) {
-                    context.connectionEvents[callbackKey].callback = callbacks[callbackKey]
-                    context.connectionEvents[callbackKey].isActive = true
+            wrappedCallbacks.onDataReceived = (data) => {
+                const isRoutingEnvelope = data?.__starRoute === true
+                const isHubUser = context.isHub.value === true
+
+                // Le hub intercepte les enveloppes de routage et les retransmet.
+                // Le check isHub se fait ici (et non à l'init) car isHub peut être
+                // null au moment de l'initialisation (résolu après waitForMeReady).
+                // Hub: route l'enveloppe puis affiche le message "métier" (payload)
+                if (isRoutingEnvelope && isHubUser) {
+                    transport.forwardStarMessage(data)
+
+                    // On remonte au chat un objet normalisé pour éviter Invalid Date
+                    if (data?.payload) {
+                        originalOnDataReceived(data.payload)
+                    }
+                    return
                 }
-            })
-        } catch(e) {
-            console.log('Erreur lors de l\'initialisation des callbacks de connexion', e)
+
+                // Message normal → on appelle le callback fourni par useMediaBroadcast
+                originalOnDataReceived(data)
+            }
         }
 
+
+        // IMPORTANT: on stocke bien les callbacks wrappés dans le contexte, pas les originaux.
+        context.storeConnectionEventCallbacks(wrappedCallbacks)
         transport.setLocalPeer()
 
 
@@ -95,58 +192,58 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
     }
 
     const cleanupPeerConnection = () => {
+        retryManager.clearAll()
         connections.closePeerConnection()
     }
 
     const syncUsersConnections = async (users) => {
+    
+        if (syncUsersConnectionsLock) {
+            return
+        }
 
-       await context.waitForMeReady()
+        syncUsersConnectionsLock = true
 
-       const newUserConnections = await connections.getNewUsersInRoom(users)
-       
-        //ATENTION : la logique est validée pour une topologie mesh, 
-        // mais doit être adaptée pour les autres topologies (star, sfu)
-        // ne pas prendre cette logique comme une vérité universelle pour toutes les topologies, mais plutôt comme un exemple de ce qui peut être fait dans une topologie mesh.
-       // - mesh : on se connecte à tous les nouveaux utilisateurs
-       // - star : on se connecte uniquement au hub (si hubSlug fourni)
-       // - sfu : la logique de connexion dépend de l’implémentation du serveur SFU (généralement, les clients se connectent au serveur SFU, pas entre eux)
-        if(context.topology.value === 'mesh') {
-            newUserConnections.forEach(user => {
-                _requestOrConnectPeer(user.slug)  
+        try {
+
+            // on attend d’avoir les infos de contexte nécessaires (meStore ready) avant de faire quoi que ce soit.
+            const ready = await context.waitForMeReady()
+            if (!ready) {
+                return
+            }
+
+            const { newUsers, removedUsers } = await connections.getRoomUsersDiff(users)
+
+            // Nettoyage des peers qui ne sont plus dans la room.
+            removedUsers.forEach(userSlug => {
+                retryManager.clearRetry(userSlug)
+                context.peerStore.removeWaitingRemotePeerId(userSlug)
+                context.peerStore.removeRemotePeerId(userSlug)
             })
-        } 
-        else if (context.topology.value === 'star' && context.hubSlug.value) {
-            // Si je suis hub: je me connecte à tous les nouveaux users.
-            // Si je suis client: je me connecte uniquement au hub.
-            if(context.isHub.value) {
-                newUserConnections.forEach(user => {
-                     _requestOrConnectPeer(user.slug) 
+
+            // Mesh: tout le monde se connecte à tout le monde.
+            if (context.topology.value === 'mesh') {
+                newUsers.forEach(user => {
+                    _requestOrConnectPeer(user.slug)
                 })
-            } else {
-                const hubSlugName = context.hubSlug.value
-                if(hubSlugName) {
-                     _requestOrConnectPeer(hubSlugName)
+            }
+            // Star: le hub se connecte à tout le monde, les clients seulement au hub.
+            else if (context.topology.value === 'star' && context.hubSlug.value) {
+                if (context.isHub.value) {
+                    newUsers.forEach(user => {
+                        _requestOrConnectPeer(user.slug)
+                    })
                 } else {
-                    console.warn('Hub peer ID not found for hubSlug', context.hubSlug.value)
+                    _requestOrConnectPeer(context.hubSlug.value)
                 }
             }
+            // SFU: pas de maillage pair à pair côté client.
+
+        } finally {
+            syncUsersConnectionsLock = false
         }
-        // pour une topologie SFU, la logique de connexion dépend de l’implémentation du serveur SFU et n’est généralement pas gérée côté client
     }
 
-    const _requestOrConnectPeer = (userSlug) => {
-        if (!context.peerStore.hasRemotePeerId(userSlug)) {
-            core.requestRemotePeerConnection(userSlug)
-        } else {
-            connections.connectToPeer({
-                userSlug: userSlug,
-                peerId: context.peerStore.getRemotePeerId(userSlug),
-                type: context.currentType.value,
-                room: context.currentRoom.value,
-            })
-        } 
-    }
-    
     const sendDataToPeer = (data, destUserSlugs = null) => {
         transport.sendData(data, destUserSlugs)
     }

@@ -143,18 +143,30 @@ export function createPeerContext({ type, room, eventBus, options }) {
     // HELPERS (fonctions utilitaires, actions synchrones)
 
     // Attendre que le peer soit prêt (ex: meStore.getMe.slug disponible) avant de faire des actions dépendantes du peerId
-    const waitForMeReady = () => {
+    const waitForMeReady = (timeoutMs = 15000) => {
         return new Promise((resolve) => {
+             const startedAt = Date.now()
+
             const checkPeer = () => {
                 if (meStore.getMe?.slug && peerStore.localPeer?._id) {
 
-                    // init context state
+                     // On initialise le contexte dès que l'identité locale est réellement prête.
                     session.isHub = (meStore.getMe.slug === session.hubSlug)
-                    
-                    resolve('ready')
-                } else {
-                    setTimeout(checkPeer, 100)
+                    resolve(true)
+                    return
+                } 
+
+                if (Date.now() - startedAt >= timeoutMs) {
+                    console.warn('waitForMeReady a expiré après', timeoutMs, 'ms')
+                    resolve(false)
+                    return
                 }
+                
+                setTimeout(checkPeer, 100)
+
+                // else {
+                //     setTimeout(checkPeer, 100)
+                // }
             }
             checkPeer()
         })
@@ -183,8 +195,11 @@ export function createPeerContext({ type, room, eventBus, options }) {
             )
             // clear rooms
             peerStore.clearConnectionsRoom(room, slug, type)
-            // virer remotePeerID[slug] de peerStore
-            peerStore.removeRemotePeerId(slug)
+            // On ne supprime le remotePeerId que si le peer n'est plus censé être dans la room.
+            // Ça évite de casser un peer encore valide lors d'une coupure transitoire.
+            if (!connection.usersInRoom.includes(slug)) {
+                peerStore.removeRemotePeerId(slug)
+            }
         })
 
         //------------------
@@ -214,6 +229,19 @@ export function createPeerContext({ type, room, eventBus, options }) {
             conn.on("error", connectionEvents.onConnectionError.callback)
         }
     }
+
+    const storeConnectionEventCallbacks = (callbacks) => {
+        try {
+            Object.keys(callbacks).forEach(callbackKey => {
+                if(!connectionEvents[callbackKey].isActive) {
+                    connectionEvents[callbackKey].callback = callbacks[callbackKey]
+                    connectionEvents[callbackKey].isActive = true
+                }
+            })
+        } catch(e) {
+            console.log('Erreur lors de l\'initialisation des callbacks de connexion', e)
+        }
+    }
         
     return {
         contextId,
@@ -240,6 +268,6 @@ export function createPeerContext({ type, room, eventBus, options }) {
         // helpers
         waitForMeReady,
         setUpConnectionListeners,
-        
+        storeConnectionEventCallbacks,
     }
 }

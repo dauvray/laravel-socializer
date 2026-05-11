@@ -24,55 +24,77 @@ import { watch } from 'vue'
 
 export function usePeerConnections(ctx) {
 
-   // let connectionInitialized = false
+    const getRoomUsersDiff = async (users = []) => {
+        const ready = await ctx.waitForMeReady()
+        if (!ready) {
+            return { newUsers: [], removedUsers: [] }
+        }
+
+        const usersInRoom = users.filter(user => user.slug !== ctx.meStore.getMe.slug)
+        const nextSlugs = usersInRoom.map(user => user.slug)
+        const previousSlugs = [...ctx.connection.usersInRoom]
+
+        const newUsers = usersInRoom.filter(user => !previousSlugs.includes(user.slug))
+        const removedUsers = previousSlugs.filter(slug => !nextSlugs.includes(slug))
+
+        ctx.connection.usersInRoom = nextSlugs
+
+        return { newUsers, removedUsers }
+    }
 
     const getNewUsersInRoom = async (users = []) => {
+        const diff = await getRoomUsersDiff(users)
+        return diff.newUsers
+    }
 
-        // attendre que  meStore.getMe.slug disponible avant d’initialiser la connexion
-        await ctx.waitForMeReady()
-
-        let usersInRoom = []
-
-        users.forEach( user => {
-            // if user is not me
-            if(user.slug !== ctx.meStore.getMe.slug) {
-                usersInRoom.push(user)
-            }
-        })
-
-        // Identifier les nouveaux utilisateurs
-        const newUsers = usersInRoom.filter(user => !ctx.connection.usersInRoom.includes(user.slug))
-
-        // Mettre à jour la liste des utilisateurs présents dans la salle
-        ctx.connection.usersInRoom = usersInRoom.map(user => user.slug)
-
-        return newUsers
+    const hasOpenConnection = (userSlug) => {
+        const room = ctx.currentRoom.value
+        const type = ctx.currentType.value
+        const roomConnections = ctx.peerStore.getConnections?.[room]?.[userSlug]?.[type] ?? []
+        return Array.isArray(roomConnections) && roomConnections.some(conn => conn?.open)
     }
 
     const connectToPeer = (payload) => {
 
-        if(ctx.peerStore.hasWaitingRemotePeerId(payload.userSlug)) {
-            ctx.peerStore.removeWaitingRemotePeerId(payload.userSlug)
+        const userSlug = payload?.userSlug
+        const peerId = payload?.peerId ? String(payload.peerId) : null
+        // const room = String(payload?.room ?? ctx.currentRoom.value)
+        // const type = String(payload?.type ?? ctx.currentType.value)
+
+        if (!userSlug || !peerId) {
+            console.warn('Connexion peer ignorée: userSlug ou peerId manquant', payload)
+            return false
         }
 
-        ctx.peerStore.addRemotePeerId(payload.userSlug, payload.peerId)
+        // Si la connexion data existe déjà et est ouverte, on ne recrée rien.
+        if (hasOpenConnection(userSlug)) {
+            return true
+        }
+
+        // On supprime le waiting flag seulement quand on a une vraie cible exploitable.
+        if (ctx.peerStore.hasWaitingRemotePeerId(userSlug)) {
+            ctx.peerStore.removeWaitingRemotePeerId(userSlug)
+        }
+
+        ctx.peerStore.addRemotePeerId(userSlug, peerId)
 
         const config = _buildPeerConnectionConfig(payload)
-
         ctx.peerStore.prepareRoomConnection(config)
 
-        if(config.options.metadata.type === 'data') {
+        if (config.options.metadata.type === 'data') {
+            try {
+                const conn = ctx.peerStore.getLocalPeer.connect(config.peerId, config.options)
+                ctx.setUpConnectionListeners(conn)
+                _storeRoomConnection(config, conn)
+                return true
+            } catch (error) {
+                console.error('Erreur pendant connectToPeer', error)
+                return false
+            }
+        }
 
-            const conn = ctx.peerStore.getLocalPeer.connect(config.peerId, config.options)
-            ctx.setUpConnectionListeners(conn)
-            _storeRoomConnection(config, conn)
-
-        } else {
-            // pour les connexions de type media, on attend d’avoir le stream avant d’ouvrir la connexion (car besoin du stream dans la connexion)
-            // c’est géré dans usePeerMedia.startCallStream → createVideoPeer
-        } 
-
-
+        // Les connexions média restent pilotées ailleurs.
+        return true
     }
 
     const closePeerConnection = () => {
@@ -90,6 +112,11 @@ export function usePeerConnections(ctx) {
                 ctx.peerStore.clearConnectionsRoom(currentRoom, userSlug, currentType)
                 ctx.peerStore.clearSignalQueueRoom(ctx.contextId)
                 ctx.peerStore.removeRemotePeerId(userSlug)
+
+                // On nettoie aussi les traces waiting pour éviter les faux positifs au prochain sync.
+                if (ctx.peerStore.hasWaitingRemotePeerId(userSlug)) {
+                    ctx.peerStore.removeWaitingRemotePeerId(userSlug)
+                }
             }
         }
     }
@@ -148,6 +175,8 @@ export function usePeerConnections(ctx) {
 
     return {
         getNewUsersInRoom,
+        getRoomUsersDiff,
+        hasOpenConnection,
         connectToPeer,
         closePeerConnection,
     }

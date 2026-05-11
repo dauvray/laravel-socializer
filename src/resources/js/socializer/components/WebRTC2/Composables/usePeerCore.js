@@ -25,6 +25,22 @@ export function usePeerCore(ctx) {
         const room = ctx.session.onAirRoom
         const type = ctx.session.currentType
         const localPeerId = ctx.peerStore.localPeer._id
+
+        if (!localPeerId) {
+            console.warn('requestRemotePeerConnection ignoré: localPeer pas encore prêt')
+            return false
+        }
+
+        const waiting = ctx.peerStore.getWaitingRemotePeerId(userSlug)
+        if (waiting && waiting.room === room && waiting.type === type) {
+            const age = Date.now() - (waiting.createdAt ?? 0)
+
+            // Si on a déjà demandé ce peerId récemment, on évite le spam réseau.
+            if (age < 12000) {
+                return false
+            }
+        }
+
         ctx.AjaxService.load('/ask-to-peer-id', 'post', {
             peerId: localPeerId,
             toUserSlug: userSlug,
@@ -32,6 +48,7 @@ export function usePeerCore(ctx) {
             type: type
         })
         ctx.peerStore.addWaitingRemotePeerId(userSlug, { room, type })
+        return true
     }
 
     const responseRemotePeerConnection = (fromUserSlug, type, room) => {
