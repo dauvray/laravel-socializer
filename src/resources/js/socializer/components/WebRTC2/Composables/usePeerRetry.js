@@ -4,13 +4,18 @@
  */
 import { onUnmounted } from 'vue'
 
-export function usePeerRetry(context) {
+export function usePeerRetry(ctx) {
     const pendingTimers = new Map()
 
     // Clé unique pour isoler les retries par type/room/user
     const _retryKey = (userSlug) => 
-        `${context.currentType.value}:${context.currentRoom.value}:${userSlug}`
+        `${ctx.currentType.value}:${ctx.currentRoom.value}:${userSlug}`
 
+    /**
+     * Annule une tentative en cours pour un utilisateur donné.
+     * @param {string} userSlug - Identifiant unique de l'utilisateur.
+     * @returns {void}
+     */
     const clearRetry = (userSlug) => {
         const key = _retryKey(userSlug)
         if (pendingTimers.has(key)) {
@@ -19,6 +24,10 @@ export function usePeerRetry(context) {
         }
     }
 
+    /**
+     * Stoppe toutes les tentatives en cours (ex: lors de la fermeture d'une room ou du composant)
+     * @returns {void}
+     */
     const clearAll = () => {
         pendingTimers.forEach(timer => clearTimeout(timer))
         pendingTimers.clear()

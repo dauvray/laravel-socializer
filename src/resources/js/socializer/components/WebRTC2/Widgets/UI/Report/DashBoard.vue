@@ -18,8 +18,8 @@
                             <li>
                                 Hub Slug : {{ api.hubSlug }}
                             </li>
-                            <li>{{ typeof api.isHub }}
-                                Am i Hub : <span :class="{'text-success': api.isHub.value, 'text-danger': !api.isHub.value}">{{ api.isHub }}</span>
+                            <li>
+                                Local Hub : <span :class="{'text-success': api.isHub.value, 'text-danger': !api.isHub.value}">{{ api.isHub }}</span>
                             </li>
                             <li>
                                 Hub Connected : <span :class="{'text-success': api.isHubConnected.value, 'text-danger': !api.isHubConnected.value}">{{ api.isHubConnected }}</span>

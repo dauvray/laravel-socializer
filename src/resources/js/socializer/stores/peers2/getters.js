@@ -25,10 +25,7 @@ export default {
     --------------------------*/
     getQueueForRoom: (state) => {
         return (roomId) => {
-            if (!state.signalQueues[roomId]) {
-                state.createSignalQueueRoom(roomId)
-            }
-            return state.signalQueues[roomId]
+            return state.signalQueues[roomId] || null
         }
     },
     getLastSignal() {

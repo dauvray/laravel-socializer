@@ -19,7 +19,7 @@
  * - fournir une "source de vérité" unique à tous les composables techniques
  */
 
-import { reactive, computed } from 'vue'
+import { reactive, computed, onBeforeMount } from 'vue'
 import { useAjaxService } from '~estarter/services/AjaxService.js'
 import { usePeer2Store } from '~socializer/stores/peers2.js'
 import { useServerStore } from '~socializer/stores/server.js'
@@ -250,11 +250,21 @@ export function createPeerContext({ type, room, eventBus, options }) {
             console.log('Erreur lors de l\'initialisation des callbacks de connexion', e)
         }
     }
+
+    /**
+     * Lifecycle hook
+     */
+    onBeforeMount(() => {
+        // On crée la "room de signalisation" dans le peerStore 
+        // dès que le contexte est initialisé.
+        peerStore.createSignalQueueRoom(contextId)
+    })
         
     return {
         contextId,
         roomSignals,
         lastRoomSignal,
+        
         // infra
         peerStore,
         meStore,

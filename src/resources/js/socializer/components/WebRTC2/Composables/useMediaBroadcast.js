@@ -103,11 +103,10 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
         // stream
         getWebcamStream,
 
-        // // screen
+        // screen
 
         // data
         sendData,
-
 
         /*------------------------
         | CONTEXTE

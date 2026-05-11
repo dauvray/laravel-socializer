@@ -164,9 +164,10 @@ export default {
         delete this.signalQueues[roomId]
     },
     createSignalQueueRoom(roomId) {
-        this.signalQueues[roomId] = []
+        if (!this.signalQueues[roomId]) {
+            this.signalQueues[roomId] = []
+        }
     },
-
 
     // Enregistrer l’id d’un peer distant lorsqu’il est reçu
     removeRemotePeerId(userSlug) {
