@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+import { ref, onScopeDispose } from 'vue'
 // local store pour les chats (on pourrait faire mieux avec un vrai store, mais c'est pas le sujet ici)
 // la clé de la map est le nom de la room, ce qui permet d'avoir une instance de chat par room
 // on stocke les messages dans une ref pour que ce soit réactif, et on expose une fonction pour ajouter un message
@@ -6,6 +6,49 @@ import { ref } from 'vue'
 // IMPORTANT : le fait que chats soit hors du composable permet de partager l'état entre plusieurs instances du composant ChatSimpleUI (ici et parent), 
 // tant qu'elles utilisent le même nom de room pour accéder à la map
 const chats = new Map()
+const ROOM_TTL_MS = 30 * 60 * 1000 // 30 min
+
+// retourne l'objet chat pour une room donnée, 
+// en créant une nouvelle entrée si la room n'existe pas encore
+function ensureRoom(room) {
+    if (!chats.has(room)) {
+        chats.set(room, {
+            messages: ref([]),
+            subscribers: 0,
+            purgeTimer: null,
+        })
+    }
+
+    return chats.get(room)
+}
+
+// Planifie la suppression d'une room après un délai, si personne n'est revenu d'ici là
+function scheduleRoomPurge(room) {
+    const chat = chats.get(room)
+    if (!chat) return
+
+    // Evite les timers dupliqués
+    if (chat.purgeTimer) return
+
+    chat.purgeTimer = setTimeout(() => {
+        const latest = chats.get(room)
+        if (!latest) return
+
+        // Purge seulement si personne n'est revenu entre temps
+        if (latest.subscribers === 0) {
+            chats.delete(room)
+        } else {
+            latest.purgeTimer = null
+        }
+    }, ROOM_TTL_MS)
+}
+
+// Annule une purge programmée pour une room, par exemple si un nouvel abonné arrive avant l'expiration du timer
+function cancelRoomPurge(chat) {
+    if (!chat?.purgeTimer) return
+    clearTimeout(chat.purgeTimer)
+    chat.purgeTimer = null
+}
 
 export function useChatSimple(room = '_default_', api = {}) {
 
@@ -13,20 +56,20 @@ export function useChatSimple(room = '_default_', api = {}) {
         * State
     ----------------------*/
 
-    if (!chats.has(room)) {
-        chats.set(room, {
-            messages: ref([])
-        })
-    }
- 
-    const chat = chats.get(room)
+    const chat = ensureRoom(room)
+    // Nouvel abonné sur la room
+    chat.subscribers += 1
+    cancelRoomPurge(chat)
+
     const messageToSend = ref('')
 
     /*----------------------
         * Logique métier
     ----------------------*/
 
-    const addNewMessage = (msg) => {
+    const addNewMessage = (data) => {
+        // protection mesh / star
+        const msg = data?.payload ?? data
         chat.messages.value.push(msg)
     }
 
@@ -45,6 +88,18 @@ export function useChatSimple(room = '_default_', api = {}) {
         api.sendData(msg) // passé en argument, permet d'utiliser des méthodes de useMediaBroadcast (ex: sendDataToPeer) ou d'autres méthodes de transport selon les besoins
         messageToSend.value = ''
     }
+
+    // Nettoyage auto quand le composant qui consomme ce composable est détruit
+    onScopeDispose(() => {
+        const latest = chats.get(room)
+        if (!latest) return
+
+        latest.subscribers = Math.max(0, latest.subscribers - 1)
+
+        if (latest.subscribers === 0) {
+            scheduleRoomPurge(room)
+        }
+    })
 
     return {
         messages: chat.messages,
