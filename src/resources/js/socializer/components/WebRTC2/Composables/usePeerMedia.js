@@ -15,22 +15,9 @@
  * 👉 rôle :
  * - abstraction pure des flux audio/vidéo
  * - isoler toute dépendance navigateur (MediaDevices API)
+ * - fournir des flux prêts à être utilisés par les connexions WebRTC
  * 
- * 
- * Fonctions concernées :
- * ----------------------
- * startWebcamStream
- * startVisioStream
- * startScreenCapture
- *
- * stopVideoStream
- * stopUserVisioStream
- * stopAllVisioStream
- *
- * stopCurrentStream
- * updateVideoProps
- *
- * resolveAnswerStream
+ * 👉 à ne pas confondre avec useMediaBroadcast qui gère la logique métier de diffusion (qui utilise usePeerMedia pour les flux)
  */
 import { watch } from 'vue'
 

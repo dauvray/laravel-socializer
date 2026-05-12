@@ -47,39 +47,6 @@
         },
         setup() {
 
-            // ne rien supprimer ici, le context est utilisé dans les callbacks de certains composants
-
-            // const {
-            //     sendLocalPeerId,
-            //     getAuthorizationRemotePeerId,
-            //     closeRemotePeerId,
-            //     sendAuthorizationRemotePeerId,
-            //     receiveAuthorizationRemotePeerId,
-            //     setLocalVideoPeer,
-            //     setLocalDataPeer,
-            //     storeConnection,
-            //     createVideoElement,
-            //     connectToQueuedConnections,
-            //     removeVideoElement,
-            //     deleteRemoteOpenedConnections,
-            //     startVisioStream,
-            //     stopUserVisioStream,
-            //     stopAllVisioStream,
-            //     currentStream,
-            //     updateCurrentRoom,
-            //     updateCurrentType,
-            //     localPeerId,
-            //     localPeer,
-            //     connections,
-            //     onResponseCallError,
-            //     callInprogress,
-            //     setCallInProgress,
-            //     setCurrentCallRoomId,
-            //     saveRemoteStream,
-            //     removeRemoteStream,
-
-            // } = usePeers()
-
             const notificationComponent = ref(null)
             const notificationComponentProps = ref(null)
             const NewMessageNotification= ref(null)

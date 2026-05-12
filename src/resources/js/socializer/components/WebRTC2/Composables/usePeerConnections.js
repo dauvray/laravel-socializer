@@ -58,8 +58,6 @@ export function usePeerConnections(ctx) {
 
         const userSlug = payload?.userSlug
         const peerId = payload?.peerId ? String(payload.peerId) : null
-        // const room = String(payload?.room ?? ctx.currentRoom.value)
-        // const type = String(payload?.type ?? ctx.currentType.value)
 
         if (!userSlug || !peerId) {
             console.warn('Connexion peer ignorée: userSlug ou peerId manquant', payload)

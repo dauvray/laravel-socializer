@@ -20,11 +20,6 @@
  * - façade technique unifiée
  * - éviter que les couches supérieures manipulent directement les sous-modules
  * 
- * Fonctions concernées dans l'ancien code :
- * ----------------------
- * createVideoElement
- * removeVideoElement
- * closeEventBusStream
  */
 
 import { inject } from 'vue'
@@ -92,7 +87,6 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
 
         return false // Échec de cette tentative -> le manager replanifiera
     }
-
 
     /**
      * Tente de se connecter à un peer distant ou de demander une connexion si nécessaire.
@@ -164,7 +158,6 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
                 originalOnDataReceived(data)
             }
         }
-
 
         // IMPORTANT: on stocke bien les callbacks wrappés dans le contexte, pas les originaux.
         context.storeConnectionEventCallbacks(wrappedCallbacks)
