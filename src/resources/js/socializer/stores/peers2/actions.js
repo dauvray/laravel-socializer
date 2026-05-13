@@ -63,16 +63,7 @@ export default {
         })
 
         if (this.connections[room][slug][type].length === 0) {
-            delete this.connections[room][slug][type]
-            // todo : closePeerConnection(room, slug, type)
-        }
-
-        if (isEmpty(this.connections[room][slug])) {
-            delete this.connections[room][slug]
-        }
-
-        if (isEmpty(this.connections[room])) {
-            delete this.connections[room]
+            this.closePeerConnection(room, slug, type)
         }
     },
     closePeerConnection(room, slug, type) {
