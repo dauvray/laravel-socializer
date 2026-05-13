@@ -2,10 +2,14 @@
     <div class="card">
         <div class="card-body">
             <button class="btn btn-primary" @click="startWebcamStream">Start Webcam Stream</button>
-            <VideoComponent :srcObject="props.api.currentStream"></VideoComponent>
+            <button class="btn btn-danger" @click="stopWebcamStream">Stop Webcam Stream</button>
+            <VideoComponent :srcObject="props.api.currentStream.value"></VideoComponent>
+            
+             {{ props.remoteStreams.length }} remote stream(s) received.
+            <VideoComponent v-for="(remoteStream, index) in props.remoteStreams" :key="index" :srcObject="remoteStream"></VideoComponent>
         </div>
     </div>
-    {{ props.api.currentStream }}
+   
 </template>
 
 <script setup>
@@ -14,10 +18,18 @@
 
     const props = defineProps({
         api: Object,
+        remoteStreams: {
+            type: Array,
+            default: () => []
+        },
     })
 
     const startWebcamStream = () => {
         props.api.getWebcamStream()
+    }
+
+    const stopWebcamStream = () => {
+        props.api.stopStream()
     }
 
 </script>

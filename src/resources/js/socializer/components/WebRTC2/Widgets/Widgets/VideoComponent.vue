@@ -1,39 +1,69 @@
 <template>
-    <VideoPlayer
+    <video 
         ref="player"
+        :controls="false"
         :autoplay="true"
+        :loop="false"
+        :muted="true"
+        :poster="poster"
         :playsinline="true"
-        :controls="true"
-        :srcObject="localStream"
-    ></VideoPlayer>
+    ></video>
 </template>
 
-<script setup>
+<<script setup>
 
-    import { watch, ref, useTemplateRef } from 'vue'
-    import VideoPlayer from '~estarter/components/widgets/VideoPlayer.vue'
+import { ref, watch } from 'vue'
 
-    const props = defineProps({
-        srcObject: {
-            type: MediaStream,
-            required: false,
-            default: null,
-        },
-    })
+const props = defineProps({
+    srcObject: {
+        type: MediaStream,
+        default: null,
+    },
+})
+// fait réfence à l'élément vidéo du template
+const player = ref(null)
 
-    const localStream = ref(null)
-    const childRef = useTemplateRef('player')
+watch(
+    // on regarde à la fois la source du flux vidéo et l'élément vidéo lui même, 
+    // car il se peut que l'un des deux ne soit pas encore prêt au moment où l'autre change
+    [() => props.srcObject, player],
+    async ([stream, video]) => {
 
-    watch(() => props.srcObject, (newVal) => {
-        if(newVal) {
-            console.log('new srcObject received in VideoComponent', newVal)
-            localStream.value = newVal
-            if (childRef.value) {
-                console.log('playing video with new srcObject', newVal, childRef.value)
-                childRef.value.play();
-            }
+        if (!stream || !video) return
+
+        if (video.srcObject === stream) {
+            return
         }
-    })
-    
+
+        video.srcObject = stream
+
+        const playVideo = async () => {
+
+            try {
+                await video.play()
+            }
+            catch (e) {
+                console.error(e)
+            }
+
+        }
+
+        if (video.readyState >= 1) {
+            await playVideo()
+            return
+        }
+
+        video.addEventListener(
+            'loadedmetadata',
+            playVideo,
+            { once: true }
+        )
+
+    },
+    {
+        immediate: true,
+        flush: 'post',
+    }
+)
 
 </script>

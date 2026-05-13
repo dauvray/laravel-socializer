@@ -64,7 +64,7 @@ export function usePeerConnections(ctx) {
             return false
         }
 
-        // Si la connexion data existe déjà et est ouverte, on ne recrée rien.
+        // Si la connexion avec ce type existe déjà et est ouverte, on ne recrée rien.
         if (hasOpenConnection(userSlug)) {
             return true
         }
@@ -74,25 +74,46 @@ export function usePeerConnections(ctx) {
             ctx.peerStore.removeWaitingRemotePeerId(userSlug)
         }
 
-        ctx.peerStore.addRemotePeerId(userSlug, peerId)
+        if(!ctx.peerStore.hasRemotePeerId(userSlug)) {
+            ctx.peerStore.addRemotePeerId(userSlug, peerId)
+        }
 
         const config = _buildPeerConnectionConfig(payload)
-        ctx.peerStore.prepareRoomConnection(config)
-
+       
         if (config.options.metadata.type === 'data') {
             try {
                 const conn = ctx.peerStore.getLocalPeer.connect(config.peerId, config.options)
-                ctx.setUpConnectionListeners(conn)
-                _storeRoomConnection(config, conn)
+                _saveRoomConnection(config, conn)
                 return true
             } catch (error) {
                 console.error('Erreur pendant connectToPeer', error)
                 return false
             }
+        } 
+        
+        else if (config.options.metadata.type === 'stream' && ctx.media.currentStream) {
+            try {
+                const call = ctx.peerStore.getLocalPeer.call(config.peerId, config.stream, config.options)
+                _saveRoomConnection(config, call)
+                return true
+            } catch (error) {
+                console.error('Erreur pendant connectToPeer (stream)', error)
+                return false
+            }
         }
 
-        // Les connexions média restent pilotées ailleurs.
         return true
+    }
+
+    const stopBroadcastCalls = () => {
+        const room = ctx.currentRoom.value
+        const type = ctx.currentType.value
+        const roomConnections = ctx.peerStore.getConnections?.[room] ?? {}
+
+        Object.keys(roomConnections).forEach((userSlug) => {
+            ctx.peerStore.closePeerConnection(room, userSlug, type)
+            ctx.peerStore.clearConnectionsRoom(room, userSlug, type)
+        })
     }
 
     const closePeerConnection = () => {
@@ -128,6 +149,7 @@ export function usePeerConnections(ctx) {
                     from: String(ctx.meStore.getMe.slug),
                     type: String(payload.type),
                     room: String(payload.room),
+                    callbackKey: ctx.contextId,
                 }
             }
         }
@@ -136,13 +158,17 @@ export function usePeerConnections(ctx) {
             // Whether the underlying data channels should be reliable (e.g. for large file transfers) 
             // or not (e.g. for gaming or streaming).
             config.options.reliable = true
-            config.options.metadata.callbackKey = ctx.contextId
-        } else {
-           // todo : a examnier quand on fera du streaming
-           // config.stream = ctx.peerStore.getStream(payload.room, payload.type)
+        } else if (payload.type === 'stream') {
+            config.stream = ctx.media.currentStream
         }
 
         return config
+    }
+
+    const _saveRoomConnection = (config, connection) => {
+        ctx.peerStore.prepareRoomConnection(config)
+        ctx.setUpConnectionListeners(connection)
+        _storeRoomConnection(config, connection)
     }
 
     const _storeRoomConnection = (config, connection) => {
@@ -153,13 +179,6 @@ export function usePeerConnections(ctx) {
             connection
         )
     }
-
-    // const _openPeerMediaConnection = (config) => {
-    //     const slug = options.metadata.slug
-    //     const room = options.metadata.room
-    //     const type = options.metadata.type
-    //     const ignoredDataConnections = [] // put here video types without dataPeerConnection
-    // }
 
     watch(ctx.lastRoomSignal, async (signal) => {
         if (!signal || !ctx.SIGNAL_TYPES.connections.includes(signal.type)) return
@@ -177,5 +196,6 @@ export function usePeerConnections(ctx) {
         hasOpenConnection,
         connectToPeer,
         closePeerConnection,
+        stopBroadcastCalls,
     }
 }

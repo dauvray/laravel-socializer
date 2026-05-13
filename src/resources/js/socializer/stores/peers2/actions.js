@@ -2,65 +2,6 @@ import { isEmpty } from '~estarter/services/helpers.js'
 
 export default {
 
-    setLocalDataPeer(type) {
-
-        if (!this.localPeer) {
-            this.createLocalPeer()
-        }
-
-        // if the connection listener is already set, we don't need to set it again
-        if (this.localPeerReady) return
-
-        this.localPeer.on('connection', async(conn) => {
-
-            const meta = conn.options?.metadata?.callbackKey
-            if(this.hasIncomingPeerCallbacks(meta)) {
-                const dynamicCallback = this.incomingConnectionCallbacks.get(meta)
-            }
-
-
-            conn.on('error', (err) => {
-                console.error('Erreur sur la connexion entrante :', err);
-            });
-
-            conn.on('close', () => {
-                console.log('Connexion call fermée dans actions :', conn.connectionId);
-                // inutile this.remoteOpenedConnections.delete(conn.connectionId)
-            });
-
-          
-
-
-           
-            if(dynamicCallback === undefined) {
-                console.warn('Aucun callback trouvé pour cette connexion entrante avec callbackKey', meta)
-            }
-            console.log('Metadata de la connexion entrante :', meta, dynamicCallback)
-
-            if (callbackKey && dynamicCallback && !this.remoteOpenedConnections.has(conn.connectionId)) {
-              // inutile  this.remoteOpenedConnections.add(conn.connectionId)
-                dynamicCallback(conn)
-            } 
-            // En prevision car actuellement les dataChannels sont gérés par la callbackKey
-            else if (meta.callback) {
-                try {
-                    const module = await import(`~socializer/callbacks/${meta.callback}.js`)
-                    if (typeof module.default === 'function' && !this.remoteOpenedConnections.has(conn.connectionId)) {
-                        this.remoteOpenedConnections.add(conn.connectionId)
-                        console.log('Appel du callback dynamique', meta.callback)
-                        await module.default(conn, context)
-                    }
-                } catch (e) {
-                    console.error(`Callback dynamique ${meta.callback} invalide`, e)
-                }
-            } else {
-                console.warn('Aucun callback trouvé pour cette connexion', meta)
-            }
-        })
-
-        this.localPeerReady = true
-    },
-
     prepareRoomConnection(payload) {
 
         const userSlug = payload.options.metadata.slug

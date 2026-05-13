@@ -186,7 +186,7 @@ export function createPeerContext({ type, room, eventBus, options }) {
         // core events
         //------------------
         conn.on("open", function () {
-            console.log('connection data ouverte dans Context', conn.metadata)
+            console.trace('connection data ouverte dans Context', conn.metadata)
         })
 
         conn.on("close", function () {

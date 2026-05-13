@@ -19,15 +19,44 @@
  */
 
 import { Peer } from "peerjs"
-import { watch } from 'vue'
+
+// -----------------------------------------------------------------------------
+// Registre global des contextes WebRTC actifs
+// key = contextId (ex: data-room-test, stream-room-test)
+// value = ctx complet (avec setUpConnectionListeners)
+// -----------------------------------------------------------------------------
+const contextRegistry = new Map()
+
+function registerContext(ctx) {
+    if (!ctx?.contextId) return
+    contextRegistry.set(ctx.contextId, ctx)
+}
+
+function unregisterContext(ctx) {
+    if (!ctx?.contextId) return
+    contextRegistry.delete(ctx.contextId)
+}
+
+function resolveContextByMetadata(metadata) {
+    const callbackKey = metadata?.callbackKey
+    if (callbackKey && contextRegistry.has(callbackKey)) {
+        return contextRegistry.get(callbackKey)
+    }
+    return null
+}
 
 export function usePeerTransport(ctx) {
 
     const setLocalPeer = () => {
 
-        if(ctx.peerStore.localPeerReady) return
+        // Chaque contexte s'enregistre, même si le peer singleton existe déjà.
+        registerContext(ctx)
 
         const peerStore = ctx.peerStore
+
+        // Le peer local est déjà prêt: rien à recréer, mais le contexte est bien enregistré.
+        if(peerStore.localPeerReady) return
+
         peerStore.localPeerReady = true
 
         peerStore.localPeer =  new Peer({
@@ -69,9 +98,52 @@ export function usePeerTransport(ctx) {
             peerStore.localPeer.reconnect()
         })
 
+        // ---------------------------------------------------------------------
+        // Dispatcher global entrant: DataConnection
+        // ---------------------------------------------------------------------
         peerStore.localPeer.on('connection', async (conn) => { 
-            ctx.setUpConnectionListeners(conn)
+            const metadata = conn?.metadata || conn?.options?.metadata || {}
+            const targetCtx = resolveContextByMetadata(metadata)
+
+            if (!targetCtx) {
+                console.warn(
+                    "[WebRTC2] Aucun contexte trouvé pour connection entrante",
+                    metadata
+                )
+                return
+            }
+
+            targetCtx.setUpConnectionListeners(conn)
         })
+
+        // ---------------------------------------------------------------------
+        // Dispatcher global entrant: MediaConnection (call stream/screen)
+        // ---------------------------------------------------------------------
+        peerStore.localPeer.on('call', (call) => {
+            const callType = call?.metadata?.type
+            if (callType !== 'stream' && callType !== 'screen') {
+                return
+            }
+
+            // One-way viewer: on répond sans stream local
+            call.answer()
+
+            const targetCtx = resolveContextByMetadata(call?.metadata || {})
+
+            if (!targetCtx) {
+                console.warn(
+                    "[WebRTC2] Aucun contexte trouvé pour call entrant",
+                    call?.metadata
+                )
+                return
+            }
+
+            targetCtx.setUpConnectionListeners(call)
+        })
+    }
+
+    const unregisterLocalContext = () => {
+        unregisterContext(ctx)
     }
 
     const _getOpenDataConnection = (room, userSlug) => {
@@ -85,7 +157,7 @@ export function usePeerTransport(ctx) {
     }
 
     // ─────────────────────────────────────────────────────────────────────────────
-    // 🔁 _forwardStarMessage — utilisée UNIQUEMENT par le hub en topologie star
+    // 🔁 forwardStarMessage — utilisée UNIQUEMENT par le hub en topologie star
     //
     // Quand le hub reçoit un message d'un client avec __starRoute: true,
     // il appelle cette fonction pour le retransmettre aux bons destinataires.
@@ -95,7 +167,7 @@ export function usePeerTransport(ctx) {
     //   envelope.to      → liste de slugs ciblés, ou null pour "tout le monde"
     //   envelope.payload → les vraies données à livrer
     // ─────────────────────────────────────────────────────────────────────────────
-    const _forwardStarMessage = (envelope) => {
+    const forwardStarMessage = (envelope) => {
         const room = ctx.session.onAirRoom
 
         // Si `to` est fourni, on cible ces slugs. Sinon, on prend tous les users de la room.
@@ -185,7 +257,8 @@ export function usePeerTransport(ctx) {
 
     return {
         setLocalPeer,
+        unregisterLocalContext,
         sendData,
-        forwardStarMessage: _forwardStarMessage, // exposé pour l'orchestrateur (routage star hub)
+        forwardStarMessage,
     }
 }

@@ -32,13 +32,6 @@ export function usePeerMedia(ctx) {
         stream.isLocal = is_local // to mute local sound in player
 
         ctx.media.currentStream = stream
-       
-
-        // ctx.peerStore.saveStream(
-        //     ctx.onAirRoom.value,
-        //     stream,
-        //     ctx.currentType.value
-        // )
     }
 
     const stopCurrentStream = () => {

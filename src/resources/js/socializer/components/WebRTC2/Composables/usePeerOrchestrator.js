@@ -162,31 +162,15 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         // IMPORTANT: on stocke bien les callbacks wrappés dans le contexte, pas les originaux.
         context.storeConnectionEventCallbacks(wrappedCallbacks)
         transport.setLocalPeer()
-
-
-
-
-
-        // todo : on en est là
-      //  connections.setLocalDataPeer(type)
-
-        // switch(type) {
-        //     case 'stream':
-        //     case 'screen':
-        //         transport.setLocalVideoPeer(callbacks)
-        //         break
-        //     case 'call':
-        //         // pour les appels, on attend d’avoir le stream avant de créer le peer (car besoin du stream dans la connexion)
-        //         // c’est géré dans usePeerMedia.startCallStream → createVideoPeer
-        //         break
-        //     default:
-        //         transport.setLocalDataPeer(callbacks)
-        // }
     }
 
     const cleanupPeerConnection = () => {
         retryManager.clearAll()
         connections.closePeerConnection()
+
+        // Important en mode multi-contexte:
+        // le contexte est retiré du dispatcher global à l'unmount.
+        transport.unregisterLocalContext() 
     }
 
     const syncUsersConnections = async (users) => {
@@ -241,8 +225,16 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         transport.sendData(data, destUserSlugs)
     }
 
-    const startWebcamStream = (is_local = false) => {
-       media.startWebcamStream(is_local)
+    const startWebcamStream = async (is_local = false) => {
+       await media.startWebcamStream(is_local)
+      context.usersInRoom.value.forEach(userSlug => {
+        _requestOrConnectPeer(userSlug)
+      })
+    }
+
+    const stopWebcamStream = () => {
+        connections.stopBroadcastCalls()
+        media.stopCurrentStream()
     }
 
     return {
@@ -259,6 +251,7 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         sendDataToPeer,
         cleanupPeerConnection,
         startWebcamStream,
+        stopWebcamStream,
 
         /*---------------------------------
         | COMPUTED

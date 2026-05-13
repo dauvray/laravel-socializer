@@ -52,7 +52,7 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
         sendDataToPeer, // fonction pour envoyer des données via une connexion data
 
         startWebcamStream, // fonction pour démarrer un stream webcam
-
+        stopWebcamStream, // fonction pour arrêter le stream webcam et les appels associés
     } = usePeerOrchestrator( type, room, options)
 
 
@@ -93,6 +93,9 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
     function getWebcamStream(isLocal = false) {
         startWebcamStream(isLocal)
     }
+    function stopStream() {
+        stopWebcamStream()
+    }
 
     return {
         // system
@@ -102,6 +105,7 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
 
         // stream
         getWebcamStream,
+        stopStream,
 
         // screen
 
