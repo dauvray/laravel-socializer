@@ -196,6 +196,7 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
                 retryManager.clearRetry(userSlug)
                 context.peerStore.removeWaitingRemotePeerId(userSlug)
                 context.peerStore.removeRemotePeerId(userSlug)
+                context.peerStore.clearConnectionsRoom(context.currentRoom.value, userSlug, context.currentType.value)
             })
 
             // Mesh: tout le monde se connecte à tout le monde.
@@ -233,7 +234,7 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
     }
 
     const stopWebcamStream = () => {
-        connections.stopBroadcastCalls()
+        connections.closePeerConnection()
         media.stopCurrentStream()
     }
 

@@ -186,16 +186,16 @@ export function createPeerContext({ type, room, eventBus, options }) {
         // core events
         //------------------
         conn.on("open", function () {
-            console.trace('connection data ouverte dans Context', conn.metadata)
+            console.trace(`connection ${conn.metadata?.type} ouverte dans Context`, conn.metadata)
         })
 
         conn.on("close", function () {
-            console.log('connection data fermée dans Context', conn.metadata)
+            console.log(`connection ${conn.metadata?.type} fermée dans Context`, conn.metadata)
             const room = conn.metadata?.room
             const type = conn.metadata?.type
             const slug = conn.metadata?.from
         
-            // virer connections[room][slug][type] de peerStore
+            // On ferme la connexion dans le peerStore
             peerStore.closePeerConnection(
                 room,
                 slug,
@@ -224,7 +224,7 @@ export function createPeerContext({ type, room, eventBus, options }) {
         }
         // Receive stream
         if(connectionEvents && connectionEvents.onStreamReceived.isActive) {
-            conn.on("stream", connectionEvents.onStreamReceived.callback)
+            conn.on("stream", (stream) => connectionEvents.onStreamReceived.callback(stream, conn, conn.metadata))
         }
 
         // Handle connection close

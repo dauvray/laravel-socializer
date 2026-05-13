@@ -83,7 +83,6 @@ export default {
         }
     },
 
-
     // Gérer les signaux provenant des autres composants (Notifications.vue)
     dispatchSignal(signal) {
 

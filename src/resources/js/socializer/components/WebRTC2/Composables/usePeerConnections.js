@@ -105,17 +105,6 @@ export function usePeerConnections(ctx) {
         return true
     }
 
-    const stopBroadcastCalls = () => {
-        const room = ctx.currentRoom.value
-        const type = ctx.currentType.value
-        const roomConnections = ctx.peerStore.getConnections?.[room] ?? {}
-
-        Object.keys(roomConnections).forEach((userSlug) => {
-            ctx.peerStore.closePeerConnection(room, userSlug, type)
-            ctx.peerStore.clearConnectionsRoom(room, userSlug, type)
-        })
-    }
-
     const closePeerConnection = () => {
         const currentType = ctx.session.currentType
         const currentRoom = ctx.session.currentRoom
@@ -196,6 +185,5 @@ export function usePeerConnections(ctx) {
         hasOpenConnection,
         connectToPeer,
         closePeerConnection,
-        stopBroadcastCalls,
     }
 }

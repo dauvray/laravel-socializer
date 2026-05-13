@@ -3,7 +3,8 @@
         <div class="card-body">
             <button class="btn btn-primary" @click="startWebcamStream">Start Webcam Stream</button>
             <button class="btn btn-danger" @click="stopWebcamStream">Stop Webcam Stream</button>
-            <VideoComponent :srcObject="props.api.currentStream.value"></VideoComponent>
+            
+            <VideoComponent v-if="props.api.currentStream.value" :srcObject="props.api.currentStream.value"></VideoComponent>
             
              {{ props.remoteStreams.length }} remote stream(s) received.
             <VideoComponent v-for="(remoteStream, index) in props.remoteStreams" :key="index" :srcObject="remoteStream"></VideoComponent>
