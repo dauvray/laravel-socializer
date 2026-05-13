@@ -193,20 +193,26 @@ export function createPeerContext({ type, room, eventBus, options }) {
             console.log(`connection ${conn.metadata?.type} fermée dans Context`, conn.metadata)
             const room = conn.metadata?.room
             const type = conn.metadata?.type
-            const slug = conn.metadata?.from
-        
-            // On ferme la connexion dans le peerStore
-            peerStore.closePeerConnection(
+
+            // slug = clé de stockage des connexions sortantes
+            // from = vrai peer distant à éventuellement oublier s'il a quitté la room
+            const storedSlug = conn.metadata?.slug
+            const remoteSlug = conn.metadata?.from
+
+            // Important :
+            // on retire uniquement CETTE instance de connexion si elle est stockée.
+            // On ne ferme surtout pas toutes les connexions du même slug,
+            // sinon on coupe aussi le stream opposé encore valide.
+            peerStore.removePeerConnectionInstance(
                 room,
-                slug,
+                storedSlug,
                 type,
+                conn,
             )
-            // clear rooms
-            peerStore.clearConnectionsRoom(room, slug, type)
+
             // On ne supprime le remotePeerId que si le peer n'est plus censé être dans la room.
-            // Ça évite de casser un peer encore valide lors d'une coupure transitoire.
-            if (!connection.usersInRoom.includes(slug)) {
-                peerStore.removeRemotePeerId(slug)
+            if (remoteSlug && !connection.usersInRoom.includes(remoteSlug)) {
+                peerStore.removeRemotePeerId(remoteSlug)
             }
         })
 
@@ -229,7 +235,7 @@ export function createPeerContext({ type, room, eventBus, options }) {
 
         // Handle connection close
         if(connectionEvents && connectionEvents.onConnectionClose.isActive) {
-            conn.on("close", connectionEvents.onConnectionClose.callback)
+            conn.on("close", () => connectionEvents.onConnectionClose.callback(conn))
         }
 
         // Handle connection error

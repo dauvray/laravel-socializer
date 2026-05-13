@@ -234,8 +234,8 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
     }
 
     const stopWebcamStream = () => {
-        connections.closePeerConnection()
         media.stopCurrentStream()
+        connections.closePeerConnection()
     }
 
     return {

@@ -29,8 +29,54 @@ export default {
     storePeerConnection(room, slug, type, connection) {
         this.connections[room][slug][type].push(connection)
     },
+    removePeerConnectionInstance(room, slug, type, connection) {
+
+        if (!room || !slug || !type) {
+            return
+        }
+
+        if (
+            !this.connections.hasOwnProperty(room)
+            || !this.connections[room].hasOwnProperty(slug)
+            || !this.connections[room][slug].hasOwnProperty(type)
+        ) {
+            return
+        }
+
+        const currentConnections = this.connections[room][slug][type]
+
+        this.connections[room][slug][type] = currentConnections.filter((item) => {
+            if (!item) {
+                return false
+            }
+
+            if (item === connection) {
+                return false
+            }
+
+            const sameConnectionId =
+                connection?.connectionId
+                && item?.connectionId
+                && item.connectionId === connection.connectionId
+
+            return !sameConnectionId
+        })
+
+        if (this.connections[room][slug][type].length === 0) {
+            delete this.connections[room][slug][type]
+            // todo : closePeerConnection(room, slug, type)
+        }
+
+        if (isEmpty(this.connections[room][slug])) {
+            delete this.connections[room][slug]
+        }
+
+        if (isEmpty(this.connections[room])) {
+            delete this.connections[room]
+        }
+    },
     closePeerConnection(room, slug, type) {
- 
+
         if(!this.connections.hasOwnProperty(room) 
             || !this.connections[room].hasOwnProperty(slug)
             || !this.connections[room][slug].hasOwnProperty(type)
@@ -49,12 +95,14 @@ export default {
                     case 'stream':
                     case 'screen':
                     case 'visio':
-                        if(conn._localStream) {
-                            conn._localStream.getTracks().forEach(track => track.stop())
+                        // Ne jamais stopper conn._localStream ici :
+                        // ce stream local peut encore être utilisé par d'autres peers.
+                        if (conn.peerConnection) {
                             conn.peerConnection.close()
                         } else {
                             conn.close()
                         }
+                        break
                 }
             }
 
