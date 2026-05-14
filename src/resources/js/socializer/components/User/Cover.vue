@@ -72,7 +72,7 @@
     import { mapActions } from 'pinia'
     import { useWallStore } from '~socializer/stores/wall.js'
     import FollowButton from '~socializer/components/User/widgets/FollowButton.vue'
-    import CallUserButton from '~socializer/components/WebRTC/widgets/CallUserButton.vue'
+    import CallUserButton from '~socializer/components/WebRTC2/Widgets/UI/CallUserButton.vue'
 
     import UserBadge from '~socializer/components/User/Badge.vue'
 

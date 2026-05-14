@@ -30,6 +30,7 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
         currentType, // type de broadcast (stream, screen, audio/video call)
         currentRoom, // room "logique" (peut différer de onAirRoom si on gère plusieurs rooms)
         onAirRoom, // room dans laquelle le peer est actif (peut différer de currentRoom si on gère plusieurs rooms)
+        currentCallRoomId, // roomId spécifique pour les appels audio/vidéo (différent de currentRoom qui est la room "logique")
         topology, // topologie de diffusion : 'mesh' (pair à pair), 'star' (étoile) ou 'sfu' (serveur de diffusion)
         hubSlug, // slug du hub de diffusion (si applicable)
         isHub, // le peer est-il le hub de diffusion ?
@@ -53,6 +54,10 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
 
         startWebcamStream, // fonction pour démarrer un stream webcam
         stopWebcamStream, // fonction pour arrêter le stream webcam et les appels associés
+
+        startCallWithPeer, // fonction pour initier un appel audio/vidéo avec un peer distant
+        acceptCallFromPeer, // fonction pour accepter un appel audio/vidéo d'un peer distant
+        openCallBetweenPeer, // fonction pour ouvrir un appel audio/vidéo entre deux peers distants
     } = usePeerOrchestrator( type, room, options)
 
 
@@ -109,6 +114,11 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
 
         // screen
 
+        // call
+        startCallWithPeer,
+        acceptCallFromPeer,
+        openCallBetweenPeer,
+
         // data
         sendData,
 
@@ -118,6 +128,7 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
         // session
         currentType,
         currentRoom,
+        currentCallRoomId,
         onAirRoom,
         topology,
         hubSlug,

@@ -20,6 +20,13 @@ import { watch } from 'vue'
 
 export function usePeerCore(ctx) {
 
+    /*------  Connection directe ----------*/
+
+    /**
+     * Demande à un peer distant son peerId pour pouvoir ensuite ouvrir une connexion WebRTC.
+     * @param {*} userSlug 
+     * @returns 
+     */
     const requestRemotePeerConnection = (userSlug) => {
 
         const room = ctx.session.onAirRoom
@@ -51,6 +58,12 @@ export function usePeerCore(ctx) {
         return true
     }
 
+    /**
+     * Répond à une demande de connexion d'un peer distant en lui envoyant notre peerId.
+     * @param {*} fromUserSlug 
+     * @param {*} type 
+     * @param {*} room 
+     */
     const responseRemotePeerConnection = (fromUserSlug, type, room) => {
 
         ctx.AjaxService.load('/response-to-peer-id', 'post', {
@@ -61,6 +74,46 @@ export function usePeerCore(ctx) {
         })
     }
 
+    /*------  Connection avec accord ----------*/
+
+    const requestAuthorizationRemotePeerId = (toUserSlug = '', type = 'vocal') => {
+
+        const localPeerId =
+            ctx.peerStore.localPeer?.id
+            || ctx.peerStore.localPeer?._id
+            || ctx.peerStore.lastLocalPeerId
+
+        ctx.session.currentCallRoomId = Math.random().toString(36).substring(2, 10) // ID de room temporaire pour sécuriser l'échange de peerId
+
+        const data = {
+            type: type,
+            action: 'peer-access-permission',
+            room: ctx.session.currentCallRoomId,
+            peerId: localPeerId,
+        }
+
+        ctx.peerStore.addWaitingRemotePeerId(toUserSlug, data)
+
+        ctx.AjaxService.load('/send-alert-to-user', 'post', {
+            toUserSlug: toUserSlug,
+            options: data
+        }) 
+    }
+
+    const sendAuthorizationRemotePeerId = (payload) => { 
+        ctx.session.currentCallRoomId = payload.options.room 
+        payload.options.peerId = ctx.peerStore.localPeer?.id || ctx.peerStore.localPeer?._id || ctx.peerStore.lastLocalPeerId
+
+        ctx.AjaxService.load('/response-to-authorization-peer', 'post', {
+            toUserSlug: payload.fromUserSlug,
+            options: payload.status ? payload.options : null,
+            type: payload.options.type, // on ajoute type pour pouvoir gérer la fermeture du call en cas de refus d'autorisation
+            status: payload.status
+        }) 
+    }
+
+    /*------  Signal Watcher ----------*/
+
     watch(ctx.lastRoomSignal, async (signal) => {
         if (!signal || !ctx.SIGNAL_TYPES.core.includes(signal.type)) return
 
@@ -68,11 +121,15 @@ export function usePeerCore(ctx) {
             case 'PEER_CONNECTION_REQUEST':
                 await responseRemotePeerConnection(signal.payload.fromUserSlug, signal.payload.type, signal.payload.room)
                 break
+            default:
+                break
         }
     })
 
     return {
         requestRemotePeerConnection,
         responseRemotePeerConnection,
+        requestAuthorizationRemotePeerId,
+        sendAuthorizationRemotePeerId,
     }
 }

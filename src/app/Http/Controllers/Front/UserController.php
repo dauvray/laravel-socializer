@@ -137,6 +137,7 @@ class UserController extends Controller
             ->with([
                 'options' =>  $request->get('options'),
                 'status' => $request->get('status'),
+                'type' => $request->get('type'),
                 'fromUserSlug' => $user->slug,
             ])
             ->sendNow();

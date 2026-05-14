@@ -95,7 +95,7 @@
             // this.setLocalVideoPeer(this, visioCallCallback.default)
             // this.setLocalDataPeer(this, visioPlayerDataCallback.default)
 
-            // this.eventBus.$on('call-user', this.onStartCall)
+             this.eventBus.$on('call-user', this.onStartCall)
             
             setInterval(() => { 
                 this.setOnlineStatus() 
@@ -148,10 +148,17 @@
                         })
                         // receive authorization to peer connection
                         .listen('.ResponseToAuthorizationPeer', (event) => {
+                            if(!event.status) {
+                                window.AWN.info(`${event.fromUserSlug} est injoignable`)
+                                this.eventBus.$emit('close-call', [{userSlug: event.fromUserSlug, type: event.type}])
+                            } else {
+                                this.openCallBetweenPeer(event)
+                            }
+                           
                             // store response connection
-                            this.updateCurrentRoom(event.options.room)
-                            this.updateCurrentType(event.options.type)
-                            this.receiveAuthorizationRemotePeerId(event)
+                            // this.updateCurrentRoom(event.options.room)
+                            // this.updateCurrentType(event.options.type)
+                            // this.receiveAuthorizationRemotePeerId(event)
                         })
                         .listen('.CloseConnectionToPeerID', (event) => {
                             this.closeRemotePeerId(event.fromUserSlug, event.type, event.room)
@@ -172,29 +179,30 @@
             onResponseAlert(fromUserSlug, options, status) {
 
                 this.notificationComponent = null
-
-                if(status) {
-                    this.updateCurrentRoom(options.room)
-                    this.updateCurrentType(options.type)
+                this.acceptCallFromPeer({fromUserSlug, options, status})
+                
+                // if(status) {
+                //     this.updateCurrentRoom(options.room)
+                //     this.updateCurrentType(options.type)
                    
-                    setTimeout(() => {
-                        this.sendAuthorizationRemotePeerId(
-                            fromUserSlug, 
-                            {
-                                ...options, 
-                                peerId : this.localPeerId
-                            },
-                            true
-                        )
-                    }, 300)
+                //     setTimeout(() => {
+                //         this.sendAuthorizationRemotePeerId(
+                //             fromUserSlug, 
+                //             {
+                //                 ...options, 
+                //                 peerId : this.localPeerId
+                //             },
+                //             true
+                //         )
+                //     }, 300)
 
-                } else {
-                    this.sendAuthorizationRemotePeerId(
-                        fromUserSlug, 
-                        {},
-                        false
-                    )
-                }
+                // } else {
+                //     this.sendAuthorizationRemotePeerId(
+                //         fromUserSlug, 
+                //         {},
+                //         false
+                //     )
+                // }
             },
             setOnlineStatus() {
                 Echo.private(this.me.channel).whisper('ping', {
@@ -202,17 +210,23 @@
                     userId: this.me.id,
                 });
             },
+
+
             // ne doit pas etre ici.
             onStopCall() {
                 this.stopAllVisioStream('visio')
                 this.eventBus.$emit('close-call', this.currentCallUsers)
             },
             onStartCall(userSlug, type) {
-                this.currentCallUsers.push({
+                // this.currentCallUsers.push({
+                //     userSlug: userSlug,
+                //     type: type,
+                // })
+
+                this.startCallWithPeer({
                     userSlug: userSlug,
                     type: type,
                 })
-                this.getAuthorizationRemotePeerId(userSlug, type)
             },
         }
     }

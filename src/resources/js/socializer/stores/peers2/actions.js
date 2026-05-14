@@ -157,10 +157,9 @@ export default {
     },
 
     // Gérer les connexions en attente d’un peer id distant
-    addWaitingRemotePeerId(userSlug, { room, type }) {
+    addWaitingRemotePeerId(userSlug, data) {
         this.waitingRemotePeerId.set(userSlug, {
-            room,
-            type,
+           ...data,
             createdAt: Date.now(),
         })
     },

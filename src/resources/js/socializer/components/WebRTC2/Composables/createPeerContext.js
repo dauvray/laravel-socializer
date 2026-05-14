@@ -40,7 +40,7 @@ export function createPeerContext({ type, room, eventBus, options }) {
         currentType: type || 'data',
         currentRoom: room || 'app',
         onAirRoom: room || 'app',
-        // currentCallRoomId: peerStore.getCurrenCallRoomId || null,
+        currentCallRoomId: null, // roomId spécifique pour les appels audio/vidéo (différent de currentRoom qui est la room "logique")
         isStreaming: false,
         isCapturing: false,
         topology: options.topology || 'mesh', // topologie de diffusion : 'mesh' (pair à pair), 'star' (étoile) ou 'sfu' (serveur de diffusion)
@@ -119,6 +119,7 @@ export function createPeerContext({ type, room, eventBus, options }) {
         currentType: computed(() => session.currentType),
         currentRoom: computed(() => session.currentRoom),
         onAirRoom: computed(() => session.onAirRoom),
+        currentCallRoomId: computed(() => session.currentCallRoomId),
         usersInRoom: computed(() => connection.usersInRoom),
         allUsersInRoom: computed(() => {
             const hub = session.hubSlug ? [session.hubSlug] : []

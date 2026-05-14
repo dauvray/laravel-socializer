@@ -238,6 +238,23 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         connections.closePeerConnection()
     }
 
+    const startCallWithPeer = async (payload) => {
+        transport.setLocalPeer()
+        const ready = await context.waitForMeReady()
+        core.requestAuthorizationRemotePeerId(payload.userSlug, payload.type)
+    }
+
+    const acceptCallFromPeer = async (payload) => {
+        transport.setLocalPeer()
+        const ready = await context.waitForMeReady()
+        core.sendAuthorizationRemotePeerId(payload)
+    }
+
+    const openCallBetweenPeer = async (payload) => {
+        console.log('openCallBetweenPeer', payload)
+        context.peerStore.removeWaitingRemotePeerId(payload.fromUserSlug)
+    }
+
     return {
         // on pourrait ne pas exposer tout ça
         ...core,
@@ -253,6 +270,9 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         cleanupPeerConnection,
         startWebcamStream,
         stopWebcamStream,
+        startCallWithPeer,
+        acceptCallFromPeer,
+        openCallBetweenPeer,
 
         /*---------------------------------
         | COMPUTED
@@ -262,6 +282,7 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         // session
         currentType: context.currentType,
         currentRoom: context.currentRoom,
+        currentCallRoomId: context.currentCallRoomId,
         onAirRoom: context.onAirRoom,
         topology: context.topology,
         hubSlug: context.hubSlug,

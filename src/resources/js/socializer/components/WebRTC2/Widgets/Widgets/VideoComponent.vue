@@ -10,7 +10,7 @@
     ></video>
 </template>
 
-<<script setup>
+<script setup>
 
 import { ref, watch } from 'vue'
 
