@@ -9,62 +9,54 @@
     </button>
 </template>
 
-<script>
+<script setup>
     /**
      * Use the global notification component system
      */
 
+    import { ref, computed, inject, onMounted, onBeforeUnmount } from 'vue'
     import IconWidget from '~estarter/components/widgets/IconWidget.vue'
 
-    export default {
-        name: 'CallUserButton',
-        inject: [
-            "AWN",
-            "eventBus",
-        ],
-        components: {
-            IconWidget,
+    const props = defineProps({
+        user: {
+            type: Object,
+            required: true
         },
-        props: {
-            user: {
-                type: Object,
-                required: true
-            },
-            type: {
-                type: String,
-                default: 'visio'
-            }
-        },
-        data() {
-            return {
-                isInCall: false,
-            }
-        },
-        mounted() {
-            this.eventBus.$on('close-call', this.onCloseCall)
-        },
-        beforeUnmount() {
-            this.eventBus.$off('close-call', this.onCloseCall)
-        },
-        computed: {
-            callIcon: function() {
-                if(this.type === 'vocal') {
-                    return this.isCalling ? 'phone-slash' : 'phone'
-                }
-                return this.isCalling ? 'video-slash' : 'video'
-            },
-        },
-        methods: {
-            onCallUser() {
-                this.eventBus.$emit('call-user', this.user.slug, this.type)
-                this.AWN.info(`Appel ${this.user.slug}`)
-                this.isInCall = true
-            },
-            onCloseCall(users) {
-                if(users.find(user => user.userSlug === this.user.slug && user.type === this.type)) {
-                    this.isInCall = false
-                }
-            },
+        type: {
+            type: String,
+            default: 'visio'
+        }
+    })
+
+    const AWN = inject('AWN')
+    const eventBus = inject('eventBus')
+
+    const isInCall = ref(false)
+
+    const callIcon = computed(() => {
+        if(props.type === 'vocal') {
+            return isInCall.value ? 'phone-slash' : 'phone'
+        }
+        return isInCall.value ? 'video-slash' : 'video'
+    })
+
+    const onCloseCall = (users) => {
+        if(users.find(user => user.userSlug === props.user.slug && user.type === props.type)) {
+            isInCall.value = false
         }
     }
+
+    const onCallUser = () => {
+        eventBus.$emit('call-user', props.user.slug, props.type)
+        AWN.info(`Appel ${props.user.slug}`)
+        isInCall.value = true
+    }
+
+    onMounted(() => {
+        eventBus.$on('close-call', onCloseCall)
+    })
+
+    onBeforeUnmount(() => {
+        eventBus.$off('close-call', onCloseCall)
+    })
 </script>

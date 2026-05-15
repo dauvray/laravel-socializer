@@ -9,6 +9,6 @@ export default () => {
     waitingRemotePeerId: new Map(), // connexions en attente d’un peer id distant (key: userSlug, value: { room, type })
     signalQueues: {}, // files d’attente de signaux pour les callbacks de connexions { type-roomId, payload }
     lastSignal: null, // dernier signal reçu (pour debug)
-
+    players: [], // liste des players actifs
   }
 }

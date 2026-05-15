@@ -50,6 +50,7 @@ export function createPeerContext({ type, room, eventBus, options }) {
 
     // MEDIA STATE
     const media = reactive({
+        videoContainer: '#videoContainer',
         currentStream: null,
         // isStreaming: false,
         // isCapturing: false,
@@ -157,7 +158,7 @@ export function createPeerContext({ type, room, eventBus, options }) {
              const startedAt = Date.now()
 
             const checkPeer = () => {
-                if (meStore.getMe?.slug && peerStore.localPeer?._id) {
+                if (meStore.getMe?.slug && (peerStore.localPeer?.id || peerStore.localPeer?._id)) {
 
                      // On initialise le contexte dès que l'identité locale est réellement prête.
                     session.isHub = (meStore.getMe.slug === session.hubSlug)

@@ -1,7 +1,12 @@
 // directive-resize.js
 export default {
   mounted(el, binding) {
+
     const options = binding.value || {};
+
+    // autoriser ou non le redimensionnement
+    if(options.resizable === false) return
+    
     const wrapperId = options.wrapperId || null;
     const corner = options.corner || 'bottom-right'; // 'top-left', 'top-right', 'bottom-left', 'bottom-right'
     const minSize = options.minSize || { width: 200, height: 112 };

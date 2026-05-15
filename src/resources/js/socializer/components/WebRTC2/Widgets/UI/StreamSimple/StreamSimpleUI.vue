@@ -4,10 +4,10 @@
             <button v-if="!isStreaming" class="btn btn-primary" @click="startWebcamStream">Start Webcam Stream</button>
             <button v-else class="btn btn-danger" @click="stopWebcamStream">Stop Webcam Stream</button>
             
-            <VideoComponent v-if="props.api.currentStream.value" :srcObject="props.api.currentStream.value"></VideoComponent>
+            <VideoComponent v-if="props.api.currentStream.value" :streamData="localStreamData"></VideoComponent>
             
             {{ props.remoteStreams.length }} remote stream(s) received.
-            <VideoComponent v-for="(remoteStream, index) in props.remoteStreams" :key="index" :srcObject="remoteStream"></VideoComponent>
+            <VideoComponent v-for="(remoteStream, index) in props.remoteStreams" :key="index" :streamData="remoteStream"></VideoComponent>
            
         </div>
     </div>
@@ -15,8 +15,8 @@
 </template>
 
 <script setup>
-    import { ref } from 'vue'
-    import VideoComponent from '~socializer/components/WebRTC2/Widgets/Widgets/VideoComponent.vue' 
+    import { ref, computed } from 'vue'
+    import VideoComponent from '~socializer/components/WebRTC2/Widgets/VideoComponent.vue' 
 
     const props = defineProps({
         api: Object,
@@ -37,5 +37,12 @@
         props.api.stopStream()
         isStreaming.value = false
     }
+
+    const localStreamData = computed(() => ({ 
+        stream: props.api.currentStream.value,
+        metadata: {
+            fromName: 'Moi'
+        }
+    }))
 
 </script>

@@ -31,10 +31,13 @@ export function usePeerCore(ctx) {
 
         const room = ctx.session.onAirRoom
         const type = ctx.session.currentType
-        const localPeerId = ctx.peerStore.localPeer._id
+        const localPeerId =
+            ctx.peerStore.localPeer?.id
+            || ctx.peerStore.localPeer?._id
+            || ctx.peerStore.lastLocalPeerId
 
         if (!localPeerId) {
-            console.warn('requestRemotePeerConnection ignoré: localPeer pas encore prêt')
+            console.warn('localPeer pas encore prêt')
             return false
         }
 
@@ -49,7 +52,6 @@ export function usePeerCore(ctx) {
         }
 
         ctx.AjaxService.load('/ask-to-peer-id', 'post', {
-            peerId: localPeerId,
             toUserSlug: userSlug,
             room: room,
             type: type
@@ -64,38 +66,38 @@ export function usePeerCore(ctx) {
      * @param {*} type 
      * @param {*} room 
      */
-    const responseRemotePeerConnection = (fromUserSlug, type, room) => {
+    const responseRemotePeerConnection = (payload) => {
 
         ctx.AjaxService.load('/response-to-peer-id', 'post', {
-            peerId: ctx.peerStore.localPeer._id,
-            toUserSlug: fromUserSlug,
-            room: room,
-            type: type
+            peerId: ctx.peerStore.localPeer?.id || ctx.peerStore.localPeer?._id || ctx.peerStore.lastLocalPeerId,
+            toUserSlug: payload.fromUserSlug,
+            room: payload.room,
+            type: payload.type
         })
     }
 
     /*------  Connection avec accord ----------*/
 
-    const requestAuthorizationRemotePeerId = (toUserSlug = '', type = 'vocal') => {
+    const requestAuthorizationRemotePeerId = (payload) => {
 
         const localPeerId =
             ctx.peerStore.localPeer?.id
             || ctx.peerStore.localPeer?._id
             || ctx.peerStore.lastLocalPeerId
 
-        ctx.session.currentCallRoomId = Math.random().toString(36).substring(2, 10) // ID de room temporaire pour sécuriser l'échange de peerId
-
+        ctx.session.currentCallRoomId = payload?.roomId || ctx.session.currentCallRoomId || Math.random().toString(36).substring(2, 10)
+       
         const data = {
-            type: type,
+            type: payload.type,
             action: 'peer-access-permission',
             room: ctx.session.currentCallRoomId,
             peerId: localPeerId,
         }
 
-        ctx.peerStore.addWaitingRemotePeerId(toUserSlug, data)
+        ctx.peerStore.addWaitingRemotePeerId(payload.toUserSlug, data)
 
         ctx.AjaxService.load('/send-alert-to-user', 'post', {
-            toUserSlug: toUserSlug,
+            toUserSlug: payload.toUserSlug,
             options: data
         }) 
     }
@@ -106,10 +108,24 @@ export function usePeerCore(ctx) {
 
         ctx.AjaxService.load('/response-to-authorization-peer', 'post', {
             toUserSlug: payload.fromUserSlug,
-            options: payload.status ? payload.options : null,
-            type: payload.options.type, // on ajoute type pour pouvoir gérer la fermeture du call en cas de refus d'autorisation
+            options: payload.status ? payload.options : { type: payload.options.type }, // on envoie les infos de connexion seulement si l'accès est autorisé, sinon on précise juste le type d'appel pour que le client puisse réagir (ex: afficher une notification d'appel refusé)
             status: payload.status
         }) 
+    }
+
+    const notifyCloseConnectionToPeer = (payload) => {
+        const toUserSlug = payload?.toUserSlug
+        const type = payload?.type || 'visio'
+        const room = payload?.room || ctx.session.currentCallRoomId || ctx.session.currentRoom
+
+        if (!toUserSlug || !room) return
+
+        ctx.AjaxService.load('/close-connection-to-peer-id', 'post', {
+            toUserSlug,
+            fromUserSlug: ctx.mySlug.value,
+            room,
+            type,
+        })
     }
 
     /*------  Signal Watcher ----------*/
@@ -119,7 +135,7 @@ export function usePeerCore(ctx) {
 
         switch (signal.type) {
             case 'PEER_CONNECTION_REQUEST':
-                await responseRemotePeerConnection(signal.payload.fromUserSlug, signal.payload.type, signal.payload.room)
+                await responseRemotePeerConnection(signal.payload)
                 break
             default:
                 break
@@ -131,5 +147,6 @@ export function usePeerCore(ctx) {
         responseRemotePeerConnection,
         requestAuthorizationRemotePeerId,
         sendAuthorizationRemotePeerId,
+        notifyCloseConnectionToPeer,
     }
 }

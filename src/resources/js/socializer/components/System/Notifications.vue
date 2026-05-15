@@ -28,7 +28,6 @@
     import { ref } from 'vue'
     import { useMeStore } from '~estarter/stores/me.js'
     import { usePeer2Store } from '~socializer/stores/peers2.js'
- //   import { usePeers } from '~socializer/components/WebRTC/composables/usePeers.js'
     import { useMediaBroadcast } from '~socializer/components/WebRTC2/Composables/useMediaBroadcast.js'
     import { useConversationsStore } from '~socializer/stores/conversations.js'
     import { defineAsyncComponent } from 'vue'
@@ -52,18 +51,27 @@
             const NewMessageNotification= ref(null)
             const queueProcesing = ref(false)
             const currentCallUsers = ref([])
-
-            // bientot inutile
+            const callInprogress = ref(false)
+            const heartbeatIntervalId = ref(null)
             const peers = useMediaBroadcast()
         
             return {
                 ...peers,
-
                 notificationComponent,
                 notificationComponentProps,
                 NewMessageNotification,
                 queueProcesing,
                 currentCallUsers,
+                callInprogress,
+                heartbeatIntervalId,
+            }
+        },
+        data() {
+            return {
+                remoteStreamsMap: new Map(),
+                activeCallRoomId: null,
+                isStoppingCall: false,
+                closingUsers: new Set(),
             }
         },
         watch: {
@@ -82,29 +90,50 @@
             ...mapState(useMeStore, {
                 me: 'getMe',
             }),
+            ...mapState(usePeer2Store, {
+                players: 'getPlayers',
+            }),
             userChannel: function() {
                 if(this.me) {
                     return this.me.channel
                 }
-            }
+            },
+            remoteStreams() {
+                return Array.from(this.remoteStreamsMap.values())
+            },
         },
-        async mounted() {
-            // TODO : revoir toute la logique de ce composant, elle est devenue un peu le fourre-tout de tout ce qui concerne les notifications et la communication avec les autres composants (via eventBus) et les autres utilisateurs (via Echo), il faudrait peut-être la scinder en plusieurs composants plus spécialisés
-            // const visioCallCallback = await import(`~socializer/callbacks/visioPlayerCallback.js`)
-            // const visioPlayerDataCallback = await import(`~socializer/callbacks/visioPlayerDataCallback.js`)
-            // this.setLocalVideoPeer(this, visioCallCallback.default)
-            // this.setLocalDataPeer(this, visioPlayerDataCallback.default)
 
-             this.eventBus.$on('call-user', this.onStartCall)
+        async mounted() {
+            this.initialize({
+                onStreamReceived: this.handleStreamReceived,
+                onConnectionClose: this.handleStreamClose
+            })
+
+            this.eventBus.$on('call-user', this.onStartCall)
             
-            setInterval(() => { 
+            this.heartbeatIntervalId = setInterval(() => { 
                 this.setOnlineStatus() 
             }, 120000) // every 2 minutes
         },
-        unmounted() {
-            Echo.leave(this.userChannel)
-            this.eventBus.$off('call-user', this.onStartCall)
+
+        async unmounted() {
+            try {
+                if (this.currentCallUsers.length > 0 || this.callInprogress) {
+                    await this.stopCallWithPeers([...this.currentCallUsers], false, {
+                        mode: 'full',
+                        roomId: this.activeCallRoomId,
+                    })
+                }
+            } finally {
+                this.cleanup()
+                Echo.leave(this.userChannel)
+                this.eventBus.$off('call-user', this.onStartCall)
+                clearInterval(this.heartbeatIntervalId)
+                this.heartbeatIntervalId = null
+                this.resetCallState()
+            }
         },
+
         methods: {
             ...mapActions(useConversationsStore, [
                 'addConversation',
@@ -115,6 +144,47 @@
             ...mapActions(usePeer2Store, [
                 'dispatchSignal',
             ]),
+            normalizeCallUser(userSlug, type = 'visio') {
+                if (!userSlug) return null
+                return { userSlug, type: type || 'visio' }
+            },
+            addCallUser(userSlug, type = 'visio') {
+                const user = this.normalizeCallUser(userSlug, type)
+                if (!user) return
+
+                const exists = this.currentCallUsers.some((u) => u.userSlug === user.userSlug && u.type === user.type)
+                if (!exists) {
+                    this.currentCallUsers = [...this.currentCallUsers, user]
+                }
+
+                this.callInprogress = this.currentCallUsers.length > 0
+            },
+            removeCallUser(userSlug) {
+                if (!userSlug) return
+                this.currentCallUsers = this.currentCallUsers.filter((u) => u.userSlug !== userSlug)
+                this.callInprogress = this.currentCallUsers.length > 0
+            },
+            ensureCallRoomId(preferred = null) {
+                if (preferred) {
+                    this.activeCallRoomId = preferred
+                    return this.activeCallRoomId
+                }
+
+                if (!this.activeCallRoomId) {
+                    this.activeCallRoomId = Math.random().toString(36).substring(2, 10)
+                }
+
+                return this.activeCallRoomId
+            },
+            resetCallState() {
+                this.cleanupCallPlayers()
+                this.callInprogress = false
+                this.currentCallUsers = []
+                this.activeCallRoomId = null
+                this.remoteStreamsMap.clear()
+                this.isStoppingCall = false
+                this.closingUsers.clear()
+            },
             initUserChannel() {
                 if(this.userChannel) {
                     Echo.leave(this.userChannel)
@@ -134,7 +204,7 @@
                                 emitter: 'Notifications',
                                 roomId: `${event.type}-${event.room}`,
                                 type: 'PEER_CONNECTION_REQUEST', 
-                                payload: { fromUserSlug: event.fromUserSlug, type: event.type, room: event.room }
+                                payload: event
                             })
                         })
                         // receive remotePeerId and connect to called user
@@ -143,25 +213,42 @@
                                 emitter: 'Notifications',
                                 roomId: `${event.type}-${event.room}`,
                                 type: 'PEER_CONNECT_TO_REMOTE_PEER', 
-                                payload: { peerId: event.peerId, userSlug: event.fromUserSlug, type: event.type, room: event.room }
+                                payload: event
                             })
                         })
                         // receive authorization to peer connection
-                        .listen('.ResponseToAuthorizationPeer', (event) => {
-                            if(!event.status) {
+                        .listen('.ResponseToAuthorizationPeer', async (event) => {
+                            if (!event.status) {
                                 window.AWN.info(`${event.fromUserSlug} est injoignable`)
-                                this.eventBus.$emit('close-call', [{userSlug: event.fromUserSlug, type: event.type}])
-                            } else {
-                                this.openCallBetweenPeer(event)
+                                this.removeCallUser(event.fromUserSlug)
+
+                                if (this.currentCallUsers.length === 0) {
+                                    await this.stopCallWithPeers([], false, {
+                                        mode: 'full',
+                                        roomId: this.activeCallRoomId || event?.options?.room || null,
+                                    })
+                                    this.resetCallState()
+                                }
+
+                                this.eventBus.$emit('close-call', [{ userSlug: event.fromUserSlug, type: event?.options?.type || 'visio' }])
+                                return
                             }
-                           
-                            // store response connection
-                            // this.updateCurrentRoom(event.options.room)
-                            // this.updateCurrentType(event.options.type)
-                            // this.receiveAuthorizationRemotePeerId(event)
+
+                            const roomId = this.ensureCallRoomId(event?.options?.room || null)
+                            this.addCallUser(event.fromUserSlug, event.options?.type || 'visio')
+                            this.callInprogress = true
+
+                            await this.openCallBetweenPeer({
+                                ...event,
+                                options: {
+                                    ...event.options,
+                                    room: roomId,
+                                },
+                            })
                         })
                         .listen('.CloseConnectionToPeerID', (event) => {
-                            this.closeRemotePeerId(event.fromUserSlug, event.type, event.room)
+                           // voir utilitée
+                            this.onRemoteStopCall(event)
                         })
                         .listen('.ChatInvitation', (event) => {
                             this.addConversation(event)
@@ -176,33 +263,31 @@
                         });
                 }
             },
-            onResponseAlert(fromUserSlug, options, status) {
-
+            async onResponseAlert(fromUserSlug, options, status) {
                 this.notificationComponent = null
-                this.acceptCallFromPeer({fromUserSlug, options, status})
-                
-                // if(status) {
-                //     this.updateCurrentRoom(options.room)
-                //     this.updateCurrentType(options.type)
-                   
-                //     setTimeout(() => {
-                //         this.sendAuthorizationRemotePeerId(
-                //             fromUserSlug, 
-                //             {
-                //                 ...options, 
-                //                 peerId : this.localPeerId
-                //             },
-                //             true
-                //         )
-                //     }, 300)
 
-                // } else {
-                //     this.sendAuthorizationRemotePeerId(
-                //         fromUserSlug, 
-                //         {},
-                //         false
-                //     )
-                // }
+                switch (options.action) {
+                    case 'peer-access-permission': {
+                        const roomId = this.ensureCallRoomId(options?.room || null)
+
+                        if (status) {
+                            this.addCallUser(fromUserSlug, options?.type || 'visio')
+                            this.callInprogress = true
+                        }
+
+                        await this.acceptCallFromPeer({
+                            fromUserSlug,
+                            options: {
+                                ...options,
+                                room: roomId,
+                            },
+                            status,
+                        })
+                        break
+                    }
+                    default:
+                        break
+                }
             },
             setOnlineStatus() {
                 Echo.private(this.me.channel).whisper('ping', {
@@ -210,23 +295,143 @@
                     userId: this.me.id,
                 });
             },
+            async onStopCall() {
+                if (this.isStoppingCall) return
+                this.isStoppingCall = true
 
+                const usersToStop = [...this.currentCallUsers]
+                const roomId = this.activeCallRoomId
 
-            // ne doit pas etre ici.
-            onStopCall() {
-                this.stopAllVisioStream('visio')
-                this.eventBus.$emit('close-call', this.currentCallUsers)
-            },
-            onStartCall(userSlug, type) {
-                // this.currentCallUsers.push({
-                //     userSlug: userSlug,
-                //     type: type,
-                // })
-
-                this.startCallWithPeer({
-                    userSlug: userSlug,
-                    type: type,
+                await this.stopCallWithPeers(usersToStop, true, {
+                    mode: 'full',
+                    roomId,
                 })
+
+                this.eventBus.$emit('close-call', usersToStop)
+                this.resetCallState()
+            },
+            async onStartCall(userSlug, type) {
+                const roomId = this.ensureCallRoomId()
+                this.addCallUser(userSlug, type || 'visio')
+                this.callInprogress = true
+
+                await this.startCallWithPeer({
+                    toUserSlug: userSlug,
+                    type: type || 'visio',
+                    roomId,
+                })
+            },            
+            async onRemoteStopCall(event) {
+                const remoteSlug = event?.fromUserSlug || null
+                const remoteType = event?.type || 'visio'
+                const roomId = event?.room || this.activeCallRoomId || null
+
+                if (!remoteSlug) return
+                if (this.closingUsers.has(remoteSlug)) return
+
+                this.closingUsers.add(remoteSlug)
+
+                await this.stopCallWithPeers([{ userSlug: remoteSlug, type: remoteType }], false, {
+                    mode: 'partial',
+                    roomId,
+                })
+
+                this.removeCallUser(remoteSlug)
+                this.removeVideoElement(`remote-${remoteSlug}-${remoteType}`)
+                this.remoteStreamsMap.forEach((value, key) => {
+                    if (value?.metadata?.from === remoteSlug) {
+                        this.remoteStreamsMap.delete(key)
+                    }
+                })
+
+                this.eventBus.$emit('close-call', [{ userSlug: remoteSlug, type: remoteType }])
+
+                if (this.currentCallUsers.length === 0) {
+                    await this.stopCallWithPeers([], false, {
+                        mode: 'full',
+                        roomId,
+                    })
+                    this.resetCallState()
+                }
+
+                this.closingUsers.delete(remoteSlug)
+            },
+            cleanupCallPlayers() {
+                const renderedPlayers = Array.isArray(this.players) ? [...this.players] : []
+
+                renderedPlayers.forEach((player) => {
+                    if (!player?.videoId) return
+
+                    // Nettoie uniquement les players d'appel (local et remote)
+                    if (player.videoId === 'local-webcam' || player.videoId.startsWith('remote-')) {
+                        this.removeVideoElement(player.videoId)
+                    }
+                })
+            },
+            async handleStreamReceived(stream, conn, metadata) {
+                const meta = metadata || conn?.metadata || {}
+                const remoteSlug = this.resolveRemoteSlug(meta)
+                const remoteType = meta?.type || conn?.metadata?.type || 'visio'
+
+                if (!remoteSlug) return
+
+                const streamKey = conn?.connectionId || `${remoteSlug}-${remoteType}`
+
+                if (this.remoteStreamsMap.has(streamKey)) {
+                return
+                }
+
+                this.remoteStreamsMap.set(streamKey, {
+                stream,
+                metadata: meta,
+                remoteSlug,
+                remoteType,
+                })
+
+                if (stream instanceof MediaStream) {
+                this.createVideoElement(
+                {
+                videoId: `remote-${remoteSlug}-${remoteType}`,
+                type: remoteType,
+                source: 'remote',
+                },
+                stream
+                )
+                }
+            },
+            handleStreamClose(conn) {
+                const meta = conn?.metadata || {}
+                const remoteSlug = this.resolveRemoteSlug(meta)
+                const remoteType = meta?.type || 'visio'
+
+                if (!remoteSlug) return
+
+                const videoId = `remote-${remoteSlug}-${remoteType}`
+                this.removeVideoElement(videoId)
+
+                const streamKey = conn?.connectionId || `${remoteSlug}-${remoteType}`
+                this.remoteStreamsMap.delete(streamKey)
+
+                this.remoteStreamsMap.forEach((value, key) => {
+                if (value?.remoteSlug === remoteSlug && value?.remoteType === remoteType) {
+                this.remoteStreamsMap.delete(key)
+                }
+                })
+            },
+            resolveRemoteSlug(metadata = {}) {
+            const mySlug = this.me?.slug || null
+
+            if (!metadata) return null
+
+            if (metadata.from && mySlug && metadata.from !== mySlug) {
+            return metadata.from
+            }
+
+            if (metadata.slug && mySlug && metadata.slug !== mySlug) {
+            return metadata.slug
+            }
+
+            return metadata.from || metadata.slug || null
             },
         }
     }

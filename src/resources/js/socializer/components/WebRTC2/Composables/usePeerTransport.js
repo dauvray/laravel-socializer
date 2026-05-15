@@ -119,25 +119,50 @@ export function usePeerTransport(ctx) {
         // ---------------------------------------------------------------------
         // Dispatcher global entrant: MediaConnection (call stream/screen)
         // ---------------------------------------------------------------------
-        peerStore.localPeer.on('call', (call) => {
-            const callType = call?.metadata?.type
-            if (callType !== 'stream' && callType !== 'screen') {
+        peerStore.localPeer.on('call', async (call) => {
+            const metadata = call?.metadata || {}
+            const callType = metadata?.type
+
+            if (callType !== 'stream' && callType !== 'screen' && callType !== 'visio' && callType !== 'vocal') {
                 return
             }
 
-            // One-way viewer: on répond sans stream local
-            call.answer()
-
-            const targetCtx = resolveContextByMetadata(call?.metadata || {})
+            const targetCtx = resolveContextByMetadata(metadata)
 
             if (!targetCtx) {
                 console.warn(
                     "[WebRTC2] Aucun contexte trouvé pour call entrant",
-                    call?.metadata
+                    metadata
                 )
                 return
             }
 
+            const getLocalStream = () => targetCtx.media?.currentStream || null
+            const isOneWay = callType === 'stream' || callType === 'screen'
+
+            if (isOneWay) {
+                call.answer(getLocalStream() || undefined)
+                targetCtx.setUpConnectionListeners(call)
+                return
+            }
+
+            let localStream = getLocalStream()
+
+            if (!localStream) {
+                let attempts = 0
+                while (!localStream && attempts < 25) {
+                    await new Promise((resolve) => setTimeout(resolve, 200))
+                    localStream = getLocalStream()
+                    attempts++
+                }
+            }
+
+            if (!localStream) {
+                console.warn('Call entrant ignoré: aucun stream local disponible pour répondre', call)
+                return
+            }
+
+            call.answer(localStream)
             targetCtx.setUpConnectionListeners(call)
         })
     }

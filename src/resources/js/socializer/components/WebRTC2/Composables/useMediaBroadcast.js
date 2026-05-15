@@ -58,6 +58,11 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
         startCallWithPeer, // fonction pour initier un appel audio/vidéo avec un peer distant
         acceptCallFromPeer, // fonction pour accepter un appel audio/vidéo d'un peer distant
         openCallBetweenPeer, // fonction pour ouvrir un appel audio/vidéo entre deux peers distants
+    
+        stopCallWithPeers, // fonction pour arrêter un appel audio/vidéo avec un ou plusieurs peers distants    
+        createVideoElement, // fonction pour créer dynamiquement un élément vidéo dans le DOM pour afficher un flux distant    
+        removeVideoElement, // fonction pour supprimer un élément vidéo du DOM lorsque le flux distant se termine ou que l'appel est raccroché   
+    
     } = usePeerOrchestrator( type, room, options)
 
 
@@ -118,6 +123,9 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
         startCallWithPeer,
         acceptCallFromPeer,
         openCallBetweenPeer,
+        stopCallWithPeers,
+        createVideoElement,
+        removeVideoElement,
 
         // data
         sendData,

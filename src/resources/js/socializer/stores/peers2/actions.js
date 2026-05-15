@@ -88,10 +88,18 @@ export default {
                     case 'visio':
                         // Ne jamais stopper conn._localStream ici :
                         // ce stream local peut encore être utilisé par d'autres peers.
-                        if (conn.peerConnection) {
-                            conn.peerConnection.close()
-                        } else {
+                        // On ferme d'abord la MediaConnection PeerJS pour garantir
+                        // l'émission de l'événement "close" côté callbacks.
+                        if (typeof conn.close === 'function') {
                             conn.close()
+                        }
+
+                        // Fallback de sécurité si la RTCPeerConnection n'est pas déjà fermée.
+                        if (
+                            conn.peerConnection
+                            && conn.peerConnection.signalingState !== 'closed'
+                        ) {
+                            conn.peerConnection.close()
                         }
                         break
                 }
@@ -165,6 +173,14 @@ export default {
     },
     removeWaitingRemotePeerId(userSlug) {
         this.waitingRemotePeerId.delete(userSlug)
+    },
+
+    // gestion des players actifs (pour les appels en cours)
+    addPlayer(player) {
+        this.players.push(player)
+    },
+    removePlayer(player) {
+        this.players = this.players.filter(p => p.videoId !== player)
     },
 
 }

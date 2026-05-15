@@ -90,7 +90,6 @@ class UserController extends Controller
             Broadcast::private('App.Models.User.'.$to->id)
             ->as('AskToPeerID')
             ->with([
-                'peerId' => $request->get('peerId'),
                 'room' => $request->get('room'),
                 'type' => $request->get('type'),
                 'fromUserSlug' => $user->slug,
@@ -137,7 +136,6 @@ class UserController extends Controller
             ->with([
                 'options' =>  $request->get('options'),
                 'status' => $request->get('status'),
-                'type' => $request->get('type'),
                 'fromUserSlug' => $user->slug,
             ])
             ->sendNow();

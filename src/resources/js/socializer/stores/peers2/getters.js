@@ -1,6 +1,4 @@
 
-import { isEmpty, findDeepValue } from '~estarter/services/helpers.js'
-
 export default {
 
     /*--------------------------
@@ -46,6 +44,13 @@ export default {
     },
     getRemotePeerId: (state) => (userSlug) => {
         return state.remotePeersId.get(userSlug)
+    },
+
+    /*--------------------------
+    | Players
+    --------------------------*/
+    getPlayers() {
+        return this.players
     },
 
 }
