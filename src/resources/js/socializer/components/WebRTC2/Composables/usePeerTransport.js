@@ -48,7 +48,7 @@ function resolveContextByMetadata(metadata) {
 
 export function usePeerTransport(ctx) {
 
-    const setLocalPeer = () => {
+    const setLocalPeer = async () => {
 
         // Chaque contexte s'enregistre, même si le peer singleton existe déjà.
         registerContext(ctx)
@@ -60,7 +60,7 @@ export function usePeerTransport(ctx) {
 
         peerStore.localPeerReady = true
 
-        peerStore.localPeer =   markRaw(new Peer({
+        peerStore.localPeer = markRaw(new Peer({
             host: import.meta.env.VITE_PEERS_SERVER_HOST,
             port: import.meta.env.VITE_PEERS_SERVER_PORT,
             path: import.meta.env.VITE_PEERS_SERVER_PATH,
@@ -166,6 +166,8 @@ export function usePeerTransport(ctx) {
             call.answer(localStream)
             targetCtx.setUpConnectionListeners(call)
         })
+
+        return await ctx.waitForMeReady()
     }
 
     const unregisterLocalContext = () => {

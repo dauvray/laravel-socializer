@@ -140,14 +140,11 @@
                 'dispatchSignal',
             ]),
             addCallUser(userSlug, type = 'visio') {
-                if (!userSlug) return
-                this.addCurrentCallUser(userSlug, type)
-
+                return this.addCurrentCallUser(userSlug, type)
             },
             removeCallUser(userSlug) {
                 if (!userSlug) return
                 this.removeCurrentCallUser(userSlug)
-
             },
             ensureCallRoomId(preferred = null) {
                 return this.ensureCurrentCallRoomId(preferred)
@@ -244,18 +241,10 @@
 
                 switch (options.action) {
                     case 'peer-access-permission': {
-                        const roomId = this.ensureCallRoomId(options?.room || null)
-
-                        if (status) {
-                            this.addCallUser(fromUserSlug, options?.type || 'visio')
-                            this.setCallInProgress(true)
-                        }
-
                         await this.acceptCallFromPeer({
                             fromUserSlug,
                             options: {
                                 ...options,
-                                room: roomId,
                             },
                             status,
                         })
@@ -287,14 +276,9 @@
                 this.resetCallState()
             },
             async onStartCall(userSlug, type) {
-                const roomId = this.ensureCallRoomId()
-                this.addCallUser(userSlug, type || 'visio')
-                this.setCallInProgress(true)
-
                 await this.startCallWithPeer({
                     toUserSlug: userSlug,
                     type: type || 'visio',
-                    roomId,
                 })
             },            
             async onRemoteStopCall(event) {

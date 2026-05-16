@@ -291,7 +291,7 @@ export function createPeerContext({ type, room, eventBus, options }) {
         return session.currentCallUsers
     }
 
-    const addCurrentCallUser = (userSlug, type = 'visio') => {
+    const addCurrentCallUser = (userSlug = null, type = 'visio') => {
         if (!userSlug) {
             return session.currentCallUsers
         }

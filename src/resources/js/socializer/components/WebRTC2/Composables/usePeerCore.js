@@ -85,8 +85,6 @@ export function usePeerCore(ctx) {
             || ctx.peerStore.localPeer?._id
             || ctx.peerStore.lastLocalPeerId
 
-        ctx.session.currentCallRoomId = payload?.roomId || ctx.session.currentCallRoomId || Math.random().toString(36).substring(2, 10)
-       
         const data = {
             type: payload.type,
             action: 'peer-access-permission',
@@ -103,8 +101,9 @@ export function usePeerCore(ctx) {
     }
 
     const sendAuthorizationRemotePeerId = (payload) => { 
-        ctx.session.currentCallRoomId = payload.options.room 
-        payload.options.peerId = ctx.peerStore.localPeer?.id || ctx.peerStore.localPeer?._id || ctx.peerStore.lastLocalPeerId
+        if(payload.status) {
+            payload.options.peerId = ctx.peerStore.localPeer?.id || ctx.peerStore.localPeer?._id || ctx.peerStore.lastLocalPeerId
+        }
 
         ctx.AjaxService.load('/response-to-authorization-peer', 'post', {
             toUserSlug: payload.fromUserSlug,

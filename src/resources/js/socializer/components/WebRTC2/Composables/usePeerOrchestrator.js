@@ -269,39 +269,50 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
     | CALLS
     ------------------------*/
 
-    const startCallWithPeer = async (payload) => {
-        transport.setLocalPeer()
-
-        const ready = await context.waitForMeReady()
+    const startCallWithPeer = (payload) => {
+        const ready = transport.setLocalPeer()
         if (!ready) return
 
-        context.session.currentType = payload?.type || 'visio'
+        const toUserSlug = payload.toUserSlug
+        const type = payload.type || 'visio'
 
-        core.requestAuthorizationRemotePeerId(payload)
+        ensureCurrentCallRoomId()
+        addCurrentCallUser(toUserSlug, type)
+        setCallInProgress(true)
+        context.session.currentType = type
+
+        core.requestAuthorizationRemotePeerId({ toUserSlug, type })
+        return
     }
 
     const acceptCallFromPeer = async (payload) => {
-        transport.setLocalPeer()
-        const ready = await context.waitForMeReady()
+        const ready = transport.setLocalPeer()
         if (!ready) return
 
-        context.session.currentType = payload?.options?.type || 'visio'
-        context.session.currentCallRoomId = payload?.options?.room || null
+        if(payload?.status) {
 
-        if (!payload?.status) {
-            core.sendAuthorizationRemotePeerId(payload)
-            return
+            const room = payload?.options?.room || null
+            const type = payload?.options?.type || 'visio'
+            const fromUserSlug = payload?.fromUserSlug
+
+            ensureCurrentCallRoomId(room)
+            addCurrentCallUser(fromUserSlug, type)
+            setCallInProgress(true)
+            context.session.currentType = type
+            context.session.currentCallRoomId = room
+
+            await media.startCurrentStream(true)
+                    media.createVideoElement({ 
+                        videoId: 'local-webcam',
+                        type: type, 
+                        source: 'local'
+                    }, 
+                    context.media.currentStream
+                )
         }
 
-        await media.startCurrentStream(true)
-                media.createVideoElement({ 
-                    videoId: 'local-webcam',
-                    type: payload.options.type, 
-                    source: 'local'
-                }, 
-                context.media.currentStream
-            )
         core.sendAuthorizationRemotePeerId(payload)
+        return
     }
 
     const openCallBetweenPeer = async (payload) => {
