@@ -383,6 +383,12 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         return context.session.currentCallRoomId
     }
 
+    /**
+     * Retourne un ID de room valide pour les appels, en utilisant l'ID préféré si fourni, 
+     * ou en générant un nouvel ID si nécessaire.
+     * @param {*} preferred 
+     * @returns 
+     */
     const ensureCurrentCallRoomId = (preferred = null) => {
         if (preferred) {
             context.session.currentCallRoomId = preferred

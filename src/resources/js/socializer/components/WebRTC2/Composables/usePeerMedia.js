@@ -19,7 +19,7 @@
  * 
  * 👉 à ne pas confondre avec useMediaBroadcast qui gère la logique métier de diffusion (qui utilise usePeerMedia pour les flux)
  */
-import { createApp, h, inject } from 'vue'
+import { createApp, h, inject, markRaw } from 'vue'
 import Draggable from '~socializer/directives/draggable.js'
 
 export function usePeerMedia(ctx) {
@@ -36,7 +36,7 @@ export function usePeerMedia(ctx) {
 
         stream.isLocal = is_local // to mute local sound in player
 
-        ctx.media.currentStream = stream
+        ctx.media.currentStream = markRaw(stream) // marquer le stream comme "non réactif" pour éviter les problèmes de performance liés à la réactivité de Vue sur les objets MediaStream
         return stream
     }
 

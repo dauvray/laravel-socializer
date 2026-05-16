@@ -19,6 +19,7 @@
  */
 
 import { Peer } from "peerjs"
+import { markRaw } from 'vue'
 
 // -----------------------------------------------------------------------------
 // Registre global des contextes WebRTC actifs
@@ -59,7 +60,7 @@ export function usePeerTransport(ctx) {
 
         peerStore.localPeerReady = true
 
-        peerStore.localPeer =  new Peer({
+        peerStore.localPeer =   markRaw(new Peer({
             host: import.meta.env.VITE_PEERS_SERVER_HOST,
             port: import.meta.env.VITE_PEERS_SERVER_PORT,
             path: import.meta.env.VITE_PEERS_SERVER_PATH,
@@ -75,7 +76,7 @@ export function usePeerTransport(ctx) {
                     }
                 ]
             }
-        })
+        }))
 
         // a la création du Peer
         peerStore.localPeer.on('open', id => {

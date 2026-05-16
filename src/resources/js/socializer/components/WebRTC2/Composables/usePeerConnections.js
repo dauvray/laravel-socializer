@@ -20,7 +20,7 @@
  * - orchestrer le réseau WebRTC entre les peers
  * 
  */
-import { watch } from 'vue'
+import { watch, markRaw } from 'vue'
 
 export function usePeerConnections(ctx) {
 
@@ -241,7 +241,7 @@ export function usePeerConnections(ctx) {
     const _saveRoomConnection = (config, connection) => {
         ctx.peerStore.prepareRoomConnection(config)
         ctx.setUpConnectionListeners(connection)
-        _storeRoomConnection(config, connection)
+        _storeRoomConnection(config, markRaw(connection))
     }
 
     const _storeRoomConnection = (config, connection) => {
