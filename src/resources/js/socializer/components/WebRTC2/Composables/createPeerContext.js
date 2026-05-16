@@ -145,7 +145,6 @@ export function createPeerContext({ type, room, eventBus, options }) {
         // pendingRequests: computed(() => peerStore.getPendingRequests),
         // remoteStreams: computed(() => peerStore.getRemoteStreams),
         // callInProgress: computed(() => peerStore.getIsCallInProgress),
-        // currentCallRoomId: computed(() => peerStore.getCurrenCallRoomId),
         // isStreaming: computed(() => peerStore.getIsStreaming),
         // isCapturing: computed(() => peerStore.getIsCapturing),
     }
@@ -181,70 +180,6 @@ export function createPeerContext({ type, room, eventBus, options }) {
             checkPeer()
         })
     }  
-
-    // const setUpConnectionListeners = (conn) => {
-
-    //     //------------------
-    //     // core events
-    //     //------------------
-    //     conn.on("open", function () {
-    //         console.trace(`connection ${conn.metadata?.type} ouverte dans Context`, conn.metadata)
-    //     })
-
-    //     conn.on("close", function () {
-    //         console.log(`connection ${conn.metadata?.type} fermée dans Context`, conn.metadata)
-    //         const room = conn.metadata?.room
-    //         const type = conn.metadata?.type
-
-    //         // slug = clé de stockage des connexions sortantes
-    //         // from = vrai peer distant à éventuellement oublier s'il a quitté la room
-    //         const storedSlug = conn.metadata?.slug
-    //         const remoteSlug = conn.metadata?.from
-
-    //         // Important :
-    //         // on retire uniquement CETTE instance de connexion si elle est stockée.
-    //         // On ne ferme surtout pas toutes les connexions du même slug,
-    //         // sinon on coupe aussi le stream opposé encore valide.
-    //         peerStore.removePeerConnectionInstance(
-    //             room,
-    //             storedSlug,
-    //             type,
-    //             conn,
-    //         )
-
-    //         // On ne supprime le remotePeerId que si le peer n'est plus censé être dans la room.
-    //         if (remoteSlug && !connection.usersInRoom.includes(remoteSlug)) {
-    //             peerStore.removeRemotePeerId(remoteSlug)
-    //         }
-    //     })
-
-    //     //------------------
-    //     // custom events
-    //     //------------------
-    //     // handle connection open
-    //     if(connectionEvents && connectionEvents.onConnectionOpen.isActive) {
-    //         conn.on("open", connectionEvents.onConnectionOpen.callback)
-    //     }
-
-    //     // Receive data
-    //     if(connectionEvents && connectionEvents.onDataReceived.isActive) {
-    //         conn.on("data", connectionEvents.onDataReceived.callback)
-    //     }
-    //     // Receive stream
-    //     if(connectionEvents && connectionEvents.onStreamReceived.isActive) {
-    //         conn.on("stream", (stream) => connectionEvents.onStreamReceived.callback(stream, conn, conn.metadata))
-    //     }
-
-    //     // Handle connection close
-    //     if(connectionEvents && connectionEvents.onConnectionClose.isActive) {
-    //         conn.on("close", () => connectionEvents.onConnectionClose.callback(conn))
-    //     }
-
-    //     // Handle connection error
-    //     if(connectionEvents && connectionEvents.onConnectionError.isActive) {
-    //         conn.on("error", connectionEvents.onConnectionError.callback)
-    //     }
-    // }
 
     const setUpConnectionListeners = (conn) => {
         if (!conn || typeof conn.on !== 'function') {

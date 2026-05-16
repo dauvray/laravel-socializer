@@ -378,6 +378,24 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         isShuttingDown = false  // ✅ Réactiver après cleanup complet
     }
 
+    const setCurrentCallRoomId = (roomId = null) => {
+        context.session.currentCallRoomId = roomId || null
+        return context.session.currentCallRoomId
+    }
+
+    const ensureCurrentCallRoomId = (preferred = null) => {
+        if (preferred) {
+            context.session.currentCallRoomId = preferred
+            return context.session.currentCallRoomId
+        }
+
+        if (!context.session.currentCallRoomId) {
+            context.session.currentCallRoomId = Math.random().toString(36).substring(2, 10)
+        }
+
+        return context.session.currentCallRoomId
+    }
+
     return {
         // on pourrait ne pas exposer tout ça
         ...core,
@@ -398,7 +416,9 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         openCallBetweenPeer,
         stopCallWithPeers,
         createVideoElement,  
-        removeVideoElement,      
+        removeVideoElement, 
+        setCurrentCallRoomId,
+        ensureCurrentCallRoomId,     
 
         /*---------------------------------
         | COMPUTED

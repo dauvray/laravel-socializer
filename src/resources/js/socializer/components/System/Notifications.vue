@@ -69,7 +69,6 @@
         data() {
             return {
                 remoteStreamsMap: new Map(),
-                activeCallRoomId: null,
                 isStoppingCall: false,
                 closingUsers: new Set(),
             }
@@ -121,7 +120,7 @@
                 if (this.currentCallUsers.length > 0 || this.callInprogress) {
                     await this.stopCallWithPeers([...this.currentCallUsers], false, {
                         mode: 'full',
-                        roomId: this.activeCallRoomId,
+                       roomId: this.currentCallRoomId,
                     })
                 }
             } finally {
@@ -165,22 +164,13 @@
                 this.callInprogress = this.currentCallUsers.length > 0
             },
             ensureCallRoomId(preferred = null) {
-                if (preferred) {
-                    this.activeCallRoomId = preferred
-                    return this.activeCallRoomId
-                }
-
-                if (!this.activeCallRoomId) {
-                    this.activeCallRoomId = Math.random().toString(36).substring(2, 10)
-                }
-
-                return this.activeCallRoomId
+                return this.ensureCurrentCallRoomId(preferred)
             },
             resetCallState() {
                 this.cleanupCallPlayers()
                 this.callInprogress = false
                 this.currentCallUsers = []
-                this.activeCallRoomId = null
+                this.setCurrentCallRoomId(null)
                 this.remoteStreamsMap.clear()
                 this.isStoppingCall = false
                 this.closingUsers.clear()
@@ -225,7 +215,7 @@
                                 if (this.currentCallUsers.length === 0) {
                                     await this.stopCallWithPeers([], false, {
                                         mode: 'full',
-                                        roomId: this.activeCallRoomId || event?.options?.room || null,
+                                         roomId: this.currentCallRoomId || event?.options?.room || null,
                                     })
                                     this.resetCallState()
                                 }
@@ -300,7 +290,7 @@
                 this.isStoppingCall = true
 
                 const usersToStop = [...this.currentCallUsers]
-                const roomId = this.activeCallRoomId
+                const roomId = this.currentCallRoomId
 
                 await this.stopCallWithPeers(usersToStop, true, {
                     mode: 'full',
@@ -324,8 +314,8 @@
             async onRemoteStopCall(event) {
                 const remoteSlug = event?.fromUserSlug || null
                 const remoteType = event?.type || 'visio'
-                const roomId = event?.room || this.activeCallRoomId || null
-
+                const roomId = event?.room || this.currentCallRoomId || null
+                
                 if (!remoteSlug) return
                 if (this.closingUsers.has(remoteSlug)) return
 
@@ -399,24 +389,46 @@
                 )
                 }
             },
-            handleStreamClose(conn) {
+            async handleStreamClose(conn) {
                 const meta = conn?.metadata || {}
                 const remoteSlug = this.resolveRemoteSlug(meta)
                 const remoteType = meta?.type || 'visio'
+                const roomId = meta?.room || this.currentCallRoomId || null
 
                 if (!remoteSlug) return
+                if (this.closingUsers.has(remoteSlug)) return
 
-                const videoId = `remote-${remoteSlug}-${remoteType}`
-                this.removeVideoElement(videoId)
+                this.closingUsers.add(remoteSlug)
 
-                const streamKey = conn?.connectionId || `${remoteSlug}-${remoteType}`
-                this.remoteStreamsMap.delete(streamKey)
+                try {
+                    const videoId = `remote-${remoteSlug}-${remoteType}`
+                    this.removeVideoElement(videoId)
 
-                this.remoteStreamsMap.forEach((value, key) => {
-                if (value?.remoteSlug === remoteSlug && value?.remoteType === remoteType) {
-                this.remoteStreamsMap.delete(key)
+                    const streamKey = conn?.connectionId || `${remoteSlug}-${remoteType}`
+                    this.remoteStreamsMap.delete(streamKey)
+
+                    this.remoteStreamsMap.forEach((value, key) => {
+                        if (
+                            (value?.remoteSlug === remoteSlug && value?.remoteType === remoteType) ||
+                            value?.metadata?.from === remoteSlug
+                        ) {
+                            this.remoteStreamsMap.delete(key)
+                        }
+                    })
+
+                    this.removeCallUser(remoteSlug)
+                    this.eventBus.$emit('close-call', [{ userSlug: remoteSlug, type: remoteType }])
+
+                    if (this.currentCallUsers.length === 0) {
+                        await this.stopCallWithPeers([], false, {
+                            mode: 'full',
+                            roomId,
+                        })
+                        this.resetCallState()
+                    }
+                } finally {
+                    this.closingUsers.delete(remoteSlug)
                 }
-                })
             },
             resolveRemoteSlug(metadata = {}) {
             const mySlug = this.me?.slug || null

@@ -63,6 +63,9 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
         createVideoElement, // fonction pour créer dynamiquement un élément vidéo dans le DOM pour afficher un flux distant    
         removeVideoElement, // fonction pour supprimer un élément vidéo du DOM lorsque le flux distant se termine ou que l'appel est raccroché   
     
+        setCurrentCallRoomId, // fonction pour définir le currentCallRoomId (roomId spécifique pour les appels audio/vidéo)
+        ensureCurrentCallRoomId, // fonction pour s'assurer que le currentCallRoomId est défini avant d'initier ou d'accepter un appel audio/vidéo
+   
     } = usePeerOrchestrator( type, room, options)
 
 
@@ -126,6 +129,8 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
         stopCallWithPeers,
         createVideoElement,
         removeVideoElement,
+        setCurrentCallRoomId,
+        ensureCurrentCallRoomId,
 
         // data
         sendData,
