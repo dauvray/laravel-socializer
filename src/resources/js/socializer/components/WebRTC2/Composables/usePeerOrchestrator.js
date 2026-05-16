@@ -402,6 +402,22 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         return context.session.currentCallRoomId
     }
 
+    const setCurrentCallUsers = (users = []) => {
+        return context.setCurrentCallUsers(users)
+    }
+
+    const addCurrentCallUser = (user) => {
+        return context.addCurrentCallUser(user)
+    }
+
+    const removeCurrentCallUser = (userSlug) => {
+        return context.removeCurrentCallUser(userSlug)
+    }
+
+    const clearCurrentCallUsers = () => {
+        return context.clearCurrentCallUsers()
+    }
+
     return {
         // on pourrait ne pas exposer tout ça
         ...core,
@@ -424,7 +440,11 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         createVideoElement,  
         removeVideoElement, 
         setCurrentCallRoomId,
-        ensureCurrentCallRoomId,     
+        ensureCurrentCallRoomId, 
+        setCurrentCallUsers,
+        addCurrentCallUser,
+        removeCurrentCallUser,
+        clearCurrentCallUsers,    
 
         /*---------------------------------
         | COMPUTED
@@ -435,6 +455,7 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         currentType: context.currentType,
         currentRoom: context.currentRoom,
         currentCallRoomId: context.currentCallRoomId,
+        currentCallUsers: context.currentCallUsers,
         onAirRoom: context.onAirRoom,
         topology: context.topology,
         hubSlug: context.hubSlug,

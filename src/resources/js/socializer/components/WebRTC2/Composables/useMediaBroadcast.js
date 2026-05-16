@@ -31,6 +31,7 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
         currentRoom, // room "logique" (peut différer de onAirRoom si on gère plusieurs rooms)
         onAirRoom, // room dans laquelle le peer est actif (peut différer de currentRoom si on gère plusieurs rooms)
         currentCallRoomId, // roomId spécifique pour les appels audio/vidéo (différent de currentRoom qui est la room "logique")
+        currentCallUsers, // liste des slugs des utilisateurs actuellement en appel avec moi (utile pour gérer les connexions et l'UI d'appel)
         topology, // topologie de diffusion : 'mesh' (pair à pair), 'star' (étoile) ou 'sfu' (serveur de diffusion)
         hubSlug, // slug du hub de diffusion (si applicable)
         isHub, // le peer est-il le hub de diffusion ?
@@ -66,6 +67,11 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
         setCurrentCallRoomId, // fonction pour définir le currentCallRoomId (roomId spécifique pour les appels audio/vidéo)
         ensureCurrentCallRoomId, // fonction pour s'assurer que le currentCallRoomId est défini avant d'initier ou d'accepter un appel audio/vidéo
    
+        setCurrentCallUsers, // fonction pour définir la liste des utilisateurs actuellement en appel avec moi
+        addCurrentCallUser, // fonction pour ajouter un utilisateur à la liste des utilisateurs actuellement en appel avec moi
+        removeCurrentCallUser, // fonction pour supprimer un utilisateur de la liste des utilisateurs actuellement en appel avec moi
+        clearCurrentCallUsers, // fonction pour vider la liste des utilisateurs actuellement en appel avec moi
+
     } = usePeerOrchestrator( type, room, options)
 
 
@@ -131,6 +137,10 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
         removeVideoElement,
         setCurrentCallRoomId,
         ensureCurrentCallRoomId,
+        setCurrentCallUsers,
+        addCurrentCallUser,
+        removeCurrentCallUser,
+        clearCurrentCallUsers,
 
         // data
         sendData,
@@ -142,6 +152,7 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
         currentType,
         currentRoom,
         currentCallRoomId,
+        currentCallUsers,
         onAirRoom,
         topology,
         hubSlug,

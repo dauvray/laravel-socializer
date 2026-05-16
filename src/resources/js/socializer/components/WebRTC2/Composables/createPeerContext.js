@@ -41,6 +41,7 @@ export function createPeerContext({ type, room, eventBus, options }) {
         currentRoom: room || 'app',
         onAirRoom: room || 'app',
         currentCallRoomId: null, // roomId spécifique pour les appels audio/vidéo (différent de currentRoom qui est la room "logique")
+        currentCallUsers: [], // liste des slugs des utilisateurs actuellement en appel avec moi (utile pour gérer les connexions et l'UI d'appel)
         isStreaming: false,
         isCapturing: false,
         topology: options.topology || 'mesh', // topologie de diffusion : 'mesh' (pair à pair), 'star' (étoile) ou 'sfu' (serveur de diffusion)
@@ -121,6 +122,7 @@ export function createPeerContext({ type, room, eventBus, options }) {
         currentRoom: computed(() => session.currentRoom),
         onAirRoom: computed(() => session.onAirRoom),
         currentCallRoomId: computed(() => session.currentCallRoomId),
+        currentCallUsers: computed(() => session.currentCallUsers),
         usersInRoom: computed(() => connection.usersInRoom),
         allUsersInRoom: computed(() => {
             const hub = session.hubSlug ? [session.hubSlug] : []
@@ -282,6 +284,43 @@ export function createPeerContext({ type, room, eventBus, options }) {
         }
     }
 
+    const setCurrentCallUsers = (users = []) => {
+        session.currentCallUsers = Array.isArray(users) ? users : []
+        return session.currentCallUsers
+    }
+
+    const addCurrentCallUser = (userSlug, type = 'visio') => {
+        if (!userSlug) {
+            return session.currentCallUsers
+        }
+
+        const exists = session.currentCallUsers.some(
+            (u) => u.userSlug === userSlug && u.type === type
+        )
+
+        if (!exists) {
+            session.currentCallUsers = [...session.currentCallUsers, { userSlug, type }]
+        }
+
+        return session.currentCallUsers
+    }
+
+    const removeCurrentCallUser = (userSlug) => {
+        if (!userSlug) {
+            return session.currentCallUsers
+        }
+
+        session.currentCallUsers = session.currentCallUsers.filter((u) => u.userSlug !== userSlug)
+        return session.currentCallUsers
+    }
+
+    const clearCurrentCallUsers = () => {
+        session.currentCallUsers = []
+        return session.currentCallUsers
+    }
+
+
+
     /**
      * Lifecycle hook
      */
@@ -318,5 +357,9 @@ export function createPeerContext({ type, room, eventBus, options }) {
         waitForMeReady,
         setUpConnectionListeners,
         storeConnectionEventCallbacks,
+        setCurrentCallUsers,
+        addCurrentCallUser,
+        removeCurrentCallUser,
+        clearCurrentCallUsers,
     }
 }

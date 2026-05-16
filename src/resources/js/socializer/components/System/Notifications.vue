@@ -45,12 +45,10 @@
             IconWidget,
         },
         setup() {
-
             const notificationComponent = ref(null)
             const notificationComponentProps = ref(null)
             const NewMessageNotification= ref(null)
             const queueProcesing = ref(false)
-            const currentCallUsers = ref([])
             const callInprogress = ref(false)
             const heartbeatIntervalId = ref(null)
             const peers = useMediaBroadcast()
@@ -61,7 +59,6 @@
                 notificationComponentProps,
                 NewMessageNotification,
                 queueProcesing,
-                currentCallUsers,
                 callInprogress,
                 heartbeatIntervalId,
             }
@@ -143,24 +140,14 @@
             ...mapActions(usePeer2Store, [
                 'dispatchSignal',
             ]),
-            normalizeCallUser(userSlug, type = 'visio') {
-                if (!userSlug) return null
-                return { userSlug, type: type || 'visio' }
-            },
             addCallUser(userSlug, type = 'visio') {
-                const user = this.normalizeCallUser(userSlug, type)
-                if (!user) return
-
-                const exists = this.currentCallUsers.some((u) => u.userSlug === user.userSlug && u.type === user.type)
-                if (!exists) {
-                    this.currentCallUsers = [...this.currentCallUsers, user]
-                }
-
+                if (!userSlug) return
+                this.addCurrentCallUser(userSlug, type)
                 this.callInprogress = this.currentCallUsers.length > 0
             },
             removeCallUser(userSlug) {
                 if (!userSlug) return
-                this.currentCallUsers = this.currentCallUsers.filter((u) => u.userSlug !== userSlug)
+                this.removeCurrentCallUser(userSlug)
                 this.callInprogress = this.currentCallUsers.length > 0
             },
             ensureCallRoomId(preferred = null) {
@@ -169,7 +156,7 @@
             resetCallState() {
                 this.cleanupCallPlayers()
                 this.callInprogress = false
-                this.currentCallUsers = []
+                this.clearCurrentCallUsers()
                 this.setCurrentCallRoomId(null)
                 this.remoteStreamsMap.clear()
                 this.isStoppingCall = false
