@@ -10,7 +10,7 @@
         ></component>
     </Teleport>
 
-    <CallWebUI v-if="callInprogress"
+    <CallWebUI v-if="isCallInProgress()"
         @stop-call="onStopCall"
     ></CallWebUI>
 
@@ -49,7 +49,7 @@
             const notificationComponentProps = ref(null)
             const NewMessageNotification= ref(null)
             const queueProcesing = ref(false)
-            const callInprogress = ref(false)
+
             const heartbeatIntervalId = ref(null)
             const peers = useMediaBroadcast()
         
@@ -59,7 +59,6 @@
                 notificationComponentProps,
                 NewMessageNotification,
                 queueProcesing,
-                callInprogress,
                 heartbeatIntervalId,
             }
         },
@@ -114,7 +113,7 @@
 
         async unmounted() {
             try {
-                if (this.currentCallUsers.length > 0 || this.callInprogress) {
+                if (this.currentCallUsers.length > 0 || this.isCallInProgress()) {
                     await this.stopCallWithPeers([...this.currentCallUsers], false, {
                         mode: 'full',
                        roomId: this.currentCallRoomId,
@@ -143,19 +142,19 @@
             addCallUser(userSlug, type = 'visio') {
                 if (!userSlug) return
                 this.addCurrentCallUser(userSlug, type)
-                this.callInprogress = this.currentCallUsers.length > 0
+
             },
             removeCallUser(userSlug) {
                 if (!userSlug) return
                 this.removeCurrentCallUser(userSlug)
-                this.callInprogress = this.currentCallUsers.length > 0
+
             },
             ensureCallRoomId(preferred = null) {
                 return this.ensureCurrentCallRoomId(preferred)
             },
             resetCallState() {
                 this.cleanupCallPlayers()
-                this.callInprogress = false
+                this.setCallInProgress(false)
                 this.clearCurrentCallUsers()
                 this.setCurrentCallRoomId(null)
                 this.remoteStreamsMap.clear()
@@ -213,7 +212,7 @@
 
                             const roomId = this.ensureCallRoomId(event?.options?.room || null)
                             this.addCallUser(event.fromUserSlug, event.options?.type || 'visio')
-                            this.callInprogress = true
+                            this.setCallInProgress(true)
 
                             await this.openCallBetweenPeer({
                                 ...event,
@@ -249,7 +248,7 @@
 
                         if (status) {
                             this.addCallUser(fromUserSlug, options?.type || 'visio')
-                            this.callInprogress = true
+                            this.setCallInProgress(true)
                         }
 
                         await this.acceptCallFromPeer({
@@ -290,7 +289,7 @@
             async onStartCall(userSlug, type) {
                 const roomId = this.ensureCallRoomId()
                 this.addCallUser(userSlug, type || 'visio')
-                this.callInprogress = true
+                this.setCallInProgress(true)
 
                 await this.startCallWithPeer({
                     toUserSlug: userSlug,

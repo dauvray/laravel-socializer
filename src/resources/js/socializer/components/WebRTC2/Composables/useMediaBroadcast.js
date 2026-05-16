@@ -72,6 +72,9 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
         removeCurrentCallUser, // fonction pour supprimer un utilisateur de la liste des utilisateurs actuellement en appel avec moi
         clearCurrentCallUsers, // fonction pour vider la liste des utilisateurs actuellement en appel avec moi
 
+        setCallInProgress, // fonction pour définir l'état d'un appel en cours
+        isCallInProgress, // fonction pour vérifier s'il y a un appel en cours avec au moins un utilisateur
+
     } = usePeerOrchestrator( type, room, options)
 
 
@@ -141,6 +144,8 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
         addCurrentCallUser,
         removeCurrentCallUser,
         clearCurrentCallUsers,
+        setCallInProgress,
+        isCallInProgress,
 
         // data
         sendData,

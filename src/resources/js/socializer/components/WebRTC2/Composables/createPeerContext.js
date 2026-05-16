@@ -42,6 +42,7 @@ export function createPeerContext({ type, room, eventBus, options }) {
         onAirRoom: room || 'app',
         currentCallRoomId: null, // roomId spécifique pour les appels audio/vidéo (différent de currentRoom qui est la room "logique")
         currentCallUsers: [], // liste des slugs des utilisateurs actuellement en appel avec moi (utile pour gérer les connexions et l'UI d'appel)
+        callInprogress: false, // y a-t-il un appel en cours avec au moins un utilisateur ?
         isStreaming: false,
         isCapturing: false,
         topology: options.topology || 'mesh', // topologie de diffusion : 'mesh' (pair à pair), 'star' (étoile) ou 'sfu' (serveur de diffusion)
@@ -123,6 +124,7 @@ export function createPeerContext({ type, room, eventBus, options }) {
         onAirRoom: computed(() => session.onAirRoom),
         currentCallRoomId: computed(() => session.currentCallRoomId),
         currentCallUsers: computed(() => session.currentCallUsers),
+        callInprogress: computed(() => session.callInprogress),
         usersInRoom: computed(() => connection.usersInRoom),
         allUsersInRoom: computed(() => {
             const hub = session.hubSlug ? [session.hubSlug] : []
@@ -302,6 +304,8 @@ export function createPeerContext({ type, room, eventBus, options }) {
             session.currentCallUsers = [...session.currentCallUsers, { userSlug, type }]
         }
 
+        session.callInprogress = session.currentCallUsers.length > 0
+
         return session.currentCallUsers
     }
 
@@ -311,6 +315,9 @@ export function createPeerContext({ type, room, eventBus, options }) {
         }
 
         session.currentCallUsers = session.currentCallUsers.filter((u) => u.userSlug !== userSlug)
+        
+        session.callInprogress = session.currentCallUsers.length > 0
+        
         return session.currentCallUsers
     }
 
@@ -318,8 +325,6 @@ export function createPeerContext({ type, room, eventBus, options }) {
         session.currentCallUsers = []
         return session.currentCallUsers
     }
-
-
 
     /**
      * Lifecycle hook

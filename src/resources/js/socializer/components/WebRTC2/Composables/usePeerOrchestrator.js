@@ -418,6 +418,18 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         return context.clearCurrentCallUsers()
     }
 
+    const setCallInProgress = (inProgress) => {
+        context.session.callInprogress = inProgress
+        return context.session.callInprogress
+    }
+
+    const isCallInProgress = () => {
+        return context.session.callInprogress
+    }
+    
+    /*---------------------
+    | API exposée aux features (useMediaBroadcast)
+    ----------------------*/
     return {
         // on pourrait ne pas exposer tout ça
         ...core,
@@ -444,7 +456,9 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         setCurrentCallUsers,
         addCurrentCallUser,
         removeCurrentCallUser,
-        clearCurrentCallUsers,    
+        clearCurrentCallUsers,
+        setCallInProgress,
+        isCallInProgress,  
 
         /*---------------------------------
         | COMPUTED
