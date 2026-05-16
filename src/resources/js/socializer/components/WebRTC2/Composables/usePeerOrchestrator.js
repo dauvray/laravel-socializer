@@ -55,41 +55,41 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
      * LOGIQUE DE TENTATIVE (Callback pour le RetryManager)
      * Détermine si on doit continuer à essayer de se connecter à un user.
      */
-const _handleConnectionAttempt = async (userSlug) => {
-    // 🛑 Ne relance RIEN si on est en train d'arrêter
-    if (isShuttingDown) return true
+    const _handleConnectionAttempt = async (userSlug) => {
+        // 🛑 Ne relance RIEN si on est en train d'arrêter
+        if (isShuttingDown) return true
 
-    // 1. Succès ultime : connexion établie
-    if (connections.hasOpenConnection(userSlug)) return true
+        // 1. Succès ultime : connexion établie
+        if (connections.hasOpenConnection(userSlug)) return true
 
-    const remotePeerId = context.peerStore.getRemotePeerId(userSlug)
-    const waiting = context.peerStore.getWaitingRemotePeerId(userSlug)
+        const remotePeerId = context.peerStore.getRemotePeerId(userSlug)
+        const waiting = context.peerStore.getWaitingRemotePeerId(userSlug)
 
-    // 2. Sécurité : Si on n'a plus d'ID ET plus d'intention (waiting), l'user est vraiment parti.
-    if (!remotePeerId && !waiting) return true
+        // 2. Sécurité : Si on n'a plus d'ID ET plus d'intention (waiting), l'user est vraiment parti.
+        if (!remotePeerId && !waiting) return true
 
-    // 3. Si on a un ID, on tente la connexion (même si waiting a sauté)
-    if (remotePeerId) {
-        const connected = connections.connectToPeer({
-            userSlug,
-            peerId: remotePeerId,
-            type: context.currentType.value,
-            room: context.session.currentCallRoomId || context.currentRoom.value,
-        })
-        if (connected) return true
-    }
-
-    // 4. Signalisation stale : On ne demande l'ID que si on est toujours en attente (waiting)
-    if (waiting) {
-        const STALE_MS = 12000
-        const age = Date.now() - (waiting.createdAt ?? 0)
-        if (age >= STALE_MS) {
-            core.requestRemotePeerConnection(userSlug)
+        // 3. Si on a un ID, on tente la connexion (même si waiting a sauté)
+        if (remotePeerId) {
+            const connected = connections.connectToPeer({
+                userSlug,
+                peerId: remotePeerId,
+                type: context.currentType.value,
+                room: context.session.currentCallRoomId || context.currentRoom.value,
+            })
+            if (connected) return true
         }
-    }
 
-    return false
-}
+        // 4. Signalisation stale : On ne demande l'ID que si on est toujours en attente (waiting)
+        if (waiting) {
+            const STALE_MS = 12000
+            const age = Date.now() - (waiting.createdAt ?? 0)
+            if (age >= STALE_MS) {
+                core.requestRemotePeerConnection(userSlug)
+            }
+        }
+
+        return false
+    }
 
     /**
      * Tente de se connecter à un peer distant ou de demander une connexion si nécessaire.

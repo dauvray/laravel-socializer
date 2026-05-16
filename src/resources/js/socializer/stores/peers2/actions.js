@@ -29,12 +29,126 @@ export default {
     storePeerConnection(room, slug, type, connection) {
         this.connections[room][slug][type].push(connection)
     },
-    removePeerConnectionInstance(room, slug, type, connection) {
+    // removePeerConnectionInstance(room, slug, type, connection) {
 
-        if (!room || !slug || !type) {
-            return
+    //     if (!room || !slug || !type) {
+    //         return
+    //     }
+
+    //     if (
+    //         !this.connections.hasOwnProperty(room)
+    //         || !this.connections[room].hasOwnProperty(slug)
+    //         || !this.connections[room][slug].hasOwnProperty(type)
+    //     ) {
+    //         return
+    //     }
+
+    //     const currentConnections = this.connections[room][slug][type]
+
+    //     this.connections[room][slug][type] = currentConnections.filter((item) => {
+    //         if (!item) {
+    //             return false
+    //         }
+
+    //         if (item === connection) {
+    //             return false
+    //         }
+
+    //         const sameConnectionId =
+    //             connection?.connectionId
+    //             && item?.connectionId
+    //             && item.connectionId === connection.connectionId
+
+    //         return !sameConnectionId
+    //     })
+
+    //     if (this.connections[room][slug][type].length === 0) {
+    //         this.closePeerConnection(room, slug, type)
+    //     }
+    // },
+    
+    removePeerConnectionInstance(room, slug, type, connection) {
+    if (!room || !slug || !type) {
+        return
+    }
+
+    if (
+        !this.connections.hasOwnProperty(room)
+        || !this.connections[room].hasOwnProperty(slug)
+        || !this.connections[room][slug].hasOwnProperty(type)
+    ) {
+        return
+    }
+
+    const currentConnections = this.connections[room][slug][type]
+
+    this.connections[room][slug][type] = currentConnections.filter((item) => {
+        if (!item) {
+            return false
         }
 
+        if (item === connection) {
+            return false
+        }
+
+        const sameConnectionId =
+            connection?.connectionId
+            && item?.connectionId
+            && item.connectionId === connection.connectionId
+
+        return !sameConnectionId
+    })
+
+    // Important: NE PAS relancer closePeerConnection ici.
+    // Sinon on peut boucler: close event -> remove -> closePeerConnection -> close event...
+    if (this.connections[room][slug][type].length === 0) {
+        this.clearConnectionsRoom(room, slug, type)
+    }
+},
+    
+    // closePeerConnection(room, slug, type) {
+
+    //     if(!this.connections.hasOwnProperty(room) 
+    //         || !this.connections[room].hasOwnProperty(slug)
+    //         || !this.connections[room][slug].hasOwnProperty(type)
+    //     ) {
+    //         return
+    //     }
+
+    //     this.connections[room][slug][type].forEach((conn, idx) => {
+
+    //         // is emitter ?
+    //         if(conn && conn.hasOwnProperty('peer')) {
+    //             switch(type) {
+    //                 case 'data':
+    //                     conn.close()
+    //                     break
+    //                 case 'stream':
+    //                 case 'screen':
+    //                 case 'visio':
+    //                     // Ne jamais stopper conn._localStream ici :
+    //                     // ce stream local peut encore être utilisé par d'autres peers.
+    //                     // On ferme d'abord la MediaConnection PeerJS pour garantir
+    //                     // l'émission de l'événement "close" côté callbacks.
+    //                     if (typeof conn.close === 'function') {
+    //                         conn.close()
+    //                     }
+
+    //                     // Fallback de sécurité si la RTCPeerConnection n'est pas déjà fermée.
+    //                     if (
+    //                         conn.peerConnection
+    //                         && conn.peerConnection.signalingState !== 'closed'
+    //                     ) {
+    //                         conn.peerConnection.close()
+    //                     }
+    //                     break
+    //             }
+    //         }
+
+    //     })
+    // },  
+
+    closePeerConnection(room, slug, type) {
         if (
             !this.connections.hasOwnProperty(room)
             || !this.connections[room].hasOwnProperty(slug)
@@ -43,70 +157,72 @@ export default {
             return
         }
 
-        const currentConnections = this.connections[room][slug][type]
-
-        this.connections[room][slug][type] = currentConnections.filter((item) => {
-            if (!item) {
-                return false
+        this.connections[room][slug][type].forEach((conn) => {
+            if (!conn || typeof conn !== 'object') {
+                return
             }
 
-            if (item === connection) {
-                return false
+            // Idempotence: ne pas fermer plusieurs fois la même instance
+            if (conn.__ctxClosing === true || conn.__ctxCloseHandled === true) {
+                return
             }
 
-            const sameConnectionId =
-                connection?.connectionId
-                && item?.connectionId
-                && item.connectionId === connection.connectionId
+            if (!conn.hasOwnProperty('peer')) {
+                return
+            }
 
-            return !sameConnectionId
-        })
-
-        if (this.connections[room][slug][type].length === 0) {
-            this.closePeerConnection(room, slug, type)
-        }
-    },
-    closePeerConnection(room, slug, type) {
-
-        if(!this.connections.hasOwnProperty(room) 
-            || !this.connections[room].hasOwnProperty(slug)
-            || !this.connections[room][slug].hasOwnProperty(type)
-        ) {
-            return
-        }
-
-        this.connections[room][slug][type].forEach((conn, idx) => {
-
-            // is emitter ?
-            if(conn && conn.hasOwnProperty('peer')) {
-                switch(type) {
-                    case 'data':
-                        conn.close()
-                        break
-                    case 'stream':
-                    case 'screen':
-                    case 'visio':
-                        // Ne jamais stopper conn._localStream ici :
-                        // ce stream local peut encore être utilisé par d'autres peers.
-                        // On ferme d'abord la MediaConnection PeerJS pour garantir
-                        // l'émission de l'événement "close" côté callbacks.
-                        if (typeof conn.close === 'function') {
+            switch (type) {
+                case 'data': {
+                    // DataConnection: close uniquement si ouvert
+                    if (typeof conn.close === 'function' && conn.open === true) {
+                        conn.__ctxClosing = true
+                        try {
                             conn.close()
+                        } catch (e) {
+                            console.warn('Erreur fermeture DataConnection', e)
                         }
-
-                        // Fallback de sécurité si la RTCPeerConnection n'est pas déjà fermée.
-                        if (
-                            conn.peerConnection
-                            && conn.peerConnection.signalingState !== 'closed'
-                        ) {
-                            conn.peerConnection.close()
-                        }
-                        break
+                    }
+                    break
                 }
-            }
 
+                case 'stream':
+                case 'screen':
+                case 'visio':
+                case 'vocal': {
+                    conn.__ctxClosing = true
+
+                    // MediaConnection PeerJS
+                    if (typeof conn.close === 'function') {
+                        try {
+                            conn.close()
+                        } catch (e) {
+                            console.warn('Erreur fermeture MediaConnection', e)
+                        }
+                    }
+
+                    // Fallback RTCPeerConnection
+                    const pc = conn.peerConnection
+                    if (
+                        pc
+                        && typeof pc.close === 'function'
+                        && pc.signalingState !== 'closed'
+                    ) {
+                        try {
+                            pc.close()
+                        } catch (e) {
+                            console.warn('Erreur fermeture RTCPeerConnection', e)
+                        }
+                    }
+
+                    break
+                }
+
+                default:
+                    break
+            }
         })
-    },  
+    },
+
     clearConnectionsRoom(room, slug, type) {
 
         if(!this.connections.hasOwnProperty(room)) {

@@ -182,37 +182,122 @@ export function createPeerContext({ type, room, eventBus, options }) {
         })
     }  
 
+    // const setUpConnectionListeners = (conn) => {
+
+    //     //------------------
+    //     // core events
+    //     //------------------
+    //     conn.on("open", function () {
+    //         console.trace(`connection ${conn.metadata?.type} ouverte dans Context`, conn.metadata)
+    //     })
+
+    //     conn.on("close", function () {
+    //         console.log(`connection ${conn.metadata?.type} fermée dans Context`, conn.metadata)
+    //         const room = conn.metadata?.room
+    //         const type = conn.metadata?.type
+
+    //         // slug = clé de stockage des connexions sortantes
+    //         // from = vrai peer distant à éventuellement oublier s'il a quitté la room
+    //         const storedSlug = conn.metadata?.slug
+    //         const remoteSlug = conn.metadata?.from
+
+    //         // Important :
+    //         // on retire uniquement CETTE instance de connexion si elle est stockée.
+    //         // On ne ferme surtout pas toutes les connexions du même slug,
+    //         // sinon on coupe aussi le stream opposé encore valide.
+    //         peerStore.removePeerConnectionInstance(
+    //             room,
+    //             storedSlug,
+    //             type,
+    //             conn,
+    //         )
+
+    //         // On ne supprime le remotePeerId que si le peer n'est plus censé être dans la room.
+    //         if (remoteSlug && !connection.usersInRoom.includes(remoteSlug)) {
+    //             peerStore.removeRemotePeerId(remoteSlug)
+    //         }
+    //     })
+
+    //     //------------------
+    //     // custom events
+    //     //------------------
+    //     // handle connection open
+    //     if(connectionEvents && connectionEvents.onConnectionOpen.isActive) {
+    //         conn.on("open", connectionEvents.onConnectionOpen.callback)
+    //     }
+
+    //     // Receive data
+    //     if(connectionEvents && connectionEvents.onDataReceived.isActive) {
+    //         conn.on("data", connectionEvents.onDataReceived.callback)
+    //     }
+    //     // Receive stream
+    //     if(connectionEvents && connectionEvents.onStreamReceived.isActive) {
+    //         conn.on("stream", (stream) => connectionEvents.onStreamReceived.callback(stream, conn, conn.metadata))
+    //     }
+
+    //     // Handle connection close
+    //     if(connectionEvents && connectionEvents.onConnectionClose.isActive) {
+    //         conn.on("close", () => connectionEvents.onConnectionClose.callback(conn))
+    //     }
+
+    //     // Handle connection error
+    //     if(connectionEvents && connectionEvents.onConnectionError.isActive) {
+    //         conn.on("error", connectionEvents.onConnectionError.callback)
+    //     }
+    // }
+
     const setUpConnectionListeners = (conn) => {
+        if (!conn || typeof conn.on !== 'function') {
+            return
+        }
+
+        // Evite de binder plusieurs fois les mêmes handlers sur la même instance
+        if (conn.__ctxListenersBound) {
+            return
+        }
+        conn.__ctxListenersBound = true
 
         //------------------
         // core events
         //------------------
         conn.on("open", function () {
-            console.trace(`connection ${conn.metadata?.type} ouverte dans Context`, conn.metadata)
+            console.trace("connection " + (conn.metadata?.type || "unknown") + " ouverte dans Context", conn.metadata)
         })
 
         conn.on("close", function () {
-            console.log(`connection ${conn.metadata?.type} fermée dans Context`, conn.metadata)
+            // Idempotence: un close déjà traité ne doit pas retraiter le cleanup
+            if (conn.__ctxCloseHandled) {
+                return
+            }
+            conn.__ctxCloseHandled = true
+
+            console.log("connection " + (conn.metadata?.type || "unknown") + " fermée dans Context", conn.metadata)
+
             const room = conn.metadata?.room
             const type = conn.metadata?.type
-
-            // slug = clé de stockage des connexions sortantes
-            // from = vrai peer distant à éventuellement oublier s'il a quitté la room
             const storedSlug = conn.metadata?.slug
-            const remoteSlug = conn.metadata?.from
 
-            // Important :
-            // on retire uniquement CETTE instance de connexion si elle est stockée.
-            // On ne ferme surtout pas toutes les connexions du même slug,
-            // sinon on coupe aussi le stream opposé encore valide.
+            // Détection robuste du peer distant (évite de supprimer mon propre slug)
+            const mySlug = meStore.getMe?.slug || null
+            const fromSlug = conn.metadata?.from || null
+            const slugMeta = conn.metadata?.slug || null
+
+            let remoteSlug = null
+            if (fromSlug && fromSlug !== mySlug) {
+                remoteSlug = fromSlug
+            } else if (slugMeta && slugMeta !== mySlug) {
+                remoteSlug = slugMeta
+            }
+
+            // Retirer uniquement cette instance (ne pas fermer en cascade ici)
             peerStore.removePeerConnectionInstance(
                 room,
                 storedSlug,
                 type,
-                conn,
+                conn
             )
 
-            // On ne supprime le remotePeerId que si le peer n'est plus censé être dans la room.
+            // Supprime le remotePeerId seulement si l'utilisateur n'est plus en room
             if (remoteSlug && !connection.usersInRoom.includes(remoteSlug)) {
                 peerStore.removeRemotePeerId(remoteSlug)
             }
@@ -221,27 +306,30 @@ export function createPeerContext({ type, room, eventBus, options }) {
         //------------------
         // custom events
         //------------------
-        // handle connection open
-        if(connectionEvents && connectionEvents.onConnectionOpen.isActive) {
+        if (connectionEvents && connectionEvents.onConnectionOpen.isActive) {
             conn.on("open", connectionEvents.onConnectionOpen.callback)
         }
 
-        // Receive data
-        if(connectionEvents && connectionEvents.onDataReceived.isActive) {
+        if (connectionEvents && connectionEvents.onDataReceived.isActive) {
             conn.on("data", connectionEvents.onDataReceived.callback)
         }
-        // Receive stream
-        if(connectionEvents && connectionEvents.onStreamReceived.isActive) {
+
+        if (connectionEvents && connectionEvents.onStreamReceived.isActive) {
             conn.on("stream", (stream) => connectionEvents.onStreamReceived.callback(stream, conn, conn.metadata))
         }
 
-        // Handle connection close
-        if(connectionEvents && connectionEvents.onConnectionClose.isActive) {
-            conn.on("close", () => connectionEvents.onConnectionClose.callback(conn))
+        if (connectionEvents && connectionEvents.onConnectionClose.isActive) {
+            conn.on("close", () => {
+                // Evite callback close métier en double
+                if (conn.__ctxCustomCloseEmitted) {
+                    return
+                }
+                conn.__ctxCustomCloseEmitted = true
+                connectionEvents.onConnectionClose.callback(conn)
+            })
         }
 
-        // Handle connection error
-        if(connectionEvents && connectionEvents.onConnectionError.isActive) {
+        if (connectionEvents && connectionEvents.onConnectionError.isActive) {
             conn.on("error", connectionEvents.onConnectionError.callback)
         }
     }
