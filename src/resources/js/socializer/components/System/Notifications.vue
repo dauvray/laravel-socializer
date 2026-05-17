@@ -10,7 +10,7 @@
         ></component>
     </Teleport>
 
-    <CallWebUI v-if="isCallInProgress()"
+    <CallWebUI v-if="peers.isCallInProgress()"
         @stop-call="onStopCall"
     ></CallWebUI>
 
@@ -54,19 +54,12 @@
             const peers = useMediaBroadcast()
         
             return {
-                ...peers,
+                peers: {...peers}, // todo : préférér webRTC: ...peers pour éviter les confusions avec les methodes du composant
                 notificationComponent,
                 notificationComponentProps,
                 NewMessageNotification,
                 queueProcesing,
                 heartbeatIntervalId,
-            }
-        },
-        data() {
-            return {
-                remoteStreamsMap: new Map(),
-                isStoppingCall: false,
-                closingUsers: new Set(),
             }
         },
         watch: {
@@ -93,15 +86,12 @@
                     return this.me.channel
                 }
             },
-            remoteStreams() {
-                return Array.from(this.remoteStreamsMap.values())
-            },
         },
 
         async mounted() {
-            this.initialize({
-                onStreamReceived: this.handleStreamReceived,
-                onConnectionClose: this.handleStreamClose
+            this.peers.initialize({
+                onStreamReceived: this.peers.handleStreamReceived,
+                onConnectionClose: this.peers.handleStreamClose
             })
 
             this.eventBus.$on('call-user', this.onStartCall)
@@ -113,19 +103,17 @@
 
         async unmounted() {
             try {
-                if (this.currentCallUsers.length > 0 || this.isCallInProgress()) {
-                    await this.stopCallWithPeers([...this.currentCallUsers], false, {
+                if (this.peers.currentCallUsers.length > 0 || this.peers.isCallInProgress()) {
+                    await this.peers.stopCallWithPeers([...this.peers.currentCallUsers], false, {
                         mode: 'full',
-                       roomId: this.currentCallRoomId,
+                       roomId: this.peers.currentCallRoomId,
                     })
                 }
             } finally {
-                this.cleanup()
                 Echo.leave(this.userChannel)
                 this.eventBus.$off('call-user', this.onStartCall)
                 clearInterval(this.heartbeatIntervalId)
                 this.heartbeatIntervalId = null
-                this.resetCallState()
             }
         },
 
@@ -140,23 +128,13 @@
                 'dispatchSignal',
             ]),
             addCallUser(userSlug, type = 'visio') {
-                return this.addCurrentCallUser(userSlug, type)
+                return this.peers.addCurrentCallUser(userSlug, type)
             },
             removeCallUser(userSlug) {
-                if (!userSlug) return
-                this.removeCurrentCallUser(userSlug)
+                return this.peers.removeCurrentCallUser(userSlug)
             },
             ensureCallRoomId(preferred = null) {
-                return this.ensureCurrentCallRoomId(preferred)
-            },
-            resetCallState() {
-                this.cleanupCallPlayers()
-                this.setCallInProgress(false)
-                this.clearCurrentCallUsers()
-                this.setCurrentCallRoomId(null)
-                this.remoteStreamsMap.clear()
-                this.isStoppingCall = false
-                this.closingUsers.clear()
+                return this.peers.ensureCurrentCallRoomId(preferred)
             },
             initUserChannel() {
                 if(this.userChannel) {
@@ -193,35 +171,19 @@
                         .listen('.ResponseToAuthorizationPeer', async (event) => {
                             if (!event.status) {
                                 window.AWN.info(`${event.fromUserSlug} est injoignable`)
-                                this.removeCallUser(event.fromUserSlug)
-
-                                if (this.currentCallUsers.length === 0) {
-                                    await this.stopCallWithPeers([], false, {
-                                        mode: 'full',
-                                         roomId: this.currentCallRoomId || event?.options?.room || null,
-                                    })
-                                    this.resetCallState()
-                                }
-
                                 this.eventBus.$emit('close-call', [{ userSlug: event.fromUserSlug, type: event?.options?.type || 'visio' }])
                                 return
                             }
-
-                            const roomId = this.ensureCallRoomId(event?.options?.room || null)
-                            this.addCallUser(event.fromUserSlug, event.options?.type || 'visio')
-                            this.setCallInProgress(true)
-
-                            await this.openCallBetweenPeer({
+                            await this.peers.openCallBetweenPeer({
                                 ...event,
                                 options: {
                                     ...event.options,
-                                    room: roomId,
                                 },
                             })
                         })
                         .listen('.CloseConnectionToPeerID', (event) => {
                            // voir utilitée
-                            this.onRemoteStopCall(event)
+                            this.peers.remoteStopCall(event)
                         })
                         .listen('.ChatInvitation', (event) => {
                             this.addConversation(event)
@@ -238,10 +200,9 @@
             },
             async onResponseAlert(fromUserSlug, options, status) {
                 this.notificationComponent = null
-
                 switch (options.action) {
                     case 'peer-access-permission': {
-                        await this.acceptCallFromPeer({
+                        await this.peers.acceptCallFromPeer({
                             fromUserSlug,
                             options: {
                                 ...options,
@@ -261,160 +222,18 @@
                 });
             },
             async onStopCall() {
-                if (this.isStoppingCall) return
-                this.isStoppingCall = true
-
-                const usersToStop = [...this.currentCallUsers]
-                const roomId = this.currentCallRoomId
-
-                await this.stopCallWithPeers(usersToStop, true, {
+                const usersToStop = this.peers.currentCallUsers ? Array.from(this.peers.currentCallUsers) : []
+                await this.peers.stopCallWithPeers(usersToStop, true, {
                     mode: 'full',
-                    roomId,
                 })
-
                 this.eventBus.$emit('close-call', usersToStop)
-                this.resetCallState()
             },
             async onStartCall(userSlug, type) {
-                await this.startCallWithPeer({
+                await this.peers.startCallWithPeer({
                     toUserSlug: userSlug,
                     type: type || 'visio',
                 })
             },            
-            async onRemoteStopCall(event) {
-                const remoteSlug = event?.fromUserSlug || null
-                const remoteType = event?.type || 'visio'
-                const roomId = event?.room || this.currentCallRoomId || null
-                
-                if (!remoteSlug) return
-                if (this.closingUsers.has(remoteSlug)) return
-
-                this.closingUsers.add(remoteSlug)
-
-                await this.stopCallWithPeers([{ userSlug: remoteSlug, type: remoteType }], false, {
-                    mode: 'partial',
-                    roomId,
-                })
-
-                this.removeCallUser(remoteSlug)
-                this.removeVideoElement(`remote-${remoteSlug}-${remoteType}`)
-                this.remoteStreamsMap.forEach((value, key) => {
-                    if (value?.metadata?.from === remoteSlug) {
-                        this.remoteStreamsMap.delete(key)
-                    }
-                })
-
-                this.eventBus.$emit('close-call', [{ userSlug: remoteSlug, type: remoteType }])
-
-                if (this.currentCallUsers.length === 0) {
-                    await this.stopCallWithPeers([], false, {
-                        mode: 'full',
-                        roomId,
-                    })
-                    this.resetCallState()
-                }
-
-                this.closingUsers.delete(remoteSlug)
-            },
-            cleanupCallPlayers() {
-                const renderedPlayers = Array.isArray(this.players) ? [...this.players] : []
-
-                renderedPlayers.forEach((player) => {
-                    if (!player?.videoId) return
-
-                    // Nettoie uniquement les players d'appel (local et remote)
-                    if (player.videoId === 'local-webcam' || player.videoId.startsWith('remote-')) {
-                        this.removeVideoElement(player.videoId)
-                    }
-                })
-            },
-            async handleStreamReceived(stream, conn, metadata) {
-                const meta = metadata || conn?.metadata || {}
-                const remoteSlug = this.resolveRemoteSlug(meta)
-                const remoteType = meta?.type || conn?.metadata?.type || 'visio'
-
-                if (!remoteSlug) return
-
-                const streamKey = conn?.connectionId || `${remoteSlug}-${remoteType}`
-
-                if (this.remoteStreamsMap.has(streamKey)) {
-                return
-                }
-
-                this.remoteStreamsMap.set(streamKey, {
-                stream,
-                metadata: meta,
-                remoteSlug,
-                remoteType,
-                })
-
-                if (stream instanceof MediaStream) {
-                this.createVideoElement(
-                {
-                videoId: `remote-${remoteSlug}-${remoteType}`,
-                type: remoteType,
-                source: 'remote',
-                },
-                stream
-                )
-                }
-            },
-            async handleStreamClose(conn) {
-                const meta = conn?.metadata || {}
-                const remoteSlug = this.resolveRemoteSlug(meta)
-                const remoteType = meta?.type || 'visio'
-                const roomId = meta?.room || this.currentCallRoomId || null
-
-                if (!remoteSlug) return
-                if (this.closingUsers.has(remoteSlug)) return
-
-                this.closingUsers.add(remoteSlug)
-
-                try {
-                    const videoId = `remote-${remoteSlug}-${remoteType}`
-                    this.removeVideoElement(videoId)
-
-                    const streamKey = conn?.connectionId || `${remoteSlug}-${remoteType}`
-                    this.remoteStreamsMap.delete(streamKey)
-
-                    this.remoteStreamsMap.forEach((value, key) => {
-                        if (
-                            (value?.remoteSlug === remoteSlug && value?.remoteType === remoteType) ||
-                            value?.metadata?.from === remoteSlug
-                        ) {
-                            this.remoteStreamsMap.delete(key)
-                        }
-                    })
-
-                    this.removeCallUser(remoteSlug)
-                    this.eventBus.$emit('close-call', [{ userSlug: remoteSlug, type: remoteType }])
-
-                    if (this.currentCallUsers.length === 0) {
-                        await this.stopCallWithPeers([], false, {
-                            mode: 'full',
-                            roomId,
-                        })
-                        this.resetCallState()
-                    }
-                } finally {
-                    this.closingUsers.delete(remoteSlug)
-                }
-            },
-            resolveRemoteSlug(metadata = {}) {
-            const mySlug = this.me?.slug || null
-
-            if (!metadata) return null
-
-            if (metadata.from && mySlug && metadata.from !== mySlug) {
-            return metadata.from
-            }
-
-            if (metadata.slug && mySlug && metadata.slug !== mySlug) {
-            return metadata.slug
-            }
-
-            return metadata.from || metadata.slug || null
-            },
         }
     }
 </script>

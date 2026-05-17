@@ -75,6 +75,11 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
         setCallInProgress, // fonction pour définir l'état d'un appel en cours
         isCallInProgress, // fonction pour vérifier s'il y a un appel en cours avec au moins un utilisateur
 
+        remoteStopCall, // fonction pour gérer l'arrêt d'un appel initié à distance (ex: quand un peer distant raccroche)
+   
+        handleStreamReceived, // fonction pour gérer la réception d'un flux distant (ex: ajouter le flux à un player vidéo)
+        handleStreamRemoved, // fonction pour gérer la suppression d'un flux distant (ex: retirer le flux d'un player vidéo et nettoyer les ressources associées)
+   
     } = usePeerOrchestrator( type, room, options)
 
 
@@ -146,6 +151,10 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
         clearCurrentCallUsers,
         setCallInProgress,
         isCallInProgress,
+        remoteStopCall,
+
+        handleStreamReceived,
+        handleStreamRemoved,
 
         // data
         sendData,

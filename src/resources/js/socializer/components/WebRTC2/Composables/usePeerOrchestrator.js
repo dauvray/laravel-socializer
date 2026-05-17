@@ -316,6 +316,28 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
     }
 
     const openCallBetweenPeer = async (payload) => {
+        
+        console.log('openCallBetweenPeer', payload)
+        
+        if(!payload?.status) {
+            removeCurrentCallUser(payload.fromUserSlug)
+            if(context.currentCallUsers.length === 0) {
+                await stopCallWithPeers([], false, {
+                    mode: 'full',
+                    roomId: context.currentCallRoomId || payload?.options?.room || null,
+                })
+                resetCallState()
+            }
+        }
+
+        const room = payload?.options?.room || null
+        const fromUserSlug = payload?.fromUserSlug
+        const type = payload?.options?.type || 'visio'
+
+        ensureCurrentCallRoomId(room)
+        addCurrentCallUser(fromUserSlug, type)
+        setCallInProgress(true)
+        
         context.peerStore.removeWaitingRemotePeerId(payload.fromUserSlug)
         context.peerStore.addRemotePeerId(payload.fromUserSlug, payload.options.peerId)
         await media.startCurrentStream(true)
@@ -336,10 +358,16 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
     const removeVideoElement = media.removeVideoElement // exposé pour être utilisé par useMediaBroadcast pour supprimer les éléments vidéo des flux distants (et local) quand un stream se termine ou qu’un appel est raccroché.
 
     const stopCallWithPeers = async (users = [], notifyRemote = true, options = {}) => {
+       
+       if (context.session.isStoppingCall) return
+       context.session.isStoppingCall = true
+
+        const usersToStop = [...context.session.currentCallUsers]
+        const roomId = options?.roomId || context.session.currentCallRoomId || context.currentRoom.value
+       
         isShuttingDown = true  // 🛑 Bloquer les retries immédiatement
 
         const mode = options?.mode || 'full'
-        const roomId = options?.roomId || context.session.currentCallRoomId || context.currentRoom.value
         const callType = context.session.currentType || 'visio'
 
         const normalizedUsers = (users || [])
@@ -387,6 +415,8 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         context.session.currentCallRoomId = null
         
         isShuttingDown = false  // ✅ Réactiver après cleanup complet
+
+        resetCallState()
     }
 
     const setCurrentCallRoomId = (roomId = null) => {
@@ -422,6 +452,7 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
     }
 
     const removeCurrentCallUser = (userSlug) => {
+        if (!userSlug) return
         return context.removeCurrentCallUser(userSlug)
     }
 
@@ -437,7 +468,148 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
     const isCallInProgress = () => {
         return context.session.callInprogress
     }
+
+    const remoteStopCall = async (payload) => {
+
+        const remoteSlug = payload?.fromUserSlug || null
+        const remoteType = payload?.type || 'visio'
+        const roomId = payload?.room || context.session.currentCallRoomId || context.currentRoom.value
+
+        if (!remoteSlug) return
+        if (context.session.closingUsers.has(remoteSlug)) return
+
+        context.session.closingUsers.add(remoteSlug)
+
+        await stopCallWithPeers([{ userSlug: remoteSlug, type: remoteType }], false, {
+            mode: 'partial',
+            roomId,
+        })
+
+        removeCurrentCallUser(remoteSlug)
+        media.removeVideoElement(`remote-${remoteSlug}-${remoteType}`)
+        context.media.remoteStreamsMap.forEach((value, key) => {
+            if (value?.metadata?.from === remoteSlug) {
+                context.media.remoteStreamsMap.delete(key)
+            }
+        })
+
+        if (context.session.currentCallUsers.length === 0) {
+            await stopCallWithPeers([], false, {
+                mode: 'full',
+                roomId,
+            })
+            resetCallState()
+        }
+
+        context.session.closingUsers.delete(remoteSlug)
+    }
+
+    const resetCallState = () => {
+        media.cleanupCallPlayers()
+        setCallInProgress(false)
+        clearCurrentCallUsers()
+        setCurrentCallRoomId(null)
+        context.media.remoteStreamsMap.clear()
+        context.session.isStoppingCall = false
+        context.session.closingUsers.clear()
+    }
+
+    /*------------------------
+    | SIGNALISATION CALLS
+    --------------------------*/
+
+    const handleStreamReceived = async (stream, conn, metadata) => {
+        const meta = metadata || conn?.metadata || {}
+        const remoteSlug = resolveRemoteSlug(meta)
+        const remoteType = meta?.type || conn?.metadata?.type || 'visio'
+
+        if (!remoteSlug) return
+
+        const streamKey = conn?.connectionId || `${remoteSlug}-${remoteType}`
     
+        if (context.media.remoteStreamsMap.has(streamKey)) {
+            return
+        }
+
+        context.media.remoteStreamsMap.set(streamKey, {
+            stream,
+            metadata: meta,
+            remoteSlug,
+            remoteType,
+        })
+
+        if (stream instanceof MediaStream) {
+            media.createVideoElement(
+                {
+                    videoId: `remote-${remoteSlug}-${remoteType}`,
+                    type: remoteType,
+                    source: 'remote',
+                },
+                stream
+            )
+        }
+    }
+
+    const handleStreamRemoved = async (conn, metadata) => {
+        const meta = conn?.metadata || {}
+        const remoteSlug = resolveRemoteSlug(meta)
+        const remoteType = meta?.type || 'visio'
+        const roomId = meta?.room || context.session.currentCallRoomId || null
+
+        if (!remoteSlug) return
+        if (context.session.closingUsers.has(remoteSlug)) return
+
+        context.session.closingUsers.add(remoteSlug)
+
+        try {
+            const videoId = `remote-${remoteSlug}-${remoteType}`
+            context.media.removeVideoElement(videoId)
+
+            const streamKey = conn?.connectionId || `${remoteSlug}-${remoteType}`
+            context.media.remoteStreamsMap.delete(streamKey)
+
+            context.media.remoteStreamsMap.forEach((value, key) => {
+                if (
+                    (value?.remoteSlug === remoteSlug && value?.remoteType === remoteType) ||
+                    value?.metadata?.from === remoteSlug
+                ) {
+                    context.media.remoteStreamsMap.delete(key)
+                }
+            })
+
+            removeCurrentCallUser(remoteSlug)
+
+            if (context.session.currentCallUsers.length === 0) {
+                await stopCallWithPeers([], false, {
+                    mode: 'full',
+                    roomId,
+                })
+                resetCallState()
+            }
+
+        } catch (error) {
+            console.error('Error removing video element:', error)
+        } finally {
+            context.session.closingUsers.delete(remoteSlug)
+        }
+    }
+
+    const resolveRemoteSlug = (metadata = {}) => {
+        const mySlug = context.meStore.me?.slug || null
+
+        if (!metadata) return null
+
+        if (metadata.from && mySlug && metadata.from !== mySlug) {
+            return metadata.from
+        }
+
+        if (metadata.slug && mySlug && metadata.slug !== mySlug) {
+            return metadata.slug
+        }
+
+        return metadata.from || metadata.slug || null
+    }
+
     /*---------------------
     | API exposée aux features (useMediaBroadcast)
     ----------------------*/
@@ -470,6 +642,11 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         clearCurrentCallUsers,
         setCallInProgress,
         isCallInProgress,  
+        remoteStopCall,
+
+        handleStreamReceived,
+        handleStreamRemoved,
+    
 
         /*---------------------------------
         | COMPUTED

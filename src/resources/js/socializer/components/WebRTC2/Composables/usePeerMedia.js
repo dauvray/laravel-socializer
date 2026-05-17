@@ -171,11 +171,25 @@ export function usePeerMedia(ctx) {
         removingVideoIds.delete(elementId)
         }
     }
+
+    const cleanupCallPlayers = () => {
+        const renderedPlayers = Array.isArray(ctx.peerStore.getPlayers) ? [...ctx.peerStore.getPlayers] : []
+        
+        renderedPlayers.forEach((player) => {
+            if (!player?.videoId) return
+
+            // Nettoie uniquement les players d'appel (local et remote)
+            if (player.videoId === 'local-webcam' || player.videoId.startsWith('remote-')) {
+                removeVideoElement(player.videoId)
+            }
+        })
+    }
     
     return {
         startCurrentStream,
         stopCurrentStream,
         createVideoElement,
         removeVideoElement,
+        cleanupCallPlayers,
     }
 }

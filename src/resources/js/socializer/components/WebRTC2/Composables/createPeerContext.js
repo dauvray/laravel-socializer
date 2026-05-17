@@ -43,8 +43,13 @@ export function createPeerContext({ type, room, eventBus, options }) {
         currentCallRoomId: null, // roomId spécifique pour les appels audio/vidéo (différent de currentRoom qui est la room "logique")
         currentCallUsers: [], // liste des slugs des utilisateurs actuellement en appel avec moi (utile pour gérer les connexions et l'UI d'appel)
         callInprogress: false, // y a-t-il un appel en cours avec au moins un utilisateur ?
+        isStoppingCall: false, // état temporaire pour indiquer que je suis en train de stopper un appel (utile pour éviter les conflits de logique lors du nettoyage des connexions et des flux)
+        closingUsers: new Set(), // Set des slugs des utilisateurs dont la connexion est en cours de fermeture (utile pour éviter les conflits de logique lors du nettoyage des connexions et des flux)
+      
+        // a mettre dans media
         isStreaming: false,
         isCapturing: false,
+      
         topology: options.topology || 'mesh', // topologie de diffusion : 'mesh' (pair à pair), 'star' (étoile) ou 'sfu' (serveur de diffusion)
         hubSlug: options.hubSlug || null, // slug du hub de diffusion (si utilisé)
         isHub: null, // le peer est-il le hub de diffusion ? (si hubSlug fourni)
@@ -54,6 +59,8 @@ export function createPeerContext({ type, room, eventBus, options }) {
     const media = reactive({
         videoContainer: '#videoContainer',
         currentStream: null,
+        remoteStreamsMap: new Map(), // Map pour stocker les flux distants avec une clé composite (userSlug-type) pour éviter les collisions
+       
         // isStreaming: false,
         // isCapturing: false,
     })
@@ -140,6 +147,7 @@ export function createPeerContext({ type, room, eventBus, options }) {
         }),
 
         currentStream: computed(() => media.currentStream),
+        remoteStreams: computed(() => Array.from(media.remoteStreamsMap.values())),
 
         mySlug: computed(() => meStore.getMe?.slug),
         myName: computed(() => meStore.getMe?.name),
@@ -258,14 +266,15 @@ export function createPeerContext({ type, room, eventBus, options }) {
         }
 
         if (connectionEvents && connectionEvents.onConnectionClose.isActive) {
-            conn.on("close", () => {
-                // Evite callback close métier en double
-                if (conn.__ctxCustomCloseEmitted) {
-                    return
-                }
-                conn.__ctxCustomCloseEmitted = true
-                connectionEvents.onConnectionClose.callback(conn)
-            })
+            // conn.on("close", () => {
+            //     // Evite callback close métier en double
+            //     if (conn.__ctxCustomCloseEmitted) {
+            //         return
+            //     }
+            //     conn.__ctxCustomCloseEmitted = true
+            //     connectionEvents.onConnectionClose.callback(conn)
+            // })
+            conn.on("close", (conn) =>  connectionEvents.onConnectionClose.callback(conn))
         }
 
         if (connectionEvents && connectionEvents.onConnectionError.isActive) {
