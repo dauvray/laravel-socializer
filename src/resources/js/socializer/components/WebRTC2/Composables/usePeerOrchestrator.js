@@ -36,6 +36,10 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
     const syncUsersConnectionsLock = ref(false)
     const isShuttingDown = ref(false)  // 🔒 Guard pour bloquer les retries pendant le cleanup
 
+    // ── Constantes ───────────────────────────────────────────────────────────
+    const MAX_REMOTE_STREAMS = 50        // limite haute de streams distants simultanés
+    const STREAM_STALE_MS    = 300_000   // 5 min — entrée sans activité considérée stale
+
     // ── Validation des inputs ────────────────────────────────────────────────
     const VALID_CALL_TYPES = ['data', 'visio', 'vocal', 'stream', 'screen', 'audio']
     const SLUG_PATTERN = /^[a-zA-Z0-9_\-.]{1,100}$/
@@ -554,6 +558,34 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
     | SIGNALISATION CALLS
     --------------------------*/
 
+    /**
+     * Supprime les entrées stales (trop anciennes ou map trop grande) de remoteStreamsMap.
+     * Appelé avant chaque ajout pour garantir une taille bornée.
+     */
+    const _cleanupStaleRemoteStreams = () => {
+        const now = Date.now()
+
+        // 1. Supprimer les entrées expirées (TTL)
+        for (const [key, entry] of context.media.remoteStreamsMap.entries()) {
+            if (now - (entry.createdAt ?? 0) > STREAM_STALE_MS) {
+                media.removeVideoElement(`remote-${entry.remoteSlug}-${entry.remoteType}`)
+                context.media.remoteStreamsMap.delete(key)
+            }
+        }
+
+        // 2. Si encore trop grand, supprimer les plus anciens (FIFO)
+        if (context.media.remoteStreamsMap.size >= MAX_REMOTE_STREAMS) {
+            const overflow = context.media.remoteStreamsMap.size - MAX_REMOTE_STREAMS + 1
+            let count = 0
+            for (const [key, entry] of context.media.remoteStreamsMap.entries()) {
+                if (count >= overflow) break
+                media.removeVideoElement(`remote-${entry.remoteSlug}-${entry.remoteType}`)
+                context.media.remoteStreamsMap.delete(key)
+                count++
+            }
+        }
+    }
+
     const handleStreamReceived = async (stream, conn, metadata) => {
         const ready = await context.waitForMeReady()
         if (!ready) return 
@@ -570,11 +602,15 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
             return
         }
 
+        // Nettoyage préventif avant ajout (taille bornée + TTL)
+        _cleanupStaleRemoteStreams()
+
         context.media.remoteStreamsMap.set(streamKey, {
             stream,
             metadata: meta,
             remoteSlug,
             remoteType,
+            createdAt: Date.now(),
         })
 
         if (stream instanceof MediaStream) {
