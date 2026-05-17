@@ -103,8 +103,8 @@ export function usePeerMedia(ctx) {
 
         app.mount(wrapper)
         
-        // Stocker l'application avec ses métadonnées
-        ctx.peerStore.addPlayer({ app, videoId: options.videoId, type: source })
+        // Enregistrer le player dans le store pour pouvoir le manipuler (ex: suppression à la fin d'un appel)
+        ctx.peerStore.addPlayer({ app: markRaw(app), videoId: options.videoId, type: source })
 
         _bindStreamCleanup(stream, videoId)
 
@@ -155,19 +155,24 @@ export function usePeerMedia(ctx) {
 
         removingVideoIds.add(elementId)
 
-        try {
         const { app } = players[index]
+
+        try {
+        // 1. Unmount d'abord → déclenche les hooks Vue (onUnmounted, etc.)
+        app.unmount()
+
+        // 2. Retirer le wrapper du DOM
         const wrapperId = `wrapper-${elementId}`
         const wrapper = document.getElementById(wrapperId)
-
         if (wrapper && wrapper.parentNode) {
-        wrapper.parentNode.removeChild(wrapper)
+            wrapper.parentNode.removeChild(wrapper)
         }
 
+        // 3. Nettoyer le store
         ctx.peerStore.removePlayer(elementId)
-        app.unmount()
-        streamCleanupBound.delete(elementId)
         } finally {
+        // Toujours libérer les sets de tracking, même si une étape échoue
+        streamCleanupBound.delete(elementId)
         removingVideoIds.delete(elementId)
         }
     }

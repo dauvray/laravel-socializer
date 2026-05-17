@@ -50,7 +50,7 @@ usePeerOrchestrator          ← Coordinateur principal (façade)
 
 ### usePeerMedia
 
-- [ ] **`createApp()` par vidéo sans cleanup** : chaque `createVideoElement()` crée une instance Vue orpheline → fuite mémoire massive sur appels longs
+- [✅] **`createApp()` par vidéo sans cleanup** : chaque `createVideoElement()` crée une instance Vue orpheline → fuite mémoire massive sur appels longs
 - [ ] **Injection `eventBus` sans fallback** : `inject('eventBus')` peut être null
 - [ ] **Collision d'ID vidéo non détectée** : deux appels concurrents avec le même `videoId` → état incohérent
 - [ ] **Container null = fail silencieux** : `document.querySelector(videoContainer)` retourne null → log + return sans retry
@@ -155,7 +155,7 @@ Phase 1 — Stabilisation (P0)
 □ Ajouter cleanup contextRegistry dans usePeerTransport
 □ Limiter inviteRetries Map (max size + TTL)
 □ Ajouter validation inputs (userSlug, payload)
-□ Fix createApp leak dans usePeerMedia (unmount à removeVideoElement)
+□ Fix createApp leak dans usePeerMedia (unmount à removeVideoElement) ✅
 □ Fix race condition getRoomUsersDiff (copie locale avant mutation)
 □ Ajouter validation stream avant peer.call() visio
 
