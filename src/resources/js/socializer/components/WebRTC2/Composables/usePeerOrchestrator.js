@@ -37,7 +37,7 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
     const isShuttingDown = ref(false)  // 🔒 Guard pour bloquer les retries pendant le cleanup
 
     // ── Validation des inputs ────────────────────────────────────────────────
-    const VALID_CALL_TYPES = ['data', 'visio', 'audio']
+    const VALID_CALL_TYPES = ['data', 'visio', 'vocal', 'stream', 'screen', 'audio']
     const SLUG_PATTERN = /^[a-zA-Z0-9_\-.]{1,100}$/
 
     const _isValidSlug = (value) =>
