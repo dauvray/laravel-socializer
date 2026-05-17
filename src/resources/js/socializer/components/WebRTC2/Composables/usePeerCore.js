@@ -20,6 +20,50 @@ import { watch } from 'vue'
 
 export function usePeerCore(ctx) {
 
+    /*------  Retry invitation pour calls ----------*/
+
+    const inviteRetries = new Map()
+    const userSlugToInviteId = new Map()
+
+    const buildInviteId = () => {
+        if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+            return crypto.randomUUID()
+        }
+        return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+    }
+
+    const stopCallInviteRetry = (inviteId) => {
+        if (!inviteId) return
+        // Cherche le userSlug associé à cet inviteId
+        for (const [userSlug, id] of userSlugToInviteId.entries()) {
+            if (id === inviteId) {
+                stopCallInviteRetryForUser(userSlug)
+                return
+            }
+        }
+    }
+
+    const stopCallInviteRetryForUser = (userSlug) => {
+        if (!userSlug) return
+        const state = inviteRetries.get(userSlug)
+        if (!state) return
+        state.stopped = true
+        if (state.timer) {
+            clearTimeout(state.timer)
+        }
+        inviteRetries.delete(userSlug)
+        userSlugToInviteId.delete(userSlug)
+    }
+
+    const clearAllCallInviteRetries = () => {
+        inviteRetries.forEach((state) => {
+            state.stopped = true
+            if (state.timer) clearTimeout(state.timer)
+        })
+        inviteRetries.clear()
+        userSlugToInviteId.clear()
+    }
+
     /*------  Connection directe ----------*/
 
     /**
@@ -85,19 +129,54 @@ export function usePeerCore(ctx) {
             || ctx.peerStore.localPeer?._id
             || ctx.peerStore.lastLocalPeerId
 
+        const inviteId = payload?.inviteId || buildInviteId()
+        const toUserSlug = payload.toUserSlug
+
         const data = {
             type: payload.type,
             action: 'peer-access-permission',
             room: ctx.session.currentCallRoomId,
             peerId: localPeerId,
+            inviteId,
         }
 
-        ctx.peerStore.addWaitingRemotePeerId(payload.toUserSlug, data)
+        ctx.peerStore.addWaitingRemotePeerId(toUserSlug, data)
 
-        ctx.AjaxService.load('/send-alert-to-user', 'post', {
-            toUserSlug: payload.toUserSlug,
-            options: data
-        }) 
+        // Enregistre le mapping
+        userSlugToInviteId.set(toUserSlug, inviteId)
+
+        const state = {
+            stopped: false,
+            timer: null,
+            attempts: 0,
+            maxAttempts: 7,
+        }
+
+        inviteRetries.set(toUserSlug, state)
+
+        const sendAttempt = async () => {
+            if (state.stopped) return
+
+            await ctx.AjaxService.load('/send-alert-to-user', 'post', {
+                toUserSlug: toUserSlug,
+                options: data
+            })
+
+            if (state.stopped) return
+
+            if (state.attempts >= state.maxAttempts) {
+                inviteRetries.delete(toUserSlug)
+                userSlugToInviteId.delete(toUserSlug)
+                return
+            }
+
+            const delay = Math.min(1200 * (2 ** state.attempts), 10000) + Math.floor(Math.random() * 400)
+            state.attempts += 1
+            state.timer = setTimeout(sendAttempt, delay)
+        }
+
+        sendAttempt()
+        return inviteId
     }
 
     const sendAuthorizationRemotePeerId = (payload) => { 
@@ -147,5 +226,8 @@ export function usePeerCore(ctx) {
         requestAuthorizationRemotePeerId,
         sendAuthorizationRemotePeerId,
         notifyCloseConnectionToPeer,
+        stopCallInviteRetry,
+        stopCallInviteRetryForUser,
+        clearAllCallInviteRetries,
     }
 }

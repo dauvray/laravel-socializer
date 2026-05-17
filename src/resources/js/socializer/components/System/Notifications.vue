@@ -48,6 +48,8 @@
             const NewMessageNotification= ref(null)
             const heartbeatIntervalId = ref(null)
             const peers = useMediaBroadcast()
+
+            const seenInviteIds = ref(new Set())
         
             return {
                 peers: {...peers},
@@ -55,6 +57,8 @@
                 notificationComponentProps,
                 NewMessageNotification,
                 heartbeatIntervalId,
+
+                seenInviteIds,
             }
         },
         watch: {
@@ -105,6 +109,9 @@
             } finally {
                 Echo.leave(this.userChannel)
                 this.eventBus.$off('call-user', this.onStartCall)
+
+                this.peers.clearAllCallInviteRetries()
+
                 clearInterval(this.heartbeatIntervalId)
                 this.heartbeatIntervalId = null
             }
@@ -130,6 +137,18 @@
                         })
                         // display alerts to user
                         .listen('.AlertToUser', (event) => {
+
+                            // stocke les invitations pour relancer si bessoin
+                            const inviteId = event?.options?.inviteId || null
+                            if (inviteId && this.seenInviteIds.has(inviteId)) {
+                                return
+                            }
+                            if (inviteId) {
+                                this.seenInviteIds.add(inviteId)
+                            }
+
+
+
                             this.notificationComponentProps = event
                             this.notificationComponent = 'AlertComponent'
                         })
@@ -153,6 +172,9 @@
                         })
                         // receive authorization to peer connection
                         .listen('.ResponseToAuthorizationPeer', async (event) => {
+                            // Si on reçoit une réponse à une invitation, on stop les retries d'invitations pour éviter les doublons
+                            this.peers.stopCallInviteRetry(event?.options?.inviteId)
+
                             if (!event.status) {
                                 window.AWN.info(`${event.fromUserSlug} est injoignable`)
                                 this.eventBus.$emit('close-call', [{ userSlug: event.fromUserSlug, type: event?.options?.type || 'visio' }])

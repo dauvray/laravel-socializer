@@ -297,20 +297,34 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
             context.session.currentCallRoomId = room
 
             await media.startCurrentStream(true)
-                    media.createVideoElement({ 
-                        videoId: 'local-webcam',
-                        type: type, 
-                        source: 'local'
-                    }, 
-                    context.media.currentStream
-                )
+            media.createVideoElement({ 
+                videoId: 'local-webcam',
+                type: type, 
+                source: 'local'
+            }, 
+            context.media.currentStream
+            )
         }
 
-        core.sendAuthorizationRemotePeerId(payload)
+        // ✅ Ajouter l'inviteId dans les options retournées
+        const options = payload?.options || {}
+        if (payload?.options?.inviteId) {
+            options.inviteId = payload.options.inviteId
+        }
+
+        core.sendAuthorizationRemotePeerId({ ...payload, 
+            options,  // ← assure que inviteId est inclus 
+        })
         return
     }
 
     const openCallBetweenPeer = async (payload) => {
+        
+        // Arrête le retry pour ce userSlug (fiable peu importe le retour de inviteId)
+        if (payload?.fromUserSlug) {
+            core.stopCallInviteRetryForUser(payload.fromUserSlug)
+        }
+        
         if(!payload?.status) {
             removeCurrentCallUser(payload.fromUserSlug)
             if(context.session.currentCallUsers.length === 0) {
@@ -612,6 +626,15 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         return metadata.from || metadata.slug || null
     }
 
+    const stopCallInviteRetry = (inviteId) => {
+        if (!inviteId) return
+        core.stopCallInviteRetry(inviteId)
+    }
+
+    const clearAllCallInviteRetries = () => {
+        core.clearAllCallInviteRetries()
+    }
+
     /*---------------------
     | API exposée aux features (useMediaBroadcast)
     ----------------------*/
@@ -648,7 +671,10 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
 
         handleStreamReceived,
         handleStreamRemoved,
-    
+
+        stopCallInviteRetry,
+        clearAllCallInviteRetries,
+     
 
         /*---------------------------------
         | COMPUTED

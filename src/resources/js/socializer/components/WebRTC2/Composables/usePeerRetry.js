@@ -75,5 +75,9 @@ export function usePeerRetry(ctx) {
     // Sécurité : si le composant Vue est détruit, on stoppe tout
     onUnmounted(() => clearAll())
 
-    return { scheduleRetry, clearRetry, clearAll }
+    return { 
+        scheduleRetry, 
+        clearRetry, 
+        clearAll 
+    }
 }
