@@ -37,7 +37,7 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
     const isShuttingDown = ref(false)  // 🔒 Guard pour bloquer les retries pendant le cleanup
 
     // ── Constantes ───────────────────────────────────────────────────────────
-    const MAX_REMOTE_STREAMS = 50        // limite haute de streams distants simultanés
+    const MAX_REMOTE_STREAMS = 12        // limite haute de streams distants simultanés (~13 pairs en mesh)
     const STREAM_STALE_MS    = 300_000   // 5 min — entrée sans activité considérée stale
 
     // ── Validation des inputs ────────────────────────────────────────────────
