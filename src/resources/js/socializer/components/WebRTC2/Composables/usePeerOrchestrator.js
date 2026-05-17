@@ -530,6 +530,9 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
     --------------------------*/
 
     const handleStreamReceived = async (stream, conn, metadata) => {
+        const ready = await context.waitForMeReady()
+        if (!ready) return 
+        
         const meta = metadata || conn?.metadata || {}
         const remoteSlug = resolveRemoteSlug(meta)
         const remoteType = meta?.type || conn?.metadata?.type || 'visio'
@@ -562,6 +565,9 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
     }
 
     const handleStreamRemoved = async (conn, metadata) => {
+        const ready = await context.waitForMeReady()
+        if (!ready) return 
+        
         const meta = conn?.metadata || {}
         const remoteSlug = resolveRemoteSlug(meta)
         const remoteType = meta?.type || 'visio'
@@ -611,19 +617,20 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
     }
 
     const resolveRemoteSlug = (metadata = {}) => {
+         if (!metadata) return null
+
         const mySlug = context.meStore.getMe?.slug || null
+        if (!mySlug) return null   
 
-        if (!metadata) return null
-
-        if (metadata.from && mySlug && metadata.from !== mySlug) {
+        if (metadata.from && metadata.from !== mySlug) {
             return metadata.from
         }
 
-        if (metadata.slug && mySlug && metadata.slug !== mySlug) {
+        if (metadata.slug && metadata.slug !== mySlug) {
             return metadata.slug
         }
 
-        return metadata.from || metadata.slug || null
+        return null
     }
 
     const stopCallInviteRetry = (inviteId) => {
