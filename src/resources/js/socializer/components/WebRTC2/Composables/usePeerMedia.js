@@ -26,6 +26,7 @@ export function usePeerMedia(ctx) {
 
     const eventBus = inject('eventBus')
     const removingVideoIds = new Set()
+    const creatingVideoIds = new Set()
     const streamCleanupBound = new Set()
 
     const startCurrentStream = async (is_local = false) => {
@@ -52,6 +53,12 @@ export function usePeerMedia(ctx) {
             return
         }
 
+        // Guard contre les créations concurrentes du même videoId
+        if (creatingVideoIds.has(videoId)) {
+            console.warn(`[usePeerMedia] createVideoElement: videoId '${videoId}' déjà en cours de création, appel ignoré.`)
+            return
+        }
+
         const wrapperId = `wrapper-${options.videoId}`
         const source = options.type || ctx.session.currentType
         const videoContainer = options.videoContainer || ctx.media.videoContainer
@@ -66,52 +73,59 @@ export function usePeerMedia(ctx) {
             return
         }
 
-        const VideoComponent = await import('~socializer/components/WebRTC2/Widgets/VideoComponent.vue')
+        // Verrouiller avant toute opération asynchrone pour éviter les race conditions
+        creatingVideoIds.add(videoId)
+
+        try {
+            const VideoComponent = await import('~socializer/components/WebRTC2/Widgets/VideoComponent.vue')
+            
+            // Créer un élément wrapper unique pour chaque vidéo
+            const wrapper = document.createElement('div')
+            wrapper.id = wrapperId
+            wrapper.classList.add('draggable-video')
+
+            const containerElement = document.querySelector(videoContainer)
+
+            if (!containerElement) {
+                console.error(`Container '${videoContainer}' not found.`)
+                return
+            }
+
+            containerElement.appendChild(wrapper)
+
+            const app = createApp({
+                render: () =>
+                    h(VideoComponent.default, {
+                        videoId: options.videoId,
+                        streamData: {
+                            stream, 
+                            metadata: {}
+                        },
+                        nickname: options.nickname,
+                        type: source,
+                        peer: options.peer,
+                        resizable: true,
+                        roomId: options?.roomId || ctx.session.currentRoom,
+                    }),
+            });
         
-        // Créer un élément wrapper unique pour chaque vidéo
-        const wrapper = document.createElement('div')
-        wrapper.id = wrapperId
-        wrapper.classList.add('draggable-video')
+            app.provide('states', ctx.ui.streamStates)
+            app.provide('eventBus', eventBus)
 
-        const containerElement = document.querySelector(videoContainer)
+            app.mount(wrapper)
+            
+            // Enregistrer le player dans le store pour pouvoir le manipuler (ex: suppression à la fin d'un appel)
+            ctx.peerStore.addPlayer({ app: markRaw(app), videoId: options.videoId, type: source })
 
-        if (!containerElement) {
-            console.error(`Container '${videoContainer}' not found.`)
-            return
-        }
+            _bindStreamCleanup(stream, videoId)
 
-        containerElement.appendChild(wrapper)
-
-        const app = createApp({
-            render: () =>
-                h(VideoComponent.default, {
-                    videoId: options.videoId,
-                    streamData: {
-                        stream, 
-                        metadata: {}
-                    },
-                    nickname: options.nickname,
-                    type: source,
-                    peer: options.peer,
-                    resizable: true,
-                    roomId: options?.roomId || ctx.session.currentRoom,
-                }),
-        });
-    
-        app.provide('states', ctx.ui.streamStates)
-        app.provide('eventBus', eventBus)
-
-        app.mount(wrapper)
-        
-        // Enregistrer le player dans le store pour pouvoir le manipuler (ex: suppression à la fin d'un appel)
-        ctx.peerStore.addPlayer({ app: markRaw(app), videoId: options.videoId, type: source })
-
-        _bindStreamCleanup(stream, videoId)
-
-        // Appliquer manuellement la directive `v-draggable` sur le wrapper
-        const draggableDirective = Draggable.mounted // Récupérer la méthode `mounted` de la directive
-        if (draggableDirective) {
-            draggableDirective(wrapper) // Appliquer la directive sur l'élément wrapper
+            // Appliquer manuellement la directive `v-draggable` sur le wrapper
+            const draggableDirective = Draggable.mounted // Récupérer la méthode `mounted` de la directive
+            if (draggableDirective) {
+                draggableDirective(wrapper) // Appliquer la directive sur l'élément wrapper
+            }
+        } finally {
+            creatingVideoIds.delete(videoId)
         }
     }
 

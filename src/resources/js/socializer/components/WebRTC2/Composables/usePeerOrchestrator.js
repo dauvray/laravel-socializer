@@ -717,7 +717,6 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
     | API exposée aux features (useMediaBroadcast)
     ----------------------*/
     return {
-        // API métier exposée aux features (useMediaBroadcast)
         initializePeerConnection,
         syncUsersConnections,
         sendDataToPeer,

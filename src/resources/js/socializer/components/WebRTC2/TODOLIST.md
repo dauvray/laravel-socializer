@@ -52,7 +52,7 @@ usePeerOrchestrator          ← Coordinateur principal (façade)
 
 - [✅] **`createApp()` par vidéo sans cleanup** : chaque `createVideoElement()` crée une instance Vue orpheline → fuite mémoire massive sur appels longs
 - [ ] **Injection `eventBus` sans fallback** : `inject('eventBus')` peut être null
-- [ ] **Collision d'ID vidéo non détectée** : deux appels concurrents avec le même `videoId` → état incohérent
+- [✅] **Collision d'ID vidéo non détectée** : deux appels concurrents avec le même `videoId` → état incohérent
 - [ ] **Container null = fail silencieux** : `document.querySelector(videoContainer)` retourne null → log + return sans retry
 - [ ] **`_bindStreamCleanup()` listeners s'accumulent** : `track.ended` / `track.inactive` listeners jamais nettoyés si `removeVideoElement()` échoue
 - [ ] **`remoteStreamsMap` sans limite** : peut contenir des centaines d'entrées stales
