@@ -22,7 +22,7 @@
  * 
  */
 
-import { inject } from 'vue'
+import { inject, ref } from 'vue'
 import { createPeerContext } from '~socializer/components/WebRTC2/Composables/createPeerContext.js'
 import { usePeerCore } from '~socializer/components/WebRTC2/Composables/usePeerCore.js'
 import { usePeerMedia } from '~socializer/components/WebRTC2/Composables/usePeerMedia.js'
@@ -33,8 +33,8 @@ import { usePeerRetry } from '~socializer/components/WebRTC2/Composables/usePeer
 export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) {
 
     const eventBus = inject('eventBus')
-    let syncUsersConnectionsLock = false
-    let isShuttingDown = false  // 🔒 Guard pour bloquer les retries pendant le cleanup
+    const syncUsersConnectionsLock = ref(false)
+    const isShuttingDown = ref(false)  // 🔒 Guard pour bloquer les retries pendant le cleanup
 
     // 1. Initialisation du Contexte et des Sous-Modules
     const context = createPeerContext({
@@ -57,7 +57,7 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
      */
     const _handleConnectionAttempt = async (userSlug) => {
         // 🛑 Ne relance RIEN si on est en train d'arrêter
-        if (isShuttingDown) return true
+        if (isShuttingDown.value) return true
 
         // 1. Succès ultime : connexion établie
         if (connections.hasOpenConnection(userSlug)) return true
@@ -168,7 +168,7 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
     }
 
     const cleanupPeerConnection = () => {
-        isShuttingDown = true
+        isShuttingDown.value = true
         
         retryManager.clearAll()
         connections.closePeerConnection({
@@ -179,16 +179,16 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
 
         transport.unregisterLocalContext()
         
-        isShuttingDown = false
+        isShuttingDown.value = false
     }    
 
     const syncUsersConnections = async (users) => {
     
-        if (syncUsersConnectionsLock) {
+        if (syncUsersConnectionsLock.value) {
             return
         }
 
-        syncUsersConnectionsLock = true
+        syncUsersConnectionsLock.value = true
 
         try {
 
@@ -228,7 +228,7 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
             // SFU: pas de maillage pair à pair côté client.
 
         } finally {
-            syncUsersConnectionsLock = false
+            syncUsersConnectionsLock.value = false
         }
     }
 
@@ -244,7 +244,7 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
     }
 
     const stopWebcamStream = () => {
-        isShuttingDown = true
+        isShuttingDown.value = true
         
         retryManager.clearAll()
         connections.closePeerConnection({
@@ -257,7 +257,7 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         media.removeVideoElement('local-webcam')
         context.session.currentCallRoomId = null
         
-        isShuttingDown = false
+        isShuttingDown.value = false
     }
 
     /*---------------------
@@ -332,8 +332,8 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
                     mode: 'full',
                 })
                 resetCallState()
-                return
             }
+            return
         }
 
         const room = payload?.options?.room || null
@@ -370,7 +370,7 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
 
         const roomId = options?.roomId || context.session.currentCallRoomId || context.currentRoom.value
        
-        isShuttingDown = true  // 🛑 Bloquer les retries immédiatement
+        isShuttingDown.value = true  // 🛑 Bloquer les retries immédiatement
 
         const mode = options?.mode || 'full'
         const callType = context.session.currentType || 'visio'
@@ -402,7 +402,7 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
                 clearSignalQueue: false,
             })
 
-            isShuttingDown = false  // ✅ Réactiver les retries après partial close
+            isShuttingDown.value = false  // ✅ Réactiver les retries après partial close
             context.session.isStoppingCall = false
             return
         }
@@ -420,7 +420,7 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         media.removeVideoElement('local-webcam')
         context.session.currentCallRoomId = null
         
-        isShuttingDown = false  // ✅ Réactiver après cleanup complet
+        isShuttingDown.value = false  // ✅ Réactiver après cleanup complet
 
         resetCallState()
     }
@@ -682,6 +682,12 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         stopCallInviteRetry,
         clearAllCallInviteRetries,
      
+
+        /*---------------------------------
+        | ÉTAT INTERNE (observable / debug)
+        ----------------------------------*/
+        isShuttingDown,
+        syncUsersConnectionsLock,
 
         /*---------------------------------
         | COMPUTED

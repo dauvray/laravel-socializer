@@ -23,8 +23,8 @@ usePeerOrchestrator          ← Coordinateur principal (façade)
 ### usePeerOrchestrator
 
 - [✅] **Race condition `resolveRemoteSlug`** : lit `context.meStore.getMe?.slug` qui peut être null → retourne le slug local → `removeCurrentCallUser(remote)` échoue → cleanup jamais déclenché
-- [ ] **`openCallBetweenPeer` : pas de return après refus** : si `!payload.status`, le flux continue (addCurrentCallUser, startCurrentStream, connect) même quand l'appel est refusé
-- [ ] **État mutable non-réactif** : `let isShuttingDown = false` et `let syncUsersConnectionsLock = false` — pas accessible/monitorable, race condition masquée
+- [✅] **`openCallBetweenPeer` : pas de return après refus** : si `!payload.status`, le flux continue (addCurrentCallUser, startCurrentStream, connect) même quand l'appel est refusé
+- [✅] **État mutable non-réactif** : `let isShuttingDown = false` et `let syncUsersConnectionsLock = false` — pas accessible/monitorable, race condition masquée
 - [ ] **API publique surexposée** : `...core, ...media, ...connections, ...transport` expose tous les internals → contrat instable, refactorisation cassée
 - [ ] **Pas de validation des inputs** : `userSlug`, `payload`, `room`, `type` jamais validés → crashes silencieuses
 - [ ] **Memory leaks** : `remoteStreamsMap` grandit sans limite, listeners `eventBus.$emit()` jamais nettoyés
