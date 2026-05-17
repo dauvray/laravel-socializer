@@ -41,8 +41,17 @@
     })
 
     const onCloseCall = (users) => {
-        console.log('users', users)
-        if(users.find(user => user.userSlug === props.user.slug && user.type === props.type)) {
+        if (!Array.isArray(users) || users.length === 0) return
+        const shouldReset = users.some((user) => {
+            if (!user || user.userSlug !== props.user.slug) return false
+
+            const eventType = user.type || null
+            if (!eventType) return true
+
+            return eventType === props.type
+        })
+
+        if (shouldReset) {
             isInCall.value = false
         }
     }

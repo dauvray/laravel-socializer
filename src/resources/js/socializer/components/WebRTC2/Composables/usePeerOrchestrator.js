@@ -582,6 +582,8 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
 
             removeCurrentCallUser(remoteSlug)
 
+            eventBus.$emit('close-call', [{ userSlug: remoteSlug, type: remoteType }])
+
             if (context.session.currentCallUsers.length === 0) {
                 await stopCallWithPeers([], false, {
                     mode: 'full',
