@@ -87,8 +87,7 @@ export function usePeerMedia(ctx) {
             const containerElement = document.querySelector(videoContainer)
 
             if (!containerElement) {
-                console.error(`Container '${videoContainer}' not found.`)
-                return
+                throw new Error(`[usePeerMedia] Container '${videoContainer}' introuvable — vérifiez que le sélecteur est correct et que le composant est monté. Création annulée pour '${videoId}'.`)
             }
 
             containerElement.appendChild(wrapper)
