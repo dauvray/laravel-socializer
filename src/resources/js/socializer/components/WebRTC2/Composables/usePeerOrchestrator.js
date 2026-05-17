@@ -186,7 +186,7 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
     }
 
     const cleanupPeerConnection = () => {
-        isShuttingDown.value = true
+        isShuttingDown.value = true  // 🛑 Guard permanent : reste actif après le teardown terminal
         
         retryManager.clearAll()
         connections.closePeerConnection({
@@ -196,8 +196,6 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         })
 
         transport.unregisterLocalContext()
-        
-        isShuttingDown.value = false
     }    
 
     const syncUsersConnections = async (users) => {
