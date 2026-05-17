@@ -358,6 +358,12 @@ export function createPeerContext({ type, room, eventBus, options }) {
         // dès que le contexte est initialisé.
         peerStore.createSignalQueueRoom(contextId)
     })
+
+    // Hooks pour la communication inverse (composables → orchestrateur)
+    // Permettent à usePeerTransport de déclencher une recovery sans couplage direct.
+    const hooks = {
+        onPeerUnavailable: null,  // (userSlug: string) => void
+    }
         
     return {
         contextId,
@@ -390,5 +396,8 @@ export function createPeerContext({ type, room, eventBus, options }) {
         addCurrentCallUser,
         removeCurrentCallUser,
         clearCurrentCallUsers,
+
+        // hooks (enregistrés par l'orchestrateur)
+        hooks,
     }
 }

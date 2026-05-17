@@ -90,6 +90,54 @@ export function usePeerTransport(ctx) {
 
         peerStore.localPeer.on('error', (err) => {
             console.error('Erreur PeerJS :', err);
+
+            // ── Recovery peer-unavailable ─────────────────────────────────────
+            // PeerJS émet 'peer-unavailable' quand le peerId distant n'est pas (ou
+            // plus) enregistré sur le serveur de signalisation.
+            // Sans traitement, la connexion échouée reste dans le store avec
+            // hasOpenConnection() qui retourne true (fallback peerConnection=null),
+            // ce qui bloque le retry → le remote player n'apparaît jamais.
+            //
+            // Fix : on supprime la connexion échouée + on invalide le peerId stale
+            //       + on notifie l'orchestrateur pour relancer le cycle complet.
+            // ─────────────────────────────────────────────────────────────────
+            if (err.type !== 'peer-unavailable') return
+
+            // Format du message PeerJS : "Could not connect to peer <peerId>"
+            const msgWords = typeof err.message === 'string' ? err.message.split(' ') : []
+            const failedPeerId = msgWords.length > 0 ? msgWords[msgWords.length - 1] : null
+            if (!failedPeerId) return
+
+            contextRegistry.forEach((registeredCtx) => {
+                // Recherche inverse peerId → userSlug dans ce contexte
+                let targetSlug = null
+                for (const [slug, peerId] of (registeredCtx.peerStore.remotePeersId?.entries?.() ?? [])) {
+                    if (String(peerId) === String(failedPeerId)) {
+                        targetSlug = slug
+                        break
+                    }
+                }
+                if (!targetSlug) return
+
+                const room = registeredCtx.session.currentCallRoomId || registeredCtx.session.currentRoom
+                const type = registeredCtx.session.currentType
+
+                // Ne traiter que les contextes qui ont réellement une connexion vers ce peerId
+                const conns = [...(registeredCtx.peerStore.getConnections?.[room]?.[targetSlug]?.[type] ?? [])]
+                const failedConns = conns.filter(conn => conn?.peer === String(failedPeerId))
+                if (failedConns.length === 0) return
+
+                // 1. Retirer la connexion échouée du store (libère le guard hasOpenConnection)
+                failedConns.forEach(conn => {
+                    registeredCtx.peerStore.removePeerConnectionInstance(room, targetSlug, type, conn)
+                })
+
+                // 2. Invalider le peerId stale pour forcer une nouvelle demande de signalisation
+                registeredCtx.peerStore.removeRemotePeerId(targetSlug)
+
+                // 3. Notifier l'orchestrateur pour relancer le cycle complet de connexion
+                registeredCtx.hooks?.onPeerUnavailable?.(targetSlug)
+            })
         })
 
         peerStore.localPeer.on('disconnected', () => {

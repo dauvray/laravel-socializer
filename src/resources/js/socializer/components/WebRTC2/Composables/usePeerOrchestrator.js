@@ -138,6 +138,18 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         retryManager.scheduleRetry(userSlug, 0, _handleConnectionAttempt)
     }
 
+    // ── Recovery hook : peer-unavailable ─────────────────────────────────────
+    // Enregistré sur le contexte pour être appelé par usePeerTransport quand
+    // PeerJS signale que le peerId distant est introuvable sur le serveur.
+    // La connexion échouée et le peerId stale ont déjà été nettoyés avant l'appel.
+    // On relance le cycle complet : nouvelle demande de peerId → nouvelle connexion.
+    // ─────────────────────────────────────────────────────────────────────────
+    context.hooks.onPeerUnavailable = (userSlug) => {
+        if (isShuttingDown.value) return
+        if (!_isValidSlug(userSlug)) return
+        _requestOrConnectPeer(userSlug)
+    }
+
    /**
      * 🔥 Glue logique (SEUL endroit où on mixe les couches)
      */
