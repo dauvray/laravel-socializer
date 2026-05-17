@@ -48,8 +48,6 @@
             const NewMessageNotification= ref(null)
             const heartbeatIntervalId = ref(null)
             const peers = useMediaBroadcast()
-
-            const seenInviteIds = ref(new Set())
         
             return {
                 peers: {...peers},
@@ -57,8 +55,6 @@
                 notificationComponentProps,
                 NewMessageNotification,
                 heartbeatIntervalId,
-
-                seenInviteIds,
             }
         },
         watch: {
@@ -111,6 +107,7 @@
                 this.eventBus.$off('call-user', this.onStartCall)
 
                 this.peers.clearAllCallInviteRetries()
+                this.peers.clearSeenInvites()
 
                 clearInterval(this.heartbeatIntervalId)
                 this.heartbeatIntervalId = null
@@ -139,13 +136,14 @@
                         .listen('.AlertToUser', (event) => {
 
                             // stocke les invitations pour relancer si bessoin
-                            const inviteId = event?.options?.inviteId || null
-                            if (inviteId && this.seenInviteIds.has(inviteId)) {
-                                return
-                            }
-                            if (inviteId) {
-                                this.seenInviteIds.add(inviteId)
-                            }
+                            if (this.peers.isInviteDuplicate(event?.options?.inviteId)) return
+                            // const inviteId = event?.options?.inviteId || null
+                            // if (inviteId && this.seenInviteIds.has(inviteId)) {
+                            //     return
+                            // }
+                            // if (inviteId) {
+                            //     this.seenInviteIds.add(inviteId)
+                            // }
 
 
 

@@ -84,19 +84,25 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
         clearAllCallInviteRetries, // fonction pour stopper toutes les tentatives de retry d'invitation à un appel (ex: lorsqu'on quitte la room ou que le composant est détruit)
     } = usePeerOrchestrator( type, room, options)
 
+   
 
     /*---------------------
         * Logique métier
     ----------------------*/
 
-    // Initialisation de la connexion et des ressources nécessaires pour le broadcast
-    function initialize(callbacks) {
-        initializePeerConnection(callbacks)
+    // pour éviter les invitations en double (ex: à cause de bugs ou de comportements utilisateurs imprévus), 
+    // on garde une trace des invitations déjà vues récemment
+    const seenInviteIds = new Set()
+
+    const clearSeenInvites = () => seenInviteIds.clear()
+
+    const isInviteDuplicate = (inviteId) => {
+        if (!inviteId) return false
+        if (seenInviteIds.has(inviteId)) return true
+        seenInviteIds.add(inviteId)
+        return false
     }
-    // Nettoyage des ressources
-    function cleanup() {
-        cleanupPeerConnection()
-    }
+
     // watch users list to sync connections when new user join the room
     const watchUsers = (newVal) => {
         try {
@@ -113,6 +119,15 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
         } catch (e) {
             console.error(e)
         }
+    }
+
+    // Initialisation de la connexion et des ressources nécessaires pour le broadcast
+    function initialize(callbacks) {
+        initializePeerConnection(callbacks)
+    }
+    // Nettoyage des ressources
+    function cleanup() {
+        cleanupPeerConnection()
     }
     // Envoi de données via une connexion data à un ou plusieurs peers distants
     function sendData(data, destUserSlugs = null) {
@@ -131,6 +146,8 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
         initialize,
         cleanup,
         watchUsers,
+        clearSeenInvites,
+        isInviteDuplicate,
 
         // stream
         getWebcamStream,
