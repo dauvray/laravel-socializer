@@ -31,7 +31,6 @@
     import { useMediaBroadcast } from '~socializer/components/WebRTC2/Composables/useMediaBroadcast.js'
     import { useConversationsStore } from '~socializer/stores/conversations.js'
     import { defineAsyncComponent } from 'vue'
-    import IconWidget from '~estarter/components/widgets/IconWidget.vue'
 
     export default {
         name: 'Notifications',
@@ -42,23 +41,19 @@
             AlertComponent: defineAsyncComponent(() => import('~socializer/components/System/widgets/AlertComponent.vue')),
             CallWebUI: defineAsyncComponent(() => import('~socializer/components/System/widgets/CallWebUI.vue')),
             ToasterNewMessage: defineAsyncComponent(() => import('~socializer/components/System/widgets/ToasterNewMessage.vue')),
-            IconWidget,
         },
         setup() {
             const notificationComponent = ref(null)
             const notificationComponentProps = ref(null)
             const NewMessageNotification= ref(null)
-            const queueProcesing = ref(false)
-
             const heartbeatIntervalId = ref(null)
             const peers = useMediaBroadcast()
         
             return {
-                peers: {...peers}, // todo : préférér webRTC: ...peers pour éviter les confusions avec les methodes du composant
+                peers: {...peers},
                 notificationComponent,
                 notificationComponentProps,
                 NewMessageNotification,
-                queueProcesing,
                 heartbeatIntervalId,
             }
         },
@@ -103,12 +98,9 @@
 
         async unmounted() {
             try {
-                const currentUsers = this.peers.currentCallUsers?.value ?? this.peers.currentCallUsers ?? []
+                const currentUsers = this.peers.currentCallUsers?.value ?? [];
                 if (currentUsers.length > 0 || this.peers.isCallInProgress()) {
-                    await this.peers.stopCallWithPeers([...currentUsers], false, {
-                        mode: 'full',
-                       roomId: this.peers.currentCallRoomId,
-                    })
+                    await this.peers.stopCallWithPeers([...currentUsers], false)
                 }
             } finally {
                 Echo.leave(this.userChannel)
@@ -128,15 +120,6 @@
             ...mapActions(usePeer2Store, [
                 'dispatchSignal',
             ]),
-            addCallUser(userSlug, type = 'visio') {
-                return this.peers.addCurrentCallUser(userSlug, type)
-            },
-            removeCallUser(userSlug) {
-                return this.peers.removeCurrentCallUser(userSlug)
-            },
-            ensureCallRoomId(preferred = null) {
-                return this.peers.ensureCurrentCallRoomId(preferred)
-            },
             initUserChannel() {
                 if(this.userChannel) {
                     Echo.leave(this.userChannel)
@@ -184,10 +167,6 @@
                         })
                         .listen('.CloseConnectionToPeerID', (event) => {
                             this.peers.remoteStopCall(event)
-                            // this.eventBus.$emit('close-call', [{ 
-                            //     userSlug: event.fromUserSlug, 
-                            //     type: event?.type || 'visio' 
-                            // }])
                         })
                         .listen('.ChatInvitation', (event) => {
                             this.addConversation(event)
@@ -226,20 +205,13 @@
                 });
             },
             async onStopCall() {
-                const currentUsers = this.peers.currentCallUsers?.value ?? this.peers.currentCallUsers ?? []
-                const usersToStop = Array.isArray(currentUsers) ? [...currentUsers] : []
+                const currentUsers = this.peers.currentCallUsers?.value ?? [];
+                const usersToStop = [...currentUsers];
                 this.eventBus.$emit('close-call', usersToStop)
-                // const usersToStop = this.peers.currentCallUsers ? Array.from(this.peers.currentCallUsers) : []
-                // this.eventBus.$emit('close-call', usersToStop)
-                await this.peers.stopCallWithPeers(usersToStop, true, {
-                    mode: 'full',
-                })
+                await this.peers.stopCallWithPeers(usersToStop)
             },
-            async onStartCall(userSlug, type) {
-                await this.peers.startCallWithPeer({
-                    toUserSlug: userSlug,
-                    type: type || 'visio',
-                })
+            async onStartCall(toUserSlug, type) {
+                await this.peers.startCallWithPeer({toUserSlug, type})
             },            
         }
     }

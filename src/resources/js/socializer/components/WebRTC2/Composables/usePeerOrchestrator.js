@@ -243,11 +243,6 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
       })
     }
 
-    const asyncstopWebcamStream = () => {
-        media.stopCurrentStream()
-        connections.closePeerConnection()
-    }
-
     const stopWebcamStream = () => {
         isShuttingDown = true
         
@@ -359,7 +354,6 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
        if (context.session.isStoppingCall) return
        context.session.isStoppingCall = true
 
-        const usersToStop = [...context.session.currentCallUsers]
         const roomId = options?.roomId || context.session.currentCallRoomId || context.currentRoom.value
        
         isShuttingDown = true  // 🛑 Bloquer les retries immédiatement
@@ -582,7 +576,10 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
 
             removeCurrentCallUser(remoteSlug)
 
-            eventBus.$emit('close-call', [{ userSlug: remoteSlug, type: remoteType }])
+            eventBus.$emit('close-call', [{ 
+                userSlug: remoteSlug, 
+                type: remoteType 
+            }])
 
             if (context.session.currentCallUsers.length === 0) {
                 await stopCallWithPeers([], false, {
