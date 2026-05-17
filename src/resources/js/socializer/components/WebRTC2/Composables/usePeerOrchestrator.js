@@ -36,10 +36,24 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
     const syncUsersConnectionsLock = ref(false)
     const isShuttingDown = ref(false)  // 🔒 Guard pour bloquer les retries pendant le cleanup
 
+    // ── Validation des inputs ────────────────────────────────────────────────
+    const VALID_CALL_TYPES = ['data', 'visio', 'audio']
+    const SLUG_PATTERN = /^[a-zA-Z0-9_\-.]{1,100}$/
+
+    const _isValidSlug = (value) =>
+        typeof value === 'string' && SLUG_PATTERN.test(value)
+
+    const _isValidCallType = (value) =>
+        typeof value === 'string' && VALID_CALL_TYPES.includes(value)
+
+    const normalizedType = _isValidCallType(type) ? type : 'data'
+    const normalizedRoom = (typeof room === 'string' && room.trim().length > 0) ? room.trim() : 'app'
+    // ─────────────────────────────────────────────────────────────────────────
+
     // 1. Initialisation du Contexte et des Sous-Modules
     const context = createPeerContext({
-        type,
-        room,
+        type: normalizedType,
+        room: normalizedRoom,
         eventBus,
         options,
     })
@@ -183,6 +197,7 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
     }    
 
     const syncUsersConnections = async (users) => {
+        if (!Array.isArray(users)) return
     
         if (syncUsersConnectionsLock.value) {
             return
@@ -265,11 +280,14 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
     ------------------------*/
 
     const startCallWithPeer = (payload) => {
+        if (!payload || typeof payload !== 'object') return
+        if (!_isValidSlug(payload.toUserSlug)) return
+
         const ready = transport.setLocalPeer()
         if (!ready) return
 
         const toUserSlug = payload.toUserSlug
-        const type = payload.type || 'visio'
+        const type = _isValidCallType(payload.type) ? payload.type : 'visio'
 
         ensureCurrentCallRoomId()
         addCurrentCallUser(toUserSlug, type)
@@ -281,14 +299,17 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
     }
 
     const acceptCallFromPeer = async (payload) => {
+        if (!payload || typeof payload !== 'object') return
+
         const ready = transport.setLocalPeer()
         if (!ready) return
 
         if(payload?.status) {
+            const fromUserSlug = payload?.fromUserSlug
+            if (!_isValidSlug(fromUserSlug)) return
 
             const room = payload?.options?.room || null
-            const type = payload?.options?.type || 'visio'
-            const fromUserSlug = payload?.fromUserSlug
+            const type = _isValidCallType(payload?.options?.type) ? payload.options.type : 'visio'
 
             ensureCurrentCallRoomId(room)
             addCurrentCallUser(fromUserSlug, type)
@@ -319,9 +340,10 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
     }
 
     const openCallBetweenPeer = async (payload) => {
-        
+        if (!payload || typeof payload !== 'object') return
+
         // Arrête le retry pour ce userSlug (fiable peu importe le retour de inviteId)
-        if (payload?.fromUserSlug) {
+        if (payload?.fromUserSlug && _isValidSlug(payload.fromUserSlug)) {
             core.stopCallInviteRetryForUser(payload.fromUserSlug)
         }
         
@@ -336,9 +358,11 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
             return
         }
 
-        const room = payload?.options?.room || null
         const fromUserSlug = payload?.fromUserSlug
-        const type = payload?.options?.type || 'visio'
+        if (!_isValidSlug(fromUserSlug)) return
+
+        const room = payload?.options?.room || null
+        const type = _isValidCallType(payload?.options?.type) ? payload.options.type : 'visio'
 
         ensureCurrentCallRoomId(room)
         addCurrentCallUser(fromUserSlug, type)
@@ -476,12 +500,13 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
     }
 
     const remoteStopCall = async (payload) => {
+        if (!payload || typeof payload !== 'object') return
 
         const remoteSlug = payload?.fromUserSlug || null
-        const remoteType = payload?.type || 'visio'
+        const remoteType = _isValidCallType(payload?.type) ? payload.type : 'visio'
         const roomId = payload?.room || context.session.currentCallRoomId || context.currentRoom.value
 
-        if (!remoteSlug) return
+        if (!remoteSlug || !_isValidSlug(remoteSlug)) return
         if (context.session.closingUsers.has(remoteSlug)) return
 
         context.session.closingUsers.add(remoteSlug)
