@@ -316,17 +316,14 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
     }
 
     const openCallBetweenPeer = async (payload) => {
-        
-        console.log('openCallBetweenPeer', payload)
-        
         if(!payload?.status) {
             removeCurrentCallUser(payload.fromUserSlug)
-            if(context.currentCallUsers.length === 0) {
+            if(context.session.currentCallUsers.length === 0) {
                 await stopCallWithPeers([], false, {
                     mode: 'full',
-                    roomId: context.currentCallRoomId || payload?.options?.room || null,
                 })
                 resetCallState()
+                return
             }
         }
 
@@ -398,6 +395,7 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
             })
 
             isShuttingDown = false  // ✅ Réactiver les retries après partial close
+            context.session.isStoppingCall = false
             return
         }
 
@@ -447,8 +445,8 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         return context.setCurrentCallUsers(users)
     }
 
-    const addCurrentCallUser = (user) => {
-        return context.addCurrentCallUser(user)
+    const addCurrentCallUser = (userSlug, type = 'visio') => {
+        return context.addCurrentCallUser(userSlug, type)
     }
 
     const removeCurrentCallUser = (userSlug) => {
@@ -502,6 +500,11 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         }
 
         context.session.closingUsers.delete(remoteSlug)
+
+        eventBus.$emit('close-call', [{
+            userSlug: remoteSlug,
+            type: remoteType,
+        }])
     }
 
     const resetCallState = () => {
@@ -563,7 +566,7 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
 
         try {
             const videoId = `remote-${remoteSlug}-${remoteType}`
-            context.media.removeVideoElement(videoId)
+            media.removeVideoElement(videoId)
 
             const streamKey = conn?.connectionId || `${remoteSlug}-${remoteType}`
             context.media.remoteStreamsMap.delete(streamKey)
@@ -595,7 +598,7 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
     }
 
     const resolveRemoteSlug = (metadata = {}) => {
-        const mySlug = context.meStore.me?.slug || null
+        const mySlug = context.meStore.getMe?.slug || null
 
         if (!metadata) return null
 

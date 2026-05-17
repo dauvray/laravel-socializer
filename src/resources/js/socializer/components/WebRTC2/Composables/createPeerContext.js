@@ -266,15 +266,18 @@ export function createPeerContext({ type, room, eventBus, options }) {
         }
 
         if (connectionEvents && connectionEvents.onConnectionClose.isActive) {
-            // conn.on("close", () => {
-            //     // Evite callback close métier en double
-            //     if (conn.__ctxCustomCloseEmitted) {
-            //         return
-            //     }
-            //     conn.__ctxCustomCloseEmitted = true
-            //     connectionEvents.onConnectionClose.callback(conn)
-            // })
-            conn.on("close", (conn) =>  connectionEvents.onConnectionClose.callback(conn))
+            conn.on("close", () => {
+                // Evite callback close metier en double
+                if (conn.__ctxCustomCloseEmitted) {
+                    return
+                }
+                conn.__ctxCustomCloseEmitted = true
+
+                const closeCallback = connectionEvents?.onConnectionClose?.callback
+                if (typeof closeCallback === "function") {
+                    closeCallback(conn)
+                }
+            })
         }
 
         if (connectionEvents && connectionEvents.onConnectionError.isActive) {
@@ -283,17 +286,29 @@ export function createPeerContext({ type, room, eventBus, options }) {
     }
 
     const storeConnectionEventCallbacks = (callbacks) => {
-        try {
-            Object.keys(callbacks).forEach(callbackKey => {
-                if(!connectionEvents[callbackKey].isActive) {
-                    connectionEvents[callbackKey].callback = callbacks[callbackKey]
-                    connectionEvents[callbackKey].isActive = true
-                }
-            })
-        } catch(e) {
-            console.log('Erreur lors de l\'initialisation des callbacks de connexion', e)
+    try {
+        if (!callbacks || typeof callbacks !== "object") {
+            return
         }
+
+        Object.keys(callbacks).forEach((callbackKey) => {
+            const eventEntry = connectionEvents[callbackKey]
+            const candidate = callbacks[callbackKey]
+
+            // Ignore les cles inconnues et les callbacks non-fonction
+            if (!eventEntry || typeof candidate !== "function") {
+                return
+            }
+
+            if (!eventEntry.isActive) {
+                eventEntry.callback = candidate
+                eventEntry.isActive = true
+            }
+        })
+    } catch (e) {
+        console.log("Erreur lors de l'initialisation des callbacks de connexion", e)
     }
+}
 
     const setCurrentCallUsers = (users = []) => {
         session.currentCallUsers = Array.isArray(users) ? users : []

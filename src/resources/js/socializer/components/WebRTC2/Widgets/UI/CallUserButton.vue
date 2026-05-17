@@ -41,6 +41,7 @@
     })
 
     const onCloseCall = (users) => {
+        console.log('users', users)
         if(users.find(user => user.userSlug === props.user.slug && user.type === props.type)) {
             isInCall.value = false
         }

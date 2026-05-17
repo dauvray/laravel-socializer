@@ -91,7 +91,7 @@
         async mounted() {
             this.peers.initialize({
                 onStreamReceived: this.peers.handleStreamReceived,
-                onConnectionClose: this.peers.handleStreamClose
+                onConnectionClose: this.peers.handleStreamRemoved
             })
 
             this.eventBus.$on('call-user', this.onStartCall)
@@ -103,8 +103,9 @@
 
         async unmounted() {
             try {
-                if (this.peers.currentCallUsers.length > 0 || this.peers.isCallInProgress()) {
-                    await this.peers.stopCallWithPeers([...this.peers.currentCallUsers], false, {
+                const currentUsers = this.peers.currentCallUsers?.value ?? this.peers.currentCallUsers ?? []
+                if (currentUsers.length > 0 || this.peers.isCallInProgress()) {
+                    await this.peers.stopCallWithPeers([...currentUsers], false, {
                         mode: 'full',
                        roomId: this.peers.currentCallRoomId,
                     })
@@ -182,8 +183,11 @@
                             })
                         })
                         .listen('.CloseConnectionToPeerID', (event) => {
-                           // voir utilitée
                             this.peers.remoteStopCall(event)
+                            // this.eventBus.$emit('close-call', [{ 
+                            //     userSlug: event.fromUserSlug, 
+                            //     type: event?.type || 'visio' 
+                            // }])
                         })
                         .listen('.ChatInvitation', (event) => {
                             this.addConversation(event)
@@ -222,11 +226,14 @@
                 });
             },
             async onStopCall() {
-                const usersToStop = this.peers.currentCallUsers ? Array.from(this.peers.currentCallUsers) : []
+                const currentUsers = this.peers.currentCallUsers?.value ?? this.peers.currentCallUsers ?? []
+                const usersToStop = Array.isArray(currentUsers) ? [...currentUsers] : []
+                this.eventBus.$emit('close-call', usersToStop)
+                // const usersToStop = this.peers.currentCallUsers ? Array.from(this.peers.currentCallUsers) : []
+                // this.eventBus.$emit('close-call', usersToStop)
                 await this.peers.stopCallWithPeers(usersToStop, true, {
                     mode: 'full',
                 })
-                this.eventBus.$emit('close-call', usersToStop)
             },
             async onStartCall(userSlug, type) {
                 await this.peers.startCallWithPeer({
