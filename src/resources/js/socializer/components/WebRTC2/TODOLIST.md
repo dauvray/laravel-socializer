@@ -167,6 +167,7 @@ utils/ (infrastructure — usage libre par tous les composables)
 
 ### usePeerConnections
 
+- [ ] **`usersInRoom` : sémantique trompeuse (filtrage prématuré)** `[M]` : `connection.usersInRoom` stocke uniquement les *peers distants* (moi filtré à la source dans `_doGetRoomUsersDiff`) — le nom suggère "tous les users de la room" alors qu'il signifie "peers auxquels je dois me connecter" → `allUsersInRoom` n'existe que pour compenser ce filtrage prématuré (aller-retour : liste complète Reverb → retire moi → rajoute moi) ; solution : renommer `connection.usersInRoom` en `connection.remotePeers`, exposer `usersInRoom = [...remotePeers, mySlug]` (liste neutre complète) et appliquer le filtre `!== mySlug` explicitement dans la logique de connexion — supprime `allUsersInRoom` comme computed compensatoire
 - [ ] **Migrer `usersInRoom` vers Pinia** `[M]` : `ctx.connection.usersInRoom` est un tableau mutable partagé hors store — le déplacer dans `peerStore` avec une action `computeRoomDiff(newSlugs)` synchrone (lecture + écriture atomique dans le store) — supprime le mutex `_diffLock` devenu inutile et rend la liste réactive dans les composants
 
 ### Robustesse
@@ -223,6 +224,7 @@ Phase 3 — Architecture (P2)           effort / projet
         nécessite un middleware/pipeline données dans `createPeerContext` ou un composable `usePeerRouter` dédié
 □  [XL] Extraire useStreamManager() avec pool Vue apps
 □  [XL] Ajouter tests unitaires sur logique pure extraite
+□  [M]  Renommer connection.usersInRoom → remotePeers, inverser le filtre "moi" au niveau de l'usage — supprime allUsersInRoom comme computed compensatoire
 □  [M]  Déplacer variables module-level (consumer count, timers) dans peerStore
 □  [S]  Cleanup explicite listeners Peer avant peer.destroy()
 ```

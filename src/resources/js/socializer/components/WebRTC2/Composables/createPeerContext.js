@@ -144,17 +144,22 @@ export function createPeerContext({ type, room, options }) {
         currentCallUsers: computed(() => session.currentCallUsers),
         callInprogress: computed(() => session.callInprogress),
         usersInRoom: computed(() => connection.usersInRoom),
+        // Tous les utilisateurs dans la room, moi compris.
+        // Pas d'exclusion du hub : c'est `usersInRoom` brut + mySlug (sans doublon).
         allUsersInRoom: computed(() => {
-            const others = connection.usersInRoom.filter(slug => slug !== session.hubSlug)
             const mySlug = meStore.getMe?.slug
-            return mySlug ? [...others, mySlug] : [...others]
+            if (!mySlug || connection.usersInRoom.includes(mySlug)) {
+                return [...connection.usersInRoom]
+            }
+            return [...connection.usersInRoom, mySlug]
         }),
 
         topology: computed(() => session.topology),
         hubSlug: computed(() => session.hubSlug),
         isHub: computed(() => session.isHub),
         isHubConnected: computed(() => {
-            return session.hubSlug && computedState.allUsersInRoom.value.includes(session.hubSlug)
+            // allUsersInRoom inclut mon propre slug, donc ce check couvre aussi le cas "je suis le hub"
+            return !!session.hubSlug && computedState.allUsersInRoom.value.includes(session.hubSlug)
         }),
 
         currentStream: computed(() => media.currentStream),
