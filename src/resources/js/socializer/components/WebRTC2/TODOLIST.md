@@ -58,7 +58,7 @@ utils/ (infrastructure — usage libre par tous les composables)
 - [ ] **Injection `eventBus` sans fallback** `[S]` : `inject('eventBus')` peut être null
 - [✅] **Collision d'ID vidéo non détectée** : deux appels concurrents avec le même `videoId` → état incohérent
 - [✅] **Container null = fail silencieux** : `document.querySelector(videoContainer)` retourne null → log + return sans retry
-- [ ] **`_bindStreamCleanup()` listeners s'accumulent** `[S]` : `track.ended` / `track.inactive` listeners jamais nettoyés si `removeVideoElement()` échoue
+- [✅] **`_bindStreamCleanup()` listeners s'accumulent** `[S]` : `track.ended` / `track.inactive` listeners jamais nettoyés si `removeVideoElement()` échoue
 - [✅] **`remoteStreamsMap` sans limite** : `_cleanupStaleRemoteStreams()` dans l'orchestrateur implémente TTL + borne MAX_REMOTE_STREAMS
 
 ### usePeerConnections

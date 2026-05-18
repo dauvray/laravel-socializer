@@ -28,6 +28,7 @@ export function usePeerMedia(ctx) {
     const removingVideoIds = new Set()
     const creatingVideoIds = new Set()
     const streamCleanupBound = new Set()
+    const streamCleanupListeners = new Map() // videoId → [{track, handler}]
 
     const startCurrentStream = async (is_local = false) => {
         const stream = await navigator.mediaDevices.getUserMedia({
@@ -130,23 +131,38 @@ export function usePeerMedia(ctx) {
 
     const _bindStreamCleanup = (stream, videoId) => {
         if (!(stream instanceof MediaStream) || !videoId) {
-        return
+            return
         }
 
         if (streamCleanupBound.has(videoId)) {
-        return
+            return
         }
 
         streamCleanupBound.add(videoId)
 
         const cleanup = () => {
-        removeVideoElement(videoId)
+            removeVideoElement(videoId)
         }
 
+        const entries = []
         stream.getTracks().forEach((track) => {
-        track.addEventListener('ended', cleanup, { once: true })
-        track.addEventListener('inactive', cleanup, { once: true })
+            track.addEventListener('ended', cleanup, { once: true })
+            track.addEventListener('inactive', cleanup, { once: true })
+            entries.push({ track, handler: cleanup })
         })
+        streamCleanupListeners.set(videoId, entries)
+    }
+
+    const _unbindStreamCleanup = (videoId) => {
+        const entries = streamCleanupListeners.get(videoId)
+        if (!entries) return
+
+        entries.forEach(({ track, handler }) => {
+            track.removeEventListener('ended', handler)
+            track.removeEventListener('inactive', handler)
+        })
+
+        streamCleanupListeners.delete(videoId)
     }
 
     const removeVideoElement = (elementId) => {
@@ -185,6 +201,7 @@ export function usePeerMedia(ctx) {
         ctx.peerStore.removePlayer(elementId)
         } finally {
         // Toujours libérer les sets de tracking, même si une étape échoue
+        _unbindStreamCleanup(elementId)
         streamCleanupBound.delete(elementId)
         removingVideoIds.delete(elementId)
         }
