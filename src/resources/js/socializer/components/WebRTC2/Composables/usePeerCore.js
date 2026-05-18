@@ -17,6 +17,7 @@
  * - préparer les informations nécessaires aux connexions 
  */
 import { watch, onUnmounted } from 'vue'
+import { usePeerRetry } from '~socializer/components/WebRTC2/Composables/utils/usePeerRetry.js'
 
 export function usePeerCore(ctx) {
 
@@ -24,7 +25,10 @@ export function usePeerCore(ctx) {
 
     const MAX_INVITE_RETRIES = 20 // max 20 invitations simultanées en attente (Map size guard)
 
-    const inviteRetries = new Map()
+    // Moteur de retry dédié aux invitations (séparé du retryManager connexions de l'orchestrateur)
+    const inviteRetryManager = usePeerRetry(ctx)
+
+    // Mapping userSlug → inviteId (pour annulation par inviteId)
     const userSlugToInviteId = new Map()
 
     const buildInviteId = () => {
@@ -36,7 +40,6 @@ export function usePeerCore(ctx) {
 
     const stopCallInviteRetry = (inviteId) => {
         if (!inviteId) return
-        // Cherche le userSlug associé à cet inviteId
         for (const [userSlug, id] of userSlugToInviteId.entries()) {
             if (id === inviteId) {
                 stopCallInviteRetryForUser(userSlug)
@@ -47,22 +50,12 @@ export function usePeerCore(ctx) {
 
     const stopCallInviteRetryForUser = (userSlug) => {
         if (!userSlug) return
-        const state = inviteRetries.get(userSlug)
-        if (!state) return
-        state.stopped = true
-        if (state.timer) {
-            clearTimeout(state.timer)
-        }
-        inviteRetries.delete(userSlug)
+        inviteRetryManager.clearRetry(userSlug)
         userSlugToInviteId.delete(userSlug)
     }
 
     const clearAllCallInviteRetries = () => {
-        inviteRetries.forEach((state) => {
-            state.stopped = true
-            if (state.timer) clearTimeout(state.timer)
-        })
-        inviteRetries.clear()
+        inviteRetryManager.clearAll()
         userSlugToInviteId.clear()
     }
 
@@ -145,51 +138,33 @@ export function usePeerCore(ctx) {
         ctx.peerStore.addWaitingRemotePeerId(toUserSlug, data)
 
         // Éviction de la plus ancienne entrée si la Map atteint la limite
-        if (inviteRetries.size >= MAX_INVITE_RETRIES) {
-            const oldestSlug = inviteRetries.keys().next().value
-            const oldestState = inviteRetries.get(oldestSlug)
-            if (oldestState) {
-                oldestState.stopped = true
-                if (oldestState.timer) clearTimeout(oldestState.timer)
-            }
-            inviteRetries.delete(oldestSlug)
-            userSlugToInviteId.delete(oldestSlug)
+        if (userSlugToInviteId.size >= MAX_INVITE_RETRIES) {
+            const oldestSlug = userSlugToInviteId.keys().next().value
+            stopCallInviteRetryForUser(oldestSlug)
         }
 
-        // Enregistre le mapping
         userSlugToInviteId.set(toUserSlug, inviteId)
 
-        const state = {
-            stopped: false,
-            timer: null,
-            attempts: 0,
-            maxAttempts: 7,
-        }
+        // Premier envoi immédiat
+        ctx.AjaxService.load('/send-alert-to-user', 'post', {
+            toUserSlug,
+            options: data
+        })
 
-        inviteRetries.set(toUserSlug, state)
-
-        const sendAttempt = async () => {
-            if (state.stopped) return
+        // Planifie les tentatives suivantes via le moteur de retry partagé.
+        // Le callback retourne true (stop) si l'invitation n'est plus en attente
+        // (acceptée, refusée ou annulée), false pour continuer.
+        inviteRetryManager.scheduleRetry(toUserSlug, 0, async (userSlug) => {
+            if (!userSlugToInviteId.has(userSlug)) return true
 
             await ctx.AjaxService.load('/send-alert-to-user', 'post', {
-                toUserSlug: toUserSlug,
+                toUserSlug: userSlug,
                 options: data
             })
 
-            if (state.stopped) return
+            return !userSlugToInviteId.has(userSlug)
+        })
 
-            if (state.attempts >= state.maxAttempts) {
-                inviteRetries.delete(toUserSlug)
-                userSlugToInviteId.delete(toUserSlug)
-                return
-            }
-
-            const delay = Math.min(1200 * (2 ** state.attempts), 10000) + Math.floor(Math.random() * 400)
-            state.attempts += 1
-            state.timer = setTimeout(sendAttempt, delay)
-        }
-
-        sendAttempt()
         return inviteId
     }
 

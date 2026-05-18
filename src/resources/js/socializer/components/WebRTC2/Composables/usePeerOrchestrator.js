@@ -28,7 +28,7 @@ import { usePeerCore } from '~socializer/components/WebRTC2/Composables/usePeerC
 import { usePeerMedia } from '~socializer/components/WebRTC2/Composables/usePeerMedia.js'
 import { usePeerConnections } from '~socializer/components/WebRTC2/Composables/usePeerConnections.js'
 import { usePeerTransport } from '~socializer/components/WebRTC2/Composables/usePeerTransport.js'
-import { usePeerRetry } from '~socializer/components/WebRTC2/Composables/usePeerRetry.js'
+import { usePeerRetry } from '~socializer/components/WebRTC2/Composables/utils/usePeerRetry.js'
 
 export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) {
 

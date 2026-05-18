@@ -12,8 +12,10 @@ usePeerOrchestrator          ← Coordinateur principal (façade)
 ├── usePeerCore               ← Signaling (Ajax / peerId exchange)
 ├── usePeerMedia              ← MediaStream lifecycle
 ├── usePeerConnections        ← WebRTC connections
-├── usePeerTransport          ← DataChannel + routage topologie
-└── usePeerRetry              ← Backoff exponentiel
+└── usePeerTransport          ← DataChannel + routage topologie
+
+utils/ (infrastructure — usage libre par tous les composables)
+└── usePeerRetry              ← Backoff exponentiel (timer manager générique)
 ```
 
 ---
@@ -46,7 +48,7 @@ usePeerOrchestrator          ← Coordinateur principal (façade)
 - [✅] **Pas de `onUnmounted()`** `[S]` : les timers d'invitation restent actifs après destruction du composant
 - [ ] **Ajax calls non-awaited** `[S]` : `AjaxService.load()` lancée sans `await` → état inconsistant si réponse arrive après nettoyage
 - [✅] **`watch(ctx.lastRoomSignal, ...)` non-unsubscribed** `[S]` : watcher actif pour toujours même après destruction
-- [ ] **Double système de retry invitation** `[M]` : `requestAuthorizationRemotePeerId` gère son propre backoff (`inviteRetries` Map + timers) en parallèle de `usePeerRetry` — même problème, deux solutions — à unifier via `usePeerRetry` avec un callback dédié
+- [✅] **Double système de retry invitation** `[M]` : `requestAuthorizationRemotePeerId` gère son propre backoff (`inviteRetries` Map + timers) en parallèle de `usePeerRetry` — même problème, deux solutions — à unifier via `usePeerRetry` avec un callback dédié
 - [ ] **Endpoints HTTP hardcodés** `[S]` : `/ask-to-peer-id`, `/response-to-peer-id`, etc. — cassable à la refacto backend
 - [ ] **Pas d'error handling HTTP** `[S]` : si un POST échoue, l'appel reste en "attente" indéfiniment
 
@@ -193,7 +195,7 @@ Phase 2 — Robustesse (P1)             effort / done
 
 Phase 3 — Architecture (P2)           effort / projet
 ──────────────────────────────────────────────────────
-□  [L]  Unifier les deux systèmes de retry (inviteRetries → usePeerRetry)
+✅  [L]  Unifier les deux systèmes de retry (inviteRetries → usePeerRetry)
 □  [L]  Implémenter machine d'état appels (remplace isShuttingDown + isStoppingCall + closingUsers)
 □  [L]  Extraire useCallManager() (start/accept/open/stop/reset)
 □  [L]  Déplacer routage star dans usePeerTransport (sortir de l'orchestrateur)
