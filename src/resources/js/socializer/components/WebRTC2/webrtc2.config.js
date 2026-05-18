@@ -29,6 +29,15 @@ export const MAX_RETRY_ATTEMPTS = 8
  */
 export const MAX_RECONNECT_ATTEMPTS = 8
 
+// ─── Destruction différée du Peer singleton ───────────────────────────────
+/**
+ * Délai (ms) avant destruction effective du Peer singleton après que le dernier
+ * consommateur s'est démonté. Si un nouveau consommateur appelle setLocalPeer()
+ * dans ce délai, la destruction est annulée et le peer existant est réutilisé.
+ * Valeur 0 = destruction immédiate.
+ */
+export const PEER_DESTROY_DELAY_MS = 10_000
+
 // ─── Rate limiting hub (topologie star) ───────────────────────────────────
 /**
  * Fenêtre glissante utilisée pour le rate limiting de forwardStarMessage().

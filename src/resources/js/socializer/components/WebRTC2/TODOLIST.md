@@ -98,7 +98,7 @@ utils/ (infrastructure — usage libre par tous les composables)
 - [✅] **Triple fallback peerId répété 4+ fois** `[S]` : `peerStore.localPeer?.id || peerStore.localPeer?._id || peerStore.lastLocalPeerId` copié-collé dans `usePeerCore`, `usePeerConnections`, `usePeerTransport`, `usePeerOrchestrator` — encapsuler dans un getter `peerStore.localPeerId` (propriété calculée dans le store)
 - [✅] **API façade trop large** `[S]` : remplacer `...core, ...media, ...connections, ...transport` par une API explicite minimale
 - [✅] **Listeners explosion** `[M]` : 4 `watch()` + multiple `on()` = 40+ listeners actives pour 10 contextes simultanés
-- [ ] **Peer singleton global fragile** `[M]` : `peerStore.localPeer` partagé — destruction par un composant = crash des autres
+- [✅] **Peer singleton global fragile** `[M]` : `peerStore.localPeer` partagé — destruction par un composant = crash des autres
 
 ### createPeerContext
 
@@ -188,7 +188,7 @@ Phase 2 — Robustesse (P1)             effort / done
 ────────────────────────────────────────────────────
 ✅ Réduire l'API exposée par usePeerOrchestrator       [S]
 ✅ Encapsuler triple fallback peerId → peerStore.localPeerId [S]
-□  Remplacer polling waitForMeReady par watch réactif [S]
+✅  Remplacer polling waitForMeReady par watch réactif [S]
 □  Corriger allUsersInRoom (dead code + doublon mySlug) [S]
 ✅ Remplacer flags __ctx* par WeakSet                 [S]
 □  Extraire _enterCallSession (déduplique open/accept) [S]
@@ -196,6 +196,7 @@ Phase 2 — Robustesse (P1)             effort / done
 □  Centraliser les constantes dans webrtc2.config.js  [S]
 □  Remplacer Math.random() par crypto.randomUUID()    [S]
 ✅ Ajouter rate limiting dans forwardStarMessage()    [S]
+
 Phase 3 — Architecture (P2)           effort / projet
 ──────────────────────────────────────────────────────
 ✅  [L]  Unifier les deux systèmes de retry (inviteRetries → usePeerRetry)

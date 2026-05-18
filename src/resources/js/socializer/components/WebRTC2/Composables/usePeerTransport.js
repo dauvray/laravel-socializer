@@ -20,7 +20,7 @@
 
 import { Peer } from "peerjs"
 import { markRaw, onUnmounted, watch } from 'vue'
-import { MAX_RECONNECT_ATTEMPTS, HUB_RATE_WINDOW_MS, HUB_MAX_MESSAGES_PER_WINDOW } from '../webrtc2.config.js'
+import { MAX_RECONNECT_ATTEMPTS, HUB_RATE_WINDOW_MS, HUB_MAX_MESSAGES_PER_WINDOW, PEER_DESTROY_DELAY_MS } from '../webrtc2.config.js'
 
 // -----------------------------------------------------------------------------
 // Registre global des contextes WebRTC actifs
@@ -39,6 +39,53 @@ let _peerInitPromise = null
 // serveur PeerJS. Réinitialisé à chaque connexion réussie (événement 'open').
 // Backoff exponentiel : 1s, 2s, 4s, 8s, 16s, 30s (max), puis abandon.
 let _reconnectAttempts = 0
+
+// ─── Référence counting du Peer singleton ────────────────────────────────────
+// Chaque contexte qui appelle setLocalPeer() incrémente ce compteur.
+// Chaque onUnmounted() le décrémente. Quand il atteint 0, la destruction est
+// planifiée avec un délai (PEER_DESTROY_DELAY_MS). Si un nouveau composant
+// remonte entre-temps, la destruction est annulée et le peer est réutilisé.
+let _peerConsumerCount = 0
+let _peerDestroyTimer = null
+
+function _schedulePeerDestroy(peerStore) {
+    // Annule tout timer en cours (ne pas empiler des destructions)
+    if (_peerDestroyTimer) {
+        clearTimeout(_peerDestroyTimer)
+        _peerDestroyTimer = null
+    }
+
+    if (PEER_DESTROY_DELAY_MS <= 0) {
+        _destroyPeerSingleton(peerStore)
+        return
+    }
+
+    console.info(
+        `[WebRTC2] Dernier consommateur parti — destruction du Peer dans ${PEER_DESTROY_DELAY_MS}ms` +
+        ` (annulable si un composant remonte avant)`
+    )
+    _peerDestroyTimer = setTimeout(() => {
+        _peerDestroyTimer = null
+        _destroyPeerSingleton(peerStore)
+    }, PEER_DESTROY_DELAY_MS)
+}
+
+function _destroyPeerSingleton(peerStore) {
+    try {
+        if (peerStore.localPeer && !peerStore.localPeer.destroyed) {
+            peerStore.localPeer.destroy()
+        }
+    } catch (e) {
+        console.warn('[WebRTC2] Erreur lors de la destruction du Peer singleton :', e)
+    }
+    peerStore.localPeer = null
+    peerStore.localPeerReady = false
+    peerStore.lastLocalPeerId = null
+    _reconnectAttempts = 0
+    _peerInitPromise = null
+    _peerConsumerCount = 0
+    console.info('[WebRTC2] Peer singleton détruit')
+}
 
 // ─── Rate limiting hub (topologie star) ─────────────────────────────────────
 // Fenêtre glissante par expéditeur : chaque entrée est un tableau de timestamps.
@@ -83,16 +130,42 @@ function resolveContextByMetadata(metadata) {
 
 export function usePeerTransport(ctx) {
 
+    // Indique si ce contexte a bien appelé setLocalPeer() et est donc comptabilisé
+    // comme consommateur du Peer singleton. Évite un double-décrémentage si
+    // onUnmounted() est appelé sans que setLocalPeer() ait jamais été invoqué.
+    let _isRegisteredAsConsumer = false
+
     // Filet de sécurité : dépollue le registre même si l'orchestrateur ne passe pas
     // par cleanupPeerConnection() (navigation abrupte, crash de composant, etc.).
     onUnmounted(() => {
         unregisterContext(ctx)
+        if (_isRegisteredAsConsumer) {
+            _peerConsumerCount--
+            if (_peerConsumerCount <= 0) {
+                _schedulePeerDestroy(ctx.peerStore)
+            }
+        }
     })
 
     const setLocalPeer = async () => {
 
         // Chaque contexte s'enregistre, même si le peer singleton existe déjà.
         registerContext(ctx)
+
+        // Comptabiliser ce contexte comme consommateur du singleton (une seule fois).
+        // Le peer ne sera physiquement détruit que quand TOUS les consommateurs
+        // auront appelé onUnmounted(), évitant ainsi les crashes croisés.
+        // Si un timer de destruction différée est en cours (PEER_DESTROY_DELAY_MS),
+        // l'annuler : le peer existant est réutilisé sans recréation.
+        if (!_isRegisteredAsConsumer) {
+            _isRegisteredAsConsumer = true
+            _peerConsumerCount++
+            if (_peerDestroyTimer) {
+                clearTimeout(_peerDestroyTimer)
+                _peerDestroyTimer = null
+                console.info('[WebRTC2] Destruction du Peer annulée — nouveau consommateur enregistré')
+            }
+        }
 
         const peerStore = ctx.peerStore
 
