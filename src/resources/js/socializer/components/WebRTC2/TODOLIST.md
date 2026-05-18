@@ -20,6 +20,9 @@ usePeerOrchestrator          ← Coordinateur principal (façade)
 
 ## 🔴 P0 — Critiques (bugs actifs / stabilité immédiate)
 
+> **Critère P0 strict** : la fonctionnalité plante ou corrompt des données en production aujourd'hui, sans manipulation particulière.  
+> Effort : `[S]` = quelques heures · `[M]` = 1–2 j · `[L]` = 3–5 j · `[XL]` = > 1 semaine
+
 ### usePeerOrchestrator
 
 - [✅] **Race condition `resolveRemoteSlug`** : lit `context.meStore.getMe?.slug` qui peut être null → retourne le slug local → `removeCurrentCallUser(remote)` échoue → cleanup jamais déclenché
@@ -32,56 +35,56 @@ usePeerOrchestrator          ← Coordinateur principal (façade)
 
 ### createPeerContext
 
-- [ ] **Pas de fallback injection** : `inject('eventBus')` échoue silencieusement si non fourni
-- [ ] **`setUpConnectionListeners()` sans cleanup** : appelée partout, jamais de unsub → listener explosion avec plusieurs contextes actifs
-- [ ] **`waitForMeReady()` timeout hardcodé (15s)** : pas configurable, peut expirer trop tôt ou trop tard
-- [ ] **Pas de cleanup du contexte** : aucun hook de destruction → stores / computed / watchers restent actifs après unmount
-- [ ] **`session.closingUsers = new Set()`** : état mutable exposé directement, n'importe quel module peut le corrompre
-- [ ] **`media.videoContainer = '#videoContainer'` hardcodé** : dépendance au HTML global, non testable
+- [✅] **`setUpConnectionListeners()` sans cleanup** `[M]` : appelée partout, jamais de unsub → listener explosion avec plusieurs contextes actifs
+- [ ] **Pas de cleanup du contexte** `[M]` : aucun hook de destruction → stores / computed / watchers restent actifs après unmount
+
+> ⬇️ Items suivants re-classés : ne causent pas de crash immédiat — voir P1/P2.
 
 ### usePeerCore
 
-- [ ] **Memory leak Map sans limite** : `inviteRetries` et `userSlugToInviteId` grandissent indéfiniment — aucun TTL, aucune limite de taille
-- [ ] **Pas de `onUnmounted()`** : les timers d'invitation restent actifs après destruction du composant
-- [ ] **Ajax calls non-awaited** : `AjaxService.load()` lancée sans `await` → état inconsistant si réponse arrive après nettoyage
-- [ ] **`watch(ctx.lastRoomSignal, ...)` non-unsubscribed** : watcher actif pour toujours même après destruction
-- [ ] **Endpoints HTTP hardcodés** : `/ask-to-peer-id`, `/response-to-peer-id`, etc. — cassable à la refacto backend
-- [ ] **Pas d'error handling HTTP** : si un POST échoue, l'appel reste en "attente" indéfiniment
+- [ ] **Memory leak Map sans limite** `[S]` : `inviteRetries` et `userSlugToInviteId` grandissent indéfiniment — aucun TTL, aucune limite de taille
+- [ ] **Pas de `onUnmounted()`** `[S]` : les timers d'invitation restent actifs après destruction du composant
+- [ ] **Ajax calls non-awaited** `[S]` : `AjaxService.load()` lancée sans `await` → état inconsistant si réponse arrive après nettoyage
+- [ ] **`watch(ctx.lastRoomSignal, ...)` non-unsubscribed** `[S]` : watcher actif pour toujours même après destruction
+- [ ] **Double système de retry invitation** `[M]` : `requestAuthorizationRemotePeerId` gère son propre backoff (`inviteRetries` Map + timers) en parallèle de `usePeerRetry` — même problème, deux solutions — à unifier via `usePeerRetry` avec un callback dédié
+- [ ] **Endpoints HTTP hardcodés** `[S]` : `/ask-to-peer-id`, `/response-to-peer-id`, etc. — cassable à la refacto backend
+- [ ] **Pas d'error handling HTTP** `[S]` : si un POST échoue, l'appel reste en "attente" indéfiniment
 
 ### usePeerMedia
 
 - [✅] **`createApp()` par vidéo sans cleanup** : chaque `createVideoElement()` crée une instance Vue orpheline → fuite mémoire massive sur appels longs
-- [ ] **Injection `eventBus` sans fallback** : `inject('eventBus')` peut être null
+- [ ] **Injection `eventBus` sans fallback** `[S]` : `inject('eventBus')` peut être null
 - [✅] **Collision d'ID vidéo non détectée** : deux appels concurrents avec le même `videoId` → état incohérent
 - [✅] **Container null = fail silencieux** : `document.querySelector(videoContainer)` retourne null → log + return sans retry
-- [ ] **`_bindStreamCleanup()` listeners s'accumulent** : `track.ended` / `track.inactive` listeners jamais nettoyés si `removeVideoElement()` échoue
-- [ ] **`remoteStreamsMap` sans limite** : peut contenir des centaines d'entrées stales
+- [ ] **`_bindStreamCleanup()` listeners s'accumulent** `[S]` : `track.ended` / `track.inactive` listeners jamais nettoyés si `removeVideoElement()` échoue
+- [✅] **`remoteStreamsMap` sans limite** : `_cleanupStaleRemoteStreams()` dans l'orchestrateur implémente TTL + borne MAX_REMOTE_STREAMS
 
 ### usePeerConnections
 
-- [ ] **Race condition `getRoomUsersDiff()`** : modifie directement `ctx.connection.usersInRoom` pendant la lecture → diff incohérent entre appels parallèles
-- [ ] **Pas de validation stream pour `visio`** : `ctx.media.currentStream` peut être null → `peer.call()` avec stream null = comportement indéfini
-- [ ] **Anti-pattern polling stream** : `while (!localStream && attempts < 25) { await sleep(200) }` → 5s max arbitraire, expiration silencieuse
-- [ ] **TOCTOU sur connection state** : `connectionState` / `signalingState` peuvent changer entre la vérification et l'utilisation
-- [ ] **Pas de limite de connexions par room** : 1000 users = 1000 connexions WebRTC = crash navigateur
-- [ ] **`watch(lastRoomSignal)` non-unsubscribed** : listener WebRTC actif après destruction
-- [ ] **`_buildPeerConnectionConfig()` sans validation** : assume peerId/userSlug non-null/valides
+- [ ] **Race condition `getRoomUsersDiff()`** `[S]` : modifie directement `ctx.connection.usersInRoom` pendant la lecture → diff incohérent entre appels parallèles
+- [ ] **Pas de validation stream pour `visio`** `[S]` : `ctx.media.currentStream` peut être null → `peer.call()` avec stream null = comportement indéfini
+- [ ] **Anti-pattern polling stream** `[S]` : `while (!localStream && attempts < 25) { await sleep(200) }` → 5s max arbitraire, expiration silencieuse
+- [ ] **TOCTOU sur connection state** `[S]` : `connectionState` / `signalingState` peuvent changer entre la vérification et l'utilisation
+- [ ] **Pas de limite de connexions par room** `[M]` : WebRTC mesh est raisonnable jusqu'à ~8 peers ; au-delà le navigateur sature — ajouter un guard dans `connectToPeer`
+- [ ] **`watch(lastRoomSignal)` non-unsubscribed** `[S]` : listener WebRTC actif après destruction
+- [ ] **`_buildPeerConnectionConfig()` sans validation** `[S]` : assume peerId/userSlug non-null/valides
 
 ### usePeerTransport
 
-- [ ] **`contextRegistry` global jamais nettoyé** : contextes détruits restent en mémoire indefiniment
-- [ ] **Race condition Peer singleton** : `if(peerStore.localPeerReady) return` insuffisant — 2 composants peuvent passer simultanément
-- [ ] **Error handler Peer inerte** : `localPeer.on('error', ...)` ne fait que logger → pas de fallback, pas de recovery
-- [ ] **Auto-reconnect infinie** : `localPeer.reconnect()` appelée sans guard → peut boucler si serveur PeerJS down
-- [ ] **`forwardStarMessage()` sans rate limiting** : hub peut être saturé par rafale de messages (N × targets)
-- [ ] **Connexion entrante ignorée silencieusement** : si `resolveContextByMetadata()` retourne null, juste un warning
+- [ ] **`contextRegistry` global jamais nettoyé** `[S]` : contextes détruits restent en mémoire indefiniment
+- [ ] **`context.hooks.onPeerUnavailable` : couplage par mutation implicite** `[M]` : l'orchestrateur pousse un callback sur un objet `hooks` du contexte que `usePeerTransport` appellera plus tard — inversion de dépendance artisanale ; un signal réactif (computed/watch sur le store) ou un eventEmitter interne serait plus explicite
+- [ ] **Race condition Peer singleton** `[S]` : `if(peerStore.localPeerReady) return` insuffisant — 2 composants peuvent passer simultanément
+- [ ] **Error handler Peer inerte** `[S]` : `localPeer.on('error', ...)` ne fait que logger → pas de fallback, pas de recovery
+- [ ] **Auto-reconnect infinie** `[S]` : `localPeer.reconnect()` appelée sans guard → peut boucler si serveur PeerJS down
+- [ ] **`forwardStarMessage()` sans rate limiting** `[S]` : hub peut être saturé par rafale de messages (N × targets)
+- [ ] **Connexion entrante ignorée silencieusement** `[S]` : si `resolveContextByMetadata()` retourne null, juste un warning
 
 ### usePeerRetry
 
-- [ ] **`MAX_ATTEMPTS = 8` hardcodé** : ~6 min max, puis abandon silencieux sans notification upstream
-- [ ] **Erreurs callback avalées** : `catch(e) { console.error; scheduleRetry() }` — on retente même si l'erreur est fatale
-- [ ] **Pas de validation du callback** : `executionCallback` non-vérifiée → crash async si undefined passé
-- [ ] **Pas de notification d'abandon** : quand `MAX_ATTEMPTS` atteint, aucun événement émis → couches supérieures ne savent pas
+- [ ] **`MAX_ATTEMPTS = 8` hardcodé** `[S]` : ~6 min max, puis abandon silencieux sans notification upstream
+- [ ] **Erreurs callback avalées** `[S]` : `catch(e) { console.error; scheduleRetry() }` — on retente même si l'erreur est fatale
+- [ ] **Pas de validation du callback** `[S]` : `executionCallback` non-vérifiée → crash async si undefined passé
+- [ ] **Pas de notification d'abandon** `[S]` : quand `MAX_ATTEMPTS` atteint, aucun événement émis → couches supérieures ne savent pas
 
 ---
 
@@ -89,39 +92,53 @@ usePeerOrchestrator          ← Coordinateur principal (façade)
 
 ### Architecture générale
 
-- [ ] **API façade trop large** : remplacer `...core, ...media, ...connections, ...transport` par une API explicite minimale
-- [ ] **Listeners explosion** : 4 `watch()` + multiple `on()` = 40+ listeners actives pour 10 contextes simultanés
-- [ ] **Peer singleton global fragile** : `peerStore.localPeer` partagé — destruction par un composant = crash des autres
+- [ ] **`waitForMeReady()` : polling `setTimeout` non-réactif** `[S]` : boucle toutes les 100ms sur deux stores jusqu'à 15s — remplacer par un `watch` sur `meStore.getMe?.slug` + `peerStore.localPeer?.id` qui résout la promesse à la première valeur valide
+- [ ] **Triple fallback peerId répété 4+ fois** `[S]` : `peerStore.localPeer?.id || peerStore.localPeer?._id || peerStore.lastLocalPeerId` copié-collé dans `usePeerCore`, `usePeerConnections`, `usePeerTransport`, `usePeerOrchestrator` — encapsuler dans un getter `peerStore.localPeerId` (propriété calculée dans le store)
+- [ ] **API façade trop large** `[S]` : remplacer `...core, ...media, ...connections, ...transport` par une API explicite minimale
+- [ ] **Listeners explosion** `[M]` : 4 `watch()` + multiple `on()` = 40+ listeners actives pour 10 contextes simultanés
+- [ ] **Peer singleton global fragile** `[M]` : `peerStore.localPeer` partagé — destruction par un composant = crash des autres
+
+### createPeerContext
+
+- [ ] **`allUsersInRoom` computed : dead code silencieux** `[S]` : `hub` et `others` calculés mais jamais utilisés → retourne `[...usersInRoom, mySlug]` sans exclusion hub, doublon mySlug possible
+- [✅] **Flags `__ctx*` mutés sur objets PeerJS tiers** `[S]` : `conn.__ctxListenersBound`, `conn.__ctxCloseHandled`, `conn.__ctxCustomCloseEmitted` — propriétés collées sur des objets que l'on ne possède pas → remplacer par un `WeakSet` interne à `setUpConnectionListeners`
+- [ ] **Pas de fallback injection** `[S]` : `inject('eventBus')` échoue silencieusement si non fourni — ajouter un guard défensif
 
 ### usePeerOrchestrator
 
-- [ ] **`stopCallWithPeers()` non-réentrant** : `isStoppingCall` flag mais pas protégé contre appels simultanés vrais
-- [ ] **Pas de machine d'état pour les appels** : états `callInprogress`, `isStoppingCall`, `closingUsers` éparpillés sans transitions claires
-- [ ] **`ensureCurrentCallRoomId()` génère avec `Math.random()`** : pas cryptographiquement sûr pour un ID de room
-
-### usePeerCore
-
-- [ ] **Deux systèmes de retry parallèles** : `inviteRetries` (Core) + `usePeerRetry` (Orchestrateur) — logiques dupliquées
+- [ ] **`handleStreamRemoved` : nettoyage en deux passes** `[S]` : suppression par clé exacte (`streamKey`) puis balayage global (`forEach`) — indique que la clé composite n'est pas fiable ; unifier la clé ou utiliser une Map indexée par slug
+- [ ] **`openCallBetweenPeer` / `acceptCallFromPeer` : ~15 lignes dupliquées** `[S]` : démarrage stream local, création élément vidéo, mise à jour `currentType`/`currentCallRoomId` présents dans les deux fonctions → extraire `_enterCallSession(payload)`
+- [ ] **Wrapping `onDataReceived` dans l'orchestrateur** `[M]` : la responsabilité du routage star (intercepter `__starRoute`) est dans `initializePeerConnection` faute d'une couche dédiée → appartient à `usePeerTransport` ou à un futur `usePeerRouter`
+- [ ] **`stopCallWithPeers()` non-réentrant** `[S]` : `isStoppingCall` flag mais pas protégé contre appels simultanés vrais
+- [ ] **Pas de machine d'état pour les appels** `[L]` : états `callInprogress`, `isStoppingCall`, `closingUsers` éparpillés sans transitions claires
+- [ ] **`ensureCurrentCallRoomId()` génère avec `Math.random()`** `[S]` : pas cryptographiquement sûr pour un ID de room
 
 ### usePeerMedia
 
-- [ ] **Directive draggable appliquée manuellement** : `Draggable.mounted(wrapper)` — fragile, non reactive, peut casser avec les MàJ Vue
+- [ ] **`session.isStreaming` / `session.isCapturing` mal placés** `[S]` : portent le commentaire `// a mettre dans media` depuis la création — déplacer dans `media` reactive ou dans `usePeerMedia`
+- [ ] **Directive draggable appliquée manuellement** `[S]` : `Draggable.mounted(wrapper)` — fragile, non reactive, peut casser avec les MàJ Vue
 
 ### usePeerConnections
 
-- [ ] **`hasOpenConnection()` pas atomique** : vérification + utilisation séparées → TOCTOU systématique
+- [ ] **`hasOpenConnection()` pas atomique** `[S]` : vérification + utilisation séparées → TOCTOU systématique
 
 ---
 
 ## 🟡 P2 — Améliorations (pérennisation long terme)
 
+### createPeerContext
+
+- [ ] **`waitForMeReady()` timeout hardcodé (15s)** `[S]` : rendre configurable via options
+- [ ] **`session.closingUsers = new Set()` exposé directement** `[S]` : remplacer par des accesseurs pour éviter la corruption externe
+- [ ] **`media.videoContainer = '#videoContainer'` hardcodé** `[S]` : injecter via options pour la testabilité
+
 ### Architecture
 
-- [ ] **Séparer CallManager** : extraire toute la logique appels (start/accept/stop/reset) dans un composable dédié `useCallManager()`
-- [ ] **Séparer StreamManager** : extraire lifecycle vidéo dans `useStreamManager()` avec pool d'instances Vue
-- [ ] **Séparer SignalingQueue** : extraire la gestion des signaux/watchers dans `useSignalingQueue()`
-- [ ] **Séparer ConnectionPool** : extraire backpressure et limites dans `useConnectionPool()`
-- [ ] **Tests unitaires** : couplage fort à Vue/inject/eventBus rend le code non-testable → extraire logique pure
+- [ ] **Séparer CallManager** `[L]` : extraire toute la logique appels (start/accept/stop/reset) dans un composable dédié `useCallManager()`
+- [ ] **Séparer StreamManager** `[L]` : extraire lifecycle vidéo dans `useStreamManager()` avec pool d'instances Vue
+- [ ] **Séparer SignalingQueue** `[M]` : extraire la gestion des signaux/watchers dans `useSignalingQueue()`
+- [ ] **Séparer ConnectionPool** `[M]` : extraire backpressure et limites dans `useConnectionPool()`
+- [ ] **Tests unitaires** `[XL]` : couplage fort à Vue/inject/eventBus rend le code non-testable → extraire logique pure
 
 ### Observabilité
 
@@ -146,35 +163,42 @@ usePeerOrchestrator          ← Coordinateur principal (façade)
 ## 📋 Checklist de refactoring suggérée (ordre d'exécution)
 
 ```
-Phase 1 — Stabilisation (P0)
-────────────────────────────
-□ Fix resolveRemoteSlug (guard mySlug null)
-□ Fix openCallBetweenPeer (return après !status)
-□ Ajouter fallbacks inject('eventBus') partout
-□ Ajouter onUnmounted() dans usePeerCore
-□ Ajouter cleanup contextRegistry dans usePeerTransport
-□ Limiter inviteRetries Map (max size + TTL)
-□ Ajouter validation inputs (userSlug, payload)
-□ Fix createApp leak dans usePeerMedia (unmount à removeVideoElement) ✅
-□ Fix race condition getRoomUsersDiff (copie locale avant mutation)
-□ Ajouter validation stream avant peer.call() visio
+Phase 1 — Stabilisation (P0)          effort / done
+────────────────────────────────────────────────────
+✅ Fix resolveRemoteSlug (guard mySlug null)           [S]
+✅ Fix openCallBetweenPeer (return après !status)      [S]
+✅ Fix createApp leak dans usePeerMedia                [S]
+✅ Validation inputs (userSlug, payload, room, type)   [S]
+✅ Ajouter setUpConnectionListeners cleanup (unsub)   [M]
+□  Ajouter cleanup du contexte (onUnmounted)          [M]
+□  Ajouter onUnmounted() dans usePeerCore             [S]
+□  Ajouter cleanup contextRegistry dans usePeerTransport [S]
+□  Limiter inviteRetries Map (max size + TTL)         [S]
+□  Fix race condition getRoomUsersDiff                [S]
+□  Ajouter validation stream avant peer.call() visio  [S]
+□  Guard auto-reconnect infinie (usePeerTransport)    [S]
 
-Phase 2 — Robustesse (P1)
-──────────────────────────
-□ Ajouter unwatch() sur tous les watch()
-□ Centraliser les constantes dans webrtc2.config.js
-□ Remplacer Math.random() par crypto.randomUUID() pour room IDs
-□ Ajouter rate limiting dans forwardStarMessage()
-□ Réduire l'API exposée par usePeerOrchestrator ✅
+Phase 2 — Robustesse (P1)             effort / done
+────────────────────────────────────────────────────
+✅ Réduire l'API exposée par usePeerOrchestrator       [S]
+□  Encapsuler triple fallback peerId → peerStore.localPeerId [S]
+□  Remplacer polling waitForMeReady par watch réactif [S]
+□  Corriger allUsersInRoom (dead code + doublon mySlug) [S]
+✅ Remplacer flags __ctx* par WeakSet                 [S]
+□  Extraire _enterCallSession (déduplique open/accept) [S]
+□  Ajouter unwatch() sur tous les watch()             [M]
+□  Centraliser les constantes dans webrtc2.config.js  [S]
+□  Remplacer Math.random() par crypto.randomUUID()    [S]
+□  Ajouter rate limiting dans forwardStarMessage()    [S]
 
-Phase 3 — Architecture (P2)
-────────────────────────────
-□ Extraire useCallManager()
-□ Extraire useStreamManager() avec pool Vue apps
-□ Extraire useSignalingQueue()
-□ Implémenter machine d'état explicite pour les appels
-□ Ajouter logger centralisé
-□ Ajouter tests unitaires sur logique pure extraite
+Phase 3 — Architecture (P2)           effort / projet
+──────────────────────────────────────────────────────
+□  [L]  Unifier les deux systèmes de retry (inviteRetries → usePeerRetry)
+□  [L]  Implémenter machine d'état appels (remplace isShuttingDown + isStoppingCall + closingUsers)
+□  [L]  Extraire useCallManager() (start/accept/open/stop/reset)
+□  [L]  Déplacer routage star dans usePeerTransport (sortir de l'orchestrateur)
+□  [XL] Extraire useStreamManager() avec pool Vue apps
+□  [XL] Ajouter tests unitaires sur logique pure extraite
 ```
 
 ---

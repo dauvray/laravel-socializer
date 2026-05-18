@@ -193,30 +193,41 @@ export function createPeerContext({ type, room, eventBus, options }) {
         })
     }  
 
+    // WeakSet interne : remplace les flags __ctxListenersBound sur l'objet tiers
+    const _boundConnections = new WeakSet()
+
     const setUpConnectionListeners = (conn) => {
         if (!conn || typeof conn.on !== 'function') {
-            return
+            return () => {}
         }
 
         // Evite de binder plusieurs fois les mêmes handlers sur la même instance
-        if (conn.__ctxListenersBound) {
-            return
+        if (_boundConnections.has(conn)) {
+            return () => {}
         }
-        conn.__ctxListenersBound = true
+        _boundConnections.add(conn)
+
+        // Variables de closure : remplacent les flags __ctxCloseHandled / __ctxCustomCloseEmitted
+        // collés sur l'objet tiers PeerJS
+        let closeHandled = false
+        let customCloseEmitted = false
+
+        // Déclaré ici (let) pour être accessible dans handleClose avant l'assignation finale
+        let cleanup = () => {}
 
         //------------------
-        // core events
+        // core events — handlers nommés pour pouvoir les passer à conn.off()
         //------------------
-        conn.on("open", function () {
+        const handleOpen = () => {
             console.trace("connection " + (conn.metadata?.type || "unknown") + " ouverte dans Context", conn.metadata)
-        })
+        }
 
-        conn.on("close", function () {
+        const handleClose = () => {
             // Idempotence: un close déjà traité ne doit pas retraiter le cleanup
-            if (conn.__ctxCloseHandled) {
+            if (closeHandled) {
                 return
             }
-            conn.__ctxCloseHandled = true
+            closeHandled = true
 
             console.log("connection " + (conn.metadata?.type || "unknown") + " fermée dans Context", conn.metadata)
 
@@ -248,41 +259,78 @@ export function createPeerContext({ type, room, eventBus, options }) {
             if (remoteSlug && !connection.usersInRoom.includes(remoteSlug)) {
                 peerStore.removeRemotePeerId(remoteSlug)
             }
-        })
+
+            // Auto-cleanup : retire tous les listeners dès que la connexion est fermée
+            // (cleanup est déjà assigné au moment où ce handler s'exécute car c'est async)
+            cleanup()
+        }
 
         //------------------
-        // custom events
+        // custom events — handlers nommés pour pouvoir les passer à conn.off()
         //------------------
-        if (connectionEvents && connectionEvents.onConnectionOpen.isActive) {
-            conn.on("open", connectionEvents.onConnectionOpen.callback)
-        }
+        const handleCustomOpen = (connectionEvents?.onConnectionOpen?.isActive)
+            ? connectionEvents.onConnectionOpen.callback
+            : null
 
-        if (connectionEvents && connectionEvents.onDataReceived.isActive) {
-            conn.on("data", connectionEvents.onDataReceived.callback)
-        }
+        const handleData = (connectionEvents?.onDataReceived?.isActive)
+            ? connectionEvents.onDataReceived.callback
+            : null
 
-        if (connectionEvents && connectionEvents.onStreamReceived.isActive) {
-            conn.on("stream", (stream) => connectionEvents.onStreamReceived.callback(stream, conn, conn.metadata))
-        }
+        // Wrapper nommé nécessaire pour capturer la référence et pouvoir faire conn.off()
+        const handleStream = (connectionEvents?.onStreamReceived?.isActive)
+            ? (stream) => connectionEvents.onStreamReceived.callback(stream, conn, conn.metadata)
+            : null
 
-        if (connectionEvents && connectionEvents.onConnectionClose.isActive) {
-            conn.on("close", () => {
+        const handleCustomClose = (connectionEvents?.onConnectionClose?.isActive)
+            ? () => {
                 // Evite callback close metier en double
-                if (conn.__ctxCustomCloseEmitted) {
+                if (customCloseEmitted) {
                     return
                 }
-                conn.__ctxCustomCloseEmitted = true
+                customCloseEmitted = true
 
                 const closeCallback = connectionEvents?.onConnectionClose?.callback
                 if (typeof closeCallback === "function") {
                     closeCallback(conn)
                 }
-            })
+            }
+            : null
+
+        const handleError = (connectionEvents?.onConnectionError?.isActive)
+            ? connectionEvents.onConnectionError.callback
+            : null
+
+        //------------------
+        // Enregistrement
+        //------------------
+        conn.on("open", handleOpen)
+        conn.on("close", handleClose)
+
+        if (handleCustomOpen) conn.on("open", handleCustomOpen)
+        if (handleData)       conn.on("data", handleData)
+        if (handleStream)     conn.on("stream", handleStream)
+        if (handleCustomClose) conn.on("close", handleCustomClose)
+        if (handleError)      conn.on("error", handleError)
+
+        //------------------
+        // Cleanup (retourné pour désinscription explicite anticipée)
+        //------------------
+        // Assignation du let déclaré en haut du scope (accessible dans handleClose)
+        cleanup = () => {
+            if (!_boundConnections.has(conn)) return
+            _boundConnections.delete(conn)
+
+            conn.off("open", handleOpen)
+            conn.off("close", handleClose)
+
+            if (handleCustomOpen)  conn.off("open", handleCustomOpen)
+            if (handleData)        conn.off("data", handleData)
+            if (handleStream)      conn.off("stream", handleStream)
+            if (handleCustomClose) conn.off("close", handleCustomClose)
+            if (handleError)       conn.off("error", handleError)
         }
 
-        if (connectionEvents && connectionEvents.onConnectionError.isActive) {
-            conn.on("error", connectionEvents.onConnectionError.callback)
-        }
+        return cleanup
     }
 
     const storeConnectionEventCallbacks = (callbacks) => {
