@@ -55,7 +55,7 @@ utils/ (infrastructure — usage libre par tous les composables)
 ### usePeerMedia
 
 - [✅] **`createApp()` par vidéo sans cleanup** : chaque `createVideoElement()` crée une instance Vue orpheline → fuite mémoire massive sur appels longs
-- [ ] **Injection `eventBus` sans fallback** `[S]` : `inject('eventBus')` peut être null
+- [✅] **Injection `eventBus` sans fallback** `[S]` : `inject('eventBus')` peut être null
 - [✅] **Collision d'ID vidéo non détectée** : deux appels concurrents avec le même `videoId` → état incohérent
 - [✅] **Container null = fail silencieux** : `document.querySelector(videoContainer)` retourne null → log + return sans retry
 - [✅] **`_bindStreamCleanup()` listeners s'accumulent** `[S]` : `track.ended` / `track.inactive` listeners jamais nettoyés si `removeVideoElement()` échoue
@@ -104,7 +104,7 @@ utils/ (infrastructure — usage libre par tous les composables)
 
 - [✅] **`allUsersInRoom` computed : dead code silencieux** `[S]` : `hub` et `others` calculés mais jamais utilisés → retourne `[...usersInRoom, mySlug]` sans exclusion hub, doublon mySlug possible
 - [✅] **Flags `__ctx*` mutés sur objets PeerJS tiers** `[S]` : `conn.__ctxListenersBound`, `conn.__ctxCloseHandled`, `conn.__ctxCustomCloseEmitted` — propriétés collées sur des objets que l'on ne possède pas → remplacer par un `WeakSet` interne à `setUpConnectionListeners`
-- [ ] **Pas de fallback injection** `[S]` : `inject('eventBus')` échoue silencieusement si non fourni — ajouter un guard défensif
+- [✅] **Pas de fallback injection** `[S]` : `inject('eventBus')` échoue silencieusement si non fourni — ajouter un guard défensif
 
 ### usePeerOrchestrator
 
@@ -204,6 +204,7 @@ Phase 2 — Robustesse (P1)             effort / done
 ✅ Remplacer flags __ctx* par WeakSet                 [S]
 □  Extraire _enterCallSession (déduplique open/accept) [S]
 ✅ Ajouter unwatch() sur tous les watch()             [M]
+✅  Ajouter guard défensif eventBus fallback dans createPeerContext [S]
 □  Centraliser les constantes dans webrtc2.config.js  [S]
 □  Remplacer Math.random() par crypto.randomUUID()    [S]
 ✅ Ajouter rate limiting dans forwardStarMessage()    [S]

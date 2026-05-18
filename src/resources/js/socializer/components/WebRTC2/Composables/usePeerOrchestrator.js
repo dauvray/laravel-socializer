@@ -22,7 +22,7 @@
  * 
  */
 
-import { inject, onUnmounted, ref, watch } from 'vue'
+import { onUnmounted, ref, watch } from 'vue'
 import { createPeerContext } from '~socializer/components/WebRTC2/Composables/createPeerContext.js'
 import { usePeerCore } from '~socializer/components/WebRTC2/Composables/usePeerCore.js'
 import { usePeerMedia } from '~socializer/components/WebRTC2/Composables/usePeerMedia.js'
@@ -32,7 +32,6 @@ import { usePeerRetry } from '~socializer/components/WebRTC2/Composables/utils/u
 
 export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) {
 
-    const eventBus = inject('eventBus')
     const syncUsersConnectionsLock = ref(false)
     const isShuttingDown = ref(false)  // 🔒 Guard pour bloquer les retries pendant le cleanup
 
@@ -58,7 +57,6 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
     const context = createPeerContext({
         type: normalizedType,
         room: normalizedRoom,
-        eventBus,
         options,
     })
     const core = usePeerCore(context)
@@ -564,7 +562,7 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
 
         context.session.closingUsers.delete(remoteSlug)
 
-        eventBus.$emit('close-call', [{
+        context.eventBus.$emit('close-call', [{
             userSlug: remoteSlug,
             type: remoteType,
         }])
@@ -683,7 +681,7 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
 
             removeCurrentCallUser(remoteSlug)
 
-            eventBus.$emit('close-call', [{ 
+            context.eventBus.$emit('close-call', [{ 
                 userSlug: remoteSlug, 
                 type: remoteType 
             }])

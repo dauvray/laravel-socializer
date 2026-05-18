@@ -19,12 +19,12 @@
  * 
  * 👉 à ne pas confondre avec useMediaBroadcast qui gère la logique métier de diffusion (qui utilise usePeerMedia pour les flux)
  */
-import { createApp, h, inject, markRaw } from 'vue'
+import { createApp, h, markRaw } from 'vue'
 import Draggable from '~socializer/directives/draggable.js'
 
 export function usePeerMedia(ctx) {
 
-    const eventBus = inject('eventBus')
+    const eventBus = ctx.eventBus
     const removingVideoIds = new Set()
     const creatingVideoIds = new Set()
     const streamCleanupBound = new Set()

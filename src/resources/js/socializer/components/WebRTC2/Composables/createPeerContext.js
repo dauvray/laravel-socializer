@@ -19,15 +19,26 @@
  * - fournir une "source de vérité" unique à tous les composables techniques
  */
 
-import { reactive, computed, ref, onBeforeMount, onUnmounted, watchEffect, effectScope } from 'vue'
+import { reactive, computed, ref, inject, onBeforeMount, onUnmounted, watchEffect, effectScope } from 'vue'
 import { useAjaxService } from '~estarter/services/AjaxService.js'
 import { usePeer2Store } from '~socializer/stores/peers2.js'
 import { useServerStore } from '~socializer/stores/server.js'
 import { useMeStore } from '~estarter/stores/me.js'
 
-export function createPeerContext({ type, room, eventBus, options }) {
+export function createPeerContext({ type, room, options }) {
 
     const contextId = `${type}-${room}`
+
+    // Guard défensif : si eventBus absent ou invalide, utiliser un no-op
+    // pour éviter les crashes silencieux sur ctx.eventBus.$emit/on/off(...).
+    const _bus = inject('eventBus', null)
+    const _isValidBus = _bus && typeof _bus.$emit === 'function' && typeof _bus.$on === 'function' && typeof _bus.$off === 'function'
+
+    if (!_isValidBus) {
+        console.warn('[WebRTC2] createPeerContext: eventBus non fourni ou invalide — les événements ne seront pas propagés.')
+    }
+
+    const _safeEventBus = _isValidBus ? _bus : { $emit: () => {}, $on: () => {}, $off: () => {} }
 
     // STORES (infra)
     const peerStore = usePeer2Store()
@@ -461,7 +472,7 @@ export function createPeerContext({ type, room, eventBus, options }) {
         meStore,
         serverStore,
         AjaxService,
-        eventBus,
+        eventBus: _safeEventBus,
 
         // state (grouped)
         session,
