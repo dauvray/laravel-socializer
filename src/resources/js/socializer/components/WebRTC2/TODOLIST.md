@@ -73,7 +73,7 @@ utils/ (infrastructure — usage libre par tous les composables)
 
 ### usePeerTransport
 
-- [ ] **`contextRegistry` global jamais nettoyé** `[S]` : contextes détruits restent en mémoire indefiniment
+- [✅] **`contextRegistry` global jamais nettoyé** `[S]` : contextes détruits restent en mémoire indefiniment
 - [ ] **`context.hooks.onPeerUnavailable` : couplage par mutation implicite** `[M]` : l'orchestrateur pousse un callback sur un objet `hooks` du contexte que `usePeerTransport` appellera plus tard — inversion de dépendance artisanale ; un signal réactif (computed/watch sur le store) ou un eventEmitter interne serait plus explicite
 - [ ] **Race condition Peer singleton** `[S]` : `if(peerStore.localPeerReady) return` insuffisant — 2 composants peuvent passer simultanément
 - [ ] **Error handler Peer inerte** `[S]` : `localPeer.on('error', ...)` ne fait que logger → pas de fallback, pas de recovery
@@ -178,7 +178,7 @@ Phase 1 — Stabilisation (P0)          effort / done
 ✅ Ajouter setUpConnectionListeners cleanup (unsub)   [M]
 ✅ Ajouter cleanup du contexte (onUnmounted)          [M]
 ✅ Ajouter onUnmounted() dans usePeerCore             [S]
-□  Ajouter cleanup contextRegistry dans usePeerTransport [S]
+✅ Ajouter cleanup contextRegistry dans usePeerTransport [S]
 ✅ Limiter inviteRetries Map (max size + TTL)         [S]
 ✅ Fix race condition getRoomUsersDiff                [S]
 ✅ Fix anti-pattern polling stream → watch réactif (usePeerTransport)  [S]

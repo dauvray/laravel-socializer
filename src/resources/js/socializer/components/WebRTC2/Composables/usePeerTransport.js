@@ -19,7 +19,7 @@
  */
 
 import { Peer } from "peerjs"
-import { markRaw, watch } from 'vue'
+import { markRaw, onUnmounted, watch } from 'vue'
 
 // -----------------------------------------------------------------------------
 // Registre global des contextes WebRTC actifs
@@ -47,6 +47,12 @@ function resolveContextByMetadata(metadata) {
 }
 
 export function usePeerTransport(ctx) {
+
+    // Filet de sécurité : dépollue le registre même si l'orchestrateur ne passe pas
+    // par cleanupPeerConnection() (navigation abrupte, crash de composant, etc.).
+    onUnmounted(() => {
+        unregisterContext(ctx)
+    })
 
     const setLocalPeer = async () => {
 
