@@ -71,10 +71,7 @@ export function usePeerCore(ctx) {
 
         const room = ctx.session.onAirRoom
         const type = ctx.session.currentType
-        const localPeerId =
-            ctx.peerStore.localPeer?.id
-            || ctx.peerStore.localPeer?._id
-            || ctx.peerStore.lastLocalPeerId
+        const localPeerId = ctx.peerStore.getLocalPeerId
 
         if (!localPeerId) {
             console.warn('localPeer pas encore prêt')
@@ -115,7 +112,7 @@ export function usePeerCore(ctx) {
 
         try {
             await ctx.AjaxService.load(ENDPOINTS.RESPONSE_TO_PEER_ID, 'post', {
-                peerId: ctx.peerStore.localPeer?.id || ctx.peerStore.localPeer?._id || ctx.peerStore.lastLocalPeerId,
+                peerId: ctx.peerStore.getLocalPeerId,
                 toUserSlug: payload.fromUserSlug,
                 room: payload.room,
                 type: payload.type
@@ -129,10 +126,7 @@ export function usePeerCore(ctx) {
 
     const requestAuthorizationRemotePeerId = async (payload) => {
 
-        const localPeerId =
-            ctx.peerStore.localPeer?.id
-            || ctx.peerStore.localPeer?._id
-            || ctx.peerStore.lastLocalPeerId
+        const localPeerId = ctx.peerStore.getLocalPeerId
 
         const inviteId = payload?.inviteId || buildInviteId()
         const toUserSlug = payload.toUserSlug
@@ -189,7 +183,7 @@ export function usePeerCore(ctx) {
 
     const sendAuthorizationRemotePeerId = async (payload) => { 
         if(payload.status) {
-            payload.options.peerId = ctx.peerStore.localPeer?.id || ctx.peerStore.localPeer?._id || ctx.peerStore.lastLocalPeerId
+            payload.options.peerId = ctx.peerStore.getLocalPeerId
         }
 
         try {

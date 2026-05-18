@@ -5,12 +5,13 @@ export default {
     getLocalPeer() {
         return this.localPeer
     },
+    /**
+     * Retourne le peerId local avec triple fallback :
+     * localPeer.id → localPeer._id → lastLocalPeerId
+     * Utiliser ce getter partout plutôt que de dupliquer le fallback manuellement.
+     */
     getLocalPeerId() {
-        if(this.localPeer) {
-            return this.lastLocalPeerId
-        }
-
-        return null
+        return this.localPeer?.id || this.localPeer?._id || this.lastLocalPeerId || null
     },
     getCurrenCallRoomId() {
         return this.currentCallRoomId

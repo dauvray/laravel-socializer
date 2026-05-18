@@ -125,9 +125,7 @@ export function usePeerConnections(ctx) {
 
         const mySlug = ctx.meStore.getMe?.slug
         const myPeerId = String(
-            ctx.peerStore.localPeer?.id
-            || ctx.peerStore.localPeer?._id
-            || ctx.peerStore.lastLocalPeerId
+            ctx.peerStore.getLocalPeerId
             || ''
         )
 
