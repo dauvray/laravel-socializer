@@ -1,10 +1,22 @@
 /**
  * ⏱️ usePeerRetry
  * Gère uniquement la logique temporelle des tentatives (Backoff exponentiel).
+ *
+ * @param {object} ctx
+ * @param {object} [options]
+ * @param {number}   [options.maxAttempts]      - Nombre maximal de tentatives avant abandon (défaut : MAX_RETRY_ATTEMPTS).
+ * @param {Function} [options.onAbandoned]      - Appelé quand toutes les tentatives sont épuisées.
+ *                                                Signature : (userSlug, attempt, error?) => void
  */
 import { onUnmounted } from 'vue'
+import { MAX_RETRY_ATTEMPTS } from '../../webrtc2.config.js'
 
-export function usePeerRetry(ctx) {
+export function usePeerRetry(ctx, options = {}) {
+    const {
+        maxAttempts = MAX_RETRY_ATTEMPTS,
+        onAbandoned = null,
+    } = options
+
     const pendingTimers = new Map()
 
     // Clé unique pour isoler les retries par type/room/user
@@ -37,11 +49,21 @@ export function usePeerRetry(ctx) {
      * @param {string} userSlug 
      * @param {number} attempt - Index de la tentative (0, 1, 2...)
      * @param {Function} executionCallback - Doit retourner true pour ARRÊTER, false pour CONTINUER le retry.
+     *                                       Peut lever une erreur avec `error.fatal = true` pour stopper sans retry.
      */
     const scheduleRetry = (userSlug, attempt, executionCallback) => {
-        const MAX_ATTEMPTS = 8
-        if (attempt >= MAX_ATTEMPTS) {
+        // Validation du callback
+        if (typeof executionCallback !== 'function') {
+            console.error(`[RetryManager] executionCallback must be a function (got ${typeof executionCallback}) for ${userSlug}`)
+            return
+        }
+
+        if (attempt >= maxAttempts) {
             clearRetry(userSlug)
+            console.warn(`[RetryManager] Abandoned after ${maxAttempts} attempts for ${userSlug}`)
+            if (typeof onAbandoned === 'function') {
+                onAbandoned(userSlug, attempt)
+            }
             return
         }
 
@@ -64,7 +86,18 @@ export function usePeerRetry(ctx) {
                 }
             } catch(e) {
                 console.error(`[RetryManager] Error during attempt ${attempt} for ${userSlug}:`, e)
-                // En cas d'erreur, on retente quand même au lieu de tout casser
+
+                // Erreur fatale : on arrête et on notifie sans replanifier
+                if (e?.fatal) {
+                    clearRetry(userSlug)
+                    console.warn(`[RetryManager] Fatal error — aborting retries for ${userSlug}`)
+                    if (typeof onAbandoned === 'function') {
+                        onAbandoned(userSlug, attempt, e)
+                    }
+                    return
+                }
+
+                // Erreur non-fatale : on replanifie la tentative suivante
                 scheduleRetry(userSlug, attempt + 1, executionCallback)
             }
         }, delay)

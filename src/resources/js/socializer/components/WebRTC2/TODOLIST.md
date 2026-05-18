@@ -83,10 +83,10 @@ utils/ (infrastructure — usage libre par tous les composables)
 
 ### usePeerRetry
 
-- [ ] **`MAX_ATTEMPTS = 8` hardcodé** `[S]` : ~6 min max, puis abandon silencieux sans notification upstream
-- [ ] **Erreurs callback avalées** `[S]` : `catch(e) { console.error; scheduleRetry() }` — on retente même si l'erreur est fatale
-- [ ] **Pas de validation du callback** `[S]` : `executionCallback` non-vérifiée → crash async si undefined passé
-- [ ] **Pas de notification d'abandon** `[S]` : quand `MAX_ATTEMPTS` atteint, aucun événement émis → couches supérieures ne savent pas
+- [✅] **`MAX_ATTEMPTS = 8` hardcodé** `[S]` : configurable via `options.maxAttempts` (défaut 8)
+- [✅] **Erreurs callback avalées** `[S]` : si `e.fatal === true`, stop sans retry + notification `onAbandoned`
+- [✅] **Pas de validation du callback** `[S]` : guard `typeof executionCallback !== 'function'` en entrée
+- [✅] **Pas de notification d'abandon** `[S]` : callback `options.onAbandoned(userSlug, attempt, error?)` appelé à l'épuisement des tentatives
 
 ---
 

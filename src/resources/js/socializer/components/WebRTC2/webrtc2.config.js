@@ -14,6 +14,14 @@
  */
 export const MAX_PEERS_PER_ROOM = 8
 
+// ─── Retry peer-to-peer (usePeerRetry) ───────────────────────────────────
+/**
+ * Nombre maximum de tentatives de connexion vers un peer avant abandon.
+ * Backoff exponentiel : 1s · 2s · 4s · 8s · … · 10s (max) + jitter 0–300ms.
+ * ~6 min de fenêtre maximale avec 8 tentatives.
+ */
+export const MAX_RETRY_ATTEMPTS = 8
+
 // ─── Reconnexion PeerJS ───────────────────────────────────────────────────
 /**
  * Nombre maximum de tentatives de reconnexion au serveur PeerJS avant abandon.
