@@ -160,8 +160,18 @@ export function usePeerConnections(ctx) {
                 return true
             }
 
-            if (config.options.metadata.type === 'visio' && ctx.media.currentStream) {
-                const call = ctx.peerStore.getLocalPeer.call(config.peerId, config.stream, config.options)
+            if (config.options.metadata.type === 'visio') {
+                const stream = config.stream
+                const isValidStream = stream instanceof MediaStream
+                    && stream.getTracks().some(t => t.readyState === 'live')
+                if (!isValidStream) {
+                    console.warn('[usePeerConnections] connectToPeer (visio): stream local absent ou invalide — peer.call() annulé', {
+                        userSlug,
+                        stream: stream ?? null,
+                    })
+                    return false
+                }
+                const call = ctx.peerStore.getLocalPeer.call(config.peerId, stream, config.options)
                 _saveRoomConnection(config, call)
                 return true
             }
