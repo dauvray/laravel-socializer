@@ -21,6 +21,7 @@
  * 
  */
 import { watch, markRaw } from 'vue'
+import { MAX_PEERS_PER_ROOM } from '../webrtc2.config.js'
 
 export function usePeerConnections(ctx) {
 
@@ -98,6 +99,18 @@ export function usePeerConnections(ctx) {
         })
     }  
 
+    /**
+     * Compte le nombre de peers ayant actuellement une connexion active dans une room
+     * (pour le type donné). Utilisé pour enforcer MAX_PEERS_PER_ROOM.
+     */
+    const _countActivePeersInRoom = (room, type) => {
+        const roomConnections = ctx.peerStore.getConnections?.[room]
+        if (!roomConnections || typeof roomConnections !== 'object') return 0
+        return Object.keys(roomConnections).filter(
+            slug => hasOpenConnection(slug, room, type)
+        ).length
+    }
+
     const connectToPeer = (payload) => {
         const userSlug = payload?.userSlug || payload?.fromUserSlug
         const peerId = payload?.peerId ? String(payload.peerId) : null
@@ -139,6 +152,20 @@ export function usePeerConnections(ctx) {
             // et l'action qui suit soient atomiques vis-à-vis des appels concurrents.
             if (hasOpenConnection(userSlug, room, type)) {
                 return true
+            }
+
+            // Garde 4 : limite du nombre de peers par room en topologie mesh.
+            // Compté à l'intérieur du verrou pour que la lecture et la décision
+            // soient atomiques vis-à-vis des appels concurrents.
+            const activePeerCount = _countActivePeersInRoom(room, type)
+            if (activePeerCount >= MAX_PEERS_PER_ROOM) {
+                console.warn(
+                    `[usePeerConnections] connectToPeer: limite de ${MAX_PEERS_PER_ROOM} peers` +
+                    ` atteinte pour la room "${room}" (type: ${type})` +
+                    ` — connexion vers "${userSlug}" refusée`,
+                    { activePeerCount, room, type, userSlug }
+                )
+                return false
             }
 
             // On supprime le waiting flag seulement quand on a une cible exploitable

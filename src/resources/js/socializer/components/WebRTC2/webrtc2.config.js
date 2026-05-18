@@ -5,6 +5,15 @@
  * Modifier ici suffit à mettre à jour l'ensemble du système après une refacto backend.
  */
 
+// ─── Limites réseau ────────────────────────────────────────────────────────
+/**
+ * Nombre maximum de peers simultanés par room en topologie mesh.
+ * WebRTC full-mesh est raisonnable jusqu'à ~8 participants ; au-delà le navigateur
+ * sature (CPU + bande passante). Toute tentative de connexion supplémentaire sera
+ * refusée avec un avertissement dans la console.
+ */
+export const MAX_PEERS_PER_ROOM = 8
+
 // ─── Endpoints HTTP (signaling backend) ────────────────────────────────────
 export const ENDPOINTS = {
     /** Demander le peerId d'un utilisateur distant (connexion directe) */
