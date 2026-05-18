@@ -49,7 +49,7 @@ utils/ (infrastructure — usage libre par tous les composables)
 - [✅] **Ajax calls non-awaited** `[S]` : `AjaxService.load()` lancée sans `await` → état inconsistant si réponse arrive après nettoyage
 - [✅] **`watch(ctx.lastRoomSignal, ...)` non-unsubscribed** `[S]` : watcher actif pour toujours même après destruction
 - [✅] **Double système de retry invitation** `[M]` : `requestAuthorizationRemotePeerId` gère son propre backoff (`inviteRetries` Map + timers) en parallèle de `usePeerRetry` — même problème, deux solutions — à unifier via `usePeerRetry` avec un callback dédié
-- [ ] **Endpoints HTTP hardcodés** `[S]` : `/ask-to-peer-id`, `/response-to-peer-id`, etc. — cassable à la refacto backend
+- [✅] **Endpoints HTTP hardcodés** `[S]` : `/ask-to-peer-id`, `/response-to-peer-id`, etc. — cassable à la refacto backend
 - [ ] **Pas d'error handling HTTP** `[S]` : si un POST échoue, l'appel reste en "attente" indéfiniment
 
 ### usePeerMedia

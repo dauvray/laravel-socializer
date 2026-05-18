@@ -18,6 +18,7 @@
  */
 import { watch, onUnmounted } from 'vue'
 import { usePeerRetry } from '~socializer/components/WebRTC2/Composables/utils/usePeerRetry.js'
+import { ENDPOINTS } from '~socializer/components/WebRTC2/webrtc2.config.js'
 
 export function usePeerCore(ctx) {
 
@@ -90,7 +91,7 @@ export function usePeerCore(ctx) {
             }
         }
 
-        await ctx.AjaxService.load('/ask-to-peer-id', 'post', {
+        await ctx.AjaxService.load(ENDPOINTS.ASK_TO_PEER_ID, 'post', {
             toUserSlug: userSlug,
             room: room,
             type: type
@@ -107,7 +108,7 @@ export function usePeerCore(ctx) {
      */
     const responseRemotePeerConnection = async (payload) => {
 
-        await ctx.AjaxService.load('/response-to-peer-id', 'post', {
+        await ctx.AjaxService.load(ENDPOINTS.RESPONSE_TO_PEER_ID, 'post', {
             peerId: ctx.peerStore.localPeer?.id || ctx.peerStore.localPeer?._id || ctx.peerStore.lastLocalPeerId,
             toUserSlug: payload.fromUserSlug,
             room: payload.room,
@@ -146,7 +147,7 @@ export function usePeerCore(ctx) {
         userSlugToInviteId.set(toUserSlug, inviteId)
 
         // Premier envoi immédiat
-        await ctx.AjaxService.load('/send-alert-to-user', 'post', {
+        await ctx.AjaxService.load(ENDPOINTS.SEND_ALERT_TO_USER, 'post', {
             toUserSlug,
             options: data
         })
@@ -157,7 +158,7 @@ export function usePeerCore(ctx) {
         inviteRetryManager.scheduleRetry(toUserSlug, 0, async (userSlug) => {
             if (!userSlugToInviteId.has(userSlug)) return true
 
-            await ctx.AjaxService.load('/send-alert-to-user', 'post', {
+            await ctx.AjaxService.load(ENDPOINTS.SEND_ALERT_TO_USER, 'post', {
                 toUserSlug: userSlug,
                 options: data
             })
@@ -173,7 +174,7 @@ export function usePeerCore(ctx) {
             payload.options.peerId = ctx.peerStore.localPeer?.id || ctx.peerStore.localPeer?._id || ctx.peerStore.lastLocalPeerId
         }
 
-        await ctx.AjaxService.load('/response-to-authorization-peer', 'post', {
+        await ctx.AjaxService.load(ENDPOINTS.RESPONSE_TO_AUTHORIZATION_PEER, 'post', {
             toUserSlug: payload.fromUserSlug,
             options: payload.status ? payload.options : { type: payload.options.type }, // on envoie les infos de connexion seulement si l'accès est autorisé, sinon on précise juste le type d'appel pour que le client puisse réagir (ex: afficher une notification d'appel refusé)
             status: payload.status
@@ -187,7 +188,7 @@ export function usePeerCore(ctx) {
 
         if (!toUserSlug || !room) return
 
-        await ctx.AjaxService.load('/close-connection-to-peer-id', 'post', {
+        await ctx.AjaxService.load(ENDPOINTS.CLOSE_CONNECTION_TO_PEER_ID, 'post', {
             toUserSlug,
             fromUserSlug: ctx.mySlug.value,
             room,
