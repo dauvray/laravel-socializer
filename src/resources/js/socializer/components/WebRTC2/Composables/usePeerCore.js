@@ -16,7 +16,7 @@
  * - agir comme serveur de signalisation côté client
  * - préparer les informations nécessaires aux connexions 
  */
-import { watch } from 'vue'
+import { watch, onUnmounted } from 'vue'
 
 export function usePeerCore(ctx) {
 
@@ -222,7 +222,7 @@ export function usePeerCore(ctx) {
 
     /*------  Signal Watcher ----------*/
 
-    watch(ctx.lastRoomSignal, async (signal) => {
+    const stopSignalWatch = watch(ctx.lastRoomSignal, async (signal) => {
         if (!signal || !ctx.SIGNAL_TYPES.core.includes(signal.type)) return
 
         switch (signal.type) {
@@ -232,6 +232,11 @@ export function usePeerCore(ctx) {
             default:
                 break
         }
+    })
+
+    onUnmounted(() => {
+        stopSignalWatch()
+        clearAllCallInviteRetries()
     })
 
     return {
