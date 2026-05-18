@@ -79,7 +79,7 @@ utils/ (infrastructure — usage libre par tous les composables)
 - [✅] **Error handler Peer inerte** `[S]` : `localPeer.on('error', ...)` ne fait que logger → pas de fallback, pas de recovery
 - [✅] **Auto-reconnect infinie** `[S]` : `localPeer.reconnect()` appelée sans guard → peut boucler si serveur PeerJS down
 - [✅] **`forwardStarMessage()` sans rate limiting** `[S]` : hub peut être saturé par rafale de messages (N × targets)
-- [ ] **Connexion entrante ignorée silencieusement** `[S]` : si `resolveContextByMetadata()` retourne null, juste un warning
+- [✅] **Connexion entrante ignorée silencieusement** `[S]` : si `resolveContextByMetadata()` retourne null, juste un warning
 
 ### usePeerRetry
 

@@ -232,9 +232,10 @@ export function usePeerTransport(ctx) {
 
                 if (!targetCtx) {
                     console.warn(
-                        "[WebRTC2] Aucun contexte trouvé pour connection entrante",
+                        "[WebRTC2] Aucun contexte trouvé pour connection entrante — connexion fermée",
                         metadata
                     )
+                    try { conn.close() } catch (e) { /* ignore */ }
                     return
                 }
 
@@ -256,9 +257,10 @@ export function usePeerTransport(ctx) {
 
                 if (!targetCtx) {
                     console.warn(
-                        "[WebRTC2] Aucun contexte trouvé pour call entrant",
+                        "[WebRTC2] Aucun contexte trouvé pour call entrant — appel fermé",
                         metadata
                     )
+                    try { call.close() } catch (e) { /* ignore */ }
                     return
                 }
 
@@ -314,8 +316,6 @@ export function usePeerTransport(ctx) {
 
     const unregisterLocalContext = () => {
         unregisterContext(ctx)
-        // Libère les entrées de rate limiting liées à ce contexte
-        _hubRateWindows.clear()
     }
 
     const _getOpenDataConnection = (room, userSlug) => {
