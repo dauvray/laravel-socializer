@@ -63,7 +63,7 @@ utils/ (infrastructure — usage libre par tous les composables)
 
 ### usePeerConnections
 
-- [ ] **Race condition `getRoomUsersDiff()`** `[S]` : modifie directement `ctx.connection.usersInRoom` pendant la lecture → diff incohérent entre appels parallèles
+- [✅] **Race condition `getRoomUsersDiff()`** `[S]` : modifie directement `ctx.connection.usersInRoom` pendant la lecture → diff incohérent entre appels parallèles
 - [ ] **Pas de validation stream pour `visio`** `[S]` : `ctx.media.currentStream` peut être null → `peer.call()` avec stream null = comportement indéfini
 - [ ] **Anti-pattern polling stream** `[S]` : `while (!localStream && attempts < 25) { await sleep(200) }` → 5s max arbitraire, expiration silencieuse
 - [ ] **TOCTOU sur connection state** `[S]` : `connectionState` / `signalingState` peuvent changer entre la vérification et l'utilisation
@@ -154,6 +154,10 @@ utils/ (infrastructure — usage libre par tous les composables)
 - [ ] **Rate limiting local** : limiter les requêtes Ajax (ask-to-peer-id) pour éviter le spam involontaire
 - [ ] **Sanitiser les métadonnées** : `conn.metadata` vient du réseau → valider avant usage
 
+### usePeerConnections
+
+- [ ] **Migrer `usersInRoom` vers Pinia** `[M]` : `ctx.connection.usersInRoom` est un tableau mutable partagé hors store — le déplacer dans `peerStore` avec une action `computeRoomDiff(newSlugs)` synchrone (lecture + écriture atomique dans le store) — supprime le mutex `_diffLock` devenu inutile et rend la liste réactive dans les composants
+
 ### Robustesse
 
 - [ ] **Configurer les constantes** : `MAX_ATTEMPTS`, `STALE_MS`, `STREAM_WAIT_TIMEOUT`, `HUB_RATE_LIMIT` → dans un fichier de config WebRTC2
@@ -176,7 +180,7 @@ Phase 1 — Stabilisation (P0)          effort / done
 ✅ Ajouter onUnmounted() dans usePeerCore             [S]
 □  Ajouter cleanup contextRegistry dans usePeerTransport [S]
 ✅ Limiter inviteRetries Map (max size + TTL)         [S]
-□  Fix race condition getRoomUsersDiff                [S]
+✅ Fix race condition getRoomUsersDiff                [S]
 □  Ajouter validation stream avant peer.call() visio  [S]
 □  Guard auto-reconnect infinie (usePeerTransport)    [S]
 

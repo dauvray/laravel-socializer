@@ -26,7 +26,11 @@ export function usePeerConnections(ctx) {
 
     const inFlightConnections = new Set()
 
-    const getRoomUsersDiff = async (users = []) => {
+    // Mutex à chaîne de promesses : sérialise les appels concurrents à getRoomUsersDiff
+    // pour éviter le TOCTOU sur ctx.connection.usersInRoom (lecture puis écriture non atomiques).
+    let _diffLock = Promise.resolve()
+
+    const _doGetRoomUsersDiff = async (users = []) => {
         const ready = await ctx.waitForMeReady()
         if (!ready) {
             return { newUsers: [], removedUsers: [] }
@@ -42,6 +46,13 @@ export function usePeerConnections(ctx) {
         ctx.connection.usersInRoom = nextSlugs
 
         return { newUsers, removedUsers }
+    }
+
+    const getRoomUsersDiff = (users = []) => {
+        const current = _diffLock.then(() => _doGetRoomUsersDiff(users))
+        // On absorbe l'erreur sur le verrou pour ne pas casser les appels suivants.
+        _diffLock = current.catch(() => {})
+        return current
     }
 
     const getNewUsersInRoom = async (users = []) => {
