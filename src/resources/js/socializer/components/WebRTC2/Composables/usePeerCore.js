@@ -22,6 +22,8 @@ export function usePeerCore(ctx) {
 
     /*------  Retry invitation pour calls ----------*/
 
+    const MAX_INVITE_RETRIES = 20 // max 20 invitations simultanées en attente (Map size guard)
+
     const inviteRetries = new Map()
     const userSlugToInviteId = new Map()
 
@@ -141,6 +143,18 @@ export function usePeerCore(ctx) {
         }
 
         ctx.peerStore.addWaitingRemotePeerId(toUserSlug, data)
+
+        // Éviction de la plus ancienne entrée si la Map atteint la limite
+        if (inviteRetries.size >= MAX_INVITE_RETRIES) {
+            const oldestSlug = inviteRetries.keys().next().value
+            const oldestState = inviteRetries.get(oldestSlug)
+            if (oldestState) {
+                oldestState.stopped = true
+                if (oldestState.timer) clearTimeout(oldestState.timer)
+            }
+            inviteRetries.delete(oldestSlug)
+            userSlugToInviteId.delete(oldestSlug)
+        }
 
         // Enregistre le mapping
         userSlugToInviteId.set(toUserSlug, inviteId)

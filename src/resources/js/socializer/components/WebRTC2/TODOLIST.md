@@ -42,7 +42,7 @@ usePeerOrchestrator          ← Coordinateur principal (façade)
 
 ### usePeerCore
 
-- [ ] **Memory leak Map sans limite** `[S]` : `inviteRetries` et `userSlugToInviteId` grandissent indéfiniment — aucun TTL, aucune limite de taille
+- [✅] **Memory leak Map sans limite** `[S]` : `inviteRetries` et `userSlugToInviteId` grandissent indéfiniment — aucun TTL, aucune limite de taille
 - [ ] **Pas de `onUnmounted()`** `[S]` : les timers d'invitation restent actifs après destruction du composant
 - [ ] **Ajax calls non-awaited** `[S]` : `AjaxService.load()` lancée sans `await` → état inconsistant si réponse arrive après nettoyage
 - [ ] **`watch(ctx.lastRoomSignal, ...)` non-unsubscribed** `[S]` : watcher actif pour toujours même après destruction
@@ -173,7 +173,7 @@ Phase 1 — Stabilisation (P0)          effort / done
 ✅ Ajouter cleanup du contexte (onUnmounted)          [M]
 □  Ajouter onUnmounted() dans usePeerCore             [S]
 □  Ajouter cleanup contextRegistry dans usePeerTransport [S]
-□  Limiter inviteRetries Map (max size + TTL)         [S]
+✅ Limiter inviteRetries Map (max size + TTL)         [S]
 □  Fix race condition getRoomUsersDiff                [S]
 □  Ajouter validation stream avant peer.call() visio  [S]
 □  Guard auto-reconnect infinie (usePeerTransport)    [S]
