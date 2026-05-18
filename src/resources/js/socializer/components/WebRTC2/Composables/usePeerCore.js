@@ -66,7 +66,7 @@ export function usePeerCore(ctx) {
      * @param {*} userSlug 
      * @returns 
      */
-    const requestRemotePeerConnection = (userSlug) => {
+    const requestRemotePeerConnection = async (userSlug) => {
 
         const room = ctx.session.onAirRoom
         const type = ctx.session.currentType
@@ -90,7 +90,7 @@ export function usePeerCore(ctx) {
             }
         }
 
-        ctx.AjaxService.load('/ask-to-peer-id', 'post', {
+        await ctx.AjaxService.load('/ask-to-peer-id', 'post', {
             toUserSlug: userSlug,
             room: room,
             type: type
@@ -105,9 +105,9 @@ export function usePeerCore(ctx) {
      * @param {*} type 
      * @param {*} room 
      */
-    const responseRemotePeerConnection = (payload) => {
+    const responseRemotePeerConnection = async (payload) => {
 
-        ctx.AjaxService.load('/response-to-peer-id', 'post', {
+        await ctx.AjaxService.load('/response-to-peer-id', 'post', {
             peerId: ctx.peerStore.localPeer?.id || ctx.peerStore.localPeer?._id || ctx.peerStore.lastLocalPeerId,
             toUserSlug: payload.fromUserSlug,
             room: payload.room,
@@ -117,7 +117,7 @@ export function usePeerCore(ctx) {
 
     /*------  Connection avec accord ----------*/
 
-    const requestAuthorizationRemotePeerId = (payload) => {
+    const requestAuthorizationRemotePeerId = async (payload) => {
 
         const localPeerId =
             ctx.peerStore.localPeer?.id
@@ -146,7 +146,7 @@ export function usePeerCore(ctx) {
         userSlugToInviteId.set(toUserSlug, inviteId)
 
         // Premier envoi immédiat
-        ctx.AjaxService.load('/send-alert-to-user', 'post', {
+        await ctx.AjaxService.load('/send-alert-to-user', 'post', {
             toUserSlug,
             options: data
         })
@@ -168,26 +168,26 @@ export function usePeerCore(ctx) {
         return inviteId
     }
 
-    const sendAuthorizationRemotePeerId = (payload) => { 
+    const sendAuthorizationRemotePeerId = async (payload) => { 
         if(payload.status) {
             payload.options.peerId = ctx.peerStore.localPeer?.id || ctx.peerStore.localPeer?._id || ctx.peerStore.lastLocalPeerId
         }
 
-        ctx.AjaxService.load('/response-to-authorization-peer', 'post', {
+        await ctx.AjaxService.load('/response-to-authorization-peer', 'post', {
             toUserSlug: payload.fromUserSlug,
             options: payload.status ? payload.options : { type: payload.options.type }, // on envoie les infos de connexion seulement si l'accès est autorisé, sinon on précise juste le type d'appel pour que le client puisse réagir (ex: afficher une notification d'appel refusé)
             status: payload.status
         }) 
     }
 
-    const notifyCloseConnectionToPeer = (payload) => {
+    const notifyCloseConnectionToPeer = async (payload) => {
         const toUserSlug = payload?.toUserSlug
         const type = payload?.type || 'visio'
         const room = payload?.room || ctx.session.currentCallRoomId || ctx.session.currentRoom
 
         if (!toUserSlug || !room) return
 
-        ctx.AjaxService.load('/close-connection-to-peer-id', 'post', {
+        await ctx.AjaxService.load('/close-connection-to-peer-id', 'post', {
             toUserSlug,
             fromUserSlug: ctx.mySlug.value,
             room,
