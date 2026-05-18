@@ -20,7 +20,7 @@
  * - orchestrer le réseau WebRTC entre les peers
  * 
  */
-import { watch, markRaw } from 'vue'
+import { watch, markRaw, onUnmounted } from 'vue'
 import { MAX_PEERS_PER_ROOM } from '../webrtc2.config.js'
 
 export function usePeerConnections(ctx) {
@@ -311,7 +311,7 @@ export function usePeerConnections(ctx) {
         )
     }
 
-    watch(ctx.lastRoomSignal, async (signal) => {
+    const stopSignalWatch = watch(ctx.lastRoomSignal, async (signal) => {
         if (!signal || !ctx.SIGNAL_TYPES.connections.includes(signal.type)) return
 
         switch (signal.type) {
@@ -319,6 +319,10 @@ export function usePeerConnections(ctx) {
                 await connectToPeer(signal.payload)
                 break
         }
+    })
+
+    onUnmounted(() => {
+        stopSignalWatch()
     })
 
     return {

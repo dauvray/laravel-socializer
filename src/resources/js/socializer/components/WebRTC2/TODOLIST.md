@@ -68,7 +68,7 @@ utils/ (infrastructure — usage libre par tous les composables)
 - [✅] **Anti-pattern polling stream** `[S]` : `while (!localStream && attempts < 25) { await sleep(200) }` → 5s max arbitraire, expiration silencieuse
 - [✅] **TOCTOU sur connection state** `[S]` : `connectionState` / `signalingState` peuvent changer entre la vérification et l'utilisation
 - [✅] **Pas de limite de connexions par room** `[M]` : WebRTC mesh est raisonnable jusqu'à ~8 peers ; au-delà le navigateur sature — ajouter un guard dans `connectToPeer`
-- [ ] **`watch(lastRoomSignal)` non-unsubscribed** `[S]` : listener WebRTC actif après destruction
+- [✅] **`watch(lastRoomSignal)` non-unsubscribed** `[S]` : listener WebRTC actif après destruction
 - [ ] **`_buildPeerConnectionConfig()` sans validation** `[S]` : assume peerId/userSlug non-null/valides
 
 ### usePeerTransport
