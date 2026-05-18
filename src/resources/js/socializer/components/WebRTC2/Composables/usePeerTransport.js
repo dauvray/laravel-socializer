@@ -141,8 +141,11 @@ export function usePeerTransport(ctx) {
                 // 2. Invalider le peerId stale pour forcer une nouvelle demande de signalisation
                 registeredCtx.peerStore.removeRemotePeerId(targetSlug)
 
-                // 3. Notifier l'orchestrateur pour relancer le cycle complet de connexion
-                registeredCtx.hooks?.onPeerUnavailable?.(targetSlug)
+                // 3. Notifier l'orchestrateur via signal réactif pour relancer le cycle complet.
+                // usePeerOrchestrator observe ce signal via watch() → pas de couplage par mutation.
+                if (registeredCtx.peerUnavailableSignal) {
+                    registeredCtx.peerUnavailableSignal.value = targetSlug
+                }
             })
         })
 

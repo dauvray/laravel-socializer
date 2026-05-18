@@ -19,7 +19,7 @@
  * - fournir une "source de vérité" unique à tous les composables techniques
  */
 
-import { reactive, computed, onBeforeMount, onUnmounted } from 'vue'
+import { reactive, computed, ref, onBeforeMount, onUnmounted } from 'vue'
 import { useAjaxService } from '~estarter/services/AjaxService.js'
 import { usePeer2Store } from '~socializer/stores/peers2.js'
 import { useServerStore } from '~socializer/stores/server.js'
@@ -430,11 +430,11 @@ export function createPeerContext({ type, room, eventBus, options }) {
         destroy()
     })
 
-    // Hooks pour la communication inverse (composables → orchestrateur)
-    // Permettent à usePeerTransport de déclencher une recovery sans couplage direct.
-    const hooks = {
-        onPeerUnavailable: null,  // (userSlug: string) => void
-    }
+    // Signal réactif : communication inverse usePeerTransport → usePeerOrchestrator
+    // usePeerTransport écrit le slug du peer indisponible ici ;
+    // usePeerOrchestrator l'observe via watch() et déclenche la recovery.
+    // Remplace l'ancienne mutation implicite de hooks.onPeerUnavailable.
+    const peerUnavailableSignal = ref(null)
         
     return {
         contextId,
@@ -468,8 +468,8 @@ export function createPeerContext({ type, room, eventBus, options }) {
         removeCurrentCallUser,
         clearCurrentCallUsers,
 
-        // hooks (enregistrés par l'orchestrateur)
-        hooks,
+        // signal réactif (usePeerTransport → usePeerOrchestrator)
+        peerUnavailableSignal,
 
         // destruction explicite (cleanup manuel si nécessaire hors lifecycle)
         destroy,

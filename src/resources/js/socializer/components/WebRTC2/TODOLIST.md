@@ -74,7 +74,7 @@ utils/ (infrastructure — usage libre par tous les composables)
 ### usePeerTransport
 
 - [✅] **`contextRegistry` global jamais nettoyé** `[S]` : contextes détruits restent en mémoire indefiniment
-- [ ] **`context.hooks.onPeerUnavailable` : couplage par mutation implicite** `[M]` : l'orchestrateur pousse un callback sur un objet `hooks` du contexte que `usePeerTransport` appellera plus tard — inversion de dépendance artisanale ; un signal réactif (computed/watch sur le store) ou un eventEmitter interne serait plus explicite
+- [✅] **`context.hooks.onPeerUnavailable` : couplage par mutation implicite** `[M]` : l'orchestrateur pousse un callback sur un objet `hooks` du contexte que `usePeerTransport` appellera plus tard — inversion de dépendance artisanale ; un signal réactif (computed/watch sur le store) ou un eventEmitter interne serait plus explicite
 - [ ] **Race condition Peer singleton** `[S]` : `if(peerStore.localPeerReady) return` insuffisant — 2 composants peuvent passer simultanément
 - [ ] **Error handler Peer inerte** `[S]` : `localPeer.on('error', ...)` ne fait que logger → pas de fallback, pas de recovery
 - [ ] **Auto-reconnect infinie** `[S]` : `localPeer.reconnect()` appelée sans guard → peut boucler si serveur PeerJS down
@@ -196,7 +196,6 @@ Phase 2 — Robustesse (P1)             effort / done
 □  Centraliser les constantes dans webrtc2.config.js  [S]
 □  Remplacer Math.random() par crypto.randomUUID()    [S]
 □  Ajouter rate limiting dans forwardStarMessage()    [S]
-
 Phase 3 — Architecture (P2)           effort / projet
 ──────────────────────────────────────────────────────
 ✅  [L]  Unifier les deux systèmes de retry (inviteRetries → usePeerRetry)

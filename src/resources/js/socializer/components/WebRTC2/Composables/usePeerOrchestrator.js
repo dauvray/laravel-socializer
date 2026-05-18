@@ -22,7 +22,7 @@
  * 
  */
 
-import { inject, ref } from 'vue'
+import { inject, ref, watch } from 'vue'
 import { createPeerContext } from '~socializer/components/WebRTC2/Composables/createPeerContext.js'
 import { usePeerCore } from '~socializer/components/WebRTC2/Composables/usePeerCore.js'
 import { usePeerMedia } from '~socializer/components/WebRTC2/Composables/usePeerMedia.js'
@@ -138,17 +138,20 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         retryManager.scheduleRetry(userSlug, 0, _handleConnectionAttempt)
     }
 
-    // ── Recovery hook : peer-unavailable ─────────────────────────────────────
-    // Enregistré sur le contexte pour être appelé par usePeerTransport quand
-    // PeerJS signale que le peerId distant est introuvable sur le serveur.
-    // La connexion échouée et le peerId stale ont déjà été nettoyés avant l'appel.
-    // On relance le cycle complet : nouvelle demande de peerId → nouvelle connexion.
+    // ── Recovery watch : peer-unavailable ──────────────────────────────────────
+    // usePeerTransport écrit le slug du peer indisponible dans context.peerUnavailableSignal.
+    // On observe ce signal ici (watch réactif) pour relancer le cycle de connexion.
+    // Plus propre que la mutation implicite de hooks.onPeerUnavailable.
     // ─────────────────────────────────────────────────────────────────────────
-    context.hooks.onPeerUnavailable = (userSlug) => {
+    const unwatchPeerUnavailable = watch(context.peerUnavailableSignal, (userSlug) => {
+        if (!userSlug) return
         if (isShuttingDown.value) return
         if (!_isValidSlug(userSlug)) return
         _requestOrConnectPeer(userSlug)
-    }
+        // On remet le signal à null pour pouvoir détecter une prochaine émission
+        // (watch ne se re-déclenche pas si la valeur ne change pas).
+        context.peerUnavailableSignal.value = null
+    })
 
    /**
      * 🔥 Glue logique (SEUL endroit où on mixe les couches)
@@ -200,6 +203,7 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
     const cleanupPeerConnection = () => {
         isShuttingDown.value = true  // 🛑 Guard permanent : reste actif après le teardown terminal
         
+        unwatchPeerUnavailable()  // Arrête l'observation du signal peer-unavailable
         retryManager.clearAll()
         connections.closePeerConnection({
             room: context.session.currentCallRoomId || context.session.currentRoom,
