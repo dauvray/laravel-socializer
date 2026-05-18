@@ -19,7 +19,7 @@
  */
 
 import { Peer } from "peerjs"
-import { markRaw } from 'vue'
+import { markRaw, watch } from 'vue'
 
 // -----------------------------------------------------------------------------
 // Registre global des contextes WebRTC actifs
@@ -195,16 +195,29 @@ export function usePeerTransport(ctx) {
                 return
             }
 
-            let localStream = getLocalStream()
+            // Attend le stream local via watch réactif (évite le polling)
+            const waitForLocalStream = (timeoutMs = 5000) => {
+                return new Promise((resolve) => {
+                    const current = getLocalStream()
+                    if (current) { resolve(current); return }
 
-            if (!localStream) {
-                let attempts = 0
-                while (!localStream && attempts < 25) {
-                    await new Promise((resolve) => setTimeout(resolve, 200))
-                    localStream = getLocalStream()
-                    attempts++
-                }
+                    let timeoutId
+                    const stop = watch(
+                        () => targetCtx.media?.currentStream,
+                        (val) => {
+                            if (val) {
+                                clearTimeout(timeoutId)
+                                stop()
+                                resolve(val)
+                            }
+                        },
+                        { immediate: false }
+                    )
+                    timeoutId = setTimeout(() => { stop(); resolve(null) }, timeoutMs)
+                })
             }
+
+            let localStream = await waitForLocalStream()
 
             if (!localStream) {
                 console.warn('Call entrant ignoré: aucun stream local disponible pour répondre', call)

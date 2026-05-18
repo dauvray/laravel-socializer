@@ -65,7 +65,7 @@ utils/ (infrastructure — usage libre par tous les composables)
 
 - [✅] **Race condition `getRoomUsersDiff()`** `[S]` : modifie directement `ctx.connection.usersInRoom` pendant la lecture → diff incohérent entre appels parallèles
 - [✅] **Pas de validation stream pour `visio`** `[S]` : `ctx.media.currentStream` peut être null → `peer.call()` avec stream null = comportement indéfini
-- [ ] **Anti-pattern polling stream** `[S]` : `while (!localStream && attempts < 25) { await sleep(200) }` → 5s max arbitraire, expiration silencieuse
+- [✅] **Anti-pattern polling stream** `[S]` : `while (!localStream && attempts < 25) { await sleep(200) }` → 5s max arbitraire, expiration silencieuse
 - [ ] **TOCTOU sur connection state** `[S]` : `connectionState` / `signalingState` peuvent changer entre la vérification et l'utilisation
 - [ ] **Pas de limite de connexions par room** `[M]` : WebRTC mesh est raisonnable jusqu'à ~8 peers ; au-delà le navigateur sature — ajouter un guard dans `connectToPeer`
 - [ ] **`watch(lastRoomSignal)` non-unsubscribed** `[S]` : listener WebRTC actif après destruction
@@ -181,7 +181,7 @@ Phase 1 — Stabilisation (P0)          effort / done
 □  Ajouter cleanup contextRegistry dans usePeerTransport [S]
 ✅ Limiter inviteRetries Map (max size + TTL)         [S]
 ✅ Fix race condition getRoomUsersDiff                [S]
-✅  Ajouter validation stream avant peer.call() visio  [S]
+✅ Fix anti-pattern polling stream → watch réactif (usePeerTransport)  [S]
 □  Guard auto-reconnect infinie (usePeerTransport)    [S]
 
 Phase 2 — Robustesse (P1)             effort / done
