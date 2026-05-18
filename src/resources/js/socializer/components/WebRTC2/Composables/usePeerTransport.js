@@ -20,7 +20,7 @@
 
 import { Peer } from "peerjs"
 import { markRaw, onUnmounted, watch } from 'vue'
-import { MAX_RECONNECT_ATTEMPTS } from '../webrtc2.config.js'
+import { MAX_RECONNECT_ATTEMPTS, HUB_RATE_WINDOW_MS, HUB_MAX_MESSAGES_PER_WINDOW } from '../webrtc2.config.js'
 
 // -----------------------------------------------------------------------------
 // Registre global des contextes WebRTC actifs
@@ -39,6 +39,29 @@ let _peerInitPromise = null
 // serveur PeerJS. Réinitialisé à chaque connexion réussie (événement 'open').
 // Backoff exponentiel : 1s, 2s, 4s, 8s, 16s, 30s (max), puis abandon.
 let _reconnectAttempts = 0
+
+// ─── Rate limiting hub (topologie star) ─────────────────────────────────────
+// Fenêtre glissante par expéditeur : chaque entrée est un tableau de timestamps.
+// Clé = senderSlug (envelope.from). Partagé entre contextes car le hub est unique.
+const _hubRateWindows = new Map()
+
+function _isHubRateLimited(senderSlug) {
+    const now = Date.now()
+    const windowStart = now - HUB_RATE_WINDOW_MS
+
+    let timestamps = _hubRateWindows.get(senderSlug) ?? []
+    // Purge les timestamps hors de la fenêtre glissante
+    timestamps = timestamps.filter(ts => ts > windowStart)
+
+    if (timestamps.length >= HUB_MAX_MESSAGES_PER_WINDOW) {
+        _hubRateWindows.set(senderSlug, timestamps)
+        return true
+    }
+
+    timestamps.push(now)
+    _hubRateWindows.set(senderSlug, timestamps)
+    return false
+}
 
 function registerContext(ctx) {
     if (!ctx?.contextId) return
@@ -291,6 +314,8 @@ export function usePeerTransport(ctx) {
 
     const unregisterLocalContext = () => {
         unregisterContext(ctx)
+        // Libère les entrées de rate limiting liées à ce contexte
+        _hubRateWindows.clear()
     }
 
     const _getOpenDataConnection = (room, userSlug) => {
@@ -315,6 +340,18 @@ export function usePeerTransport(ctx) {
     //   envelope.payload → les vraies données à livrer
     // ─────────────────────────────────────────────────────────────────────────────
     const forwardStarMessage = (envelope) => {
+        // ── Rate limiting ────────────────────────────────────────────────────────
+        // Protection contre les rafales de messages : si un client dépasse
+        // HUB_MAX_MESSAGES_PER_WINDOW messages dans HUB_RATE_WINDOW_MS, l'excédent
+        // est abandonné pour éviter la saturation du hub.
+        if (_isHubRateLimited(envelope.from)) {
+            console.warn(
+                `[Hub] Rate limit dépassé (${HUB_MAX_MESSAGES_PER_WINDOW} msg/${HUB_RATE_WINDOW_MS}ms)` +
+                ` — message de '${envelope.from}' abandonné`
+            )
+            return
+        }
+
         const room = ctx.session.onAirRoom
 
         // Si `to` est fourni, on cible ces slugs. Sinon, on prend tous les users de la room.

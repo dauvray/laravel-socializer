@@ -78,7 +78,7 @@ utils/ (infrastructure — usage libre par tous les composables)
 - [✅] **Race condition Peer singleton** `[S]` : `if(peerStore.localPeerReady) return` insuffisant — 2 composants peuvent passer simultanément
 - [✅] **Error handler Peer inerte** `[S]` : `localPeer.on('error', ...)` ne fait que logger → pas de fallback, pas de recovery
 - [✅] **Auto-reconnect infinie** `[S]` : `localPeer.reconnect()` appelée sans guard → peut boucler si serveur PeerJS down
-- [ ] **`forwardStarMessage()` sans rate limiting** `[S]` : hub peut être saturé par rafale de messages (N × targets)
+- [✅] **`forwardStarMessage()` sans rate limiting** `[S]` : hub peut être saturé par rafale de messages (N × targets)
 - [ ] **Connexion entrante ignorée silencieusement** `[S]` : si `resolveContextByMetadata()` retourne null, juste un warning
 
 ### usePeerRetry
@@ -195,7 +195,7 @@ Phase 2 — Robustesse (P1)             effort / done
 □  Ajouter unwatch() sur tous les watch()             [M]
 □  Centraliser les constantes dans webrtc2.config.js  [S]
 □  Remplacer Math.random() par crypto.randomUUID()    [S]
-□  Ajouter rate limiting dans forwardStarMessage()    [S]
+✅ Ajouter rate limiting dans forwardStarMessage()    [S]
 Phase 3 — Architecture (P2)           effort / projet
 ──────────────────────────────────────────────────────
 ✅  [L]  Unifier les deux systèmes de retry (inviteRetries → usePeerRetry)

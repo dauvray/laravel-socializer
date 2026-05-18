@@ -21,6 +21,15 @@ export const MAX_PEERS_PER_ROOM = 8
  */
 export const MAX_RECONNECT_ATTEMPTS = 8
 
+// ─── Rate limiting hub (topologie star) ───────────────────────────────────
+/**
+ * Fenêtre glissante utilisée pour le rate limiting de forwardStarMessage().
+ * Si un client envoie plus de HUB_MAX_MESSAGES_PER_WINDOW messages dans
+ * cette fenêtre, l'excédent est abandonné avec un avertissement console.
+ */
+export const HUB_RATE_WINDOW_MS = 1000
+export const HUB_MAX_MESSAGES_PER_WINDOW = 20
+
 // ─── Types de connexion valides ────────────────────────────────────────────
 /**
  * Ensemble des types de connexion PeerJS reconnus par le système WebRTC2.
