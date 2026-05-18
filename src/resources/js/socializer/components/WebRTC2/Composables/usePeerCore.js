@@ -91,13 +91,18 @@ export function usePeerCore(ctx) {
             }
         }
 
-        await ctx.AjaxService.load(ENDPOINTS.ASK_TO_PEER_ID, 'post', {
-            toUserSlug: userSlug,
-            room: room,
-            type: type
-        })
-        ctx.peerStore.addWaitingRemotePeerId(userSlug, { room, type })
-        return true
+        try {
+            await ctx.AjaxService.load(ENDPOINTS.ASK_TO_PEER_ID, 'post', {
+                toUserSlug: userSlug,
+                room: room,
+                type: type
+            })
+            ctx.peerStore.addWaitingRemotePeerId(userSlug, { room, type })
+            return true
+        } catch (e) {
+            console.error('[usePeerCore] requestRemotePeerConnection failed:', e)
+            return false
+        }
     }
 
     /**
@@ -108,12 +113,16 @@ export function usePeerCore(ctx) {
      */
     const responseRemotePeerConnection = async (payload) => {
 
-        await ctx.AjaxService.load(ENDPOINTS.RESPONSE_TO_PEER_ID, 'post', {
-            peerId: ctx.peerStore.localPeer?.id || ctx.peerStore.localPeer?._id || ctx.peerStore.lastLocalPeerId,
-            toUserSlug: payload.fromUserSlug,
-            room: payload.room,
-            type: payload.type
-        })
+        try {
+            await ctx.AjaxService.load(ENDPOINTS.RESPONSE_TO_PEER_ID, 'post', {
+                peerId: ctx.peerStore.localPeer?.id || ctx.peerStore.localPeer?._id || ctx.peerStore.lastLocalPeerId,
+                toUserSlug: payload.fromUserSlug,
+                room: payload.room,
+                type: payload.type
+            })
+        } catch (e) {
+            console.error('[usePeerCore] responseRemotePeerConnection failed:', e)
+        }
     }
 
     /*------  Connection avec accord ----------*/
@@ -147,10 +156,15 @@ export function usePeerCore(ctx) {
         userSlugToInviteId.set(toUserSlug, inviteId)
 
         // Premier envoi immédiat
-        await ctx.AjaxService.load(ENDPOINTS.SEND_ALERT_TO_USER, 'post', {
-            toUserSlug,
-            options: data
-        })
+        try {
+            await ctx.AjaxService.load(ENDPOINTS.SEND_ALERT_TO_USER, 'post', {
+                toUserSlug,
+                options: data
+            })
+        } catch (e) {
+            console.error('[usePeerCore] requestAuthorizationRemotePeerId initial send failed:', e)
+            // Le moteur de retry prendra le relais
+        }
 
         // Planifie les tentatives suivantes via le moteur de retry partagé.
         // Le callback retourne true (stop) si l'invitation n'est plus en attente
@@ -158,10 +172,14 @@ export function usePeerCore(ctx) {
         inviteRetryManager.scheduleRetry(toUserSlug, 0, async (userSlug) => {
             if (!userSlugToInviteId.has(userSlug)) return true
 
-            await ctx.AjaxService.load(ENDPOINTS.SEND_ALERT_TO_USER, 'post', {
-                toUserSlug: userSlug,
-                options: data
-            })
+            try {
+                await ctx.AjaxService.load(ENDPOINTS.SEND_ALERT_TO_USER, 'post', {
+                    toUserSlug: userSlug,
+                    options: data
+                })
+            } catch (e) {
+                console.error('[usePeerCore] requestAuthorizationRemotePeerId retry send failed:', e)
+            }
 
             return !userSlugToInviteId.has(userSlug)
         })
@@ -174,11 +192,15 @@ export function usePeerCore(ctx) {
             payload.options.peerId = ctx.peerStore.localPeer?.id || ctx.peerStore.localPeer?._id || ctx.peerStore.lastLocalPeerId
         }
 
-        await ctx.AjaxService.load(ENDPOINTS.RESPONSE_TO_AUTHORIZATION_PEER, 'post', {
-            toUserSlug: payload.fromUserSlug,
-            options: payload.status ? payload.options : { type: payload.options.type }, // on envoie les infos de connexion seulement si l'accès est autorisé, sinon on précise juste le type d'appel pour que le client puisse réagir (ex: afficher une notification d'appel refusé)
-            status: payload.status
-        }) 
+        try {
+            await ctx.AjaxService.load(ENDPOINTS.RESPONSE_TO_AUTHORIZATION_PEER, 'post', {
+                toUserSlug: payload.fromUserSlug,
+                options: payload.status ? payload.options : { type: payload.options.type }, // on envoie les infos de connexion seulement si l'accès est autorisé, sinon on précise juste le type d'appel pour que le client puisse réagir (ex: afficher une notification d'appel refusé)
+                status: payload.status
+            })
+        } catch (e) {
+            console.error('[usePeerCore] sendAuthorizationRemotePeerId failed:', e)
+        }
     }
 
     const notifyCloseConnectionToPeer = async (payload) => {
@@ -188,12 +210,16 @@ export function usePeerCore(ctx) {
 
         if (!toUserSlug || !room) return
 
-        await ctx.AjaxService.load(ENDPOINTS.CLOSE_CONNECTION_TO_PEER_ID, 'post', {
-            toUserSlug,
-            fromUserSlug: ctx.mySlug.value,
-            room,
-            type,
-        })
+        try {
+            await ctx.AjaxService.load(ENDPOINTS.CLOSE_CONNECTION_TO_PEER_ID, 'post', {
+                toUserSlug,
+                fromUserSlug: ctx.mySlug.value,
+                room,
+                type,
+            })
+        } catch (e) {
+            console.error('[usePeerCore] notifyCloseConnectionToPeer failed:', e)
+        }
     }
 
     /*------  Signal Watcher ----------*/
