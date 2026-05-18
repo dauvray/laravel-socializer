@@ -14,6 +14,13 @@
  */
 export const MAX_PEERS_PER_ROOM = 8
 
+// ─── Reconnexion PeerJS ───────────────────────────────────────────────────
+/**
+ * Nombre maximum de tentatives de reconnexion au serveur PeerJS avant abandon.
+ * Backoff exponentiel : 1s · 2s · 4s · 8s · 16s · 30s (max) par tentative.
+ */
+export const MAX_RECONNECT_ATTEMPTS = 8
+
 // ─── Types de connexion valides ────────────────────────────────────────────
 /**
  * Ensemble des types de connexion PeerJS reconnus par le système WebRTC2.

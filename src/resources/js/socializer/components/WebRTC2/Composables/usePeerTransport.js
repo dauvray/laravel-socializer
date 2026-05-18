@@ -20,6 +20,7 @@
 
 import { Peer } from "peerjs"
 import { markRaw, onUnmounted, watch } from 'vue'
+import { MAX_RECONNECT_ATTEMPTS } from '../webrtc2.config.js'
 
 // -----------------------------------------------------------------------------
 // Registre global des contextes WebRTC actifs
@@ -33,6 +34,11 @@ const contextRegistry = new Map()
 // éviter la race condition : 2 composants qui appellent setLocalPeer() en même
 // temps créeraient chacun une instance Peer distincte.
 let _peerInitPromise = null
+
+// Guard auto-reconnect infinie : compteur de tentatives de reconnexion au
+// serveur PeerJS. Réinitialisé à chaque connexion réussie (événement 'open').
+// Backoff exponentiel : 1s, 2s, 4s, 8s, 16s, 30s (max), puis abandon.
+let _reconnectAttempts = 0
 
 function registerContext(ctx) {
     if (!ctx?.contextId) return
@@ -99,6 +105,8 @@ export function usePeerTransport(ctx) {
 
             // a la création du Peer
             peerStore.localPeer.on('open', id => {
+                // Connexion (re)établie : réinitialise le compteur de reconnexion
+                _reconnectAttempts = 0
                 // Workaround for peer.reconnect deleting previous id
                 if (id === null) {
                     peerStore.localPeer.id = peerStore.lastLocalPeerId
@@ -163,10 +171,33 @@ export function usePeerTransport(ctx) {
             })
 
             peerStore.localPeer.on('disconnected', () => {
-                // Workaround for peer.reconnect deleting previous id
-                peerStore.localPeer.id = peerStore.lastLocalPeerId
-                peerStore.localPeer._lastServerId = peerStore.lastLocalPeerId
-                peerStore.localPeer.reconnect()
+                // Guard : ne pas tenter de reconnecter un peer détruit
+                if (peerStore.localPeer.destroyed) return
+
+                // Guard auto-reconnect infinie : abandon après MAX_RECONNECT_ATTEMPTS
+                if (_reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+                    console.error(
+                        `[WebRTC2] PeerJS: serveur injoignable après ${MAX_RECONNECT_ATTEMPTS} tentatives — abandon.`
+                    )
+                    return
+                }
+
+                _reconnectAttempts++
+
+                // Backoff exponentiel : 1s · 2s · 4s · 8s · 16s … plafonné à 30s
+                const delayMs = Math.min(1000 * Math.pow(2, _reconnectAttempts - 1), 30_000)
+
+                console.warn(
+                    `[WebRTC2] PeerJS déconnecté — tentative ${_reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} dans ${delayMs}ms`
+                )
+
+                setTimeout(() => {
+                    if (peerStore.localPeer.destroyed) return
+                    // Workaround for peer.reconnect deleting previous id
+                    peerStore.localPeer.id = peerStore.lastLocalPeerId
+                    peerStore.localPeer._lastServerId = peerStore.lastLocalPeerId
+                    peerStore.localPeer.reconnect()
+                }, delayMs)
             })
 
             // ---------------------------------------------------------------------

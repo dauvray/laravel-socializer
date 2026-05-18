@@ -76,8 +76,8 @@ utils/ (infrastructure — usage libre par tous les composables)
 - [✅] **`contextRegistry` global jamais nettoyé** `[S]` : contextes détruits restent en mémoire indefiniment
 - [✅] **`context.hooks.onPeerUnavailable` : couplage par mutation implicite** `[M]` : l'orchestrateur pousse un callback sur un objet `hooks` du contexte que `usePeerTransport` appellera plus tard — inversion de dépendance artisanale ; un signal réactif (computed/watch sur le store) ou un eventEmitter interne serait plus explicite
 - [✅] **Race condition Peer singleton** `[S]` : `if(peerStore.localPeerReady) return` insuffisant — 2 composants peuvent passer simultanément
-- [ ] **Error handler Peer inerte** `[S]` : `localPeer.on('error', ...)` ne fait que logger → pas de fallback, pas de recovery
-- [ ] **Auto-reconnect infinie** `[S]` : `localPeer.reconnect()` appelée sans guard → peut boucler si serveur PeerJS down
+- [✅] **Error handler Peer inerte** `[S]` : `localPeer.on('error', ...)` ne fait que logger → pas de fallback, pas de recovery
+- [✅] **Auto-reconnect infinie** `[S]` : `localPeer.reconnect()` appelée sans guard → peut boucler si serveur PeerJS down
 - [ ] **`forwardStarMessage()` sans rate limiting** `[S]` : hub peut être saturé par rafale de messages (N × targets)
 - [ ] **Connexion entrante ignorée silencieusement** `[S]` : si `resolveContextByMetadata()` retourne null, juste un warning
 
@@ -182,7 +182,7 @@ Phase 1 — Stabilisation (P0)          effort / done
 ✅ Limiter inviteRetries Map (max size + TTL)         [S]
 ✅ Fix race condition getRoomUsersDiff                [S]
 ✅ Fix anti-pattern polling stream → watch réactif (usePeerTransport)  [S]
-□  Guard auto-reconnect infinie (usePeerTransport)    [S]
+✅ Guard auto-reconnect infinie (usePeerTransport)    [S]
 
 Phase 2 — Robustesse (P1)             effort / done
 ────────────────────────────────────────────────────
