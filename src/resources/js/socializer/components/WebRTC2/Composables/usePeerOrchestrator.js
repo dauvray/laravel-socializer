@@ -419,61 +419,65 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
        if (context.session.isStoppingCall) return
        context.session.isStoppingCall = true
 
-        const roomId = options?.roomId || context.session.currentCallRoomId || context.currentRoom.value
-       
-        isShuttingDown.value = true  // 🛑 Bloquer les retries immédiatement
+        try {
+            const roomId = options?.roomId || context.session.currentCallRoomId || context.currentRoom.value
+           
+            isShuttingDown.value = true  // 🛑 Bloquer les retries immédiatement
 
-        const mode = options?.mode || 'full'
-        const callType = context.session.currentType || 'visio'
+            const mode = options?.mode || 'full'
+            const callType = context.session.currentType || 'visio'
 
-        const normalizedUsers = (users || [])
-            .map((u) => ({ userSlug: u?.userSlug || u?.slug, type: u?.type || callType }))
-            .filter((u) => !!u.userSlug)
+            const normalizedUsers = (users || [])
+                .map((u) => ({ userSlug: u?.userSlug || u?.slug, type: u?.type || callType }))
+                .filter((u) => !!u.userSlug)
 
-        if (notifyRemote) {
-            normalizedUsers.forEach((u) => {
-                core.notifyCloseConnectionToPeer({
-                    toUserSlug: u.userSlug,
-                    type: u.type || callType,
-                    room: roomId,
+            if (notifyRemote) {
+                normalizedUsers.forEach((u) => {
+                    core.notifyCloseConnectionToPeer({
+                        toUserSlug: u.userSlug,
+                        type: u.type || callType,
+                        room: roomId,
+                    })
                 })
-            })
-        }
+            }
 
-        if (mode === 'partial') {
-            normalizedUsers.forEach((u) => {
-                retryManager.clearRetry(u.userSlug)
-                context.peerStore.removeWaitingRemotePeerId(u.userSlug)
-            })
+            if (mode === 'partial') {
+                normalizedUsers.forEach((u) => {
+                    retryManager.clearRetry(u.userSlug)
+                    context.peerStore.removeWaitingRemotePeerId(u.userSlug)
+                })
+
+                connections.closePeerConnection({
+                    room: roomId,
+                    type: callType,
+                    users: normalizedUsers.map((u) => u.userSlug),
+                    clearSignalQueue: false,
+                })
+
+                isShuttingDown.value = false  // ✅ Réactiver les retries après partial close
+                return
+            }
+
+            // === MODE FULL ===
+            retryManager.clearAll()
 
             connections.closePeerConnection({
                 room: roomId,
                 type: callType,
-                users: normalizedUsers.map((u) => u.userSlug),
-                clearSignalQueue: false,
+                clearSignalQueue: true,
             })
 
-            isShuttingDown.value = false  // ✅ Réactiver les retries après partial close
+            media.stopCurrentStream()
+            media.removeVideoElement('local-webcam')
+            context.session.currentCallRoomId = null
+            
+            isShuttingDown.value = false  // ✅ Réactiver après cleanup complet
+
+            resetCallState()
+        } finally {
+            // 🔒 Garantit la libération du verrou dans tous les cas (retour anticipé, exception, etc.)
             context.session.isStoppingCall = false
-            return
         }
-
-        // === MODE FULL ===
-        retryManager.clearAll()
-
-        connections.closePeerConnection({
-            room: roomId,
-            type: callType,
-            clearSignalQueue: true,
-        })
-
-        media.stopCurrentStream()
-        media.removeVideoElement('local-webcam')
-        context.session.currentCallRoomId = null
-        
-        isShuttingDown.value = false  // ✅ Réactiver après cleanup complet
-
-        resetCallState()
     }
 
     const setCurrentCallRoomId = (roomId = null) => {
@@ -573,7 +577,7 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         clearCurrentCallUsers()
         setCurrentCallRoomId(null)
         context.media.remoteStreamsMap.clear()
-        context.session.isStoppingCall = false
+        // ℹ️ isStoppingCall est géré exclusivement par stopCallWithPeers (finally)
         context.session.closingUsers.clear()
     }
 

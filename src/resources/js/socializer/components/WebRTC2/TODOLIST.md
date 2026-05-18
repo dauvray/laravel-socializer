@@ -110,8 +110,7 @@ utils/ (infrastructure — usage libre par tous les composables)
 
 - [✅] **`handleStreamRemoved` : nettoyage en deux passes** `[S]` : suppression par clé exacte (`streamKey`) puis balayage global (`forEach`) — indique que la clé composite n'est pas fiable ; unifier la clé ou utiliser une Map indexée par slug
 - [✅] **`openCallBetweenPeer` / `acceptCallFromPeer` : ~15 lignes dupliquées** `[S]` : démarrage stream local, création élément vidéo, mise à jour `currentType`/`currentCallRoomId` présents dans les deux fonctions → extraire `_enterCallSession(payload)`
-- [ ] **Wrapping `onDataReceived` dans l'orchestrateur** `[M]` : la responsabilité du routage star (intercepter `__starRoute`) est dans `initializePeerConnection` faute d'une couche dédiée → appartient à `usePeerTransport` ou à un futur `usePeerRouter`
-- [ ] **`stopCallWithPeers()` non-réentrant** `[S]` : `isStoppingCall` flag mais pas protégé contre appels simultanés vrais
+- [✅] **`stopCallWithPeers()` non-réentrant** `[S]` : `isStoppingCall` flag mais pas protégé contre appels simultanés vrais
 - [ ] **Pas de machine d'état pour les appels** `[L]` : états `callInprogress`, `isStoppingCall`, `closingUsers` éparpillés sans transitions claires
 - [ ] **`ensureCurrentCallRoomId()` génère avec `Math.random()`** `[S]` : pas cryptographiquement sûr pour un ID de room
 - [ ] **`_enterCallSession` : écrasement silencieux de l'ID généré** `[S]` : `ensureCurrentCallRoomId(null)` génère un ID aléatoire, mais la ligne suivante `context.session.currentCallRoomId = room` (room = null) l'écrase immédiatement → l'ID est perdu ; supprimer la ligne redondante et laisser `ensureCurrentCallRoomId` seul gérer l'affectation
@@ -207,6 +206,7 @@ Phase 2 — Robustesse (P1)             effort / done
 ✅ Extraire _enterCallSession (déduplique open/accept) [S]
 ✅ Ajouter unwatch() sur tous les watch()             [M]
 ✅  Ajouter guard défensif eventBus fallback dans createPeerContext [S]
+✅ Rendre stopCallWithPeers réentrant (try/finally + responsabilité unique) [S]
 □  Centraliser les constantes dans webrtc2.config.js  [S]
 □  Remplacer Math.random() par crypto.randomUUID()    [S]
 ✅ Ajouter rate limiting dans forwardStarMessage()    [S]
@@ -219,7 +219,8 @@ Phase 3 — Architecture (P2)           effort / projet
 ✅  [L]  Unifier les deux systèmes de retry (inviteRetries → usePeerRetry)
 □  [L]  Implémenter machine d'état appels (remplace isShuttingDown + isStoppingCall + closingUsers)
 □  [L]  Extraire useCallManager() (start/accept/open/stop/reset)
-□  [L]  Déplacer routage star dans usePeerTransport (sortir de l'orchestrateur)
+□  [L]  Déplacer routage star dans usePeerTransport (sortir de l'orchestrateur) — inclut le wrapping `onDataReceived` actuellement dans `initializePeerConnection` ; 
+        nécessite un middleware/pipeline données dans `createPeerContext` ou un composable `usePeerRouter` dédié
 □  [XL] Extraire useStreamManager() avec pool Vue apps
 □  [XL] Ajouter tests unitaires sur logique pure extraite
 □  [M]  Déplacer variables module-level (consumer count, timers) dans peerStore

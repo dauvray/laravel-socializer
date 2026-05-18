@@ -23,14 +23,14 @@
     })
 
     //  En se basant sur le nom de la room, ce composable permet de partager 
-    // le même état de chat entre plusieurs composants.
+    // le même état de contexte entre plusieurs composants.
     const { 
             messages, 
             addNewMessage, 
             messageToSend,
             send,
         } = useChatSimple(
-                props.api.currentRoom.value, // on peut aussi passer un nom de room en argument pour partager le même chat entre plusieurs composants, tant qu'elles utilisent le même nom de room pour accéder à la map
+                props.api.currentRoom.value, // état de contexte de room sélectionné
                 props.api // passé en argument, permet d'utiliser des méthodes de useMediaBroadcast (ex: sendDataToPeer) ou d'autres méthodes de transport selon les besoins
             )
 </script>
