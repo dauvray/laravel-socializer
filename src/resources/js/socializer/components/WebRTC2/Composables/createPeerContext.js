@@ -134,9 +134,9 @@ export function createPeerContext({ type, room, eventBus, options }) {
         callInprogress: computed(() => session.callInprogress),
         usersInRoom: computed(() => connection.usersInRoom),
         allUsersInRoom: computed(() => {
-            const hub = session.hubSlug ? [session.hubSlug] : []
             const others = connection.usersInRoom.filter(slug => slug !== session.hubSlug)
-            return [...connection.usersInRoom, meStore.getMe?.slug]
+            const mySlug = meStore.getMe?.slug
+            return mySlug ? [...others, mySlug] : [...others]
         }),
 
         topology: computed(() => session.topology),
@@ -205,7 +205,7 @@ export function createPeerContext({ type, room, eventBus, options }) {
         })
     }
 
-    // WeakSet interne pour suivre les connexions déjà bindées et éviter les doublons de listeners (idempotence) 
+    // WeakSet interne pour suivre les connexions déjà bindées et éviter les doublon s de listeners (idempotence) 
     // sans polluer les objets tiers PeerJS avec des flags personnalisés.
     const _boundConnections = new WeakSet()
 

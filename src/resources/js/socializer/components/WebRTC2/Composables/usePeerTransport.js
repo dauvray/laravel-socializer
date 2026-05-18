@@ -177,9 +177,10 @@ export function usePeerTransport(ctx) {
         // le second attend la même plutôt que de créer un second Peer.
         if (_peerInitPromise) return _peerInitPromise
 
-        peerStore.localPeerReady = true
-
         const _doInit = async () => {
+            // Marqué comme "en cours d'init" ici (et non avant _doInit) pour pouvoir
+            // le réinitialiser à false dans le .catch() si l'initialisation échoue.
+            peerStore.localPeerReady = true
 
             peerStore.localPeer = markRaw(new Peer({
                 host: import.meta.env.VITE_PEERS_SERVER_HOST,
@@ -267,8 +268,8 @@ export function usePeerTransport(ctx) {
             })
 
             peerStore.localPeer.on('disconnected', () => {
-                // Guard : ne pas tenter de reconnecter un peer détruit
-                if (peerStore.localPeer.destroyed) return
+                // Guard : ne pas tenter de reconnecter un peer nul ou détruit
+                if (!peerStore.localPeer || peerStore.localPeer.destroyed) return
 
                 // Guard auto-reconnect infinie : abandon après MAX_RECONNECT_ATTEMPTS
                 if (_reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
@@ -288,7 +289,7 @@ export function usePeerTransport(ctx) {
                 )
 
                 setTimeout(() => {
-                    if (peerStore.localPeer.destroyed) return
+                    if (!peerStore.localPeer || peerStore.localPeer.destroyed) return
                     // Workaround for peer.reconnect deleting previous id
                     peerStore.localPeer.id = peerStore.lastLocalPeerId
                     peerStore.localPeer._lastServerId = peerStore.lastLocalPeerId
@@ -379,11 +380,17 @@ export function usePeerTransport(ctx) {
                 targetCtx.setUpConnectionListeners(call)
             })
 
-            return await ctx.waitForMeReady()
-
         } // end _doInit
 
-        _peerInitPromise = _doInit().finally(() => { _peerInitPromise = null })
+        _peerInitPromise = _doInit()
+            .catch(err => {
+                // En cas d'échec, on remet le flag à false pour qu'un prochain
+                // appel à setLocalPeer() puisse relancer l'initialisation.
+                console.error('[WebRTC2] Échec d\'initialisation du Peer :', err)
+                peerStore.localPeerReady = false
+                peerStore.localPeer = null
+            })
+            .finally(() => { _peerInitPromise = null })
         return _peerInitPromise
     }
 

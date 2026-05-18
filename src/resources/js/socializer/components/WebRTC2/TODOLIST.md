@@ -102,7 +102,7 @@ utils/ (infrastructure — usage libre par tous les composables)
 
 ### createPeerContext
 
-- [ ] **`allUsersInRoom` computed : dead code silencieux** `[S]` : `hub` et `others` calculés mais jamais utilisés → retourne `[...usersInRoom, mySlug]` sans exclusion hub, doublon mySlug possible
+- [✅] **`allUsersInRoom` computed : dead code silencieux** `[S]` : `hub` et `others` calculés mais jamais utilisés → retourne `[...usersInRoom, mySlug]` sans exclusion hub, doublon mySlug possible
 - [✅] **Flags `__ctx*` mutés sur objets PeerJS tiers** `[S]` : `conn.__ctxListenersBound`, `conn.__ctxCloseHandled`, `conn.__ctxCustomCloseEmitted` — propriétés collées sur des objets que l'on ne possède pas → remplacer par un `WeakSet` interne à `setUpConnectionListeners`
 - [ ] **Pas de fallback injection** `[S]` : `inject('eventBus')` échoue silencieusement si non fourni — ajouter un guard défensif
 
@@ -123,6 +123,12 @@ utils/ (infrastructure — usage libre par tous les composables)
 ### usePeerConnections
 
 - [✅] **`hasOpenConnection()` pas atomique** `[S]` : vérification + utilisation séparées → TOCTOU systématique
+
+### usePeerTransport
+
+- [ ] **`localPeerReady` sémantique trompeuse** `[S]` : le flag est mis à `true` dès le début de `_doInit()`, avant l'événement `open` — il indique "initialisation en cours" et non "peer utilisable" ; toute vérification externe de ce flag est trompeuse → renommer en `localPeerInitializing` ou ne le passer à `true` qu'à la réception de l'événement `open`
+- [ ] **Timer de reconnexion orphelin** `[S]` : dans `on('disconnected')`, le `setTimeout` de backoff est créé sans stocker sa référence — si `_destroyPeerSingleton` est appelé pendant le délai, le timer ne peut pas être annulé (seul le guard `peer.destroyed` le protège à l'exécution, mais le timer reste en mémoire jusqu'à expiration) → stocker la référence et l'annuler dans `_destroyPeerSingleton`
+- [ ] **`catch` incomplet sur `_peerInitPromise`** `[S]` : si `_doInit()` échoue, `localPeerReady` et `localPeer` sont remis à zéro mais `_peerConsumerCount` reste inchangé — les `onUnmounted` décrémentent correctement, mais `_destroyPeerSingleton` est appelé sur un peer déjà null sans que le compteur reflète l'état réel
 
 ---
 
@@ -153,6 +159,11 @@ utils/ (infrastructure — usage libre par tous les composables)
 - [ ] **Valider tous les slugs entrants** : `userSlug` d'un peer distant peut être forgé — valider format/longueur
 - [ ] **Rate limiting local** : limiter les requêtes Ajax (ask-to-peer-id) pour éviter le spam involontaire
 - [ ] **Sanitiser les métadonnées** : `conn.metadata` vient du réseau → valider avant usage
+
+### usePeerTransport
+
+- [ ] **Variables module-level désynchronisées du store** `[M]` : `_peerConsumerCount`, `_peerInitPromise`, `_reconnectAttempts`, `_peerDestroyTimer` vivent dans le module ES et non dans Pinia — en cas de HMR, de reset du store ou de tests unitaires, ces compteurs deviennent incohérents avec l'état du `peerStore` → les déplacer dans le store ou dans une structure partagée initialisée à la création du store
+- [ ] **Pas de cleanup explicite des listeners Peer** `[S]` : à la destruction (`_destroyPeerSingleton`), `peer.destroy()` retire les listeners implicitement via PeerJS, mais les handlers `on('connection')`, `on('call')`, `on('disconnected')`, `on('error')`, `on('open')` ne sont jamais retirés explicitement — stocker les handlers et appeler `peer.off()` avant `peer.destroy()` pour ne pas dépendre du comportement interne de PeerJS
 
 ### usePeerConnections
 
@@ -189,13 +200,16 @@ Phase 2 — Robustesse (P1)             effort / done
 ✅ Réduire l'API exposée par usePeerOrchestrator       [S]
 ✅ Encapsuler triple fallback peerId → peerStore.localPeerId [S]
 ✅  Remplacer polling waitForMeReady par watch réactif [S]
-□  Corriger allUsersInRoom (dead code + doublon mySlug) [S]
+✅ Corriger allUsersInRoom (dead code + doublon mySlug) [S]
 ✅ Remplacer flags __ctx* par WeakSet                 [S]
 □  Extraire _enterCallSession (déduplique open/accept) [S]
 ✅ Ajouter unwatch() sur tous les watch()             [M]
 □  Centraliser les constantes dans webrtc2.config.js  [S]
 □  Remplacer Math.random() par crypto.randomUUID()    [S]
 ✅ Ajouter rate limiting dans forwardStarMessage()    [S]
+□  Clarifier sémantique localPeerReady (rename ou déplacer l'affectation) [S]
+□  Stocker et annuler le timer de backoff dans _destroyPeerSingleton [S]
+□  Corriger catch _peerInitPromise (remettre _peerConsumerCount) [S]
 
 Phase 3 — Architecture (P2)           effort / projet
 ──────────────────────────────────────────────────────
@@ -205,6 +219,8 @@ Phase 3 — Architecture (P2)           effort / projet
 □  [L]  Déplacer routage star dans usePeerTransport (sortir de l'orchestrateur)
 □  [XL] Extraire useStreamManager() avec pool Vue apps
 □  [XL] Ajouter tests unitaires sur logique pure extraite
+□  [M]  Déplacer variables module-level (consumer count, timers) dans peerStore
+□  [S]  Cleanup explicite listeners Peer avant peer.destroy()
 ```
 
 ---
