@@ -77,14 +77,20 @@ export function usePeerConnections(ctx) {
                 return conn.open === true
             }
 
-            // MediaConnection PeerJS
-            const pc = conn.peerConnection
-            if (pc?.connectionState) {
-                return !['closed', 'failed', 'disconnected'].includes(pc.connectionState)
-            }
+            // MediaConnection PeerJS — lecture défensive : le RTCPeerConnection peut être
+            // en cours de destruction au moment de la lecture (TOCTOU inter-ticks).
+            try {
+                const pc = conn.peerConnection
+                if (pc?.connectionState) {
+                    return !['closed', 'failed', 'disconnected'].includes(pc.connectionState)
+                }
 
-            if (pc?.signalingState) {
-                return pc.signalingState !== 'closed'
+                if (pc?.signalingState) {
+                    return pc.signalingState !== 'closed'
+                }
+            } catch {
+                // Objet RTCPeerConnection détruit ou état illisible → connexion considérée fermée
+                return false
             }
 
             // Fallback: connexion considérée active si non explicitement fermée
@@ -123,14 +129,18 @@ export function usePeerConnections(ctx) {
             return true
         }
 
-        // Si la connexion avec ce type existe déjà et est ouverte, on ne recrée rien.
-        if (hasOpenConnection(userSlug)) {
-            return true
-        }
-
+        // Acquiert le verrou AVANT hasOpenConnection pour éviter le TOCTOU :
+        // la vérification de l'état et l'action (peer.call/connect) sont dans la même
+        // section critique — aucun appel concurrent ne peut passer la garde entre les deux.
         inFlightConnections.add(lockKey)
 
         try {
+            // Garde 3 (dans le verrou) : vérifié après acquisition pour que l'état lu
+            // et l'action qui suit soient atomiques vis-à-vis des appels concurrents.
+            if (hasOpenConnection(userSlug, room, type)) {
+                return true
+            }
+
             // On supprime le waiting flag seulement quand on a une cible exploitable
             if (ctx.peerStore.hasWaitingRemotePeerId(userSlug)) {
                 ctx.peerStore.removeWaitingRemotePeerId(userSlug)
