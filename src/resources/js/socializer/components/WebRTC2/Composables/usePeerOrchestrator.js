@@ -326,33 +326,43 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         return
     }
 
+    /**
+     * Démarre la session d'appel locale.
+     * Commun à `acceptCallFromPeer` (récepteur qui accepte) et `openCallBetweenPeer` (initiateur confirmé).
+     * Configure l'état, démarre le stream local et crée l'élément vidéo local.
+     *
+     * @param {string}      fromUserSlug - Slug de l'interlocuteur
+     * @param {string|null} room         - ID de room (null → conserve ou génère)
+     * @param {string}      type         - Type d'appel (visio, vocal, …)
+     */
+    const _enterCallSession = async ({ fromUserSlug, room, type }) => {
+        ensureCurrentCallRoomId(room)
+        addCurrentCallUser(fromUserSlug, type)
+        setCallInProgress(true)
+        context.session.currentType = type
+        context.session.currentCallRoomId = room
+
+        await media.startCurrentStream(true)
+        media.createVideoElement(
+            { videoId: 'local-webcam', type, source: 'local' },
+            context.media.currentStream
+        )
+    }
+
     const acceptCallFromPeer = async (payload) => {
         if (!payload || typeof payload !== 'object') return
 
         const ready = transport.setLocalPeer()
         if (!ready) return
 
-        if(payload?.status) {
+        if (payload?.status) {
             const fromUserSlug = payload?.fromUserSlug
             if (!_isValidSlug(fromUserSlug)) return
 
             const room = payload?.options?.room || null
             const type = _isValidCallType(payload?.options?.type) ? payload.options.type : 'visio'
 
-            ensureCurrentCallRoomId(room)
-            addCurrentCallUser(fromUserSlug, type)
-            setCallInProgress(true)
-            context.session.currentType = type
-            context.session.currentCallRoomId = room
-
-            await media.startCurrentStream(true)
-            media.createVideoElement({ 
-                videoId: 'local-webcam',
-                type: type, 
-                source: 'local'
-            }, 
-            context.media.currentStream
-            )
+            await _enterCallSession({ fromUserSlug, room, type })
         }
 
         // ✅ Ajouter l'inviteId dans les options retournées
@@ -392,23 +402,12 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         const room = payload?.options?.room || null
         const type = _isValidCallType(payload?.options?.type) ? payload.options.type : 'visio'
 
-        ensureCurrentCallRoomId(room)
-        addCurrentCallUser(fromUserSlug, type)
-        setCallInProgress(true)
-        
-        context.peerStore.removeWaitingRemotePeerId(payload.fromUserSlug)
-        context.peerStore.addRemotePeerId(payload.fromUserSlug, payload.options.peerId)
-        await media.startCurrentStream(true)
-        media.createVideoElement({ 
-                videoId: 'local-webcam',
-                type: payload.options.type, 
-                source: 'local'
-            }, 
-            context.media.currentStream
-        )
-        context.session.currentType = payload.options.type
-        context.session.currentCallRoomId = payload.options.room
-        _requestOrConnectPeer(payload.fromUserSlug)
+        context.peerStore.removeWaitingRemotePeerId(fromUserSlug)
+        context.peerStore.addRemotePeerId(fromUserSlug, payload.options.peerId)
+
+        await _enterCallSession({ fromUserSlug, room, type })
+
+        _requestOrConnectPeer(fromUserSlug)
     }
 
     const createVideoElement = media.createVideoElement // exposé pour être utilisé par useMediaBroadcast (diffusion) pour créer les éléments vidéo des flux distants (et local)    
@@ -620,7 +619,9 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
 
         if (!remoteSlug) return
 
-        const streamKey = conn?.connectionId || `${remoteSlug}-${remoteType}`
+        // Clé canonique basée sur l'identité sémantique (slug + type), indépendante de l'objet conn.
+        // Garantit que handleStreamReceived et handleStreamRemoved utilisent la même clé.
+        const streamKey = `${remoteSlug}-${remoteType}`
     
         if (context.media.remoteStreamsMap.has(streamKey)) {
             return
@@ -667,17 +668,9 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
             const videoId = `remote-${remoteSlug}-${remoteType}`
             media.removeVideoElement(videoId)
 
-            const streamKey = conn?.connectionId || `${remoteSlug}-${remoteType}`
+            // Clé canonique identique à handleStreamReceived → suppression en passe unique.
+            const streamKey = `${remoteSlug}-${remoteType}`
             context.media.remoteStreamsMap.delete(streamKey)
-
-            context.media.remoteStreamsMap.forEach((value, key) => {
-                if (
-                    (value?.remoteSlug === remoteSlug && value?.remoteType === remoteType) ||
-                    value?.metadata?.from === remoteSlug
-                ) {
-                    context.media.remoteStreamsMap.delete(key)
-                }
-            })
 
             removeCurrentCallUser(remoteSlug)
 

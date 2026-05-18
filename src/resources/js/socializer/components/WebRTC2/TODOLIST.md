@@ -108,12 +108,13 @@ utils/ (infrastructure — usage libre par tous les composables)
 
 ### usePeerOrchestrator
 
-- [ ] **`handleStreamRemoved` : nettoyage en deux passes** `[S]` : suppression par clé exacte (`streamKey`) puis balayage global (`forEach`) — indique que la clé composite n'est pas fiable ; unifier la clé ou utiliser une Map indexée par slug
-- [ ] **`openCallBetweenPeer` / `acceptCallFromPeer` : ~15 lignes dupliquées** `[S]` : démarrage stream local, création élément vidéo, mise à jour `currentType`/`currentCallRoomId` présents dans les deux fonctions → extraire `_enterCallSession(payload)`
+- [✅] **`handleStreamRemoved` : nettoyage en deux passes** `[S]` : suppression par clé exacte (`streamKey`) puis balayage global (`forEach`) — indique que la clé composite n'est pas fiable ; unifier la clé ou utiliser une Map indexée par slug
+- [✅] **`openCallBetweenPeer` / `acceptCallFromPeer` : ~15 lignes dupliquées** `[S]` : démarrage stream local, création élément vidéo, mise à jour `currentType`/`currentCallRoomId` présents dans les deux fonctions → extraire `_enterCallSession(payload)`
 - [ ] **Wrapping `onDataReceived` dans l'orchestrateur** `[M]` : la responsabilité du routage star (intercepter `__starRoute`) est dans `initializePeerConnection` faute d'une couche dédiée → appartient à `usePeerTransport` ou à un futur `usePeerRouter`
 - [ ] **`stopCallWithPeers()` non-réentrant** `[S]` : `isStoppingCall` flag mais pas protégé contre appels simultanés vrais
 - [ ] **Pas de machine d'état pour les appels** `[L]` : états `callInprogress`, `isStoppingCall`, `closingUsers` éparpillés sans transitions claires
 - [ ] **`ensureCurrentCallRoomId()` génère avec `Math.random()`** `[S]` : pas cryptographiquement sûr pour un ID de room
+- [ ] **`_enterCallSession` : écrasement silencieux de l'ID généré** `[S]` : `ensureCurrentCallRoomId(null)` génère un ID aléatoire, mais la ligne suivante `context.session.currentCallRoomId = room` (room = null) l'écrase immédiatement → l'ID est perdu ; supprimer la ligne redondante et laisser `ensureCurrentCallRoomId` seul gérer l'affectation
 
 ### usePeerMedia
 
@@ -202,7 +203,8 @@ Phase 2 — Robustesse (P1)             effort / done
 ✅  Remplacer polling waitForMeReady par watch réactif [S]
 ✅ Corriger allUsersInRoom (dead code + doublon mySlug) [S]
 ✅ Remplacer flags __ctx* par WeakSet                 [S]
-□  Extraire _enterCallSession (déduplique open/accept) [S]
+✅ Fix handleStreamRemoved (clé canonique slug+type, passe unique)  [S]
+✅ Extraire _enterCallSession (déduplique open/accept) [S]
 ✅ Ajouter unwatch() sur tous les watch()             [M]
 ✅  Ajouter guard défensif eventBus fallback dans createPeerContext [S]
 □  Centraliser les constantes dans webrtc2.config.js  [S]
