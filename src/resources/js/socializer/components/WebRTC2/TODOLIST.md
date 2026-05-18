@@ -94,7 +94,7 @@ utils/ (infrastructure — usage libre par tous les composables)
 
 ### Architecture générale
 
-- [ ] **`waitForMeReady()` : polling `setTimeout` non-réactif** `[S]` : boucle toutes les 100ms sur deux stores jusqu'à 15s — remplacer par un `watch` sur `meStore.getMe?.slug` + `peerStore.localPeer?.id` qui résout la promesse à la première valeur valide
+- [✅] **`waitForMeReady()` : polling `setTimeout` non-réactif** `[S]` : boucle toutes les 100ms sur deux stores jusqu'à 15s — remplacer par un `watch` sur `meStore.getMe?.slug` + `peerStore.localPeer?.id` qui résout la promesse à la première valeur valide
 - [ ] **Triple fallback peerId répété 4+ fois** `[S]` : `peerStore.localPeer?.id || peerStore.localPeer?._id || peerStore.lastLocalPeerId` copié-collé dans `usePeerCore`, `usePeerConnections`, `usePeerTransport`, `usePeerOrchestrator` — encapsuler dans un getter `peerStore.localPeerId` (propriété calculée dans le store)
 - [ ] **API façade trop large** `[S]` : remplacer `...core, ...media, ...connections, ...transport` par une API explicite minimale
 - [ ] **Listeners explosion** `[M]` : 4 `watch()` + multiple `on()` = 40+ listeners actives pour 10 contextes simultanés

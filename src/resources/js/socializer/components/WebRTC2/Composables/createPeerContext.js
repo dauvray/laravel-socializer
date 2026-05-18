@@ -19,7 +19,7 @@
  * - fournir une "source de vérité" unique à tous les composables techniques
  */
 
-import { reactive, computed, ref, onBeforeMount, onUnmounted } from 'vue'
+import { reactive, computed, ref, onBeforeMount, onUnmounted, watchEffect, effectScope } from 'vue'
 import { useAjaxService } from '~estarter/services/AjaxService.js'
 import { usePeer2Store } from '~socializer/stores/peers2.js'
 import { useServerStore } from '~socializer/stores/server.js'
@@ -164,31 +164,46 @@ export function createPeerContext({ type, room, eventBus, options }) {
     // HELPERS (fonctions utilitaires, actions synchrones)
 
     // Attendre que le peer soit prêt (ex: meStore.getMe.slug disponible) avant de faire des actions dépendantes du peerId
+    // Utilise un watchEffect réactif (effectScope détaché) plutôt qu'un polling setTimeout.
+    // Se résout dès que meStore.getMe.slug ET peerStore.lastLocalPeerId sont disponibles.
     const waitForMeReady = (timeoutMs = 15000) => {
         return new Promise((resolve) => {
-             const startedAt = Date.now()
+            let resolved = false
+            let timeoutId = null
 
-            const checkPeer = () => {
-                if (meStore.getMe?.slug && (peerStore.localPeer?.id || peerStore.localPeer?._id)) {
+            // Scope détaché : pas lié au cycle de vie d'un composant, nettoyé manuellement.
+            // Permet d'appeler watchEffect hors contexte setup() sans warning Vue.
+            const scope = effectScope(true)
 
-                     // On initialise le contexte dès que l'identité locale est réellement prête.
-                    session.isHub = (meStore.getMe.slug === session.hubSlug)
-                    resolve(true)
-                    return
-                } 
-
-                if (Date.now() - startedAt >= timeoutMs) {
-                    console.warn('waitForMeReady a expiré après', timeoutMs, 'ms')
-                    resolve(false)
-                    return
-                }
-                
-                setTimeout(checkPeer, 100)
-
+            const _resolve = (value) => {
+                if (resolved) return
+                resolved = true
+                clearTimeout(timeoutId)
+                scope.stop()
+                resolve(value)
             }
-            checkPeer()
+
+            scope.run(() => {
+                watchEffect(() => {
+                    const slug = meStore.getMe?.slug
+                    // peerStore.lastLocalPeerId est réactif (Pinia) et mis à jour par l'événement
+                    // 'open' de PeerJS — contrairement à localPeer.id qui est markRaw.
+                    const peerId = peerStore.lastLocalPeerId
+                    if (slug && peerId) {
+                        // On initialise le contexte dès que l'identité locale est réellement prête.
+                        session.isHub = (slug === session.hubSlug)
+                        _resolve(true)
+                    }
+                })
+            })
+
+            // Timeout de sécurité — une seule alarme, pas de boucle de polling
+            timeoutId = setTimeout(() => {
+                console.warn('waitForMeReady a expiré après', timeoutMs, 'ms')
+                _resolve(false)
+            }, timeoutMs)
         })
-    }  
+    }
 
     // WeakSet interne pour suivre les connexions déjà bindées et éviter les doublons de listeners (idempotence) 
     // sans polluer les objets tiers PeerJS avec des flags personnalisés.
