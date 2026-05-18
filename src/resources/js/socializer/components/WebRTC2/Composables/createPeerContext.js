@@ -19,7 +19,7 @@
  * - fournir une "source de vérité" unique à tous les composables techniques
  */
 
-import { reactive, computed, onBeforeMount } from 'vue'
+import { reactive, computed, onBeforeMount, onUnmounted } from 'vue'
 import { useAjaxService } from '~estarter/services/AjaxService.js'
 import { usePeer2Store } from '~socializer/stores/peers2.js'
 import { useServerStore } from '~socializer/stores/server.js'
@@ -185,15 +185,13 @@ export function createPeerContext({ type, room, eventBus, options }) {
                 
                 setTimeout(checkPeer, 100)
 
-                // else {
-                //     setTimeout(checkPeer, 100)
-                // }
             }
             checkPeer()
         })
     }  
 
-    // WeakSet interne : remplace les flags __ctxListenersBound sur l'objet tiers
+    // WeakSet interne pour suivre les connexions déjà bindées et éviter les doublons de listeners (idempotence) 
+    // sans polluer les objets tiers PeerJS avec des flags personnalisés.
     const _boundConnections = new WeakSet()
 
     const setUpConnectionListeners = (conn) => {
@@ -207,7 +205,7 @@ export function createPeerContext({ type, room, eventBus, options }) {
         }
         _boundConnections.add(conn)
 
-        // Variables de closure : remplacent les flags __ctxCloseHandled / __ctxCustomCloseEmitted
+        // Variables de closure
         // collés sur l'objet tiers PeerJS
         let closeHandled = false
         let customCloseEmitted = false
@@ -399,12 +397,37 @@ export function createPeerContext({ type, room, eventBus, options }) {
     }
 
     /**
-     * Lifecycle hook
+     * Lifecycle hooks
      */
     onBeforeMount(() => {
         // On crée la "room de signalisation" dans le peerStore 
         // dès que le contexte est initialisé.
         peerStore.createSignalQueueRoom(contextId)
+    })
+
+    // Nettoyage complet du contexte à la destruction du composant propriétaire
+    const destroy = () => {
+        // Supprime la signal queue room créée dans onBeforeMount
+        peerStore.clearSignalQueueRoom(contextId)
+
+        // Libère les références aux streams distants
+        media.remoteStreamsMap.clear()
+        media.currentStream = null
+
+        // Réinitialise les états de session
+        session.currentCallUsers = []
+        session.closingUsers = new Set()
+        session.callInprogress = false
+        session.isStoppingCall = false
+        session.isStreaming = false
+        session.isCapturing = false
+
+        // Réinitialise la liste des utilisateurs en room
+        connection.usersInRoom = []
+    }
+
+    onUnmounted(() => {
+        destroy()
     })
 
     // Hooks pour la communication inverse (composables → orchestrateur)
@@ -447,5 +470,8 @@ export function createPeerContext({ type, room, eventBus, options }) {
 
         // hooks (enregistrés par l'orchestrateur)
         hooks,
+
+        // destruction explicite (cleanup manuel si nécessaire hors lifecycle)
+        destroy,
     }
 }

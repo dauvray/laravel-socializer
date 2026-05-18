@@ -36,7 +36,7 @@ usePeerOrchestrator          ← Coordinateur principal (façade)
 ### createPeerContext
 
 - [✅] **`setUpConnectionListeners()` sans cleanup** `[M]` : appelée partout, jamais de unsub → listener explosion avec plusieurs contextes actifs
-- [ ] **Pas de cleanup du contexte** `[M]` : aucun hook de destruction → stores / computed / watchers restent actifs après unmount
+- [✅] **Pas de cleanup du contexte** `[M]` : aucun hook de destruction → stores / computed / watchers restent actifs après unmount
 
 > ⬇️ Items suivants re-classés : ne causent pas de crash immédiat — voir P1/P2.
 
@@ -170,7 +170,7 @@ Phase 1 — Stabilisation (P0)          effort / done
 ✅ Fix createApp leak dans usePeerMedia                [S]
 ✅ Validation inputs (userSlug, payload, room, type)   [S]
 ✅ Ajouter setUpConnectionListeners cleanup (unsub)   [M]
-□  Ajouter cleanup du contexte (onUnmounted)          [M]
+✅ Ajouter cleanup du contexte (onUnmounted)          [M]
 □  Ajouter onUnmounted() dans usePeerCore             [S]
 □  Ajouter cleanup contextRegistry dans usePeerTransport [S]
 □  Limiter inviteRetries Map (max size + TTL)         [S]
