@@ -22,7 +22,7 @@
  * 
  */
 
-import { inject, ref, watch } from 'vue'
+import { inject, onUnmounted, ref, watch } from 'vue'
 import { createPeerContext } from '~socializer/components/WebRTC2/Composables/createPeerContext.js'
 import { usePeerCore } from '~socializer/components/WebRTC2/Composables/usePeerCore.js'
 import { usePeerMedia } from '~socializer/components/WebRTC2/Composables/usePeerMedia.js'
@@ -151,6 +151,18 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         // On remet le signal à null pour pouvoir détecter une prochaine émission
         // (watch ne se re-déclenche pas si la valeur ne change pas).
         context.peerUnavailableSignal.value = null
+    })
+
+    // Filet de sécurité : stoppe le watcher et les timers de retry si le composant
+    // est détruit sans que cleanupPeerConnection() ait été appelé explicitement
+    // (navigation abrupte, erreur, lazy-unmount, etc.).
+    // ⚠️ NE PAS appeler cleanupPeerConnection() ici : createPeerContext.destroy()
+    // s'exécute en premier (FIFO) et vide la session, ce qui rendrait
+    // connections.closePeerConnection() inefficace.
+    onUnmounted(() => {
+        isShuttingDown.value = true   // 🛑 Bloque tout retry post-unmount
+        unwatchPeerUnavailable()      // Arrête l'observation du signal peer-unavailable
+        retryManager.clearAll()       // Libère tous les timers de retry en vol
     })
 
    /**
