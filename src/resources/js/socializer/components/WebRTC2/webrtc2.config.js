@@ -14,6 +14,13 @@
  */
 export const MAX_PEERS_PER_ROOM = 8
 
+// ─── Types de connexion valides ────────────────────────────────────────────
+/**
+ * Ensemble des types de connexion PeerJS reconnus par le système WebRTC2.
+ * Utilisé pour valider les payloads avant d'ouvrir une connexion.
+ */
+export const VALID_CONNECTION_TYPES = new Set(['data', 'stream', 'screen', 'visio', 'vocal'])
+
 // ─── Endpoints HTTP (signaling backend) ────────────────────────────────────
 export const ENDPOINTS = {
     /** Demander le peerId d'un utilisateur distant (connexion directe) */

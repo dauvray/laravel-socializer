@@ -21,7 +21,7 @@
  * 
  */
 import { watch, markRaw, onUnmounted } from 'vue'
-import { MAX_PEERS_PER_ROOM } from '../webrtc2.config.js'
+import { MAX_PEERS_PER_ROOM, VALID_CONNECTION_TYPES } from '../webrtc2.config.js'
 
 export function usePeerConnections(ctx) {
 
@@ -185,6 +185,10 @@ export function usePeerConnections(ctx) {
                 room,
             })
 
+            if (!config) {
+                return false
+            }
+
             if (config.options.metadata.type === 'data') {
                 const conn = ctx.peerStore.getLocalPeer.connect(config.peerId, config.options)
                 _saveRoomConnection(config, conn)
@@ -266,29 +270,56 @@ export function usePeerConnections(ctx) {
     }
 
     const _buildPeerConnectionConfig = (payload) => {
+        const peerId = payload?.peerId ? String(payload.peerId).trim() : ''
+        const userSlug = payload?.userSlug ? String(payload.userSlug).trim() : ''
+        const type = payload?.type ? String(payload.type).trim() : ''
+        const room = payload?.room ? String(payload.room).trim() : ''
+        const me = ctx.meStore.getMe
+
+        if (!peerId) {
+            console.warn('[usePeerConnections] _buildPeerConnectionConfig: peerId manquant ou vide', payload)
+            return null
+        }
+        if (!userSlug) {
+            console.warn('[usePeerConnections] _buildPeerConnectionConfig: userSlug manquant ou vide', payload)
+            return null
+        }
+        if (!VALID_CONNECTION_TYPES.has(type)) {
+            console.warn('[usePeerConnections] _buildPeerConnectionConfig: type de connexion invalide', { type, validTypes: [...VALID_CONNECTION_TYPES] })
+            return null
+        }
+        if (!room) {
+            console.warn('[usePeerConnections] _buildPeerConnectionConfig: room manquante ou vide', payload)
+            return null
+        }
+        if (!me?.slug) {
+            console.warn('[usePeerConnections] _buildPeerConnectionConfig: meStore.getMe null ou slug absent')
+            return null
+        }
+
         const config = {
-            peerId: String(payload.peerId),
+            peerId,
             options: {
                 metadata: {
-                    slug: String(payload.userSlug),
-                    from: String(ctx.meStore.getMe.slug),
-                    fromName: String(ctx.meStore.getMe.name),
-                    type: String(payload.type),
-                    room: String(payload.room),
+                    slug: userSlug,
+                    from: String(me.slug),
+                    fromName: String(me.name ?? ''),
+                    type,
+                    room,
                     callbackKey: ctx.contextId,
                 }
             }
         }
 
-        if (payload.type === 'data') {
-            // Whether the underlying data channels should be reliable (e.g. for large file transfers) 
+        if (type === 'data') {
+            // Whether the underlying data channels should be reliable (e.g. for large file transfers)
             // or not (e.g. for gaming or streaming).
             config.options.reliable = true
-        } else if ( payload.type === 'stream'
-            || payload.type === 'screen'
-            || payload.type === 'visio'
-            || payload.type === 'vocal'           
-
+        } else if (
+            type === 'stream'
+            || type === 'screen'
+            || type === 'visio'
+            || type === 'vocal'
         ) {
             config.stream = ctx.media.currentStream
         }
