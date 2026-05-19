@@ -30,15 +30,13 @@ import { usePeerConnections } from '~socializer/components/WebRTC2/Composables/u
 import { usePeerTransport } from '~socializer/components/WebRTC2/Composables/usePeerTransport.js'
 import { usePeerRetry } from '~socializer/components/WebRTC2/Composables/utils/usePeerRetry.js'
 import { CALL_STATES } from '~socializer/components/WebRTC2/Composables/utils/useCallStateMachine.js'
+import { MAX_REMOTE_STREAMS, STREAM_STALE_MS, SIGNALING_STALE_MS } from '~socializer/components/WebRTC2/webrtc2.config.js'
 
 export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) {
 
     const syncUsersConnectionsLock = ref(false)
     const isShuttingDown = ref(false)  // 🔒 Guard pour bloquer les retries pendant le cleanup
 
-    // ── Constantes ───────────────────────────────────────────────────────────
-    const MAX_REMOTE_STREAMS = 12        // limite haute de streams distants simultanés (~13 pairs en mesh)
-    const STREAM_STALE_MS    = 300_000   // 5 min — entrée sans activité considérée stale
 
     // ── Validation des inputs ────────────────────────────────────────────────
     const VALID_CALL_TYPES = ['data', 'visio', 'vocal', 'stream', 'screen', 'audio']
@@ -98,9 +96,8 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
 
         // 4. Signalisation stale : On ne demande l'ID que si on est toujours en attente (waiting)
         if (waiting) {
-            const STALE_MS = 12000
             const age = Date.now() - (waiting.createdAt ?? 0)
-            if (age >= STALE_MS) {
+            if (age >= SIGNALING_STALE_MS) {
                 core.requestRemotePeerConnection(userSlug)
             }
         }

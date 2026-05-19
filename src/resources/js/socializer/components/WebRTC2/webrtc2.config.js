@@ -47,6 +47,59 @@ export const PEER_DESTROY_DELAY_MS = 10_000
 export const HUB_RATE_WINDOW_MS = 1000
 export const HUB_MAX_MESSAGES_PER_WINDOW = 20
 
+// ─── Streams distants (remoteStreamsMap) ──────────────────────────────────
+/**
+ * Nombre maximum de streams distants simultanés dans remoteStreamsMap.
+ * Correspond environ au nombre max de pairs en mesh (~13 pairs → 12 streams distants).
+ * Au-delà, l'entrée la plus ancienne est évincée.
+ */
+export const MAX_REMOTE_STREAMS = 12
+
+/**
+ * Durée (ms) après laquelle un stream distant sans activité est considéré stale
+ * et éligible à l'éviction dans _cleanupStaleRemoteStreams().
+ * Défaut : 5 minutes.
+ */
+export const STREAM_STALE_MS = 300_000
+
+// ─── Signalisation stale ──────────────────────────────────────────────────
+/**
+ * Durée (ms) après laquelle une entrée "waiting" dans le store de signalisation
+ * (getWaitingRemotePeerId) est considérée stale.
+ * Utilisé dans deux sens complémentaires :
+ *   - usePeerOrchestrator : déclenche une nouvelle demande si l'entrée est trop vieille.
+ *   - usePeerCore         : empêche le re-envoi si l'entrée est trop récente (anti-spam).
+ */
+export const SIGNALING_STALE_MS = 12_000
+
+// ─── Backoff exponentiel reconnexion PeerJS ───────────────────────────────
+/**
+ * Délai de base (ms) pour le backoff exponentiel sur l'événement 'disconnected'.
+ * La formule appliquée est : min(BASE * 2^(attempt-1), MAX_DELAY).
+ */
+export const RECONNECT_BASE_DELAY_MS = 1_000
+
+/**
+ * Délai maximum (ms) pour le backoff exponentiel de reconnexion PeerJS.
+ * Au-delà, le délai est plafonné à cette valeur.
+ */
+export const RECONNECT_MAX_DELAY_MS = 30_000
+
+// ─── Attente stream local (usePeerTransport) ──────────────────────────────
+/**
+ * Durée maximale (ms) d'attente du stream local via watch réactif
+ * avant d'abandonner la réponse à un appel entrant.
+ */
+export const STREAM_WAIT_TIMEOUT_MS = 5_000
+
+// ─── Invitations d'appel (usePeerCore) ────────────────────────────────────
+/**
+ * Nombre maximum d'invitations d'appel simultanément en attente de réponse
+ * (taille max de la Map userSlugToInviteId).
+ * Au-delà, les nouvelles invitations sont ignorées pour éviter les fuites.
+ */
+export const MAX_INVITE_RETRIES = 20
+
 // ─── Types de connexion valides ────────────────────────────────────────────
 /**
  * Ensemble des types de connexion PeerJS reconnus par le système WebRTC2.

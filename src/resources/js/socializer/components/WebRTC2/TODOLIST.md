@@ -208,7 +208,7 @@ Phase 2 — Robustesse (P1)             effort / done
 ✅ Ajouter unwatch() sur tous les watch()             [M]
 ✅  Ajouter guard défensif eventBus fallback dans createPeerContext [S]
 ✅ Rendre stopCallWithPeers réentrant (try/finally + responsabilité unique) [S]
-□  Centraliser les constantes dans webrtc2.config.js  [S]
+✅ Centraliser les constantes dans webrtc2.config.js  [S]
 ✅ Remplacer Math.random() par crypto.randomUUID()    [S]
 ✅ Ajouter rate limiting dans forwardStarMessage()    [S]
 ✅ Clarifier sémantique localPeerReady (rename ou déplacer l'affectation) [S]

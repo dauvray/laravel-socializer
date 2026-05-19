@@ -20,7 +20,7 @@
 
 import { Peer } from "peerjs"
 import { markRaw, onUnmounted, watch } from 'vue'
-import { MAX_RECONNECT_ATTEMPTS, HUB_RATE_WINDOW_MS, HUB_MAX_MESSAGES_PER_WINDOW, PEER_DESTROY_DELAY_MS } from '../webrtc2.config.js'
+import { MAX_RECONNECT_ATTEMPTS, HUB_RATE_WINDOW_MS, HUB_MAX_MESSAGES_PER_WINDOW, PEER_DESTROY_DELAY_MS, RECONNECT_BASE_DELAY_MS, RECONNECT_MAX_DELAY_MS, STREAM_WAIT_TIMEOUT_MS } from '../webrtc2.config.js'
 
 // -----------------------------------------------------------------------------
 // Registre global des contextes WebRTC actifs
@@ -307,8 +307,8 @@ export function usePeerTransport(ctx) {
 
                 _reconnectAttempts++
 
-                // Backoff exponentiel : 1s · 2s · 4s · 8s · 16s … plafonné à 30s
-                const delayMs = Math.min(1000 * Math.pow(2, _reconnectAttempts - 1), 30_000)
+                // Backoff exponentiel : BASE · BASE*2 · BASE*4 … plafonné à MAX_DELAY
+                const delayMs = Math.min(RECONNECT_BASE_DELAY_MS * Math.pow(2, _reconnectAttempts - 1), RECONNECT_MAX_DELAY_MS)
 
                 console.warn(
                     `[WebRTC2] PeerJS déconnecté — tentative ${_reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} dans ${delayMs}ms`
@@ -374,7 +374,7 @@ export function usePeerTransport(ctx) {
                 }
 
                 // Attend le stream local via watch réactif (évite le polling)
-                const waitForLocalStream = (timeoutMs = 5000) => {
+                const waitForLocalStream = (timeoutMs = STREAM_WAIT_TIMEOUT_MS) => {
                     return new Promise((resolve) => {
                         const current = getLocalStream()
                         if (current) { resolve(current); return }

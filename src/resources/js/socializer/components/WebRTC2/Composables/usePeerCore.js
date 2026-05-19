@@ -18,13 +18,11 @@
  */
 import { watch, onUnmounted } from 'vue'
 import { usePeerRetry } from '~socializer/components/WebRTC2/Composables/utils/usePeerRetry.js'
-import { ENDPOINTS } from '~socializer/components/WebRTC2/webrtc2.config.js'
+import { ENDPOINTS, MAX_INVITE_RETRIES, SIGNALING_STALE_MS } from '~socializer/components/WebRTC2/webrtc2.config.js'
 
 export function usePeerCore(ctx) {
 
     /*------  Retry invitation pour calls ----------*/
-
-    const MAX_INVITE_RETRIES = 20 // max 20 invitations simultanées en attente (Map size guard)
 
     // Moteur de retry dédié aux invitations (séparé du retryManager connexions de l'orchestrateur)
     const inviteRetryManager = usePeerRetry(ctx)
@@ -83,7 +81,7 @@ export function usePeerCore(ctx) {
             const age = Date.now() - (waiting.createdAt ?? 0)
 
             // Si on a déjà demandé ce peerId récemment, on évite le spam réseau.
-            if (age < 12000) {
+            if (age < SIGNALING_STALE_MS) {
                 return false
             }
         }
