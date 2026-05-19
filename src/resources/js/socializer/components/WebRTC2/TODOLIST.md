@@ -126,7 +126,7 @@ utils/ (infrastructure — usage libre par tous les composables)
 
 ### usePeerTransport
 
-- [ ] **`localPeerReady` sémantique trompeuse** `[S]` : le flag est mis à `true` dès le début de `_doInit()`, avant l'événement `open` — il indique "initialisation en cours" et non "peer utilisable" ; toute vérification externe de ce flag est trompeuse → renommer en `localPeerInitializing` ou ne le passer à `true` qu'à la réception de l'événement `open`
+- [✅] **`localPeerReady` sémantique trompeuse** `[S]` : le flag est mis à `true` dès le début de `_doInit()`, avant l'événement `open` — il indique "initialisation en cours" et non "peer utilisable" ; toute vérification externe de ce flag est trompeuse → renommer en `localPeerInitializing` ou ne le passer à `true` qu'à la réception de l'événement `open`
 - [ ] **Timer de reconnexion orphelin** `[S]` : dans `on('disconnected')`, le `setTimeout` de backoff est créé sans stocker sa référence — si `_destroyPeerSingleton` est appelé pendant le délai, le timer ne peut pas être annulé (seul le guard `peer.destroyed` le protège à l'exécution, mais le timer reste en mémoire jusqu'à expiration) → stocker la référence et l'annuler dans `_destroyPeerSingleton`
 - [ ] **`catch` incomplet sur `_peerInitPromise`** `[S]` : si `_doInit()` échoue, `localPeerReady` et `localPeer` sont remis à zéro mais `_peerConsumerCount` reste inchangé — les `onUnmounted` décrémentent correctement, mais `_destroyPeerSingleton` est appelé sur un peer déjà null sans que le compteur reflète l'état réel
 
@@ -211,7 +211,7 @@ Phase 2 — Robustesse (P1)             effort / done
 □  Centraliser les constantes dans webrtc2.config.js  [S]
 □  Remplacer Math.random() par crypto.randomUUID()    [S]
 ✅ Ajouter rate limiting dans forwardStarMessage()    [S]
-□  Clarifier sémantique localPeerReady (rename ou déplacer l'affectation) [S]
+✅ Clarifier sémantique localPeerReady (rename ou déplacer l'affectation) [S]
 □  Stocker et annuler le timer de backoff dans _destroyPeerSingleton [S]
 □  Corriger catch _peerInitPromise (remettre _peerConsumerCount) [S]
 

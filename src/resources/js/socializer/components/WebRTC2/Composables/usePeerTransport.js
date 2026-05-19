@@ -178,10 +178,6 @@ export function usePeerTransport(ctx) {
         if (_peerInitPromise) return _peerInitPromise
 
         const _doInit = async () => {
-            // Marqué comme "en cours d'init" ici (et non avant _doInit) pour pouvoir
-            // le réinitialiser à false dans le .catch() si l'initialisation échoue.
-            peerStore.localPeerReady = true
-
             peerStore.localPeer = markRaw(new Peer({
                 host: import.meta.env.VITE_PEERS_SERVER_HOST,
                 port: import.meta.env.VITE_PEERS_SERVER_PORT,
@@ -202,6 +198,11 @@ export function usePeerTransport(ctx) {
 
             // a la création du Peer
             peerStore.localPeer.on('open', id => {
+                // Peer utilisable : connexion (re)établie avec le serveur PeerJS.
+                // localPeerReady passe à true ici (et non plus au début de _doInit)
+                // pour refléter l'état réel : le peer n'est utilisable qu'une fois
+                // l'événement 'open' reçu. Idempotent sur les reconnexions.
+                peerStore.localPeerReady = true
                 // Connexion (re)établie : réinitialise le compteur de reconnexion
                 _reconnectAttempts = 0
                 // Workaround for peer.reconnect deleting previous id
@@ -384,8 +385,8 @@ export function usePeerTransport(ctx) {
 
         _peerInitPromise = _doInit()
             .catch(err => {
-                // En cas d'échec, on remet le flag à false pour qu'un prochain
-                // appel à setLocalPeer() puisse relancer l'initialisation.
+                // En cas d'échec : localPeerReady est encore false (on('open') n'a
+                // pas été reçu), localPeer est remis à null pour permettre un retry.
                 console.error('[WebRTC2] Échec d\'initialisation du Peer :', err)
                 peerStore.localPeerReady = false
                 peerStore.localPeer = null
