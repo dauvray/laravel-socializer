@@ -29,6 +29,7 @@ import { usePeerMedia } from '~socializer/components/WebRTC2/Composables/usePeer
 import { usePeerConnections } from '~socializer/components/WebRTC2/Composables/usePeerConnections.js'
 import { usePeerTransport } from '~socializer/components/WebRTC2/Composables/usePeerTransport.js'
 import { usePeerRetry } from '~socializer/components/WebRTC2/Composables/utils/usePeerRetry.js'
+import { CALL_STATES } from '~socializer/components/WebRTC2/Composables/utils/useCallStateMachine.js'
 
 export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) {
 
@@ -317,9 +318,11 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         const toUserSlug = payload.toUserSlug
         const type = _isValidCallType(payload.type) ? payload.type : 'visio'
 
+        // Transition en premier : évite toute mutation d'état si un appel est déjà en cours.
+        if (!context.callMachine.transition(CALL_STATES.CALLING)) return
+
         ensureCurrentCallRoomId()
         addCurrentCallUser(toUserSlug, type)
-        setCallInProgress(true)
         context.session.currentType = type
 
         core.requestAuthorizationRemotePeerId({ toUserSlug, type })
@@ -338,7 +341,6 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
     const _enterCallSession = async ({ fromUserSlug, room, type }) => {
         ensureCurrentCallRoomId(room)
         addCurrentCallUser(fromUserSlug, type)
-        setCallInProgress(true)
         context.session.currentType = type
         context.session.currentCallRoomId = room
 
@@ -362,6 +364,7 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
             const room = payload?.options?.room || null
             const type = _isValidCallType(payload?.options?.type) ? payload.options.type : 'visio'
 
+            if (!context.callMachine.transition(CALL_STATES.RECEIVING)) return
             await _enterCallSession({ fromUserSlug, room, type })
         }
 
@@ -391,7 +394,6 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
                 await stopCallWithPeers([], false, {
                     mode: 'full',
                 })
-                resetCallState()
             }
             return
         }
@@ -405,6 +407,7 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         context.peerStore.removeWaitingRemotePeerId(fromUserSlug)
         context.peerStore.addRemotePeerId(fromUserSlug, payload.options.peerId)
 
+        if (!context.callMachine.transition(CALL_STATES.CONNECTED)) return
         await _enterCallSession({ fromUserSlug, room, type })
 
         _requestOrConnectPeer(fromUserSlug)
@@ -415,16 +418,19 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
     const removeVideoElement = media.removeVideoElement // exposé pour être utilisé par useMediaBroadcast pour supprimer les éléments vidéo des flux distants (et local) quand un stream se termine ou qu’un appel est raccroché.
 
     const stopCallWithPeers = async (users = [], notifyRemote = true, options = {}) => {
-       
-       if (context.session.isStoppingCall) return
-       context.session.isStoppingCall = true
+        const mode = options?.mode || 'full'
+
+        // Garde full  : la transition vers CLOSING est le mutex du full stop.
+        // Garde partial : géré par closingUsers (par utilisateur) en amont dans remoteStopCall.
+        if (mode !== 'partial') {
+            if (!context.callMachine.transition(CALL_STATES.CLOSING)) return
+        }
 
         try {
             const roomId = options?.roomId || context.session.currentCallRoomId || context.currentRoom.value
            
             isShuttingDown.value = true  // 🛑 Bloquer les retries immédiatement
 
-            const mode = options?.mode || 'full'
             const callType = context.session.currentType || 'visio'
 
             const normalizedUsers = (users || [])
@@ -473,10 +479,13 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
             
             isShuttingDown.value = false  // ✅ Réactiver après cleanup complet
 
-            resetCallState()
+            resetCallState()  // → callMachine.reset() : CLOSING → IDLE
         } finally {
-            // 🔒 Garantit la libération du verrou dans tous les cas (retour anticipé, exception, etc.)
-            context.session.isStoppingCall = false
+            // Filet de sécurité : si resetCallState n'a pas été appelé (exception),
+            // garantir qu'on ne reste pas coincé en état CLOSING.
+            if (context.callMachine.isStopping.value) {
+                context.callMachine.reset()
+            }
         }
     }
 
@@ -522,12 +531,16 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
     }
 
     const setCallInProgress = (inProgress) => {
-        context.session.callInprogress = inProgress
-        return context.session.callInprogress
+        // Compatibilité rétrograde : l'état est désormais géré par callMachine.
+        // Les transitions internes utilisent context.callMachine.transition() directement.
+        if (!inProgress) {
+            context.callMachine.reset()
+        }
+        return context.callMachine.callInprogress.value
     }
 
     const isCallInProgress = () => {
-        return context.session.callInprogress
+        return context.callMachine.callInprogress.value
     }
 
     const remoteStopCall = async (payload) => {
@@ -538,9 +551,9 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         const roomId = payload?.room || context.session.currentCallRoomId || context.currentRoom.value
 
         if (!remoteSlug || !_isValidSlug(remoteSlug)) return
-        if (context.session.closingUsers.has(remoteSlug)) return
+        if (context.callMachine.closingUsers.has(remoteSlug)) return
 
-        context.session.closingUsers.add(remoteSlug)
+        context.callMachine.closingUsers.add(remoteSlug)
 
         await stopCallWithPeers([{ userSlug: remoteSlug, type: remoteType }], false, {
             mode: 'partial',
@@ -560,10 +573,9 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
                 mode: 'full',
                 roomId,
             })
-            resetCallState()
         }
 
-        context.session.closingUsers.delete(remoteSlug)
+        context.callMachine.closingUsers.delete(remoteSlug)
 
         context.eventBus.$emit('close-call', [{
             userSlug: remoteSlug,
@@ -573,12 +585,10 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
 
     const resetCallState = () => {
         media.cleanupCallPlayers()
-        setCallInProgress(false)
+        context.callMachine.reset()  // CLOSING → IDLE + closingUsers.clear()
         clearCurrentCallUsers()
         setCurrentCallRoomId(null)
         context.media.remoteStreamsMap.clear()
-        // ℹ️ isStoppingCall est géré exclusivement par stopCallWithPeers (finally)
-        context.session.closingUsers.clear()
     }
 
     /*------------------------
@@ -642,6 +652,12 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
             createdAt: Date.now(),
         })
 
+        // Côté récepteur : le stream entrant confirme que la connexion est établie.
+        // Transition RECEIVING → CONNECTED maintenant que le flux est actif.
+        if (context.callMachine.callState.value === CALL_STATES.RECEIVING) {
+            context.callMachine.transition(CALL_STATES.CONNECTED)
+        }
+
         if (stream instanceof MediaStream) {
             media.createVideoElement(
                 {
@@ -664,9 +680,9 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         const roomId = meta?.room || context.session.currentCallRoomId || null
 
         if (!remoteSlug) return
-        if (context.session.closingUsers.has(remoteSlug)) return
+        if (context.callMachine.closingUsers.has(remoteSlug)) return
 
-        context.session.closingUsers.add(remoteSlug)
+        context.callMachine.closingUsers.add(remoteSlug)
 
         try {
             const videoId = `remote-${remoteSlug}-${remoteType}`
@@ -688,13 +704,12 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
                     mode: 'full',
                     roomId,
                 })
-                resetCallState()
             }
 
         } catch (error) {
             console.error('Error removing video element:', error)
         } finally {
-            context.session.closingUsers.delete(remoteSlug)
+            context.callMachine.closingUsers.delete(remoteSlug)
         }
     }
 
@@ -767,6 +782,10 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         | COMPUTED
         ----------------------------------*/
         contextId: context.contextId,
+
+        // machine d'état d'appel
+        callState: context.callMachine.callState,
+        callInprogress: context.callMachine.callInprogress,
 
         // session
         currentType: context.currentType,

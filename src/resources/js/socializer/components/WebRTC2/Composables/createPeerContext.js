@@ -24,10 +24,15 @@ import { useAjaxService } from '~estarter/services/AjaxService.js'
 import { usePeer2Store } from '~socializer/stores/peers2.js'
 import { useServerStore } from '~socializer/stores/server.js'
 import { useMeStore } from '~estarter/stores/me.js'
+import { createCallStateMachine } from '~socializer/components/WebRTC2/Composables/utils/useCallStateMachine.js'
 
 export function createPeerContext({ type, room, options }) {
 
     const contextId = `${type}-${room}`
+
+    // MACHINE D'ÉTAT D'APPEL
+    // Remplace les trois flags éparpillés : callInprogress, isStoppingCall, closingUsers.
+    const callMachine = createCallStateMachine(contextId)
 
     // Guard défensif : si eventBus absent ou invalide, utiliser un no-op
     // pour éviter les crashes silencieux sur ctx.eventBus.$emit/on/off(...).
@@ -53,9 +58,6 @@ export function createPeerContext({ type, room, options }) {
         onAirRoom: room || 'app',
         currentCallRoomId: null, // roomId spécifique pour les appels audio/vidéo (différent de currentRoom qui est la room "logique")
         currentCallUsers: [], // liste des slugs des utilisateurs actuellement en appel avec moi (utile pour gérer les connexions et l'UI d'appel)
-        callInprogress: false, // y a-t-il un appel en cours avec au moins un utilisateur ?
-        isStoppingCall: false, // état temporaire pour indiquer que je suis en train de stopper un appel (utile pour éviter les conflits de logique lors du nettoyage des connexions et des flux)
-        closingUsers: new Set(), // Set des slugs des utilisateurs dont la connexion est en cours de fermeture (utile pour éviter les conflits de logique lors du nettoyage des connexions et des flux)
       
         // a mettre dans media
         isStreaming: false,
@@ -142,7 +144,7 @@ export function createPeerContext({ type, room, options }) {
         onAirRoom: computed(() => session.onAirRoom),
         currentCallRoomId: computed(() => session.currentCallRoomId),
         currentCallUsers: computed(() => session.currentCallUsers),
-        callInprogress: computed(() => session.callInprogress),
+        callInprogress: callMachine.callInprogress,
         usersInRoom: computed(() => connection.usersInRoom),
         // Tous les utilisateurs dans la room, moi compris.
         // Pas d'exclusion du hub : c'est `usersInRoom` brut + mySlug (sans doublon).
@@ -405,8 +407,6 @@ export function createPeerContext({ type, room, options }) {
             session.currentCallUsers = [...session.currentCallUsers, { userSlug, type }]
         }
 
-        session.callInprogress = session.currentCallUsers.length > 0
-
         return session.currentCallUsers
     }
 
@@ -416,9 +416,7 @@ export function createPeerContext({ type, room, options }) {
         }
 
         session.currentCallUsers = session.currentCallUsers.filter((u) => u.userSlug !== userSlug)
-        
-        session.callInprogress = session.currentCallUsers.length > 0
-        
+
         return session.currentCallUsers
     }
 
@@ -447,11 +445,11 @@ export function createPeerContext({ type, room, options }) {
 
         // Réinitialise les états de session
         session.currentCallUsers = []
-        session.closingUsers = new Set()
-        session.callInprogress = false
-        session.isStoppingCall = false
         session.isStreaming = false
         session.isCapturing = false
+
+        // Remet la machine d'état d'appel à IDLE et vide closingUsers
+        callMachine.reset()
 
         // Réinitialise la liste des utilisateurs en room
         connection.usersInRoom = []
@@ -486,6 +484,9 @@ export function createPeerContext({ type, room, options }) {
         connection,
         SIGNAL_TYPES,
         connectionEvents,
+
+        // machine d'état d'appel (remplace callInprogress / isStoppingCall / closingUsers)
+        callMachine,
 
         // computed
         ...computedState,

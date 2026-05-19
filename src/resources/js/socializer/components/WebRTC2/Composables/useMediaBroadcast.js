@@ -26,6 +26,10 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
     const {
         contextId, // id du contexte (type-room) 
 
+        // machine d'état d'appel
+        callState,       // état courant : 'idle' | 'calling' | 'receiving' | 'connected' | 'closing'
+        callInprogress,  // computed : vrai dès que l'appel n'est plus à l'état IDLE
+
         // session
         currentType, // type de broadcast (stream, screen, audio/video call)
         currentRoom, // room "logique" (peut différer de onAirRoom si on gère plusieurs rooms)
@@ -170,6 +174,8 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
         clearCurrentCallUsers,
         setCallInProgress,
         isCallInProgress,
+        callState,
+        callInprogress,
         remoteStopCall,
 
         handleStreamReceived,
