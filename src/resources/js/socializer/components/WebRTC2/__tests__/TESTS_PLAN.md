@@ -11,6 +11,7 @@
 - [x] **Infrastructure** : `vitest.config.js`, `setup.js` (mocks globaux : mediaDevices, RTCPeerConnection, crypto, Pinia)
 - [x] **`utils/useCallStateMachine.test.js`** — 35 tests : transitions FSM, computed dérivés, reset(), closingUsers
 - [x] **`utils/usePeerRetry.test.js`** — 15 tests : scheduleRetry, clearRetry, clearAll, fake timers, erreurs fatales, cleanup onUnmounted
+- [-] **`usePeerCore.test.js`** — 25 tests (partiel) : requestRemotePeerConnection (7), responseRemotePeerConnection (3), requestAuthorizationRemotePeerId (10 — inclut MAX_INVITE_RETRIES), sendAuthorizationRemotePeerId (5)
 
 ---
 
@@ -30,6 +31,21 @@ Tâche 7 → useMediaBroadcast    (intégration feature layer)
 
 ---
 
+### Avancement
+
+- [x] Infrastructure (vitest.config.js, setup.js, helpers, mocks)
+- [x] `utils/useCallStateMachine.test.js` — 35 tests ✅
+- [x] `utils/usePeerRetry.test.js` — 15 tests ✅
+- [-] Tâche 1 — `usePeerCore.test.js` — 25 tests ✅ (4/9 items couverts, 5 restants)
+- [ ] Tâche 2 — `usePeerConnections.test.js`
+- [ ] Tâche 3 — `usePeerMedia.test.js`
+- [ ] Tâche 4 — `usePeerTransport.test.js`
+- [ ] Tâche 5 — `createPeerContext.test.js`
+- [ ] Tâche 6 — `usePeerOrchestrator.test.js`
+- [ ] Tâche 7 — `useMediaBroadcast.test.js`
+
+---
+
 ### Tâche 1 — `usePeerCore.test.js` (Signaling layer)
 
 **Périmètre** : couche HTTP/Ajax pure, sans WebRTC.
@@ -37,11 +53,11 @@ Tâche 7 → useMediaBroadcast    (intégration feature layer)
 - [✅] `requestRemotePeerConnection` : POST Ajax déclenché, `addWaitingRemotePeerId` appelé, throttling SIGNALING_STALE_MS (pas de 2e requête si `waiting` récent)
 - [✅] `responseRemotePeerConnection` : POST avec `peerId` local correct
 - [✅] `requestAuthorizationRemotePeerId` : envoi immédiat + retry via `inviteRetryManager`, retourne un `inviteId`
-- [ ] `sendAuthorizationRemotePeerId` : envoi avec `status: true` (inclut peerId) vs `status: false` (type seulement)
+- [✅] `sendAuthorizationRemotePeerId` : envoi avec `status: true` (inclut peerId) vs `status: false` (type seulement)
 - [ ] `notifyCloseConnectionToPeer` : POST avec room/type/fromUserSlug
 - [ ] Signal watcher : un signal `PEER_CONNECTION_REQUEST` dans `lastRoomSignal` déclenche `responseRemotePeerConnection`
 - [ ] `stopCallInviteRetry` / `stopCallInviteRetryForUser` / `clearAllCallInviteRetries` : cancellent les retries correspondants
-- [ ] Limite `MAX_INVITE_RETRIES` : la plus ancienne entrée est évincée quand la Map est pleine
+- [✅] Limite `MAX_INVITE_RETRIES` : la plus ancienne entrée est évincée quand la Map est pleine *(couvert dans requestAuthorizationRemotePeerId)*
 - [ ] `onUnmounted` : watcher stoppé + inviteRetryManager vidé
 
 **Prérequis** : `createMockContext()` suffit (AjaxService injecté via ctx) ; `vi.useFakeTimers()` pour les retries.
