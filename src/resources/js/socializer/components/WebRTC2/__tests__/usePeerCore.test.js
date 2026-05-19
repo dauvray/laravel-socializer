@@ -321,4 +321,94 @@ describe('usePeerCore', () => {
             expect(ctx.AjaxService.load).toHaveBeenCalledTimes(21)
         })
     })
+
+    // ── sendAuthorizationRemotePeerId ───────────────────────────────────────
+
+    describe('sendAuthorizationRemotePeerId', () => {
+
+        const buildPayload = (overrides = {}) => ({
+            fromUserSlug: 'bob',
+            status: true,
+            options: {
+                type: 'visio',
+                room: 'room-42',
+                action: 'peer-access-permission',
+            },
+            ...overrides,
+        })
+
+        it('envoie un POST à RESPONSE_TO_AUTHORIZATION_PEER avec status true et les options complètes incluant le peerId local', async () => {
+            ctx.peerStore.getLocalPeerId = 'local-peer-xyz'
+            const payload = buildPayload()
+
+            await core.sendAuthorizationRemotePeerId(payload)
+
+            expect(ctx.AjaxService.load).toHaveBeenCalledOnce()
+            expect(ctx.AjaxService.load).toHaveBeenCalledWith(
+                ENDPOINTS.RESPONSE_TO_AUTHORIZATION_PEER,
+                'post',
+                {
+                    toUserSlug: 'bob',
+                    options: {
+                        type: 'visio',
+                        room: 'room-42',
+                        action: 'peer-access-permission',
+                        peerId: 'local-peer-xyz',
+                    },
+                    status: true,
+                }
+            )
+        })
+
+        it('injecte getLocalPeerId dans options.peerId quand status est true', async () => {
+            ctx.peerStore.getLocalPeerId = 'peer-id-injected'
+            const payload = buildPayload()
+
+            await core.sendAuthorizationRemotePeerId(payload)
+
+            const sentOptions = ctx.AjaxService.load.mock.calls[0][2].options
+            expect(sentOptions.peerId).toBe('peer-id-injected')
+        })
+
+        it('envoie un POST à RESPONSE_TO_AUTHORIZATION_PEER avec status false et uniquement { type } dans options', async () => {
+            const payload = buildPayload({
+                status: false,
+                options: {
+                    type: 'visio',
+                    room: 'room-42',
+                    action: 'peer-access-permission',
+                },
+            })
+
+            await core.sendAuthorizationRemotePeerId(payload)
+
+            expect(ctx.AjaxService.load).toHaveBeenCalledOnce()
+            expect(ctx.AjaxService.load).toHaveBeenCalledWith(
+                ENDPOINTS.RESPONSE_TO_AUTHORIZATION_PEER,
+                'post',
+                {
+                    toUserSlug: 'bob',
+                    options: { type: 'visio' },
+                    status: false,
+                }
+            )
+        })
+
+        it('n\'inclut pas peerId dans options quand status est false', async () => {
+            ctx.peerStore.getLocalPeerId = 'should-not-appear'
+            const payload = buildPayload({ status: false })
+
+            await core.sendAuthorizationRemotePeerId(payload)
+
+            const sentOptions = ctx.AjaxService.load.mock.calls[0][2].options
+            expect(sentOptions).not.toHaveProperty('peerId')
+        })
+
+        it('ne throw pas si le POST Ajax échoue (erreur avalée)', async () => {
+            ctx.AjaxService.load.mockRejectedValue(new Error('Network error'))
+            const payload = buildPayload()
+
+            await expect(core.sendAuthorizationRemotePeerId(payload)).resolves.toBeUndefined()
+        })
+    })
 })
