@@ -6,7 +6,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createMockContext } from './helpers/createMockContext.js'
 import { withSetup } from './helpers/withSetup.js'
 import { usePeerCore } from '~socializer/components/WebRTC2/Composables/usePeerCore.js'
-import { ENDPOINTS, SIGNALING_STALE_MS } from '~socializer/components/WebRTC2/webrtc2.config.js'
+import { ENDPOINTS, SIGNALING_STALE_MS, MAX_INVITE_RETRIES } from '~socializer/components/WebRTC2/webrtc2.config.js'
 
 describe('usePeerCore', () => {
     let ctx
@@ -164,6 +164,161 @@ describe('usePeerCore', () => {
             const payload = buildPayload()
 
             await expect(core.responseRemotePeerConnection(payload)).resolves.toBeUndefined()
+        })
+    })
+
+    // ── requestAuthorizationRemotePeerId ────────────────────────────────────
+
+    describe('requestAuthorizationRemotePeerId', () => {
+
+        const buildPayload = (overrides = {}) => ({
+            toUserSlug: 'alice',
+            type: 'visio',
+            ...overrides,
+        })
+
+        it('déclenche un POST immédiat à SEND_ALERT_TO_USER avec les bons paramètres', async () => {
+            ctx.session.currentCallRoomId = 'call-room-1'
+            const payload = buildPayload()
+
+            const inviteId = await core.requestAuthorizationRemotePeerId(payload)
+
+            expect(ctx.AjaxService.load).toHaveBeenCalledOnce()
+            expect(ctx.AjaxService.load).toHaveBeenCalledWith(
+                ENDPOINTS.SEND_ALERT_TO_USER,
+                'post',
+                {
+                    toUserSlug: 'alice',
+                    options: {
+                        type: 'visio',
+                        action: 'peer-access-permission',
+                        room: 'call-room-1',
+                        peerId: ctx.peerStore.getLocalPeerId,
+                        inviteId,
+                    },
+                }
+            )
+        })
+
+        it('retourne un inviteId non vide', async () => {
+            const inviteId = await core.requestAuthorizationRemotePeerId(buildPayload())
+
+            expect(inviteId).toBeDefined()
+            expect(typeof inviteId).toBe('string')
+            expect(inviteId.length).toBeGreaterThan(0)
+        })
+
+        it('réutilise l\'inviteId fourni dans le payload', async () => {
+            const payload = buildPayload({ inviteId: 'my-custom-invite-id' })
+
+            const inviteId = await core.requestAuthorizationRemotePeerId(payload)
+
+            expect(inviteId).toBe('my-custom-invite-id')
+            expect(ctx.AjaxService.load).toHaveBeenCalledWith(
+                ENDPOINTS.SEND_ALERT_TO_USER,
+                'post',
+                expect.objectContaining({
+                    options: expect.objectContaining({ inviteId: 'my-custom-invite-id' }),
+                })
+            )
+        })
+
+        it('génère deux inviteIds distincts pour deux appels différents sans inviteId fourni', async () => {
+            const id1 = await core.requestAuthorizationRemotePeerId(buildPayload({ toUserSlug: 'alice' }))
+            const id2 = await core.requestAuthorizationRemotePeerId(buildPayload({ toUserSlug: 'bob' }))
+
+            expect(id1).not.toBe(id2)
+        })
+
+        it('appelle addWaitingRemotePeerId avec le bon slug et les bonnes données', async () => {
+            ctx.session.currentCallRoomId = 'call-room-42'
+            const payload = buildPayload()
+
+            const inviteId = await core.requestAuthorizationRemotePeerId(payload)
+
+            expect(ctx.peerStore.addWaitingRemotePeerId).toHaveBeenCalledWith(
+                'alice',
+                {
+                    type: 'visio',
+                    action: 'peer-access-permission',
+                    room: 'call-room-42',
+                    peerId: ctx.peerStore.getLocalPeerId,
+                    inviteId,
+                }
+            )
+        })
+
+        it('planifie un retry : un second POST est envoyé après le premier délai', async () => {
+            await core.requestAuthorizationRemotePeerId(buildPayload())
+
+            // Seul l'envoi initial pour l'instant
+            expect(ctx.AjaxService.load).toHaveBeenCalledOnce()
+
+            // Avancer pour déclencher le premier retry (attempt 0 : délai max 1299ms)
+            await vi.advanceTimersByTimeAsync(1300)
+
+            expect(ctx.AjaxService.load).toHaveBeenCalledTimes(2)
+        })
+
+        it('le retry continue tant que l\'inviteId est dans la Map', async () => {
+            await core.requestAuthorizationRemotePeerId(buildPayload())
+
+            // Avancer pour déclencher attempt 0 (≤1299ms) puis attempt 1 (≤3599ms depuis start)
+            await vi.advanceTimersByTimeAsync(5000)
+
+            // Envoi initial + au moins 2 retries
+            expect(ctx.AjaxService.load.mock.calls.length).toBeGreaterThanOrEqual(3)
+        })
+
+        it('le retry s\'arrête après stopCallInviteRetry', async () => {
+            const inviteId = await core.requestAuthorizationRemotePeerId(buildPayload())
+
+            core.stopCallInviteRetry(inviteId)
+
+            await vi.advanceTimersByTimeAsync(60_000)
+
+            // Seulement l'envoi initial, aucun retry
+            expect(ctx.AjaxService.load).toHaveBeenCalledOnce()
+        })
+
+        it('ne throw pas si le POST initial échoue et planifie quand même le retry', async () => {
+            ctx.AjaxService.load
+                .mockRejectedValueOnce(new Error('Network error'))
+                .mockResolvedValue({ data: {} })
+
+            await expect(
+                core.requestAuthorizationRemotePeerId(buildPayload())
+            ).resolves.toBeDefined()
+
+            // Avancer pour déclencher le retry
+            await vi.advanceTimersByTimeAsync(1300)
+
+            // Le retry a bien été envoyé malgré l'échec initial
+            expect(ctx.AjaxService.load).toHaveBeenCalledTimes(2)
+        })
+
+        it('évince la plus ancienne entrée quand la Map atteint MAX_INVITE_RETRIES', async () => {
+            // Remplir la Map jusqu'à MAX_INVITE_RETRIES
+            for (let i = 0; i < MAX_INVITE_RETRIES; i++) {
+                await core.requestAuthorizationRemotePeerId(buildPayload({ toUserSlug: `user-${i}` }))
+            }
+
+            // Réinitialiser le compteur pour n'observer que la suite
+            ctx.AjaxService.load.mockClear()
+
+            // 21ème entrée : déclenche l'éviction de user-0 (la plus ancienne)
+            await core.requestAuthorizationRemotePeerId(buildPayload({ toUserSlug: 'new-user' }))
+
+            // Avancer pour déclencher tous les retries attempt-0 (délai max 1299ms)
+            await vi.advanceTimersByTimeAsync(1300)
+
+            // user-0 a été évincé (son timer annulé) → son retry ne se déclenche pas
+            // Attendu : 1 (initial new-user)
+            //         + 19 (retries user-1..user-19)
+            //         + 1  (retry new-user)
+            //         = 21
+            // Sans éviction ce serait 22 (+ le retry de user-0)
+            expect(ctx.AjaxService.load).toHaveBeenCalledTimes(21)
         })
     })
 })

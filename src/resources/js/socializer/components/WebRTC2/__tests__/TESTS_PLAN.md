@@ -36,7 +36,7 @@ Tâche 7 → useMediaBroadcast    (intégration feature layer)
 
 - [✅] `requestRemotePeerConnection` : POST Ajax déclenché, `addWaitingRemotePeerId` appelé, throttling SIGNALING_STALE_MS (pas de 2e requête si `waiting` récent)
 - [✅] `responseRemotePeerConnection` : POST avec `peerId` local correct
-- [ ] `requestAuthorizationRemotePeerId` : envoi immédiat + retry via `inviteRetryManager`, retourne un `inviteId`
+- [✅] `requestAuthorizationRemotePeerId` : envoi immédiat + retry via `inviteRetryManager`, retourne un `inviteId`
 - [ ] `sendAuthorizationRemotePeerId` : envoi avec `status: true` (inclut peerId) vs `status: false` (type seulement)
 - [ ] `notifyCloseConnectionToPeer` : POST avec room/type/fromUserSlug
 - [ ] Signal watcher : un signal `PEER_CONNECTION_REQUEST` dans `lastRoomSignal` déclenche `responseRemotePeerConnection`
