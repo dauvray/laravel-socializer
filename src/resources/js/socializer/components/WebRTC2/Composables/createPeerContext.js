@@ -114,7 +114,7 @@ export function createPeerContext({ type, room, options }) {
 
     // CONNECTION EVENTS
    const connectionEvents = reactive({
-       onConnectionOpen: {
+        onConnectionOpen: {
             callback: () => {},
             isActive: false,
         },
@@ -366,29 +366,29 @@ export function createPeerContext({ type, room, options }) {
     }
 
     const storeConnectionEventCallbacks = (callbacks) => {
-    try {
-        if (!callbacks || typeof callbacks !== "object") {
-            return
-        }
-
-        Object.keys(callbacks).forEach((callbackKey) => {
-            const eventEntry = connectionEvents[callbackKey]
-            const candidate = callbacks[callbackKey]
-
-            // Ignore les cles inconnues et les callbacks non-fonction
-            if (!eventEntry || typeof candidate !== "function") {
+        try {
+            if (!callbacks || typeof callbacks !== "object") {
                 return
             }
 
-            if (!eventEntry.isActive) {
-                eventEntry.callback = candidate
-                eventEntry.isActive = true
-            }
-        })
-    } catch (e) {
-        console.log("Erreur lors de l'initialisation des callbacks de connexion", e)
+            Object.keys(callbacks).forEach((callbackKey) => {
+                const eventEntry = connectionEvents[callbackKey]
+                const candidate = callbacks[callbackKey]
+
+                // Ignore les cles inconnues et les callbacks non-fonction
+                if (!eventEntry || typeof candidate !== "function") {
+                    return
+                }
+
+                if (!eventEntry.isActive) {
+                    eventEntry.callback = candidate
+                    eventEntry.isActive = true
+                }
+            })
+        } catch (e) {
+            console.log("Erreur lors de l'initialisation des callbacks de connexion", e)
+        }
     }
-}
 
     const setCurrentCallUsers = (users = []) => {
         session.currentCallUsers = Array.isArray(users) ? users : []

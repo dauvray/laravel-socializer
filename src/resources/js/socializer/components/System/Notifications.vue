@@ -134,19 +134,8 @@
                         })
                         // display alerts to user
                         .listen('.AlertToUser', (event) => {
-
                             // stocke les invitations pour relancer si bessoin
                             if (this.peers.isInviteDuplicate(event?.options?.inviteId)) return
-                            // const inviteId = event?.options?.inviteId || null
-                            // if (inviteId && this.seenInviteIds.has(inviteId)) {
-                            //     return
-                            // }
-                            // if (inviteId) {
-                            //     this.seenInviteIds.add(inviteId)
-                            // }
-
-
-
                             this.notificationComponentProps = event
                             this.notificationComponent = 'AlertComponent'
                         })

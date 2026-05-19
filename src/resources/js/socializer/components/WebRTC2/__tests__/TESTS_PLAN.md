@@ -142,11 +142,16 @@ Tâche 7 → useMediaBroadcast    (intégration feature layer)
 **Périmètre** : coordination des sous-modules, guard `isShuttingDown`, machine d'état appel.
 
 - [ ] `initializePeerConnection` : callbacks stockés dans `connectionEvents` ; en topologie star + hub, `onDataReceived` est wrappé (enveloppe `__starRoute` interceptée, payload remonté)
+- [ ] `initializePeerConnection` wrapping `onStreamReceived` : `handleStreamReceived` interne est chaîné **avant** le callback utilisateur (quel que soit le type) ; le callback utilisateur reste appelé ensuite si fourni
+- [ ] `initializePeerConnection` wrapping `onConnectionClose` stream : uniquement pour `type === 'stream'`, `handleStreamRemoved` interne est chaîné avant le callback utilisateur ; pour les autres types (`data`, `visio`…) la fermeture n'est pas wrappée
 - [ ] `syncUsersConnections` topologie mesh : `_requestOrConnectPeer` appelé pour chaque new user
 - [ ] `syncUsersConnections` topologie star hub : se connecte à tous les new users
 - [ ] `syncUsersConnections` topologie star client : se connecte uniquement au hub
 - [ ] `syncUsersConnections` lock : appels parallèles sérialisés (le 2e attend la fin du 1er)
 - [ ] `_requestOrConnectPeer` : connexion directe si `remotePeerId` connu ; sinon `requestRemotePeerConnection` ; retry `scheduleRetry` lancé dans tous les cas
+- [ ] `handleStreamReceived` mode `stream` : peuple `remoteStreamsMap` (clé `${slug}-${type}`) **sans** appeler `createVideoElement` — l'UI consomme `remoteStreams` via le slot
+- [ ] `handleStreamReceived` autres modes (visio, vocal…) : peuple `remoteStreamsMap` **et** crée le player DOM via `createVideoElement`, transition RECEIVING→CONNECTED
+- [ ] `handleStreamRemoved` mode `stream` : retire l'entrée de `remoteStreamsMap`, `removeVideoElement` est appelé (no-op si absent), `removeCurrentCallUser` mis à jour
 - [ ] `stopCallWithPeers` mode `full` : `closePeerConnection` global, `stopCurrentStream`, reset `callMachine`, `isShuttingDown` repasse à false en fin
 - [ ] `stopCallWithPeers` mode `partial` : fermeture sélective, `isShuttingDown` repasse à false, `callMachine` reste en CONNECTED
 - [ ] `isShuttingDown` guard : watcher `peerUnavailableSignal` et `_handleConnectionAttempt` ne s'exécutent pas si true
@@ -169,8 +174,9 @@ Tâche 7 → useMediaBroadcast    (intégration feature layer)
 - [ ] Flux appel complet récepteur : `acceptCallFromPeer` (status true) → `stopCallWithPeers`
 - [ ] Refus d'appel : `acceptCallFromPeer` (status false) → aucun stream démarré, callMachine reste IDLE
 - [ ] `remoteStopCall` : ferme le stream distant, supprime le videoElement, émet `close-call`
-- [ ] `handleStreamReceived` : crée le videoElement distant, transition RECEIVING→CONNECTED
-- [ ] `handleStreamRemoved` : supprime le videoElement, si dernier user → `stopCallWithPeers` full
+- [ ] `handleStreamReceived` mode `stream` (via `initializePeerConnection`) : `remoteStreams` (computed) passe de longueur 0 à 1 après réception ; **aucun** `createVideoElement` appelé
+- [ ] `handleStreamReceived` mode `visio` : `createVideoElement` appelé, transition RECEIVING→CONNECTED
+- [ ] `handleStreamRemoved` : supprime le videoElement (si présent), `remoteStreams` revient à longueur 0, si dernier user → `stopCallWithPeers` full
 - [ ] Événements exposés : `close-call` émis avec le bon payload
 
 **Prérequis** : `usePeerOrchestrator` entièrement mocké via `vi.mock` (résultat de la tâche 6) ou intégration complète avec tous les sous-modules mockés.

@@ -193,8 +193,15 @@ export function usePeerConnections(ctx) {
                 return true
             }
 
-            if (config.options.metadata.type === 'stream' && ctx.media.currentStream) {
-                const call = ctx.peerStore.getLocalPeer.call(config.peerId, config.stream, config.options)
+            if (config.options.metadata.type === 'stream') {
+                const stream = config.stream
+                const isValidStream = stream instanceof MediaStream
+                    && stream.getTracks().some(t => t.readyState === 'live')
+                // Pas de stream disponible : pas encore streamé, on ignore silencieusement
+                if (!isValidStream) {
+                    return true
+                }
+                const call = ctx.peerStore.getLocalPeer.call(config.peerId, stream, config.options)
                 _saveRoomConnection(config, call)
                 return true
             }

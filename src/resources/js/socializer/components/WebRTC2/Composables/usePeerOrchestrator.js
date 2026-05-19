@@ -203,6 +203,29 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
             }
         }
 
+        // Wrap onStreamReceived : chaîne le tracking interne (remoteStreamsMap) avant le callback utilisateur.
+        // Sans ce wrap, handleStreamReceived n'est jamais appelé et remoteStreams reste vide.
+        const originalOnStreamReceived = callbacks?.onStreamReceived ?? null
+        wrappedCallbacks.onStreamReceived = async (stream, conn, metadata) => {
+            await handleStreamReceived(stream, conn, metadata)
+            if (typeof originalOnStreamReceived === 'function') {
+                originalOnStreamReceived(stream, conn, metadata)
+            }
+        }
+
+        // Wrap onConnectionClose pour le mode stream : chaîne le cleanup interne (remoteStreamsMap)
+        // avant le callback utilisateur. Limité au type 'stream' pour éviter les effets de bord
+        // sur les connexions data (stopCallWithPeers, removeCurrentCallUser, etc.).
+        if (type === 'stream') {
+            const originalOnConnectionClose = callbacks?.onConnectionClose ?? null
+            wrappedCallbacks.onConnectionClose = async (conn) => {
+                await handleStreamRemoved(conn, conn?.metadata)
+                if (typeof originalOnConnectionClose === 'function') {
+                    originalOnConnectionClose(conn)
+                }
+            }
+        }
+
         // IMPORTANT: on stocke bien les callbacks wrappés dans le contexte, pas les originaux.
         context.storeConnectionEventCallbacks(wrappedCallbacks)
         transport.setLocalPeer()
@@ -654,7 +677,10 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
             context.callMachine.transition(CALL_STATES.CONNECTED)
         }
 
-        if (stream instanceof MediaStream) {
+        // En mode 'stream', remoteStreamsMap est la source de vérité consommée par l'UI via remoteStreams.
+        // On ne crée pas de player DOM injecté : c'est au composant (ex: StreamSimpleUI) de rendre les streams.
+        // Pour les autres modes (visio, vocal…), on crée le player DOM comme d'habitude.
+        if (stream instanceof MediaStream && context.session.currentType !== 'stream') {
             media.createVideoElement(
                 {
                     videoId: `remote-${remoteSlug}-${remoteType}`,
@@ -801,6 +827,7 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         currentStream: context.currentStream,
         isStreaming: context.isStreaming,
         isCapturing: context.isCapturing,
+        remoteStreams: context.remoteStreams,
 
         // meStore
         mySlug: context.mySlug,

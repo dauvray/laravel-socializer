@@ -26,10 +26,10 @@
                     style="--bs-btn-padding-y: .25rem; --bs-btn-padding-x: .5rem; --bs-btn-font-size: .70rem;"
                     :user="element"
                 ></FollowButton>
-                <CallUserButton
+                <CallRemotePeerBtn
                     v-if="user.connected"
                     :user="element"
-                ></CallUserButton>
+                ></CallRemotePeerBtn>
             </div>
         </div>
 
@@ -72,7 +72,7 @@
     import { mapActions } from 'pinia'
     import { useWallStore } from '~socializer/stores/wall.js'
     import FollowButton from '~socializer/components/User/widgets/FollowButton.vue'
-    import CallUserButton from '~socializer/components/WebRTC2/Widgets/UI/CallUserButton.vue'
+    import CallRemotePeerBtn from '~socializer/components/WebRTC2/Widgets/UI/Buttons/CallRemotePeerBtn.vue'
 
     import UserBadge from '~socializer/components/User/Badge.vue'
 
@@ -84,7 +84,7 @@
             ModalWidget: defineAsyncComponent(() => import('~estarter/components/widgets/ModalLazy.js')),
             CropperWidget: defineAsyncComponent(() => import('~estarter/components/widgets/CropperWidget.vue')),
             FollowButton,
-            CallUserButton,
+            CallRemotePeerBtn,
             UserBadge,
         },
         props: {

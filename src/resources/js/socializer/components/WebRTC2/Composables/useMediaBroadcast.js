@@ -48,7 +48,8 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
         currentStream, // flux média local (MediaStream) créé par getUserMedia ou getDisplayMedia
         isStreaming, // indique si un flux est actuellement diffusé (utile pour l'UI et la logique métier)
         isCapturing, // indique si on est en train de partager son écran (utile pour l'UI et la logique métier)
-        
+        remoteStreams, // liste des flux médias distants reçus (utile pour gérer les éléments vidéo et l'UI d'appel)
+
         // meStore
         mySlug,
         myName,
@@ -206,6 +207,7 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
         currentStream,
         isStreaming,
         isCapturing,
+        remoteStreams,
 
         // meStore
         mySlug,
