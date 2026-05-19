@@ -113,7 +113,7 @@ utils/ (infrastructure — usage libre par tous les composables)
 - [✅] **`stopCallWithPeers()` non-réentrant** `[S]` : `isStoppingCall` flag mais pas protégé contre appels simultanés vrais
 - [✅] **Pas de machine d'état pour les appels** `[L]` : états `callInprogress`, `isStoppingCall`, `closingUsers` éparpillés sans transitions claires
 - [✅] **`ensureCurrentCallRoomId()` génère avec `Math.random()`** `[S]` : pas cryptographiquement sûr pour un ID de room
-- [ ] **`_enterCallSession` : écrasement silencieux de l'ID généré** `[S]` : `ensureCurrentCallRoomId(null)` génère un ID aléatoire, mais la ligne suivante `context.session.currentCallRoomId = room` (room = null) l'écrase immédiatement → l'ID est perdu ; supprimer la ligne redondante et laisser `ensureCurrentCallRoomId` seul gérer l'affectation
+- [✅] **`_enterCallSession` : écrasement silencieux de l'ID généré** `[S]` : `ensureCurrentCallRoomId(null)` génère un ID aléatoire, mais la ligne suivante `context.session.currentCallRoomId = room` (room = null) l'écrase immédiatement → l'ID est perdu ; supprimer la ligne redondante et laisser `ensureCurrentCallRoomId` seul gérer l'affectation
 
 ### usePeerMedia
 

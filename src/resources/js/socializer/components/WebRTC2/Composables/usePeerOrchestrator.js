@@ -342,7 +342,6 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         ensureCurrentCallRoomId(room)
         addCurrentCallUser(fromUserSlug, type)
         context.session.currentType = type
-        context.session.currentCallRoomId = room
 
         await media.startCurrentStream(true)
         media.createVideoElement(
