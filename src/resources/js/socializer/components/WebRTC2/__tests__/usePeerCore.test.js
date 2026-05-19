@@ -116,4 +116,54 @@ describe('usePeerCore', () => {
             expect(result).toBe(false)
         })
     })
+
+    // ── responseRemotePeerConnection ────────────────────────────────────────
+
+    describe('responseRemotePeerConnection', () => {
+
+        const buildPayload = (overrides = {}) => ({
+            fromUserSlug: 'bob',
+            room: 'room-42',
+            type: 'visio',
+            ...overrides,
+        })
+
+        it('envoie un POST à RESPONSE_TO_PEER_ID avec le peerId local et les métadonnées du payload', async () => {
+            const payload = buildPayload()
+
+            await core.responseRemotePeerConnection(payload)
+
+            expect(ctx.AjaxService.load).toHaveBeenCalledOnce()
+            expect(ctx.AjaxService.load).toHaveBeenCalledWith(
+                ENDPOINTS.RESPONSE_TO_PEER_ID,
+                'post',
+                {
+                    peerId: ctx.peerStore.getLocalPeerId,
+                    toUserSlug: 'bob',
+                    room: 'room-42',
+                    type: 'visio',
+                }
+            )
+        })
+
+        it('utilise bien getLocalPeerId du contexte comme peerId envoyé', async () => {
+            ctx.peerStore.getLocalPeerId = 'my-real-peer-id'
+            const payload = buildPayload()
+
+            await core.responseRemotePeerConnection(payload)
+
+            expect(ctx.AjaxService.load).toHaveBeenCalledWith(
+                ENDPOINTS.RESPONSE_TO_PEER_ID,
+                'post',
+                expect.objectContaining({ peerId: 'my-real-peer-id' })
+            )
+        })
+
+        it('ne throw pas si le POST Ajax échoue (erreur avalée)', async () => {
+            ctx.AjaxService.load.mockRejectedValue(new Error('Network error'))
+            const payload = buildPayload()
+
+            await expect(core.responseRemotePeerConnection(payload)).resolves.toBeUndefined()
+        })
+    })
 })

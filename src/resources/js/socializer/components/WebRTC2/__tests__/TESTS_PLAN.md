@@ -35,7 +35,7 @@ Tâche 7 → useMediaBroadcast    (intégration feature layer)
 **Périmètre** : couche HTTP/Ajax pure, sans WebRTC.
 
 - [✅] `requestRemotePeerConnection` : POST Ajax déclenché, `addWaitingRemotePeerId` appelé, throttling SIGNALING_STALE_MS (pas de 2e requête si `waiting` récent)
-- [ ] `responseRemotePeerConnection` : POST avec `peerId` local correct
+- [✅] `responseRemotePeerConnection` : POST avec `peerId` local correct
 - [ ] `requestAuthorizationRemotePeerId` : envoi immédiat + retry via `inviteRetryManager`, retourne un `inviteId`
 - [ ] `sendAuthorizationRemotePeerId` : envoi avec `status: true` (inclut peerId) vs `status: false` (type seulement)
 - [ ] `notifyCloseConnectionToPeer` : POST avec room/type/fromUserSlug
