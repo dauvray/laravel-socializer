@@ -76,8 +76,24 @@ function _schedulePeerDestroy(peerStore) {
 }
 
 function _destroyPeerSingleton(peerStore) {
+    // Cas résiduel : _destroyPeerSingleton peut être appelé après un échec
+    // d'initialisation (catch de _peerInitPromise) où localPeer a déjà été remis
+    // à null. Dans ce cas, _peerConsumerCount reflète encore les consommateurs
+    // actifs (leurs onUnmounted décrémentent normalement jusqu'à 0) — ne pas le
+    // réinitialiser ici, cela fausserait le comptage pour un éventuel retry.
+    if (!peerStore.localPeer) {
+        // Rien à détruire ; annuler le timer de reconnexion par précaution.
+        if (_reconnectTimer) {
+            clearTimeout(_reconnectTimer)
+            _reconnectTimer = null
+        }
+        _peerInitPromise = null
+        console.info('[WebRTC2] _destroyPeerSingleton: peer déjà absent (échec init ou double-appel), skip')
+        return
+    }
+
     try {
-        if (peerStore.localPeer && !peerStore.localPeer.destroyed) {
+        if (!peerStore.localPeer.destroyed) {
             peerStore.localPeer.destroy()
         }
     } catch (e) {
@@ -396,6 +412,12 @@ export function usePeerTransport(ctx) {
             .catch(err => {
                 // En cas d'échec : localPeerReady est encore false (on('open') n'a
                 // pas été reçu), localPeer est remis à null pour permettre un retry.
+                // _peerConsumerCount N'est PAS remis à 0 ici : les consommateurs
+                // actifs (composants montés) doivent continuer à décrémenter
+                // normalement via onUnmounted — les remettre à 0 ici créerait un
+                // décalage si un nouveau composant s'enregistre avant que les anciens
+                // unmontent, pouvant déclencher la destruction d'un peer valide.
+                // _destroyPeerSingleton gère explicitement le cas localPeer=null.
                 console.error('[WebRTC2] Échec d\'initialisation du Peer :', err)
                 peerStore.localPeerReady = false
                 peerStore.localPeer = null

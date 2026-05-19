@@ -128,7 +128,7 @@ utils/ (infrastructure — usage libre par tous les composables)
 
 - [✅] **`localPeerReady` sémantique trompeuse** `[S]` : le flag est mis à `true` dès le début de `_doInit()`, avant l'événement `open` — il indique "initialisation en cours" et non "peer utilisable" ; toute vérification externe de ce flag est trompeuse → renommer en `localPeerInitializing` ou ne le passer à `true` qu'à la réception de l'événement `open`
 - [✅] **Timer de reconnexion orphelin** `[S]` : dans `on('disconnected')`, le `setTimeout` de backoff est créé sans stocker sa référence — si `_destroyPeerSingleton` est appelé pendant le délai, le timer ne peut pas être annulé (seul le guard `peer.destroyed` le protège à l'exécution, mais le timer reste en mémoire jusqu'à expiration) → stocker la référence et l'annuler dans `_destroyPeerSingleton`
-- [ ] **`catch` incomplet sur `_peerInitPromise`** `[S]` : si `_doInit()` échoue, `localPeerReady` et `localPeer` sont remis à zéro mais `_peerConsumerCount` reste inchangé — les `onUnmounted` décrémentent correctement, mais `_destroyPeerSingleton` est appelé sur un peer déjà null sans que le compteur reflète l'état réel
+- [✅] **`catch` incomplet sur `_peerInitPromise`** `[S]` : si `_doInit()` échoue, `localPeerReady` et `localPeer` sont remis à zéro mais `_peerConsumerCount` reste inchangé — les `onUnmounted` décrémentent correctement, mais `_destroyPeerSingleton` est appelé sur un peer déjà null sans que le compteur reflète l'état réel
 
 ---
 
@@ -162,7 +162,7 @@ utils/ (infrastructure — usage libre par tous les composables)
 
 ### usePeerTransport
 
-- [ ] **Variables module-level désynchronisées du store** `[M]` : `_peerConsumerCount`, `_peerInitPromise`, `_reconnectAttempts`, `_peerDestroyTimer` vivent dans le module ES et non dans Pinia — en cas de HMR, de reset du store ou de tests unitaires, ces compteurs deviennent incohérents avec l'état du `peerStore` → les déplacer dans le store ou dans une structure partagée initialisée à la création du store
+- [ ] **Variables module-level désynchronisées du store** `[M]` : `_peerConsumerCount`, `_peerInitPromise`, `_reconnectAttempts`, `_peerDestroyTimer` vivent dans le module ES et non dans Pinia — en cas de HMR, de reset du store ou de tests unitaires, ces compteurs deviennent incohérents avec l'état du `peerStore` → les déplacer dans le store ou dans une structure partagée initialisée à la création du store. ⚠️ **Contrainte de migration** : `_destroyPeerSingleton` comporte un early return (quand `localPeer` est null après un échec d'init) qui **ne remet volontairement pas `_peerConsumerCount` à 0** — les consommateurs encore montés doivent pouvoir décrémenter normalement pour un retry ; lors de la migration vers Pinia, cette asymétrie doit être préservée (ex : action `resetPeerState({ keepConsumerCount: true })`).
 - [ ] **Pas de cleanup explicite des listeners Peer** `[S]` : à la destruction (`_destroyPeerSingleton`), `peer.destroy()` retire les listeners implicitement via PeerJS, mais les handlers `on('connection')`, `on('call')`, `on('disconnected')`, `on('error')`, `on('open')` ne sont jamais retirés explicitement — stocker les handlers et appeler `peer.off()` avant `peer.destroy()` pour ne pas dépendre du comportement interne de PeerJS
 
 ### usePeerConnections
@@ -213,7 +213,7 @@ Phase 2 — Robustesse (P1)             effort / done
 ✅ Ajouter rate limiting dans forwardStarMessage()    [S]
 ✅ Clarifier sémantique localPeerReady (rename ou déplacer l'affectation) [S]
 ✅  Stocker et annuler le timer de backoff dans _destroyPeerSingleton [S]
-□  Corriger catch _peerInitPromise (remettre _peerConsumerCount) [S]
+✅ Corriger catch _peerInitPromise (remettre _peerConsumerCount) [S]
 
 Phase 3 — Architecture (P2)           effort / projet
 ──────────────────────────────────────────────────────
