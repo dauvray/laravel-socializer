@@ -131,6 +131,26 @@ utils/ (infrastructure — usage libre par tous les composables)
 - [✅] **`catch` incomplet sur `_peerInitPromise`** `[S]` : si `_doInit()` échoue, `localPeerReady` et `localPeer` sont remis à zéro mais `_peerConsumerCount` reste inchangé — les `onUnmounted` décrémentent correctement, mais `_destroyPeerSingleton` est appelé sur un peer déjà null sans que le compteur reflète l'état réel
 
 ---
+## Mise en place des tests avant P2 - Améliorations
+
+> Plan détaillé dans [`__tests__/TESTS_PLAN.md`](__tests__/TESTS_PLAN.md) (7 tâches, une par conversation).
+
+### Avancement
+
+- [x] Infrastructure (vitest.config.js, setup.js, helpers, mocks)
+- [x] `utils/useCallStateMachine.test.js` — 35 tests ✅
+- [x] `utils/usePeerRetry.test.js` — 15 tests ✅
+- [ ] Tâche 1 — `usePeerCore.test.js`
+- [ ] Tâche 2 — `usePeerConnections.test.js`
+- [ ] Tâche 3 — `usePeerMedia.test.js`
+- [ ] Tâche 4 — `usePeerTransport.test.js`
+- [ ] Tâche 5 — `createPeerContext.test.js`
+- [ ] Tâche 6 — `usePeerOrchestrator.test.js`
+- [ ] Tâche 7 — `useMediaBroadcast.test.js`
+
+---
+
+---
 
 ## 🟡 P2 — Améliorations (pérennisation long terme)
 
