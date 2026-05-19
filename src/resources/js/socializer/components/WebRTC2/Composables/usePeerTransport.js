@@ -40,6 +40,11 @@ let _peerInitPromise = null
 // Backoff exponentiel : 1s, 2s, 4s, 8s, 16s, 30s (max), puis abandon.
 let _reconnectAttempts = 0
 
+// Référence du timer de reconnexion en cours (backoff exponentiel sur 'disconnected').
+// Stockée pour pouvoir l'annuler dans _destroyPeerSingleton si la destruction
+// survient pendant le délai d'attente.
+let _reconnectTimer = null
+
 // ─── Référence counting du Peer singleton ────────────────────────────────────
 // Chaque contexte qui appelle setLocalPeer() incrémente ce compteur.
 // Chaque onUnmounted() le décrémente. Quand il atteint 0, la destruction est
@@ -77,6 +82,10 @@ function _destroyPeerSingleton(peerStore) {
         }
     } catch (e) {
         console.warn('[WebRTC2] Erreur lors de la destruction du Peer singleton :', e)
+    }
+    if (_reconnectTimer) {
+        clearTimeout(_reconnectTimer)
+        _reconnectTimer = null
     }
     peerStore.localPeer = null
     peerStore.localPeerReady = false
@@ -289,7 +298,7 @@ export function usePeerTransport(ctx) {
                     `[WebRTC2] PeerJS déconnecté — tentative ${_reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} dans ${delayMs}ms`
                 )
 
-                setTimeout(() => {
+                _reconnectTimer = setTimeout(() => {
                     if (!peerStore.localPeer || peerStore.localPeer.destroyed) return
                     // Workaround for peer.reconnect deleting previous id
                     peerStore.localPeer.id = peerStore.lastLocalPeerId
