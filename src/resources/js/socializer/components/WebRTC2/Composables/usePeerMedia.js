@@ -20,7 +20,6 @@
  * 👉 à ne pas confondre avec useMediaBroadcast qui gère la logique métier de diffusion (qui utilise usePeerMedia pour les flux)
  */
 import { createApp, h, markRaw } from 'vue'
-import Draggable from '~socializer/directives/draggable.js'
 
 export function usePeerMedia(ctx) {
 
@@ -87,7 +86,6 @@ export function usePeerMedia(ctx) {
             // Créer un élément wrapper unique pour chaque vidéo
             const wrapper = document.createElement('div')
             wrapper.id = wrapperId
-            wrapper.classList.add('draggable-video')
 
             const containerElement = document.querySelector(videoContainer)
 
@@ -109,6 +107,7 @@ export function usePeerMedia(ctx) {
                         type: source,
                         peer: options.peer,
                         resizable: true,
+                        draggable: true,
                         roomId: options?.roomId || ctx.session.currentRoom,
                     }),
             });
@@ -122,12 +121,6 @@ export function usePeerMedia(ctx) {
             ctx.peerStore.addPlayer({ app: markRaw(app), videoId: options.videoId, type: source })
 
             _bindStreamCleanup(stream, videoId)
-
-            // Appliquer manuellement la directive `v-draggable` sur le wrapper
-            const draggableDirective = Draggable.mounted // Récupérer la méthode `mounted` de la directive
-            if (draggableDirective) {
-                draggableDirective(wrapper) // Appliquer la directive sur l'élément wrapper
-            }
         } finally {
             creatingVideoIds.delete(videoId)
         }

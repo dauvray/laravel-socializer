@@ -1,21 +1,25 @@
 <template>
-    {{ streamData.metadata?.fromName }}
-    <video 
-        ref="player"
-        v-resize="resizeOptions"
-        :controls="false"
-        :autoplay="true"
-        :loop="false"
-        :muted="true"
-        :poster="poster"
-        :playsinline="true"
-    ></video>
+    <div class="draggable-video" 
+        v-draggable="draggableOptions">
+        {{ streamData.metadata?.fromName }}
+        <video 
+            ref="player"
+            v-resize="resizeOptions"
+            :controls="false"
+            :autoplay="true"
+            :loop="false"
+            :muted="true"
+            :poster="poster"
+            :playsinline="true"
+        ></video>
+    </div>
 </template>
 
 <script setup>
 
 import { ref, watch } from 'vue'
 import resizeDirective from '~socializer/directives/resizable.js'
+import draggableDirective from '~socializer/directives/draggable.js'
 
 const props = defineProps({
     streamData: {
@@ -55,11 +59,17 @@ const props = defineProps({
         required: false,
         default: false,
     },
+    draggable: {
+        type: Boolean,
+        required: false,
+        default: false,
+    },
 })
 // fait réfence à l'élément vidéo du template
 const player = ref(null)
 
 const vResize = resizeDirective
+const vDraggable = draggableDirective
 const resizeOptions = {
     resizable: props.resizable,
     corner: 'top-right',
@@ -72,6 +82,9 @@ const resizeOptions = {
         width: 800, 
         height: 450
     },
+}
+const draggableOptions = {
+    draggable: props.draggable,
 }
 
 watch(

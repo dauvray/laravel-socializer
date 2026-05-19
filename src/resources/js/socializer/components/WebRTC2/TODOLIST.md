@@ -118,7 +118,7 @@ utils/ (infrastructure — usage libre par tous les composables)
 ### usePeerMedia
 
 - [✅] **`session.isStreaming` / `session.isCapturing` mal placés** `[S]` : portent le commentaire `// a mettre dans media` depuis la création — déplacer dans `media` reactive ou dans `usePeerMedia`
-- [ ] **Directive draggable appliquée manuellement** `[S]` : `Draggable.mounted(wrapper)` — fragile, non reactive, peut casser avec les MàJ Vue
+- [✅] **Directive draggable appliquée manuellement** `[S]` : `Draggable.mounted(wrapper)` — fragile, non reactive, peut casser avec les MàJ Vue
 
 ### usePeerConnections
 

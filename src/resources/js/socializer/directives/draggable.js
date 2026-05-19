@@ -1,5 +1,11 @@
 export default {
-  mounted(el) {
+  mounted(el, binding) {
+
+   const options = binding.value || {};
+
+    // autoriser ou non le glissement
+    if(!options?.draggable) return
+
     let startX = 0;
     let startY = 0;
     let offsetX = 0;
