@@ -39,12 +39,16 @@ export function usePeerMedia(ctx) {
         stream.isLocal = is_local // to mute local sound in player
 
         ctx.media.currentStream = markRaw(stream) // marquer le stream comme "non réactif" pour éviter les problèmes de performance liés à la réactivité de Vue sur les objets MediaStream
+        ctx.media.isStreaming = true
+       //todo ctx.media.isCapturing = true
         return stream
     }
 
     const stopCurrentStream = () => {
         ctx.media.currentStream?.getTracks().forEach(t => t.stop())
         ctx.media.currentStream = null
+        ctx.media.isStreaming = false
+       // todo ctx.media.isCapturing = false
     }
 
     const createVideoElement = async (options = {}, stream = null) => {

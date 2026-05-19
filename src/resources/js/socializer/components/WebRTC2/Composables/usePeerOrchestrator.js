@@ -802,6 +802,8 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
 
         // media
         currentStream: context.currentStream,
+        isStreaming: context.isStreaming,
+        isCapturing: context.isCapturing,
 
         // meStore
         mySlug: context.mySlug,

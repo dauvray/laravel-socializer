@@ -46,7 +46,9 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
 
         // media
         currentStream, // flux média local (MediaStream) créé par getUserMedia ou getDisplayMedia
-
+        isStreaming, // indique si un flux est actuellement diffusé (utile pour l'UI et la logique métier)
+        isCapturing, // indique si on est en train de partager son écran (utile pour l'UI et la logique métier)
+        
         // meStore
         mySlug,
         myName,
@@ -116,10 +118,6 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
 
             syncUsersConnections(newVal)
 
-            // TODO : a faire si un broadcast est en cours (isStreaming || isCapturing) → syncJoingingUsers(newVal)
-            // if (isStreaming.value || isCapturing.value) {
-            //     syncJoingingUsers(newVal)
-            // }
         } catch (e) {
             console.error(e)
         }
@@ -206,6 +204,8 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
 
         // media
         currentStream,
+        isStreaming,
+        isCapturing,
 
         // meStore
         mySlug,

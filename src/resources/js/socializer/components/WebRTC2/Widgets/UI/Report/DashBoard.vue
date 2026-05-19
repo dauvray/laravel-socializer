@@ -27,6 +27,14 @@
                         </ul>
                     </template>
                 </li>
+                <template v-if="api.currentType.value !== 'data'">
+                    <li>
+                        Streaming : <span :class="{'text-success': api.isStreaming.value, 'text-danger': !api.isStreaming.value}">{{ api.isStreaming }}</span>
+                    </li>
+                    <li>
+                        Capturing : <span :class="{'text-success': api.isCapturing.value, 'text-danger': !api.isCapturing.value}">{{ api.isCapturing }}</span>
+                    </li>
+                </template>
             </ul>
         </div>
     </div>

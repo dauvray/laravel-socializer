@@ -60,8 +60,8 @@ export function createPeerContext({ type, room, options }) {
         currentCallUsers: [], // liste des slugs des utilisateurs actuellement en appel avec moi (utile pour gérer les connexions et l'UI d'appel)
       
         // a mettre dans media
-        isStreaming: false,
-        isCapturing: false,
+        // isStreaming: false,
+        // isCapturing: false,
       
         topology: options.topology || 'mesh', // topologie de diffusion : 'mesh' (pair à pair), 'star' (étoile) ou 'sfu' (serveur de diffusion)
         hubSlug: options.hubSlug || null, // slug du hub de diffusion (si utilisé)
@@ -73,9 +73,8 @@ export function createPeerContext({ type, room, options }) {
         videoContainer: '#videoContainer',
         currentStream: null,
         remoteStreamsMap: new Map(), // Map pour stocker les flux distants avec une clé composite (userSlug-type) pour éviter les collisions
-       
-        // isStreaming: false,
-        // isCapturing: false,
+        isStreaming: false,
+        isCapturing: false,
     })
 
     // UI STATE
@@ -166,6 +165,8 @@ export function createPeerContext({ type, room, options }) {
 
         currentStream: computed(() => media.currentStream),
         remoteStreams: computed(() => Array.from(media.remoteStreamsMap.values())),
+        isStreaming: computed(() => media.isStreaming),
+        isCapturing: computed(() => media.isCapturing),
 
         mySlug: computed(() => meStore.getMe?.slug),
         myName: computed(() => meStore.getMe?.name),
@@ -445,8 +446,8 @@ export function createPeerContext({ type, room, options }) {
 
         // Réinitialise les états de session
         session.currentCallUsers = []
-        session.isStreaming = false
-        session.isCapturing = false
+        media.isStreaming = false
+        media.isCapturing = false
 
         // Remet la machine d'état d'appel à IDLE et vide closingUsers
         callMachine.reset()
