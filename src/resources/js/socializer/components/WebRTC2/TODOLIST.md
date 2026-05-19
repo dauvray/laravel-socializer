@@ -112,7 +112,7 @@ utils/ (infrastructure — usage libre par tous les composables)
 - [✅] **`openCallBetweenPeer` / `acceptCallFromPeer` : ~15 lignes dupliquées** `[S]` : démarrage stream local, création élément vidéo, mise à jour `currentType`/`currentCallRoomId` présents dans les deux fonctions → extraire `_enterCallSession(payload)`
 - [✅] **`stopCallWithPeers()` non-réentrant** `[S]` : `isStoppingCall` flag mais pas protégé contre appels simultanés vrais
 - [✅] **Pas de machine d'état pour les appels** `[L]` : états `callInprogress`, `isStoppingCall`, `closingUsers` éparpillés sans transitions claires
-- [ ] **`ensureCurrentCallRoomId()` génère avec `Math.random()`** `[S]` : pas cryptographiquement sûr pour un ID de room
+- [✅] **`ensureCurrentCallRoomId()` génère avec `Math.random()`** `[S]` : pas cryptographiquement sûr pour un ID de room
 - [ ] **`_enterCallSession` : écrasement silencieux de l'ID généré** `[S]` : `ensureCurrentCallRoomId(null)` génère un ID aléatoire, mais la ligne suivante `context.session.currentCallRoomId = room` (room = null) l'écrase immédiatement → l'ID est perdu ; supprimer la ligne redondante et laisser `ensureCurrentCallRoomId` seul gérer l'affectation
 
 ### usePeerMedia
@@ -209,7 +209,7 @@ Phase 2 — Robustesse (P1)             effort / done
 ✅  Ajouter guard défensif eventBus fallback dans createPeerContext [S]
 ✅ Rendre stopCallWithPeers réentrant (try/finally + responsabilité unique) [S]
 □  Centraliser les constantes dans webrtc2.config.js  [S]
-□  Remplacer Math.random() par crypto.randomUUID()    [S]
+✅ Remplacer Math.random() par crypto.randomUUID()    [S]
 ✅ Ajouter rate limiting dans forwardStarMessage()    [S]
 ✅ Clarifier sémantique localPeerReady (rename ou déplacer l'affectation) [S]
 ✅  Stocker et annuler le timer de backoff dans _destroyPeerSingleton [S]

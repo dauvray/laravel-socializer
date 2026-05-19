@@ -507,7 +507,7 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         }
 
         if (!context.session.currentCallRoomId) {
-            context.session.currentCallRoomId = Math.random().toString(36).substring(2, 10)
+            context.session.currentCallRoomId = crypto.randomUUID()
         }
 
         return context.session.currentCallRoomId
