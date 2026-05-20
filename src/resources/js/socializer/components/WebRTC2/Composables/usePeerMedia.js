@@ -39,7 +39,6 @@ export function usePeerMedia(ctx) {
 
         ctx.media.currentStream = markRaw(stream) // marquer le stream comme "non réactif" pour éviter les problèmes de performance liés à la réactivité de Vue sur les objets MediaStream
         ctx.media.isStreaming = true
-       //todo ctx.media.isCapturing = true
         return stream
     }
 
@@ -47,7 +46,22 @@ export function usePeerMedia(ctx) {
         ctx.media.currentStream?.getTracks().forEach(t => t.stop())
         ctx.media.currentStream = null
         ctx.media.isStreaming = false
-       // todo ctx.media.isCapturing = false
+    }
+
+    const startScreenCapture = async (includeSystemAudio = false) => {
+        const stream = await navigator.mediaDevices.getDisplayMedia({
+            video: true,
+            audio: includeSystemAudio,
+        })
+        ctx.media.screenStream = markRaw(stream)
+        ctx.media.isCapturing = true
+        return stream
+    }
+
+    const stopScreenCapture = () => {
+        ctx.media.screenStream?.getTracks().forEach(t => t.stop())
+        ctx.media.screenStream = null
+        ctx.media.isCapturing = false
     }
 
     const createVideoElement = async (options = {}, stream = null) => {
@@ -220,6 +234,8 @@ export function usePeerMedia(ctx) {
     return {
         startCurrentStream,
         stopCurrentStream,
+        startScreenCapture,
+        stopScreenCapture,
         createVideoElement,
         removeVideoElement,
         cleanupCallPlayers,

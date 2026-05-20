@@ -74,8 +74,13 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         // 🛑 Ne relance RIEN si on est en train d'arrêter
         if (isShuttingDown.value) return true
 
+        const room = context.session.currentCallRoomId || context.currentRoom.value
+        const mainTypeOpen = connections.hasOpenConnection(userSlug, null, context.currentType.value)
+        const screenOpen = !context.media.isCapturing
+            || connections.hasOpenConnection(userSlug, null, 'screen')
+
         // 1. Succès ultime : connexion établie
-        if (connections.hasOpenConnection(userSlug)) return true
+        if (mainTypeOpen && screenOpen) return true
 
         const remotePeerId = context.peerStore.getRemotePeerId(userSlug)
         const waiting = context.peerStore.getWaitingRemotePeerId(userSlug)
@@ -85,13 +90,28 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
 
         // 3. Si on a un ID, on tente la connexion (même si waiting a sauté)
         if (remotePeerId) {
-            const connected = connections.connectToPeer({
-                userSlug,
-                peerId: remotePeerId,
-                type: context.currentType.value,
-                room: context.session.currentCallRoomId || context.currentRoom.value,
-            })
-            if (connected) return true
+            if (!mainTypeOpen) {
+                const connected = connections.connectToPeer({
+                    userSlug,
+                    peerId: remotePeerId,
+                    type: context.currentType.value,
+                    room,
+                })
+                // Si la connexion principale a échoué pour une vraie raison (ex: visio sans stream prêt)
+                // on continue à reessayer plutôt que de s'arrêter prématurément
+                if (!connected) return false
+            }
+
+            if (context.media.isCapturing && !screenOpen) {
+                connections.connectToPeer({
+                    userSlug,
+                    peerId: remotePeerId,
+                    type: 'screen',
+                    room,
+                })
+            }
+
+            return true
         }
 
         // 4. Signalisation stale : On ne demande l'ID que si on est toujours en attente (waiting)
@@ -111,9 +131,10 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
      * @param {string} userSlug - L'identifiant de l'utilisateur pour lequel la connexion est tentée.
      * @returns {void}
      */
-    const _requestOrConnectPeer = (userSlug) => {
+    const _requestOrConnectPeer = (userSlug, type = null) => {
         if (!userSlug) return
-        if (connections.hasOpenConnection(userSlug)) return
+        const effectiveType = type || context.currentType.value
+        if (connections.hasOpenConnection(userSlug, null, effectiveType)) return
 
         const remotePeerId = context.peerStore.getRemotePeerId(userSlug)
         const waiting = context.peerStore.getWaitingRemotePeerId(userSlug)
@@ -122,7 +143,7 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
             connections.connectToPeer({
                 userSlug,
                 peerId: remotePeerId,
-                type: context.currentType.value,
+                type: effectiveType,
                 room: context.session.currentCallRoomId || context.currentRoom.value,
             })
         } else if (!waiting) {
@@ -281,12 +302,22 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
                 context.peerStore.removeWaitingRemotePeerId(userSlug)
                 context.peerStore.removeRemotePeerId(userSlug)
                 context.peerStore.clearConnectionsRoom(activeRoom, userSlug, context.currentType.value)
+
+                // Fermer aussi la connexion 'screen' si elle existe
+                if (context.media.isCapturing) {
+                    context.peerStore.clearConnectionsRoom(activeRoom, userSlug, 'screen')
+                }
             })
 
             // Mesh: tout le monde se connecte à tout le monde.
             if (context.topology.value === 'mesh') {
                 newUsers.forEach(user => {
                     _requestOrConnectPeer(user.slug)
+
+                    // Si on est en train de partager l'écran, initier aussi la connexion 'screen'
+                    if (context.media.isCapturing) {
+                        _requestOrConnectPeer(user.slug, 'screen')
+                    }
                 })
             }
             // Star: le hub se connecte à tout le monde, les clients seulement au hub.
@@ -313,8 +344,8 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
     const startWebcamStream = async (is_local = false) => {
         await media.startCurrentStream(is_local)
         context.usersInRoom.value.forEach(userSlug => {
-        _requestOrConnectPeer(userSlug)
-      })
+            _requestOrConnectPeer(userSlug)
+        })
     }
 
     const stopWebcamStream = () => {
@@ -332,6 +363,23 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         context.session.currentCallRoomId = null
         
         isShuttingDown.value = false
+    }
+
+    const startScreenCapture = async () => {
+        await media.startScreenCapture()
+        const room = context.session.currentCallRoomId || context.currentRoom.value
+        context.usersInRoom.value.forEach(userSlug => {
+            _requestOrConnectPeer(userSlug, 'screen')
+        })
+    }
+
+    const stopScreenCapture = () => {
+        media.stopScreenCapture()
+        connections.closePeerConnection({
+            room: context.session.currentCallRoomId || context.currentRoom.value,
+            type: 'screen',          // ← hardcodé, jamais context.currentType.value
+            clearSignalQueue: false, // garder la queue pour le stream webcam actif
+        })
     }
 
     const toggleAudioState = () => {
@@ -815,6 +863,10 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         cleanupPeerConnection,
         startWebcamStream,
         stopWebcamStream,
+
+        startScreenCapture,
+        stopScreenCapture,
+
         toggleAudioState,
         toggleVideoState,
         startCallWithPeer,
@@ -871,9 +923,11 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
 
         // media
         currentStream: context.currentStream,
+        screenStream: context.screenStream,
         isStreaming: context.isStreaming,
         isCapturing: context.isCapturing,
         remoteStreams: context.remoteStreams,
+        remoteScreens: context.remoteScreens,
 
         // ui
         isMuted: context.isMuted,

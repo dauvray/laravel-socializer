@@ -206,6 +206,16 @@ export function usePeerConnections(ctx) {
                 return true
             }
 
+            if (config.options.metadata.type === 'screen') {
+                const stream = config.stream
+                const isValidStream = stream instanceof MediaStream
+                    && stream.getTracks().some(t => t.readyState === 'live')
+                if (!isValidStream) return true
+                const call = ctx.peerStore.getLocalPeer.call(config.peerId, stream, config.options)
+                _saveRoomConnection(config, call)
+                return true
+            }
+
             if (config.options.metadata.type === 'visio') {
                 const stream = config.stream
                 const isValidStream = stream instanceof MediaStream
@@ -320,9 +330,10 @@ export function usePeerConnections(ctx) {
             // Whether the underlying data channels should be reliable (e.g. for large file transfers)
             // or not (e.g. for gaming or streaming).
             config.options.reliable = true
+        } else if (type === 'screen') {
+            config.stream = ctx.media.screenStream
         } else if (
             type === 'stream'
-            || type === 'screen'
             || type === 'visio'
             || type === 'vocal'
         ) {

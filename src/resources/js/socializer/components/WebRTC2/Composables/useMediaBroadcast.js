@@ -45,10 +45,12 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
         usersInRoom, // liste des utilisateurs présents dans la room 
 
         // media
-        currentStream, // flux média local (MediaStream) créé par getUserMedia ou getDisplayMedia
+        currentStream, // flux média local (MediaStream) créé par getUserMedia
+        screenStream, // flux de partage d'écran local (MediaStream) créé par getDisplayMedia
         isStreaming, // indique si un flux est actuellement diffusé (utile pour l'UI et la logique métier)
         isCapturing, // indique si on est en train de partager son écran (utile pour l'UI et la logique métier)
         remoteStreams, // liste des flux médias distants reçus (utile pour gérer les éléments vidéo et l'UI d'appel)
+        remoteScreens, // liste des flux de partage d'écran distants reçus (utile pour gérer les éléments vidéo et l'UI d'appel)
 
         // ui
         isMuted, // état muet/non muet du flux local (utile pour l'UI et la logique métier)
@@ -69,6 +71,9 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
         stopWebcamStream, // fonction pour arrêter le stream webcam et les appels associés
         toggleAudioState, // fonction pour basculer l'état audio (muet/non muet) du flux local
         toggleVideoState, // fonction pour basculer l'état vidéo (activée/désactivée) du flux local
+
+        startScreenCapture, // fonction pour démarrer le partage d'écran
+        stopScreenCapture, // fonction pour arrêter le partage d'écran
 
         startCallWithPeer, // fonction pour initier un appel audio/vidéo avec un peer distant
         acceptCallFromPeer, // fonction pour accepter un appel audio/vidéo d'un peer distant
@@ -150,6 +155,13 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
     function stopStream() {
         stopWebcamStream()
     }
+    // Démarrage partage ecran
+    function startCapture() {
+        startScreenCapture()
+    }
+    function stopCapture() {
+        stopScreenCapture()
+    }
     function toggleAudioMute() {
         toggleAudioState()
     }
@@ -172,6 +184,8 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
         toggleVideoVisibility,
 
         // screen
+        startCapture,
+        stopCapture,
 
         // call
         startCallWithPeer,
@@ -220,9 +234,11 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
 
         // media
         currentStream,
+        screenStream,
         isStreaming,
         isCapturing,
         remoteStreams,
+        remoteScreens,
 
         // ui
         isMuted,

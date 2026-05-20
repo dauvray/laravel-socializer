@@ -67,6 +67,7 @@ export function createPeerContext({ type, room, options }) {
     const media = reactive({
         videoContainer: '#videoContainer',
         currentStream: null,
+        screenStream: null,  
         remoteStreamsMap: new Map(), // Map pour stocker les flux distants avec une clé composite (userSlug-type) pour éviter les collisions
         isStreaming: false,
         isCapturing: false,
@@ -159,7 +160,9 @@ export function createPeerContext({ type, room, options }) {
         }),
 
         currentStream: computed(() => media.currentStream),
-        remoteStreams: computed(() => Array.from(media.remoteStreamsMap.values())),
+        screenStream: computed(() => media.screenStream),
+        remoteStreams: computed(() => Array.from(media.remoteStreamsMap.values()).filter(e => e.remoteType !== 'screen')),
+        remoteScreens: computed(() => Array.from(media.remoteStreamsMap.values()).filter(e => e.remoteType === 'screen')),
         isStreaming: computed(() => media.isStreaming),
         isCapturing: computed(() => media.isCapturing),
 
