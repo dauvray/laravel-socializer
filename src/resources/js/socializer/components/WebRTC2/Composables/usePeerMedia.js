@@ -138,6 +138,12 @@ export function usePeerMedia(ctx) {
         }
     }
 
+    /**
+     * Lie le nettoyage d'un flux à la fin de sa durée de vie (ex: arrêt de la webcam, fin du partage d'écran)
+     * @param {MediaStream} stream 
+     * @param {string} videoId 
+     * @returns 
+     */
     const _bindStreamCleanup = (stream, videoId) => {
         if (!(stream instanceof MediaStream) || !videoId) {
             return
@@ -162,6 +168,11 @@ export function usePeerMedia(ctx) {
         streamCleanupListeners.set(videoId, entries)
     }
 
+    /**
+     * Détache les écouteurs de nettoyage d'un flux pour un videoId donné
+     * @param {string} videoId 
+     * @returns {void}
+     */
     const _unbindStreamCleanup = (videoId) => {
         const entries = streamCleanupListeners.get(videoId)
         if (!entries) return

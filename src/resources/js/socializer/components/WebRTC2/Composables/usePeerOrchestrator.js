@@ -367,6 +367,23 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
 
     const startScreenCapture = async () => {
         await media.startScreenCapture()
+
+        // Détecter l'arrêt natif du navigateur ("Stop sharing") :
+        // On écoute 'ended' sur la piste vidéo pour déclencher le même nettoyage qu'un arrêt manuel.
+        const screenStream = context.media.screenStream
+        if (screenStream instanceof MediaStream) {
+            const videoTracks = screenStream.getVideoTracks()
+            if (videoTracks.length > 0) {
+                videoTracks[0].addEventListener('ended', () => {
+                    // Guard : si stopScreenCapture a déjà été appelé (via bouton UI),
+                    // isCapturing est déjà false → on n'entre pas en boucle.
+                    if (context.media.isCapturing) {
+                        stopScreenCapture()
+                    }
+                }, { once: true })
+            }
+        }
+
         const room = context.session.currentCallRoomId || context.currentRoom.value
         context.usersInRoom.value.forEach(userSlug => {
             _requestOrConnectPeer(userSlug, 'screen')

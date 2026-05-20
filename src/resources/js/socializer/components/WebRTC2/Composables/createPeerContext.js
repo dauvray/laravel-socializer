@@ -172,14 +172,6 @@ export function createPeerContext({ type, room, options }) {
 
         mySlug: computed(() => meStore.getMe?.slug),
         myName: computed(() => meStore.getMe?.name),
-        // localPeer: computed(() => peerStore.getLocalPeer),
-        // localPeerId: computed(() => peerStore.getLocalPeerId),
-        // connections: computed(() => peerStore.getConnections),
-        // pendingRequests: computed(() => peerStore.getPendingRequests),
-        // remoteStreams: computed(() => peerStore.getRemoteStreams),
-        // callInProgress: computed(() => peerStore.getIsCallInProgress),
-        // isStreaming: computed(() => peerStore.getIsStreaming),
-        // isCapturing: computed(() => peerStore.getIsCapturing),
     }
 
     // HELPERS (fonctions utilitaires, actions synchrones)
