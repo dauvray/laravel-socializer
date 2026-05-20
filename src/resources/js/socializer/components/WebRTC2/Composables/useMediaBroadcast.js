@@ -50,6 +50,11 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
         isCapturing, // indique si on est en train de partager son écran (utile pour l'UI et la logique métier)
         remoteStreams, // liste des flux médias distants reçus (utile pour gérer les éléments vidéo et l'UI d'appel)
 
+        // ui
+        isMuted, // état muet/non muet du flux local (utile pour l'UI et la logique métier)
+        isVideoEnabled, // état vidéo activée/désactivée du flux local (utile pour l'UI et la logique métier)
+        streamStates, // objet regroupant les états liés au flux local (isMuted, isVideoEnabled, etc.)
+
         // meStore
         mySlug,
         myName,
@@ -62,6 +67,8 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
 
         startWebcamStream, // fonction pour démarrer un stream webcam
         stopWebcamStream, // fonction pour arrêter le stream webcam et les appels associés
+        toggleAudioState, // fonction pour basculer l'état audio (muet/non muet) du flux local
+        toggleVideoState, // fonction pour basculer l'état vidéo (activée/désactivée) du flux local
 
         startCallWithPeer, // fonction pour initier un appel audio/vidéo avec un peer distant
         acceptCallFromPeer, // fonction pour accepter un appel audio/vidéo d'un peer distant
@@ -143,6 +150,12 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
     function stopStream() {
         stopWebcamStream()
     }
+    function toggleAudioMute() {
+        toggleAudioState()
+    }
+    function toggleVideoVisibility() {
+        toggleVideoState()
+    }
 
     return {
         // system
@@ -155,6 +168,8 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
         // stream
         getWebcamStream,
         stopStream,
+        toggleAudioMute,
+        toggleVideoVisibility,
 
         // screen
 
@@ -208,6 +223,11 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
         isStreaming,
         isCapturing,
         remoteStreams,
+
+        // ui
+        isMuted,
+        isVideoEnabled,
+        streamStates,
 
         // meStore
         mySlug,

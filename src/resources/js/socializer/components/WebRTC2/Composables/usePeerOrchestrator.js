@@ -219,7 +219,17 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         if (type === 'stream') {
             const originalOnConnectionClose = callbacks?.onConnectionClose ?? null
             wrappedCallbacks.onConnectionClose = async (conn) => {
-                await handleStreamRemoved(conn, conn?.metadata)
+                const mySlug = context.meStore.getMe?.slug
+                const senderSlug = conn?.metadata?.from
+
+                // Ne déclencher le cleanup que si le remote était l'émetteur (connexion entrante).
+                // Si senderSlug === mySlug, c'est notre propre conn sortante qui se ferme :
+                // le remote peut encore streamer via PC-2 (connexion inverse) — ne pas le retirer.
+                if (!mySlug || !senderSlug || senderSlug !== mySlug) {
+                    await handleStreamRemoved(conn, conn?.metadata)
+                }
+
+
                 if (typeof originalOnConnectionClose === 'function') {
                     originalOnConnectionClose(conn)
                 }
@@ -322,6 +332,34 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         context.session.currentCallRoomId = null
         
         isShuttingDown.value = false
+    }
+
+    const toggleAudioState = () => {
+        // 1. Bascule le flag dans le contexte
+        context.ui.streamStates.isMuted = !context.ui.streamStates.isMuted
+
+        // 2. Applique l'état sur les tracks audio du stream courant (sans couper/recapturer)
+        const stream = context.media.currentStream
+        if (stream instanceof MediaStream) {
+            stream.getAudioTracks().forEach(track => {
+                track.enabled = !context.ui.streamStates.isMuted
+            })
+        }
+    }
+
+    const toggleVideoState = () => {
+        // 1. Bascule le flag dans le contexte (devient false si true, et inversement)
+        context.ui.streamStates.isVideoEnabled = !context.ui.streamStates.isVideoEnabled
+
+        // 2. Applique l'état sur les tracks vidéo du stream courant
+        const stream = context.media.currentStream
+        if (stream instanceof MediaStream) {
+            stream.getVideoTracks().forEach(track => {
+                // Si isVideoEnabled est true, track.enabled sera true (l'image s'affiche)
+                // Si isVideoEnabled est false, track.enabled sera false (écran noir)
+                track.enabled = context.ui.streamStates.isVideoEnabled
+            })
+        }
     }
 
     /*---------------------
@@ -721,7 +759,13 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
                 type: remoteType 
             }])
 
-            if (context.session.currentCallUsers.length === 0) {
+            /*
+                En mode stream (broadcast unidirectionnel), le cycle de vie du stream local est géré explicitement par l'utilisateur via stopStream(). 
+                Un pair distant qui se déconnecte ne doit pas déclencher l'arrêt du broadcast local. 
+                La logique stopCallWithPeers full ne concerne que les modes d'appel bidirectionnels (visio, vocal)
+                 où raccrocher côté distant justifie de tout fermer localement.
+            */
+            if (context.session.currentType !== 'stream' && context.session.currentCallUsers.length === 0) {
                 await stopCallWithPeers([], false, {
                     mode: 'full',
                     roomId,
@@ -771,6 +815,8 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         cleanupPeerConnection,
         startWebcamStream,
         stopWebcamStream,
+        toggleAudioState,
+        toggleVideoState,
         startCallWithPeer,
         acceptCallFromPeer,
         openCallBetweenPeer,
@@ -828,6 +874,11 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         isStreaming: context.isStreaming,
         isCapturing: context.isCapturing,
         remoteStreams: context.remoteStreams,
+
+        // ui
+        isMuted: context.isMuted,
+        isVideoEnabled: context.isVideoEnabled,
+        streamStates: context.streamStates,
 
         // meStore
         mySlug: context.mySlug,

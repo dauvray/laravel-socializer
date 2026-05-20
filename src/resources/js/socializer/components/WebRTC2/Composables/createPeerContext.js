@@ -57,12 +57,7 @@ export function createPeerContext({ type, room, options }) {
         currentRoom: room || 'app',
         onAirRoom: room || 'app',
         currentCallRoomId: null, // roomId spécifique pour les appels audio/vidéo (différent de currentRoom qui est la room "logique")
-        currentCallUsers: [], // liste des slugs des utilisateurs actuellement en appel avec moi (utile pour gérer les connexions et l'UI d'appel)
-      
-        // a mettre dans media
-        // isStreaming: false,
-        // isCapturing: false,
-      
+        currentCallUsers: [], // liste des slugs des utilisateurs actuellement en appel avec moi (utile pour gérer les connexions et l'UI d'appel)      
         topology: options.topology || 'mesh', // topologie de diffusion : 'mesh' (pair à pair), 'star' (étoile) ou 'sfu' (serveur de diffusion)
         hubSlug: options.hubSlug || null, // slug du hub de diffusion (si utilisé)
         isHub: null, // le peer est-il le hub de diffusion ? (si hubSlug fourni)
@@ -167,6 +162,10 @@ export function createPeerContext({ type, room, options }) {
         remoteStreams: computed(() => Array.from(media.remoteStreamsMap.values())),
         isStreaming: computed(() => media.isStreaming),
         isCapturing: computed(() => media.isCapturing),
+
+        isMuted: computed(() => ui.streamStates.isMuted),
+        isVideoEnabled: computed(() => ui.streamStates.isVideoEnabled),
+        streamStates: computed(() => ui.streamStates),
 
         mySlug: computed(() => meStore.getMe?.slug),
         myName: computed(() => meStore.getMe?.name),
