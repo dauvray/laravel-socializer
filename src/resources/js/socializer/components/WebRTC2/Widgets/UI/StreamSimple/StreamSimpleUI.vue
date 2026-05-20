@@ -1,22 +1,22 @@
 <template>
     <div class="card">
         <div class="card-body">
-
-            <LocalStreamBtn
-                :isStreaming="props.api.isStreaming.value"
-                :streamStates="props.api.streamStates.value"
-                @start_video="startWebcamStream"
-                @start_audio="startWebcamStream"
-                @stop_video="stopWebcamStream"
-                @toggle_audio="onToggleAudioMute"
-                @toggle_video="onToggleVideoVisibility"
-            ></LocalStreamBtn>
-            <LocalCaptureBtn
-                :isCapturing="props.api.isCapturing.value"
-                @start-stream="startScreenCapture"
-                @stop-stream="stopScreenCapture">
-            </LocalCaptureBtn>
-            
+            <div class="btn-group btn-group-sm" role="group">
+                <LocalStreamBtn
+                    :isStreaming="props.api.isStreaming.value"
+                    :streamStates="props.api.streamStates.value"
+                    @start_video="startWebcamStream"
+                    @start_audio="startWebcamStream"
+                    @stop_video="stopWebcamStream"
+                    @toggle_audio="onToggleAudioMute"
+                    @toggle_video="onToggleVideoVisibility"
+                ></LocalStreamBtn>
+                <LocalCaptureBtn
+                    :isCapturing="props.api.isCapturing.value"
+                    @start-stream="startScreenCapture"
+                    @stop-stream="stopScreenCapture">
+                </LocalCaptureBtn>
+            </div>       
             <div class="row">
                 <div class="col">
                     <h5>Local Stream</h5>
@@ -51,7 +51,7 @@
     })
 
     const startWebcamStream = () => {
-        props.api.getWebcamStream(true)
+        props.api.getWebcamStream()
     }
 
     const stopWebcamStream = () => {
@@ -119,5 +119,4 @@
             }
         }))
     )
-
 </script>

@@ -7,7 +7,7 @@
             :controls="false"
             :autoplay="true"
             :loop="false"
-            :muted="true"
+            :muted="props.streamData.metadata?.isMe || false"
             :poster="poster"
             :playsinline="true"
         ></video>

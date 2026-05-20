@@ -29,13 +29,11 @@ export function usePeerMedia(ctx) {
     const streamCleanupBound = new Set()
     const streamCleanupListeners = new Map() // videoId → [{track, handler}]
 
-    const startCurrentStream = async (is_local = false) => {
+    const startCurrentStream = async () => {
         const stream = await navigator.mediaDevices.getUserMedia({
             video: ctx.ui.streamStates.isVideoEnabled,
             audio: !ctx.ui.streamStates.isMuted,
         })
-
-        stream.isLocal = is_local // to mute local sound in player
 
         ctx.media.currentStream = markRaw(stream) // marquer le stream comme "non réactif" pour éviter les problèmes de performance liés à la réactivité de Vue sur les objets MediaStream
         ctx.media.isStreaming = true

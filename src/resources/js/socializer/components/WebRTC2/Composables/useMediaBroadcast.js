@@ -149,8 +149,8 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
         sendDataToPeer(data, destUserSlugs)
     }
     // Démarrage d’un stream webcam
-    function getWebcamStream(isLocal = false) {
-        startWebcamStream(isLocal)
+    function getWebcamStream() {
+        startWebcamStream()
     }
     function stopStream() {
         stopWebcamStream()

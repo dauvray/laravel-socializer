@@ -341,8 +341,8 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         transport.sendData(data, destUserSlugs)
     }
 
-    const startWebcamStream = async (is_local = false) => {
-        await media.startCurrentStream(is_local)
+    const startWebcamStream = async () => {
+        await media.startCurrentStream()
         context.usersInRoom.value.forEach(userSlug => {
             _requestOrConnectPeer(userSlug)
         })
