@@ -28,7 +28,9 @@
     const api = useMediaBroadcast(props.mode, props.room ?? 'app', props.options)
 
     onMounted(() => {
-       api.initialize(props.callbacks)
+       if(props.callbacks) {
+            api.initialize(props.callbacks)
+       }
     })
 
     onBeforeUnmount(() => {

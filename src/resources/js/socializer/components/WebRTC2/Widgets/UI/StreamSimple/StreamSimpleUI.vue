@@ -47,7 +47,8 @@
 </template>
 
 <script setup>
-    import { ref, computed, watch } from 'vue'
+    import { ref, computed, watch, onMounted } from 'vue'
+    import { useMeStore } from '~estarter/stores/me.js'
     import VideoComponent from '~socializer/components/WebRTC2/Widgets/VideoComponent.vue' 
     import LocalStreamBtn from '~socializer/components/WebRTC2/Widgets/UI/Buttons/LocalStreamBtn.vue'
     import LocalCaptureBtn from '~socializer/components/WebRTC2/Widgets/UI/Buttons/LocalCaptureBtn.vue'
@@ -55,6 +56,64 @@
     const props = defineProps({
         api: Object,
     })
+
+    const meStore = useMeStore()
+
+    onMounted(() => {
+        props.api.initialize({
+            onDataReceived: handleStreamData,
+            onStreamReceived: handleStreamReceived,
+            onConnectionClose: handleStreamClose,
+        })
+    })
+
+    /**
+     * Callbacks pour la gestion des events de stream (reçus, fermés, données reçues sur les streams)
+     */
+     
+    const handleStreamReceived = (stream, conn, metadata) => {
+        console.log('Stream reçu dans chat', { stream, conn, metadata })
+    }
+
+    const handleStreamClose = (conn) => {
+        // 1) On récupère les métadonnées transportées par PeerJS.
+        //    Elles nous disent "qui a initié" cette connexion (metadata.from),
+        //    et donc si la fermeture vient de nous ou d'un autre peer.
+        const metadata = conn?.metadata || {}
+
+        // 2) Cas critique à comprendre :
+        //    Quand JE coupe MA webcam, certaines connexions sortantes se ferment.
+        //    Ces connexions sortantes ont metadata.from = mon slug.
+        //
+        //    Si on supprimait remoteStreamsMap ici, on effacerait à tort des streams distants
+        //    encore valides (ex: stream de B), juste parce que MA connexion sortante a fermé.
+        //
+        //    => Donc si la fermeture concerne une connexion que J'avais initiée,
+        //       on ne touche pas à la liste des streams distants.
+        if(metadata?.from && metadata.from === meStore.getMe?.slug) {
+            return
+        }
+        
+        // 3) Ici, on traite plutôt une fermeture liée à un peer distant.
+        //    conn.peer correspond à l'id du peer distant associé à cette connexion.
+        //    C'est la clé utilisée dans remoteStreamsMap au moment de handleStreamReceived.
+        const peerId = conn?.peer || null
+
+        // 4) On retire uniquement le stream de ce peer distant.
+        //    On ne clear jamais toute la map, sinon on casserait les autres streams encore actifs.
+        if (peerId) {
+        console.log('Stream fermé par le peer', { peerId })
+        }
+    }
+
+    const handleStreamData = (data, conn) => {
+        console.log('Donnée reçue sur le stream', { data, conn })
+    // signalData.value.push({data, peerdId: conn?.metadata?.peerId})
+    }
+
+    /**
+     * Methodes de contrôle des flux locaux (webcam + audio) et de partage d’écran
+     */
 
     const startWebcamStream = () => {
         props.api.getWebcamStream()
@@ -90,6 +149,9 @@
     }
 
 
+    /**
+     * Données formatées pour les composants vidéo (local, écran, distants) - 
+     */
 
     const localStreamData = computed(() => ({ 
         stream: props.api.currentStream.value,
