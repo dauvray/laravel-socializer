@@ -44,11 +44,10 @@
             </div>
         </div>
     </div>
-   
 </template>
 
 <script setup>
-    import { ref, computed } from 'vue'
+    import { ref, computed, watch } from 'vue'
     import VideoComponent from '~socializer/components/WebRTC2/Widgets/VideoComponent.vue' 
     import LocalStreamBtn from '~socializer/components/WebRTC2/Widgets/UI/Buttons/LocalStreamBtn.vue'
     import LocalCaptureBtn from '~socializer/components/WebRTC2/Widgets/UI/Buttons/LocalCaptureBtn.vue'
@@ -90,7 +89,7 @@
         props.api.toggleVideoVisibility()
     }
 
-   // const isAudioStream = computed(() => props.api.isAudioStream.value)
+
 
     const localStreamData = computed(() => ({ 
         stream: props.api.currentStream.value,
@@ -114,18 +113,25 @@
         }
     }))
 
-    const remoteStreamsData = computed(() =>
-        props.api.remoteStreams.value.map(rs => ({
-            stream: rs.stream,
+    const remoteStreamsData = computed(() => {
+
+        const apiInstance = props.api
+        if (!apiInstance) return []
+
+        // On récupère le tableau (Vue gère l'unwrapping du computed automatiquement)
+        const streams = apiInstance.remoteStreams?.value || apiInstance.remoteStreams || []
+
+        return streams.map(rs => ({
+            stream: rs.stream, // On passe le flux brut tel quel
             metadata: {
-                fromName: rs.metadata?.fromName || rs.remoteSlug || 'Unknown',
+                fromName: rs.metadata?.fromName || 'Unknown',
                 roomId: rs.metadata?.room,
-                countViewers: props.api.usersInRoom.value.length,
+                countViewers: apiInstance.usersInRoom?.value?.length || apiInstance.usersInRoom?.length || 0,
                 currentType: rs.remoteType,
-                peerId: rs.metadata?.peerId || rs.peerId || null,
+                peerId: rs.peerId || rs.metadata?.peerId || null, // On vérifie les deux emplacements au cas où
             }
         }))
-    )
+    })
 
     const remoteScreensData = computed(() =>
         props.api.remoteScreens.value.map(rs => ({

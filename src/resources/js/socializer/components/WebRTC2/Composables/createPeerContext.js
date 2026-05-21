@@ -19,7 +19,7 @@
  * - fournir une "source de vérité" unique à tous les composables techniques
  */
 
-import { reactive, computed, ref, inject, onBeforeMount, onUnmounted, watchEffect, effectScope } from 'vue'
+import { reactive, computed, ref, inject, onBeforeMount, onUnmounted, watchEffect, effectScope, shallowReactive } from 'vue'
 import { useAjaxService } from '~estarter/services/AjaxService.js'
 import { usePeer2Store } from '~socializer/stores/peers2.js'
 import { useServerStore } from '~socializer/stores/server.js'
@@ -68,7 +68,7 @@ export function createPeerContext({ type, room, options }) {
         videoContainer: '#videoContainer',
         currentStream: null,
         screenStream: null,  
-        remoteStreamsMap: new Map(), // Map pour stocker les flux distants avec une clé composite (userSlug-type) pour éviter les collisions
+        remoteStreamsMap: shallowReactive(new Map()), // Map pour stocker les flux distants avec une clé composite (userSlug-type) pour éviter les collisions
         isStreaming: false,
         isCapturing: false,
         isAudioStream: false, // flag pour différencier les flux audio des flux vidéo (utile pour l'UI et la gestion des streams)

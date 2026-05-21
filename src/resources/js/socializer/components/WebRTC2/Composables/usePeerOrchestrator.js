@@ -782,6 +782,7 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
             metadata: meta,
             remoteSlug,
             remoteType,
+            peerId: conn?.peer || null,
             createdAt: Date.now(),
         })
 
