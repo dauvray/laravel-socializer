@@ -954,6 +954,7 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         screenStream: context.screenStream,
         isStreaming: context.isStreaming,
         isCapturing: context.isCapturing,
+        isAudioStream: context.isAudioStream,
         remoteStreams: context.remoteStreams,
         remoteScreens: context.remoteScreens,
 

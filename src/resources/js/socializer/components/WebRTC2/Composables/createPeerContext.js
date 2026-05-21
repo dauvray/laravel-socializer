@@ -166,6 +166,7 @@ export function createPeerContext({ type, room, options }) {
         remoteScreens: computed(() => Array.from(media.remoteStreamsMap.values()).filter(e => e.remoteType === 'screen')),
         isStreaming: computed(() => media.isStreaming),
         isCapturing: computed(() => media.isCapturing),
+        isAudioStream: computed(() => media.isAudioStream),
 
         isMuted: computed(() => ui.streamStates.isMuted),
         isVideoEnabled: computed(() => ui.streamStates.isVideoEnabled),

@@ -83,6 +83,8 @@
         props.api.toggleVideoVisibility()
     }
 
+   // const isAudioStream = computed(() => props.api.isAudioStream.value)
+
     const localStreamData = computed(() => ({ 
         stream: props.api.currentStream.value,
         metadata: {
@@ -91,6 +93,9 @@
             countViewers: props.api.usersInRoom.value.length,
             currentType: props.api.currentType.value,
             isMe: true,
+
+
+            isAudioStream: !props.api.isVideoEnabled.value,
         }
     }))
 
@@ -102,6 +107,9 @@
             countViewers: props.api.usersInRoom.value.length,
             currentType: props.api.currentType.value,
             isMe: true,
+
+            
+            isAudioStream: !props.api.isVideoEnabled.value,
         }
     }))
 

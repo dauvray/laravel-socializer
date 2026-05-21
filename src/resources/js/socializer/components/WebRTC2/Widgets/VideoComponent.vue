@@ -44,10 +44,23 @@
 
 <script setup>
 
-    import { ref, watch , onBeforeUnmount } from 'vue'
+    import { ref, watch , onBeforeUnmount, defineAsyncComponent } from 'vue'
     import resizeDirective from '~socializer/directives/resizable.js'
     import draggableDirective from '~socializer/directives/draggable.js'
     import IconWidget from '~estarter/components/widgets/IconWidget.vue'
+    import Spinner from '~estarter/components/widgets/Spinners/Spinner1.vue'
+
+    const SpectrumAnalyzer = defineAsyncComponent({
+        // La fonction de chargement (le dynamic import)
+        loader: () => import('~socializer/components/WebRTC2/Widgets/UI/SpectrumAnalyzer.vue'),
+        // Un composant à afficher pendant le chargement
+        loadingComponent: Spinner,
+        // Délai avant d'afficher le composant de chargement (par défaut : 200ms)
+        delay: 200,
+        // Un composant à afficher si le chargement échoue (optionnel)
+        // errorComponent: ErrorComponent,
+        // Durée maximale avant d'abandonner le chargement et afficher le composant d'erreur (par défaut : Infinity)
+    })
 
     const props = defineProps({
         streamData: {

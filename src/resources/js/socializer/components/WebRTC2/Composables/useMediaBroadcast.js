@@ -49,6 +49,7 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
         screenStream, // flux de partage d'écran local (MediaStream) créé par getDisplayMedia
         isStreaming, // indique si un flux est actuellement diffusé (utile pour l'UI et la logique métier)
         isCapturing, // indique si on est en train de partager son écran (utile pour l'UI et la logique métier)
+        isAudioStream, // indique si le flux local est un flux audio (utile pour différencier les comportements et l'UI entre audio et vidéo)
         remoteStreams, // liste des flux médias distants reçus (utile pour gérer les éléments vidéo et l'UI d'appel)
         remoteScreens, // liste des flux de partage d'écran distants reçus (utile pour gérer les éléments vidéo et l'UI d'appel)
 
@@ -249,6 +250,7 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
         screenStream,
         isStreaming,
         isCapturing,
+        isAudioStream,
         remoteStreams,
         remoteScreens,
 

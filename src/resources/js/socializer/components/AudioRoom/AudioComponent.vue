@@ -23,7 +23,7 @@
 
 <script>
 
-   // import SpectrumAnalyzer from './widgets/SpectrumAnalyzer.vue'
+   // import SpectrumAnalyzer from '~socializer/components/WebRTC2/Widgets/UI/SpectrumAnalyzer.vue'
     import RoomUsersList from '~socializer/components/Server/widgets/RoomUsersList.vue'
     import MediaBroadcastProvider from '~socializer/components/WebRTC/widgets/MediaBroadcastProvider.vue'
     import AudioDefaultUserButtonUI from '~socializer/components/WebRTC/widgets/ui/AudioDefaultUserButtonUI.vue'
