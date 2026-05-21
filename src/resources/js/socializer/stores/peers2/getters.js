@@ -17,6 +17,12 @@ export default {
     getLocalPeerId() {
         return this.localPeer ? this.localPeer.id : null
     },
+    getLastLocalPeerId() {
+        return this.lastLocalPeerId
+    },
+    getLocalPeerReady() {
+        return this.localPeerReady
+    },
 
     /*--------------------------
     | Signal queues

@@ -936,6 +936,7 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         callInprogress: context.callMachine.callInprogress,
 
         // session
+        localPeerId: context.localPeerId,
         currentType: context.currentType,
         currentRoom: context.currentRoom,
         currentCallRoomId: context.currentCallRoomId,

@@ -2,6 +2,16 @@ import { isEmpty } from '~estarter/services/helpers.js'
 
 export default {
 
+    setLocalPeer(peer = null) {
+        this.localPeer = peer
+    },
+    setLocalPeerReady(ready = false) {
+        this.localPeerReady = ready
+    },
+    setLastLocalPeerId(peerId = null) {
+        this.lastLocalPeerId = peerId
+    },
+
     prepareRoomConnection(payload) {
 
         const userSlug = payload.options.metadata.slug
@@ -29,125 +39,44 @@ export default {
     storePeerConnection(room, slug, type, connection) {
         this.connections[room][slug][type].push(connection)
     },
-    // removePeerConnectionInstance(room, slug, type, connection) {
-
-    //     if (!room || !slug || !type) {
-    //         return
-    //     }
-
-    //     if (
-    //         !this.connections.hasOwnProperty(room)
-    //         || !this.connections[room].hasOwnProperty(slug)
-    //         || !this.connections[room][slug].hasOwnProperty(type)
-    //     ) {
-    //         return
-    //     }
-
-    //     const currentConnections = this.connections[room][slug][type]
-
-    //     this.connections[room][slug][type] = currentConnections.filter((item) => {
-    //         if (!item) {
-    //             return false
-    //         }
-
-    //         if (item === connection) {
-    //             return false
-    //         }
-
-    //         const sameConnectionId =
-    //             connection?.connectionId
-    //             && item?.connectionId
-    //             && item.connectionId === connection.connectionId
-
-    //         return !sameConnectionId
-    //     })
-
-    //     if (this.connections[room][slug][type].length === 0) {
-    //         this.closePeerConnection(room, slug, type)
-    //     }
-    // },
-    
     removePeerConnectionInstance(room, slug, type, connection) {
-    if (!room || !slug || !type) {
-        return
-    }
-
-    if (
-        !this.connections.hasOwnProperty(room)
-        || !this.connections[room].hasOwnProperty(slug)
-        || !this.connections[room][slug].hasOwnProperty(type)
-    ) {
-        return
-    }
-
-    const currentConnections = this.connections[room][slug][type]
-
-    this.connections[room][slug][type] = currentConnections.filter((item) => {
-        if (!item) {
-            return false
+        if (!room || !slug || !type) {
+            return
         }
 
-        if (item === connection) {
-            return false
+        if (
+            !this.connections.hasOwnProperty(room)
+            || !this.connections[room].hasOwnProperty(slug)
+            || !this.connections[room][slug].hasOwnProperty(type)
+        ) {
+            return
         }
 
-        const sameConnectionId =
-            connection?.connectionId
-            && item?.connectionId
-            && item.connectionId === connection.connectionId
+        const currentConnections = this.connections[room][slug][type]
 
-        return !sameConnectionId
-    })
+        this.connections[room][slug][type] = currentConnections.filter((item) => {
+            if (!item) {
+                return false
+            }
 
-    // Important: NE PAS relancer closePeerConnection ici.
-    // Sinon on peut boucler: close event -> remove -> closePeerConnection -> close event...
-    if (this.connections[room][slug][type].length === 0) {
-        this.clearConnectionsRoom(room, slug, type)
-    }
-},
-    
-    // closePeerConnection(room, slug, type) {
+            if (item === connection) {
+                return false
+            }
 
-    //     if(!this.connections.hasOwnProperty(room) 
-    //         || !this.connections[room].hasOwnProperty(slug)
-    //         || !this.connections[room][slug].hasOwnProperty(type)
-    //     ) {
-    //         return
-    //     }
+            const sameConnectionId =
+                connection?.connectionId
+                && item?.connectionId
+                && item.connectionId === connection.connectionId
 
-    //     this.connections[room][slug][type].forEach((conn, idx) => {
+            return !sameConnectionId
+        })
 
-    //         // is emitter ?
-    //         if(conn && conn.hasOwnProperty('peer')) {
-    //             switch(type) {
-    //                 case 'data':
-    //                     conn.close()
-    //                     break
-    //                 case 'stream':
-    //                 case 'screen':
-    //                 case 'visio':
-    //                     // Ne jamais stopper conn._localStream ici :
-    //                     // ce stream local peut encore être utilisé par d'autres peers.
-    //                     // On ferme d'abord la MediaConnection PeerJS pour garantir
-    //                     // l'émission de l'événement "close" côté callbacks.
-    //                     if (typeof conn.close === 'function') {
-    //                         conn.close()
-    //                     }
-
-    //                     // Fallback de sécurité si la RTCPeerConnection n'est pas déjà fermée.
-    //                     if (
-    //                         conn.peerConnection
-    //                         && conn.peerConnection.signalingState !== 'closed'
-    //                     ) {
-    //                         conn.peerConnection.close()
-    //                     }
-    //                     break
-    //             }
-    //         }
-
-    //     })
-    // },  
-
+        // Important: NE PAS relancer closePeerConnection ici.
+        // Sinon on peut boucler: close event -> remove -> closePeerConnection -> close event...
+        if (this.connections[room][slug][type].length === 0) {
+            this.clearConnectionsRoom(room, slug, type)
+        }
+    },
     closePeerConnection(room, slug, type) {
         if (
             !this.connections.hasOwnProperty(room)
@@ -222,7 +151,6 @@ export default {
             }
         })
     },
-
     clearConnectionsRoom(room, slug, type) {
 
         if(!this.connections.hasOwnProperty(room)) {
@@ -245,7 +173,6 @@ export default {
             delete this.connections[room]
         }
     },
-
     // Gérer les signaux provenant des autres composants (Notifications.vue)
     dispatchSignal(signal) {
 
@@ -272,10 +199,14 @@ export default {
         }
     },
 
-    // Enregistrer l’id d’un peer distant lorsqu’il est reçu
+    // Supprimer l’id d’un peer distant lorsqu’il n'est plus dans auncune room
     removeRemotePeerId(userSlug) {
-        this.remotePeersId.delete(userSlug)
+        const isUserConnected = Object.values(this.connections).some(room => userSlug in room)
+        if (!isUserConnected) {
+            this.remotePeersId.delete(userSlug)
+        }
     },
+    // Enregistrer l’id d’un peer distant lorsqu’il est reçu
     addRemotePeerId(userSlug, peerId) {
         this.remotePeersId.set(userSlug, peerId)
     },

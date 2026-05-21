@@ -203,6 +203,8 @@ export function usePeerConnections(ctx) {
                 }
                 const call = ctx.peerStore.getLocalPeer.call(config.peerId, stream, config.options)
                 _saveRoomConnection(config, call)
+                 const conn = ctx.peerStore.getLocalPeer.connect(config.peerId, config.options)
+                _saveRoomConnection(config, conn)
                 return true
             }
 

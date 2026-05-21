@@ -17,6 +17,7 @@
                 <div class="user-info-wrapper">
                     <span class="user-info">
                         {{ props.streamData.metadata?.fromName || 'Unknown' }}
+                        {{ props.streamData.metadata?.peerId || 'No Peer ID' }}
                         <template v-if="props.streamData.metadata.currentType !== 'visio'">
                             <IconWidget  icon="eye"></IconWidget> {{ props.streamData.metadata?.countViewers || 0 }}
                         </template>
@@ -39,7 +40,6 @@
             <button type="button" class="btn btn-primary" @click="togglePIP">PIP</button>
         </div>
     </div>
-
 </template>
 
 <script setup>
@@ -73,6 +73,7 @@
                     countViewers: 0,
                     currentType: null,
                     isMe: false,
+                    peerId: null,
                 }
             }),
         },

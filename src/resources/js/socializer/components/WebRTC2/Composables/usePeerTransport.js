@@ -493,14 +493,15 @@ export function usePeerTransport(ctx) {
         unregisterContext(ctx)
     }
 
-    const _getOpenDataConnection = (room, userSlug) => {
-        const roomConnections = ctx.peerStore.getConnections?.[room]?.[userSlug]?.data ?? []
+    const _getOpenDataConnection = (room, userSlug, type = 'data') => {
+        const roomConnections = ctx.peerStore.getConnections?.[room]?.[userSlug]?.[type] ?? []
         
         if (!Array.isArray(roomConnections) || roomConnections.length === 0) {
             return null
         }
 
-        return roomConnections.find(conn => conn?.open) ?? null
+        // cherche une connexion ouverte avec un datachannel actif (fallback conn=null si aucune)
+        return roomConnections.find(conn => conn?.open && conn?.chunker) ?? null
     }
 
     // ─────────────────────────────────────────────────────────────────────────────
@@ -569,6 +570,7 @@ export function usePeerTransport(ctx) {
         }
 
         const room = ctx.session.onAirRoom
+        const type = ctx.session.currentType
 
         // Si `to` est fourni, on cible ces slugs. Sinon, on prend tous les users de la room.
         // Dans les deux cas, on exclut l'expéditeur (inutile de lui renvoyer son propre message).
@@ -576,7 +578,7 @@ export function usePeerTransport(ctx) {
             .filter(slug => slug !== senderSlug)
 
         targets.forEach(userSlug => {
-            const conn = _getOpenDataConnection(room, userSlug)
+            const conn = _getOpenDataConnection(room, userSlug, type)
             if (!conn) {
                 console.warn('[Hub] Retransmission ignorée: connexion indisponible pour', userSlug)
                 return
@@ -601,13 +603,14 @@ export function usePeerTransport(ctx) {
     const sendData = (data, destUserSlugs = null) => {
 
         const room = ctx.session.onAirRoom
+        const type = ctx.session.currentType
 
         // ── TOPOLOGIE MESH ──────────────────────────────────────────────────────
         // Chaque peer est connecté à tous les autres → on envoie directement à chacun.
         if (ctx.topology.value === 'mesh') {
             const targets = destUserSlugs || ctx.connection.usersInRoom
             targets.forEach(userSlug => {
-                const conn = _getOpenDataConnection(room, userSlug)
+                const conn = _getOpenDataConnection(room, userSlug, type)
                 if (!conn) {
                     console.warn('[Mesh] Envoi ignoré: connexion indisponible pour', userSlug)
                     return
@@ -625,7 +628,7 @@ export function usePeerTransport(ctx) {
             if (ctx.isHub.value) {
                 const targets = destUserSlugs || ctx.connection.usersInRoom
                 targets.forEach(userSlug => {
-                    const conn = _getOpenDataConnection(room, userSlug)
+                    const conn = _getOpenDataConnection(room, userSlug, type)
                     if (!conn) {
                         console.warn('[Hub] Envoi ignoré: connexion indisponible pour', userSlug)
                         return
@@ -646,7 +649,7 @@ export function usePeerTransport(ctx) {
                 payload: data,              // les vraies données à livrer
             }
 
-            const conn = _getOpenDataConnection(room, ctx.hubSlug.value)
+            const conn = _getOpenDataConnection(room, ctx.hubSlug.value, type)
             if (!conn) {
                 console.warn('[Client] Envoi ignoré: connexion hub indisponible', ctx.hubSlug.value)
                 return

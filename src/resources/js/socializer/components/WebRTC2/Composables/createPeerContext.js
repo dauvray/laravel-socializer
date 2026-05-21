@@ -84,7 +84,6 @@ export function createPeerContext({ type, room, options }) {
 
     // CONNECTION STATE
     const connection = reactive({
-        // isConnecting: false,
         usersInRoom: [],
     })
 
@@ -174,6 +173,7 @@ export function createPeerContext({ type, room, options }) {
 
         mySlug: computed(() => meStore.getMe?.slug),
         myName: computed(() => meStore.getMe?.name),
+        localPeerId: computed(() => peerStore.lastLocalPeerId),
     }
 
     // HELPERS (fonctions utilitaires, actions synchrones)

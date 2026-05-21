@@ -31,6 +31,7 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
         callInprogress,  // computed : vrai dès que l'appel n'est plus à l'état IDLE
 
         // session
+        localPeerId, // id du peer local (null tant que le peer n'est pas prêt)
         currentType, // type de broadcast (stream, screen, audio/video call)
         currentRoom, // room "logique" (peut différer de onAirRoom si on gère plusieurs rooms)
         onAirRoom, // room dans laquelle le peer est actif (peut différer de currentRoom si on gère plusieurs rooms)
@@ -232,6 +233,7 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
         | CONTEXTE
         --------------------------*/
         // session
+        localPeerId,
         currentType,
         currentRoom,
         currentCallRoomId,

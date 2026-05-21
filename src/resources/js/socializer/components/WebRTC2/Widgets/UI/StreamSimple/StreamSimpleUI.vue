@@ -32,8 +32,14 @@
                     <VideoComponent v-if="props.api.screenStream.value" :streamData="screenStreamData"></VideoComponent>
                 </div>
                 <div class="col">
-                    <VideoComponent v-for="(remoteStream, index) in remoteStreamsData" :key="index" :streamData="remoteStream"></VideoComponent>
-                    <VideoComponent v-for="(remoteScreen, index) in remoteScreensData" :key="index" :streamData="remoteScreen"></VideoComponent>
+                    <VideoComponent v-for="(remoteStream, index) in remoteStreamsData" 
+                        :key="index" 
+                        :streamData="remoteStream" 
+                    ></VideoComponent>
+                    <VideoComponent v-for="(remoteScreen, index) in remoteScreensData" 
+                        :key="index" 
+                        :streamData="remoteScreen"
+                    ></VideoComponent>
                 </div>
             </div>
         </div>
@@ -77,6 +83,7 @@
 
     const onToggleAudioMute = () => {
         props.api.toggleAudioMute()
+        props.api.sendData('hello from audio stream')
     }
 
     const onToggleVideoVisibility = () => {
@@ -93,9 +100,6 @@
             countViewers: props.api.usersInRoom.value.length,
             currentType: props.api.currentType.value,
             isMe: true,
-
-
-            isAudioStream: !props.api.isVideoEnabled.value,
         }
     }))
 
@@ -107,9 +111,6 @@
             countViewers: props.api.usersInRoom.value.length,
             currentType: props.api.currentType.value,
             isMe: true,
-
-            
-            isAudioStream: !props.api.isVideoEnabled.value,
         }
     }))
 
@@ -121,6 +122,7 @@
                 roomId: rs.metadata?.room,
                 countViewers: props.api.usersInRoom.value.length,
                 currentType: rs.remoteType,
+                peerId: rs.metadata?.peerId || rs.peerId || null,
             }
         }))
     )
