@@ -68,7 +68,14 @@
         }
     })
 
-    const emit = defineEmits(['start_video', 'start_audio', 'stop_video', 'toggle_audio'])
+    const emit = defineEmits([
+        'start_video', 
+        'start_audio',  
+        'stop_video', 
+        'stop_audio', 
+        'toggle_audio', 
+        'toggle_video'
+    ])
 
     const onStartVideoCall = () => {
         emit('start_video')
@@ -80,6 +87,10 @@
 
     const onStopBroadcastWebcam = () => {
         emit('stop_video')
+    }
+
+    const onStopAudioCall = () => {
+        emit('stop_audio')
     }
 
     const onToggleAudio = () => {

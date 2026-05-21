@@ -71,6 +71,7 @@ export function createPeerContext({ type, room, options }) {
         remoteStreamsMap: new Map(), // Map pour stocker les flux distants avec une clé composite (userSlug-type) pour éviter les collisions
         isStreaming: false,
         isCapturing: false,
+        isAudioStream: false, // flag pour différencier les flux audio des flux vidéo (utile pour l'UI et la gestion des streams)
     })
 
     // UI STATE

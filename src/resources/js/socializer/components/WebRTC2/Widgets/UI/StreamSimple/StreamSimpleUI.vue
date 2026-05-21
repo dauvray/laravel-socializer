@@ -6,8 +6,9 @@
                     :isStreaming="props.api.isStreaming.value"
                     :streamStates="props.api.streamStates.value"
                     @start_video="startWebcamStream"
-                    @start_audio="startWebcamStream"
+                    @start_audio="startAudioStream"
                     @stop_video="stopWebcamStream"
+                    @stop_audio="stopAudioStream"
                     @toggle_audio="onToggleAudioMute"
                     @toggle_video="onToggleVideoVisibility"
                 ></LocalStreamBtn>
@@ -56,6 +57,14 @@
 
     const stopWebcamStream = () => {
         props.api.stopStream()
+    }
+
+    const startAudioStream = () => {
+        props.api.getAudioStream()
+    }
+
+    const stopAudioStream = () => {
+        props.api.stopAudio()
     }
 
     const startScreenCapture = () => {

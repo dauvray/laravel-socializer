@@ -72,6 +72,9 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
         toggleAudioState, // fonction pour basculer l'état audio (muet/non muet) du flux local
         toggleVideoState, // fonction pour basculer l'état vidéo (activée/désactivée) du flux local
 
+        startAudioStream, // fonction pour démarrer un stream audio
+        stopAudioStream, // fonction pour arrêter le stream audio et les appels associés
+
         startScreenCapture, // fonction pour démarrer le partage d'écran
         stopScreenCapture, // fonction pour arrêter le partage d'écran
 
@@ -155,6 +158,13 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
     function stopStream() {
         stopWebcamStream()
     }
+    // Démarrage d'un stream audio
+    function getAudioStream() {
+        startAudioStream()
+    }
+    function stopAudio() {
+        stopAudioStream()
+     }
     // Démarrage partage ecran
     function startCapture() {
         startScreenCapture()
@@ -180,6 +190,8 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
         // stream
         getWebcamStream,
         stopStream,
+        getAudioStream,
+        stopAudio,
         toggleAudioMute,
         toggleVideoVisibility,
 

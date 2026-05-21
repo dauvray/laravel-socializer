@@ -87,6 +87,9 @@ Tâche 7 → useMediaBroadcast    (intégration feature layer)
 
 - [ ] `startCurrentStream` : `getUserMedia` appelé avec les bonnes contraintes, `currentStream` mis à jour, stream marqué `markRaw`
 - [ ] `stopCurrentStream` : `track.stop()` appelé sur chaque track, `currentStream` null, `isStreaming` false
+- [ ] `startAudioStream` : `getUserMedia` appelé avec les bonnes contraintes, `currentStream` mis à jour, stream marqué `markRaw`, contexte correctement mis à jour
+- [ ] `startScreenCapture` : `getUserMedia` appelé avec les bonnes contraintes, `screenStream` mis à jour, stream marqué `markRaw`, contexte correctement mis à jour
+- [ ] `stopScreenCapture` : `track.stop()` appelé sur chaque track, `screenStream` null, `isCapturing` false
 - [ ] `createVideoElement` : guard `creatingVideoIds` (idempotent sur appels concurrents), container absent → erreur claire, `peerStore.addPlayer` appelé
 - [ ] `createVideoElement` : `VideoComponent.vue` importé dynamiquement (mock via `vi.mock`)
 - [ ] `removeVideoElement` : guard `removingVideoIds`, `app.unmount()` appelé, wrapper DOM retiré, `peerStore.removePlayer` appelé

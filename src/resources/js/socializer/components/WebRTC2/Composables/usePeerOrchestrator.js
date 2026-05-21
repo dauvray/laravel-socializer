@@ -365,6 +365,17 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         isShuttingDown.value = false
     }
 
+    const startAudioStream = async () => {
+        await media.startAudioStream()
+        context.usersInRoom.value.forEach(userSlug => {
+            _requestOrConnectPeer(userSlug)
+        })
+    }
+
+    const stopAudioStream = () => {
+        stopWebcamStream()
+    }
+
     const startScreenCapture = async () => {
         await media.startScreenCapture()
 
@@ -880,10 +891,10 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         cleanupPeerConnection,
         startWebcamStream,
         stopWebcamStream,
-
+        startAudioStream,
+        stopAudioStream,
         startScreenCapture,
         stopScreenCapture,
-
         toggleAudioState,
         toggleVideoState,
         startCallWithPeer,

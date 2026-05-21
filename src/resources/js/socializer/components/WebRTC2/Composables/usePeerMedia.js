@@ -44,6 +44,19 @@ export function usePeerMedia(ctx) {
         ctx.media.currentStream?.getTracks().forEach(t => t.stop())
         ctx.media.currentStream = null
         ctx.media.isStreaming = false
+        ctx.media.isAudioStream = false
+    }
+
+    const startAudioStream = async () => {
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video: false,
+            audio: true,
+        })
+
+        ctx.media.currentStream = markRaw(stream)
+        ctx.media.isStreaming = true
+        ctx.media.isAudioStream = true
+        return stream
     }
 
     const startScreenCapture = async (includeSystemAudio = false) => {
@@ -243,6 +256,7 @@ export function usePeerMedia(ctx) {
     return {
         startCurrentStream,
         stopCurrentStream,
+        startAudioStream,
         startScreenCapture,
         stopScreenCapture,
         createVideoElement,
