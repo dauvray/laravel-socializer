@@ -114,24 +114,24 @@ function _destroyPeerSingleton(peerStore) {
 
 // ─── Rate limiting hub (topologie star) ─────────────────────────────────────
 // Fenêtre glissante par expéditeur : chaque entrée est un tableau de timestamps.
-// Clé = senderSlug (envelope.from). Partagé entre contextes car le hub est unique.
+// Clé = senderIdentity (peerId entrant réel). Partagé entre contextes car le hub est unique.
 const _hubRateWindows = new Map()
 
-function _isHubRateLimited(senderSlug) {
+function _isHubRateLimited(senderIdentity) {
     const now = Date.now()
     const windowStart = now - HUB_RATE_WINDOW_MS
 
-    let timestamps = _hubRateWindows.get(senderSlug) ?? []
+    let timestamps = _hubRateWindows.get(senderIdentity) ?? []
     // Purge les timestamps hors de la fenêtre glissante
     timestamps = timestamps.filter(ts => ts > windowStart)
 
     if (timestamps.length >= HUB_MAX_MESSAGES_PER_WINDOW) {
-        _hubRateWindows.set(senderSlug, timestamps)
+        _hubRateWindows.set(senderIdentity, timestamps)
         return true
     }
 
     timestamps.push(now)
-    _hubRateWindows.set(senderSlug, timestamps)
+    _hubRateWindows.set(senderIdentity, timestamps)
     return false
 }
 
@@ -478,6 +478,14 @@ export function usePeerTransport(ctx) {
     //   envelope.payload → les vraies données à livrer
     // ─────────────────────────────────────────────────────────────────────────────
     const forwardStarMessage = (envelope, sourceConn = null) => {
+        const senderIdentity = sourceConn?.peer ? String(sourceConn.peer) : null
+        if (!senderIdentity) {
+            console.warn('[Hub] Enveloppe star ignorée: peerId expéditeur introuvable sur la connexion entrante', {
+                declaredFrom: envelope?.from,
+            })
+            return
+        }
+
         const senderSlug = _resolveSenderSlugFromIncomingConn(sourceConn, ctx)
         if (!senderSlug) {
             console.warn('[Hub] Enveloppe star ignorée: expéditeur non résolu depuis la connexion entrante', {
@@ -491,10 +499,10 @@ export function usePeerTransport(ctx) {
         // Protection contre les rafales de messages : si un client dépasse
         // HUB_MAX_MESSAGES_PER_WINDOW messages dans HUB_RATE_WINDOW_MS, l'excédent
         // est abandonné pour éviter la saturation du hub.
-        if (_isHubRateLimited(senderSlug)) {
+        if (_isHubRateLimited(senderIdentity)) {
             console.warn(
                 `[Hub] Rate limit dépassé (${HUB_MAX_MESSAGES_PER_WINDOW} msg/${HUB_RATE_WINDOW_MS}ms)` +
-                ` — message de '${senderSlug}' abandonné`
+                ` — message de '${senderSlug}' (${senderIdentity}) abandonné`
             )
             return
         }

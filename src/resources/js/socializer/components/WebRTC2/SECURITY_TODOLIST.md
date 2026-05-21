@@ -7,7 +7,7 @@
 
 - [✅] 🔴 **[CRITIQUE] Usurpation d'identité `envelope.from`** `[M]` : le champ `from` de l'enveloppe star est auto-déclaré par le client (`ctx.mySlug.value`) et jamais vérifié par le hub — un client malveillant peut usurper le slug d'un autre utilisateur et faire croire que ses messages proviennent de lui → le hub doit résoudre le slug réel de l'expéditeur depuis le `contextRegistry` (identité PeerJS de la connexion entrante) et ignorer `envelope.from` comme source de vérité
 
-- [ ] 🟠 **[HAUTE] Rate limiting contournable par rotation de `envelope.from`** `[S]` : `_isHubRateLimited(envelope.from)` est basé sur le slug auto-déclaré — un client peut changer librement `envelope.from` pour éviter le plafond → appliquer le rate limiting sur l'identité PeerJS réelle de la connexion (côté récepteur hub), pas sur le champ déclaratif de l'enveloppe
+- [✅] 🟠 **[HAUTE] Rate limiting contournable par rotation de `envelope.from`** `[S]` : `_isHubRateLimited(envelope.from)` est basé sur le slug auto-déclaré — un client peut changer librement `envelope.from` pour éviter le plafond → appliquer le rate limiting sur l'identité PeerJS réelle de la connexion (côté récepteur hub), pas sur le champ déclaratif de l'enveloppe
 
 - [ ] 🟠 **[HAUTE] Aucune limite de taille sur les messages forwardés (amplification DoS)** `[S]` : `conn.send(envelope.payload)` est appelé sans vérification de taille — un client peut envoyer un payload de plusieurs Mo que le hub retransmet à tous les membres → ajouter une constante `MAX_PAYLOAD_BYTES` dans `webrtc2.config.js` et rejeter l'enveloppe si `JSON.stringify(envelope.payload).length > MAX_PAYLOAD_BYTES`
 
