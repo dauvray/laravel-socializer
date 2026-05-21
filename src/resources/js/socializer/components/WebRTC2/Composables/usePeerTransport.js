@@ -20,7 +20,7 @@
 
 import { Peer } from "peerjs"
 import { markRaw, onUnmounted, watch } from 'vue'
-import { MAX_RECONNECT_ATTEMPTS, HUB_RATE_WINDOW_MS, HUB_MAX_MESSAGES_PER_WINDOW, PEER_DESTROY_DELAY_MS, RECONNECT_BASE_DELAY_MS, RECONNECT_MAX_DELAY_MS, STREAM_WAIT_TIMEOUT_MS } from '../webrtc2.config.js'
+import { MAX_RECONNECT_ATTEMPTS, HUB_RATE_WINDOW_MS, HUB_MAX_MESSAGES_PER_WINDOW, MAX_PAYLOAD_BYTES, PEER_DESTROY_DELAY_MS, RECONNECT_BASE_DELAY_MS, RECONNECT_MAX_DELAY_MS, STREAM_WAIT_TIMEOUT_MS } from '../webrtc2.config.js'
 
 // -----------------------------------------------------------------------------
 // Registre global des contextes WebRTC actifs
@@ -159,6 +159,43 @@ function _resolveSenderSlugFromIncomingConn(conn, ctx) {
     }
 
     return null
+}
+
+function _getPayloadSizeBytes(payload) {
+    // Autorise les payloads binaires natifs navigateur
+    if (payload instanceof Blob) {
+        return { ok: true, bytes: payload.size, kind: 'blob' }
+    }
+
+    if (payload instanceof ArrayBuffer) {
+        return { ok: true, bytes: payload.byteLength, kind: 'arraybuffer' }
+    }
+
+    if (ArrayBuffer.isView(payload)) {
+        return { ok: true, bytes: payload.byteLength, kind: 'typed-array' }
+    }
+
+    // String brute
+    if (typeof payload === 'string') {
+        return { ok: true, bytes: new TextEncoder().encode(payload).length, kind: 'string' }
+    }
+
+    // JSON (objets, tableaux, nombres, booleens, null)
+    const valueType = typeof payload
+    const isJsonCompatible = payload === null || valueType === 'object' || valueType === 'number' || valueType === 'boolean'
+    if (isJsonCompatible) {
+        try {
+            const json = JSON.stringify(payload)
+            if (typeof json !== 'string') {
+                return { ok: false, reason: 'payload JSON invalide apres serialisation' }
+            }
+            return { ok: true, bytes: new TextEncoder().encode(json).length, kind: 'json' }
+        } catch (error) {
+            return { ok: false, reason: 'payload JSON non serialisable' }
+        }
+    }
+
+    return { ok: false, reason: `type non supporte (${valueType})` }
 }
 
 function registerContext(ctx) {
@@ -503,6 +540,30 @@ export function usePeerTransport(ctx) {
             console.warn(
                 `[Hub] Rate limit dépassé (${HUB_MAX_MESSAGES_PER_WINDOW} msg/${HUB_RATE_WINDOW_MS}ms)` +
                 ` — message de '${senderSlug}' (${senderIdentity}) abandonné`
+            )
+            return
+        }
+
+        // ── Limite de taille payload (anti-amplification DoS) ─────────────────
+        // Types acceptes: JSON + binaire (Blob, File, ArrayBuffer, TypedArray)
+        const payloadSize = _getPayloadSizeBytes(envelope?.payload)
+        if (!payloadSize.ok) {
+            console.warn('[Hub] Enveloppe star ignoree: payload invalide', {
+                reason: payloadSize.reason,
+                senderSlug,
+                senderPeerId: senderIdentity,
+            })
+            return
+        }
+
+        if (payloadSize.bytes > MAX_PAYLOAD_BYTES) {
+            console.warn(
+                `[Hub] Enveloppe star ignoree: payload trop volumineux (${payloadSize.bytes} octets > ${MAX_PAYLOAD_BYTES})`,
+                {
+                    payloadKind: payloadSize.kind,
+                    senderSlug,
+                    senderPeerId: senderIdentity,
+                }
             )
             return
         }

@@ -47,6 +47,13 @@ export const PEER_DESTROY_DELAY_MS = 10_000
 export const HUB_RATE_WINDOW_MS = 1000
 export const HUB_MAX_MESSAGES_PER_WINDOW = 20
 
+/**
+ * Taille maximale (octets) d'un payload retransmis par le hub en topologie star.
+ * Concerne les payloads JSON et binaires (Blob/File/ArrayBuffer/TypedArray).
+ * Au-dela, le message est rejete pour limiter les risques d'amplification DoS.
+ */
+export const MAX_PAYLOAD_BYTES = 64 * 1024
+
 // ─── Streams distants (remoteStreamsMap) ──────────────────────────────────
 /**
  * Nombre maximum de streams distants simultanés dans remoteStreamsMap.
