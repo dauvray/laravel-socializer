@@ -299,7 +299,7 @@ export function createPeerContext({ type, room, options }) {
             : null
 
         const handleData = (connectionEvents?.onDataReceived?.isActive)
-            ? connectionEvents.onDataReceived.callback
+            ? (data) => connectionEvents.onDataReceived.callback(data, conn, conn.metadata)
             : null
 
         // Wrapper nommé nécessaire pour capturer la référence et pouvoir faire conn.off()

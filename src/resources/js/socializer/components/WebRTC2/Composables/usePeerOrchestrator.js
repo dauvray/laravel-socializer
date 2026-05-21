@@ -201,7 +201,7 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         if (context.topology.value === 'star' && typeof callbacks.onDataReceived === 'function') {
             const originalOnDataReceived = callbacks.onDataReceived
 
-            wrappedCallbacks.onDataReceived = (data) => {
+            wrappedCallbacks.onDataReceived = (data, conn) => {
                 const isRoutingEnvelope = data?.__starRoute === true
                 const isHubUser = context.isHub.value === true
 
@@ -210,7 +210,7 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
                 // null au moment de l'initialisation (résolu après waitForMeReady).
                 // Hub: route l'enveloppe puis affiche le message "métier" (payload)
                 if (isRoutingEnvelope && isHubUser) {
-                    transport.forwardStarMessage(data)
+                    transport.forwardStarMessage(data, conn)
 
                     // On remonte au chat un objet normalisé pour éviter Invalid Date
                     if (data?.payload) {

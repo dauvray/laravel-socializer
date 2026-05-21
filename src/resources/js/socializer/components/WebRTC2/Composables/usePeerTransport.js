@@ -135,6 +135,32 @@ function _isHubRateLimited(senderSlug) {
     return false
 }
 
+function _resolveSenderSlugFromIncomingConn(conn, ctx) {
+    const senderPeerId = conn?.peer ? String(conn.peer) : null
+    if (!senderPeerId) return null
+
+    const usersInRoom = Array.isArray(ctx?.connection?.usersInRoom)
+        ? ctx.connection.usersInRoom
+        : []
+
+    // Priorité: ne considérer que les membres connus de la room courante.
+    for (const slug of usersInRoom) {
+        const mappedPeerId = ctx?.peerStore?.getRemotePeerId?.(slug)
+        if (mappedPeerId && String(mappedPeerId) === senderPeerId) {
+            return slug
+        }
+    }
+
+    // Fallback défensif: parcourt la map complète si usersInRoom est temporairement vide.
+    for (const [slug, peerId] of (ctx?.peerStore?.remotePeersId?.entries?.() ?? [])) {
+        if (peerId && String(peerId) === senderPeerId) {
+            return slug
+        }
+    }
+
+    return null
+}
+
 function registerContext(ctx) {
     if (!ctx?.contextId) return
     contextRegistry.set(ctx.contextId, ctx)
@@ -447,19 +473,28 @@ export function usePeerTransport(ctx) {
     // il appelle cette fonction pour le retransmettre aux bons destinataires.
     //
     // Paramètres de l'enveloppe :
-    //   envelope.from    → slug de l'expéditeur (exclu de la retransmission)
+    //   envelope.from    → champ déclaratif client (non fiable, ignoré côté hub)
     //   envelope.to      → liste de slugs ciblés, ou null pour "tout le monde"
     //   envelope.payload → les vraies données à livrer
     // ─────────────────────────────────────────────────────────────────────────────
-    const forwardStarMessage = (envelope) => {
+    const forwardStarMessage = (envelope, sourceConn = null) => {
+        const senderSlug = _resolveSenderSlugFromIncomingConn(sourceConn, ctx)
+        if (!senderSlug) {
+            console.warn('[Hub] Enveloppe star ignorée: expéditeur non résolu depuis la connexion entrante', {
+                senderPeerId: sourceConn?.peer,
+                declaredFrom: envelope?.from,
+            })
+            return
+        }
+
         // ── Rate limiting ────────────────────────────────────────────────────────
         // Protection contre les rafales de messages : si un client dépasse
         // HUB_MAX_MESSAGES_PER_WINDOW messages dans HUB_RATE_WINDOW_MS, l'excédent
         // est abandonné pour éviter la saturation du hub.
-        if (_isHubRateLimited(envelope.from)) {
+        if (_isHubRateLimited(senderSlug)) {
             console.warn(
                 `[Hub] Rate limit dépassé (${HUB_MAX_MESSAGES_PER_WINDOW} msg/${HUB_RATE_WINDOW_MS}ms)` +
-                ` — message de '${envelope.from}' abandonné`
+                ` — message de '${senderSlug}' abandonné`
             )
             return
         }
@@ -469,7 +504,7 @@ export function usePeerTransport(ctx) {
         // Si `to` est fourni, on cible ces slugs. Sinon, on prend tous les users de la room.
         // Dans les deux cas, on exclut l'expéditeur (inutile de lui renvoyer son propre message).
         const targets = (envelope.to || ctx.connection.usersInRoom)
-            .filter(slug => slug !== envelope.from)
+            .filter(slug => slug !== senderSlug)
 
         targets.forEach(userSlug => {
             const conn = _getOpenDataConnection(room, userSlug)
