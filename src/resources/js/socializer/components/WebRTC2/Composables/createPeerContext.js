@@ -104,8 +104,7 @@ export function createPeerContext({ type, room, options }) {
 
     // dernier signal reçu pour la room
     const lastRoomSignal = computed(() => {
-        const q = peerStore.getQueueForRoom(contextId)
-        return q?.at(-1) ?? null
+        return peerStore.getLastRoomSignal(contextId)
     })
 
     // CONNECTION EVENTS

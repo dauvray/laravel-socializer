@@ -16,7 +16,7 @@
 
 <script setup>
 
-    import { useChatSimple } from '~socializer/components/WebRTC2/Widgets/UI/ChatSimple/useChatSimple.js'
+    import { useChatSimple } from '~socializer/components/WebRTC2/Exemples/ChatSimple/useChatSimple.js'
     
     const props = defineProps({
         api: Object,

@@ -28,18 +28,29 @@
             </div>
             <div class="row">
                 <div class="col">
-                    <VideoComponent v-if="props.api.currentStream.value" :streamData="localStreamData"></VideoComponent>
-                    <VideoComponent v-if="props.api.screenStream.value" :streamData="screenStreamData"></VideoComponent>
+                    <MediaBroadcastPlayer v-if="props.api.currentStream.value" 
+                        :streamData="localStreamData"
+                        :videoEnabled="videoEnabled">
+                        <template #audio="audioProps">
+                            <SpectrumAnalyzer v-bind="audioProps"></SpectrumAnalyzer>
+                        </template>
+                    </MediaBroadcastPlayer>
+                    <MediaBroadcastPlayer v-if="props.api.screenStream.value" 
+                        :streamData="screenStreamData"
+                    ></MediaBroadcastPlayer>
                 </div>
                 <div class="col">
-                    <VideoComponent v-for="(remoteStream, index) in remoteStreamsData" 
+                    <MediaBroadcastPlayer v-for="(remoteStream, index) in remoteStreamsData" 
                         :key="index" 
-                        :streamData="remoteStream" 
-                    ></VideoComponent>
-                    <VideoComponent v-for="(remoteScreen, index) in remoteScreensData" 
+                        :streamData="remoteStream">
+                        <template #audio="audioProps">
+                            <SpectrumAnalyzer v-bind="audioProps"></SpectrumAnalyzer>
+                        </template>
+                    </MediaBroadcastPlayer>
+                    <MediaBroadcastPlayer v-for="(remoteScreen, index) in remoteScreensData" 
                         :key="index" 
                         :streamData="remoteScreen"
-                    ></VideoComponent>
+                    ></MediaBroadcastPlayer>
                 </div>
             </div>
         </div>
@@ -47,17 +58,34 @@
 </template>
 
 <script setup>
-    import { ref, computed, watch, onMounted } from 'vue'
+    import { ref, computed, watch, onMounted, defineAsyncComponent } from 'vue'
     import { useMeStore } from '~estarter/stores/me.js'
-    import VideoComponent from '~socializer/components/WebRTC2/Widgets/VideoComponent.vue' 
+    import { usePeer2Store } from '~socializer/stores/peers2.js'
+    import MediaBroadcastPlayer from '~socializer/components/WebRTC2/Widgets/MediaBroadcastPlayer.vue' 
     import LocalStreamBtn from '~socializer/components/WebRTC2/Widgets/UI/Buttons/LocalStreamBtn.vue'
     import LocalCaptureBtn from '~socializer/components/WebRTC2/Widgets/UI/Buttons/LocalCaptureBtn.vue'
+    import Spinner from '~estarter/components/widgets/Spinners/Spinner1.vue'
 
     const props = defineProps({
         api: Object,
     })
 
     const meStore = useMeStore()
+    const peerStore = usePeer2Store()
+
+    const SpectrumAnalyzer = defineAsyncComponent({
+        // La fonction de chargement (le dynamic import)
+        loader: () => import('~socializer/components/WebRTC2/Widgets/UI/Audio/SpectrumAnalyzer.vue'),
+        // Un composant à afficher pendant le chargement
+        loadingComponent: Spinner,
+        // Délai avant d'afficher le composant de chargement (par défaut : 200ms)
+        delay: 200,
+        // Un composant à afficher si le chargement échoue (optionnel)
+        // errorComponent: ErrorComponent,
+        // Durée maximale avant d'abandonner le chargement et afficher le composant d'erreur (par défaut : Infinity)
+    })
+
+    const videoEnabled = ref(true)
 
     onMounted(() => {
         props.api.initialize({
@@ -73,6 +101,7 @@
      
     const handleStreamReceived = (stream, conn, metadata) => {
         console.log('Stream reçu dans chat', { stream, conn, metadata })
+        peerStore.createSignalQueueRoom(conn.peer)
     }
 
     const handleStreamClose = (conn) => {
@@ -108,7 +137,11 @@
 
     const handleStreamData = (data, conn) => {
         console.log('Donnée reçue sur le stream', { data, conn })
-    // signalData.value.push({data, peerdId: conn?.metadata?.peerId})
+        peerStore.dispatchSignal({
+            emitter: 'StreamSimpleUI',
+            roomId: conn?.peer,
+            payload: data
+        })
     }
 
     /**
@@ -141,11 +174,22 @@
 
     const onToggleAudioMute = () => {
         props.api.toggleAudioMute()
-        props.api.sendData('hello from audio stream')
+        props.api.sendData({
+            roomId: props.api.onAirRoom.value,
+            type: 'AUDIO_MUTE_TOGGLE', 
+            isMuted: props.api.isMuted.value,
+        })
+       
     }
 
     const onToggleVideoVisibility = () => {
         props.api.toggleVideoVisibility()
+        props.api.sendData({
+            roomId: props.api.onAirRoom.value,
+            type: 'VIDEO_ACTIVE_TOGGLE', 
+            isActive: props.api.isVideoEnabled.value,
+        })
+        videoEnabled.value = props.api.isVideoEnabled.value
     }
 
 

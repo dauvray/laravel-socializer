@@ -35,6 +35,12 @@ export default {
     getLastSignal() {
         return this.lastSignal
     },
+    getLastRoomSignal: (state) => {
+        return (roomId) => {
+            const q = state.signalQueues[roomId] || null
+             return q?.at(-1) ?? null
+        }
+    },
 
     /*--------------------------
     | Remote peers ID

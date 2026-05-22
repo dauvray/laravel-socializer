@@ -1,25 +1,35 @@
 <template>
     <div class="draggable-video" 
-        v-draggable="draggableOptions">
-        <video 
-            ref="player"
-            v-resize="resizeOptions"
-            :controls="false"
-            :autoplay="true"
-            :loop="false"
-            :muted="props.streamData.metadata?.isMe || false"
-            :poster="poster"
-            :playsinline="true"
-        ></video>
+        v-draggable="draggableOptions"
+        v-resize="resizeOptions">
+        <slot v-if="videoActive" name="video">
+            <VideoPlayer
+                ref="player"
+                :controls="false"
+                :autoplay="true"
+                :loop="false"
+                :muted="props.streamData.metadata?.isMe || false"
+                :poster="poster"
+                :playsinline="true"
+            ></VideoPlayer>
+        </slot>
+        <slot v-else name="audio" :streams="[props.streamData.stream]">
+            <audio 
+                ref="player"
+                :controls="true"
+                :autoplay="true"
+                :loop="false"
+                :muted="props.streamData.metadata?.isMe || false"
+            ></audio>
+        </slot>
 
         <div class="video-tools-wrapper">
             <div class="video-tools">
                 <div class="user-info-wrapper">
                     <span class="user-info">
-                        {{ props.streamData.metadata?.fromName || 'Unknown' }}
-                        {{ props.streamData.metadata?.peerId || 'No Peer ID' }}
+                        {{ props.streamData.metadata?.fromName || 'Inconnu' }}
                         <template v-if="props.streamData.metadata.currentType !== 'visio'">
-                            <IconWidget  icon="eye"></IconWidget> {{ props.streamData.metadata?.countViewers || 0 }}
+                            <IconWidget icon="eye"></IconWidget> {{ props.streamData.metadata?.countViewers || 0 }}
                         </template>
                     </span>
                 </div>
@@ -44,23 +54,12 @@
 
 <script setup>
 
-    import { ref, watch , onBeforeUnmount, defineAsyncComponent } from 'vue'
+    import { ref, watch, onBeforeUnmount, defineAsyncComponent, computed, onUnmounted } from 'vue'
+    import { usePeer2Store } from '~socializer/stores/peers2.js'
     import resizeDirective from '~socializer/directives/resizable.js'
     import draggableDirective from '~socializer/directives/draggable.js'
     import IconWidget from '~estarter/components/widgets/IconWidget.vue'
-    import Spinner from '~estarter/components/widgets/Spinners/Spinner1.vue'
-
-    const SpectrumAnalyzer = defineAsyncComponent({
-        // La fonction de chargement (le dynamic import)
-        loader: () => import('~socializer/components/WebRTC2/Widgets/UI/SpectrumAnalyzer.vue'),
-        // Un composant à afficher pendant le chargement
-        loadingComponent: Spinner,
-        // Délai avant d'afficher le composant de chargement (par défaut : 200ms)
-        delay: 200,
-        // Un composant à afficher si le chargement échoue (optionnel)
-        // errorComponent: ErrorComponent,
-        // Durée maximale avant d'abandonner le chargement et afficher le composant d'erreur (par défaut : Infinity)
-    })
+    import VideoPlayer from '~estarter/components/widgets/VideoPlayer.vue'
 
     const props = defineProps({
         streamData: {
@@ -87,8 +86,15 @@
             required: false,
             default: false,
         },
+        videoEnabled: {
+            type: Boolean,
+            required: false,
+            default: true,
+        },
     })
     
+    const peerStore = usePeer2Store()
+
     const player = ref(null) // fait réfence à l'élément vidéo du template
     const vResize = resizeDirective
     const vDraggable = draggableDirective
@@ -108,10 +114,34 @@
     const draggableOptions = {
         draggable: props.draggable,
     }
+    const muted = ref(false)
+    const videoActive = ref(props.videoEnabled)
+
+
 
     // todo
     const showStartButton = ref(false)
-    const muted = ref(false)
+
+
+    /*** Signaling */
+    const lastRoomSignal = computed(() => {
+       return peerStore.getLastRoomSignal(props.streamData.metadata?.peerId)
+    })
+
+    const stopSignalWatch = watch(lastRoomSignal, async (signal) => {
+        if (!signal || signal.roomId !== props.streamData.metadata?.peerId) return
+
+        switch (signal.payload?.type) {
+            case 'AUDIO_MUTE_TOGGLE':
+                muted.value = signal.payload.isMuted
+                break
+            case 'VIDEO_ACTIVE_TOGGLE':
+                videoActive.value = signal.payload.isActive
+                break
+            default:
+                break
+        }
+    })
 
     /*** Methodes */
     const toggleFullscreen = () => {
@@ -147,26 +177,26 @@
         // on regarde à la fois la source du flux vidéo et l'élément vidéo lui même, 
         // car il se peut que l'un des deux ne soit pas encore prêt au moment où l'autre change
         [() => props.streamData, player],
-        async ([streamData, video]) => {
-            if (!streamData || !video) return
-            if (video.srcObject === streamData.stream) return
-            video.srcObject = streamData.stream
+        async ([streamData, playerComponent]) => {
+            if (!streamData || !playerComponent || !playerComponent.nativeVideo) return
+            if (playerComponent.nativeVideo.srcObject === streamData.stream) return
+            playerComponent.nativeVideo.srcObject = streamData.stream
 
             const playVideo = async () => {
                 try {
-                    await video.play()
+                    await playerComponent.nativeVideo.play()
                 }
                 catch (e) {
                     console.error(e)
                 }
             }
 
-            if (video.readyState >= 1) {
+            if (playerComponent.nativeVideo.readyState >= 1) {
                 await playVideo()
                 return
             }
 
-            video.addEventListener(
+            playerComponent.nativeVideo.addEventListener(
                 'loadedmetadata',
                 playVideo,
                 { once: true }
@@ -177,6 +207,10 @@
             flush: 'post',
         }
     )
+    // fais watch sur props.videoEnabled pour activer/désactiver la vidéo en fonction de cette prop (utile pour les toggles de caméra dans le StreamSimpleUI)
+    watch(() => props.videoEnabled, (newVal) => {
+        videoActive.value = newVal
+    })
 
     onBeforeUnmount(() => {
         if (player.value) {
@@ -188,6 +222,10 @@
                 })
             }
         }
+    })
+
+    onUnmounted(() => {
+        stopSignalWatch()
     })
 </script>
 
