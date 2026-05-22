@@ -30,8 +30,8 @@
                 <div class="col">
                     <MediaBroadcastPlayer v-if="props.api.currentStream.value" 
                         :streamData="localStreamData"
-                        :videoEnabled="videoEnabled"
-                        :isMuted="isMuted">
+                        :videoEnabled="props.api.isVideoEnabled"
+                        :isMuted="props.api.isMuted">
                         <template #audio="audioProps">
                             <SpectrumAnalyzer v-bind="audioProps"></SpectrumAnalyzer>
                         </template>
@@ -85,10 +85,6 @@
         // errorComponent: ErrorComponent,
         // Durée maximale avant d'abandonner le chargement et afficher le composant d'erreur (par défaut : Infinity)
     })
-
-    // pour l'etat local. Pour le remote, envoyé via sendData 
-    const videoEnabled = ref(true)
-    const isMuted = ref(false)
 
     onMounted(() => {
         props.api.initialize({
@@ -157,8 +153,6 @@
 
     const stopWebcamStream = () => {
         props.api.stopStream()
-        videoEnabled.value = true
-        isMuted.value = false
     }
 
     const startAudioStream = () => {
@@ -184,7 +178,6 @@
             type: 'AUDIO_MUTE_TOGGLE', 
             isMuted: props.api.isMuted.value,
         })
-        isMuted.value = props.api.isMuted.value
     }
 
     const onToggleVideoVisibility = () => {
@@ -194,7 +187,6 @@
             type: 'VIDEO_ACTIVE_TOGGLE', 
             isActive: props.api.isVideoEnabled.value,
         })
-        videoEnabled.value = props.api.isVideoEnabled.value
     }
 
     /**
