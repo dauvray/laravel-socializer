@@ -1,36 +1,32 @@
 export default {
   mounted(el, binding) {
+    const options = binding.value || {};
+    if (!options?.draggable) return;
 
-   const options = binding.value || {};
+    // 🔑 Si la directive resize a wrappé l'élément, on drag le wrapper
+    const target = el._resizeDirective?.wrapper || el;
 
-    // autoriser ou non le glissement
-    if(!options?.draggable) return
-
-    let startX = 0;
-    let startY = 0;
-    let offsetX = 0;
-    let offsetY = 0;
+    let startX = 0, startY = 0, offsetX = 0, offsetY = 0;
     let isDragging = false;
 
-    // Désactiver le comportement tactile natif (scroll) sur cet élément
-    // IMPORTANT : ajouter aussi en CSS `touch-action: none;` si possible.
-    el.style.touchAction = el.style.touchAction || 'none';
+    target.style.touchAction = target.style.touchAction || 'none';
 
     const onPointerDown = (e) => {
-      // ignore les boutons secondaires / wheel click
       if (e.button && e.button !== 0) return;
+      // 🔑 Ne pas démarrer le drag si on a cliqué sur le grip de resize
+      if (e.target.classList?.contains('resize-grip')) return;
 
       e.preventDefault();
       (e.target || e).setPointerCapture?.(e.pointerId);
 
-      const rect = el.getBoundingClientRect();
+      const rect = target.getBoundingClientRect();
       startX = e.clientX;
       startY = e.clientY;
       offsetX = startX - rect.left;
       offsetY = startY - rect.top;
 
       isDragging = true;
-      el.classList.add('dragging');
+      target.classList.add('dragging');
 
       window.addEventListener('pointermove', onPointerMove);
       window.addEventListener('pointerup', onPointerUp);
@@ -41,43 +37,36 @@ export default {
       if (!isDragging) return;
       e.preventDefault();
 
-      const clientX = e.clientX;
-      const clientY = e.clientY;
-
       const screenWidth = document.documentElement.clientWidth;
       const screenHeight = document.documentElement.clientHeight;
-      const rect = el.getBoundingClientRect();
-      const elementWidth = rect.width;
-      const elementHeight = rect.height;
+      const rect = target.getBoundingClientRect();
 
-      let x = clientX - offsetX;
-      let y = clientY - offsetY;
+      let x = e.clientX - offsetX;
+      let y = e.clientY - offsetY;
 
-      x = Math.max(0, Math.min(x, screenWidth - elementWidth));
-      y = Math.max(0, Math.min(y, screenHeight - elementHeight));
+      x = Math.max(0, Math.min(x, screenWidth - rect.width));
+      y = Math.max(0, Math.min(y, screenHeight - rect.height));
 
-      el.style.position = 'fixed';
-      el.style.left = `${x}px`;
-      el.style.top = `${y}px`;
+      target.style.position = 'fixed';
+      target.style.left = `${x}px`;
+      target.style.top = `${y}px`;
     };
 
     const onPointerUp = (e) => {
       if (!isDragging) return;
       isDragging = false;
-      el.classList.remove('dragging');
-
+      target.classList.remove('dragging');
       try { (e.target || e).releasePointerCapture?.(e.pointerId); } catch (err) {}
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', onPointerUp);
       window.removeEventListener('pointercancel', onPointerUp);
     };
 
-    // Attacher
-    el.addEventListener('pointerdown', onPointerDown);
+    // 🔑 On écoute sur `target` (le wrapper), pas sur `el`
+    target.addEventListener('pointerdown', onPointerDown);
 
-    // Cleanup
     el._cleanupDraggable = () => {
-      el.removeEventListener('pointerdown', onPointerDown);
+      target.removeEventListener('pointerdown', onPointerDown);
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', onPointerUp);
       window.removeEventListener('pointercancel', onPointerUp);

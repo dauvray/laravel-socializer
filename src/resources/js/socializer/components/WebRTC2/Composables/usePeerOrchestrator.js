@@ -361,6 +361,8 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         media.stopCurrentStream()
         media.removeVideoElement('local-webcam')
         context.session.currentCallRoomId = null
+        context.ui.streamStates.isVideoEnabled = true
+        context.ui.streamStates.isMuted = false
         
         isShuttingDown.value = false
     }

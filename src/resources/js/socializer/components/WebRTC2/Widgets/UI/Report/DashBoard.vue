@@ -30,6 +30,14 @@
                 <template v-if="api.currentType.value !== 'data'">
                     <li>
                         Streaming : <span :class="{'text-success': api.isStreaming.value, 'text-danger': !api.isStreaming.value}">{{ api.isStreaming }}</span>
+                        <ul v-if="api.isStreaming.value">
+                            <li>
+                                Video : <span :class="{'text-success': api.isVideoEnabled.value, 'text-danger': !api.isVideoEnabled.value}">{{  api.isVideoEnabled }}</span>
+                            </li>
+                            <li>
+                                Audio : <span :class="{'text-success': !api.isMuted.value, 'text-danger': api.isMuted.value}">{{ !api.isMuted.value }}</span>
+                            </li>
+                        </ul>
                     </li>
                     <li>
                         Capturing : <span :class="{'text-success': api.isCapturing.value, 'text-danger': !api.isCapturing.value}">{{ api.isCapturing }}</span>

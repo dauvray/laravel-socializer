@@ -1,15 +1,15 @@
 <template>
     <div class="draggable-video" 
+        v-resize="resizeOptions"
         v-draggable="draggableOptions"
-        v-resize="resizeOptions">
-        <slot v-if="videoActive" name="video">
+        >
+        <slot v-if="videoActive" name="video" :streamData="props.streamData">
             <VideoPlayer
                 ref="player"
                 :controls="false"
                 :autoplay="true"
                 :loop="false"
                 :muted="props.streamData.metadata?.isMe || false"
-                :poster="poster"
                 :playsinline="true"
             ></VideoPlayer>
         </slot>
@@ -31,6 +31,7 @@
                         <template v-if="props.streamData.metadata.currentType !== 'visio'">
                             <IconWidget icon="eye"></IconWidget> {{ props.streamData.metadata?.countViewers || 0 }}
                         </template>
+                        <IconWidget v-if="muted" icon="microphone-slash"></IconWidget>
                     </span>
                 </div>
                 <!-- <div v-if="isClosable" class="video-btns" role="group">
@@ -43,12 +44,20 @@
 
         <div class="video-cache" ref="video-cache"></div>
 
-        <div class="video-controls">
-            <button v-if="showStartButton" type="button" class="btn btn-primary" @click="startVideo">Play</button>
-            <button v-if="!props.streamData.metadata.isMe" type="button" class="btn" :class="{'btn-primary': !muted, 'btn-secondary': muted}" @click="toggleMute">{{ muted ? 'Unmute' : 'Mute' }}</button>
-            <button type="button" class="btn btn-primary" @click="toggleFullscreen">Fullscreen</button>
-            <button type="button" class="btn btn-primary" @click="togglePIP">PIP</button>
-        </div>
+        <slot name="controls">
+            <div class="video-controls">
+                <button v-if="showStartButton" type="button" class="btn btn-primary" @click="startVideo">Play</button>
+                <button v-if="!props.streamData.metadata.isMe" 
+                    type="button" 
+                    class="btn" 
+                    :class="{'btn-primary': !muted, 'btn-secondary': muted}" 
+                    @click="toggleMute">{{ muted ? 'Unmute' : 'Mute' }}
+                </button>
+                <button type="button" class="btn btn-primary" @click="toggleFullscreen">Fullscreen</button>
+                <button type="button" class="btn btn-primary" @click="togglePIP">PIP</button>
+            </div>
+        </slot>
+
     </div>
 </template>
 
@@ -91,6 +100,7 @@
             required: false,
             default: true,
         },
+
     })
     
     const peerStore = usePeer2Store()
@@ -146,18 +156,20 @@
     /*** Methodes */
     const toggleFullscreen = () => {
         if (!document.fullscreenElement) {
-            player.value.requestFullscreen().catch(err => {
+            player.value.nativeVideo.requestFullscreen().catch(err => {
                 console.error(`Error attempting to enable fullscreen mode: ${err.message} (${err.name})`)
             })
         } else {
-            document.exitFullscreen()
+            document.exitFullscreen().catch(err => {
+                console.error(`Error attempting to exit fullscreen mode: ${err.message} (${err.name})`)
+            })
         }
     }
 
     const toggleMute = () => {
         if (!player.value) return
-        player.value.muted = !player.value.muted
-        muted.value = player.value.muted
+        player.value.nativeVideo.muted = !player.value.nativeVideo.muted
+        muted.value = player.value.nativeVideo.muted
     }
 
     const togglePIP = () => {
@@ -167,7 +179,7 @@
                 console.error(`Error attempting to exit Picture-in-Picture mode: ${err.message} (${err.name})`)
             })
         } else {
-            player.value.requestPictureInPicture().catch(err => {
+            player.value.nativeVideo.requestPictureInPicture().catch(err => {
                 console.error(`Error attempting to enter Picture-in-Picture mode: ${err.message} (${err.name})`)
             })
         }
