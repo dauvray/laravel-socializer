@@ -31,6 +31,10 @@
     provide(WEBRTC_API_KEY, api)
 
     onMounted(() => {
+        // Si on veut avoir la main sur les callbacks et gerer les évenements depuis le parent
+        // on initialise l'api avec les callbacks passés en props
+        // sinon, on laisse l'enfant gérer les événements de connexion et de flux (ex: StreamSimpleUI) 
+        // et on n'initialise pas l'api ici (car elle sera initialisée dans le composant enfant qui reçoit les flux)
        if(props.callbacks) {
             api.initialize(props.callbacks)
        }

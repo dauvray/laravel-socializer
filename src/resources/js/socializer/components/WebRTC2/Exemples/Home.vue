@@ -45,7 +45,7 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useBreadcrumbService } from '~estarter/services/BreadcrumbService.js'
-import MediaBroadcastProvider from '~socializer/components/WebRTC2/Widgets/MediaBroadcastProvider.vue'
+import MediaBroadcastProvider from '~socializer/components/WebRTC2/Widgets/Mediaplayer/MediaBroadcastProvider.vue'
 import ChatSimpleUI from '~socializer/components/WebRTC2/Exemples/ChatSimple/ChatSimpleUI.vue'
 import { useChatSimple } from '~socializer/components/WebRTC2/Exemples/ChatSimple/useChatSimple.js'
 import Debug from '~socializer/components/WebRTC2/Widgets/UI/Report/Debug.vue'

@@ -17,41 +17,46 @@
                     @start-stream="startScreenCapture"
                     @stop-stream="stopScreenCapture">
                 </LocalCaptureBtn>
-            </div>       
+            </div> 
+            
             <div class="row">
                 <div class="col">
                     <h5>Local Stream</h5>
+                    <LocalMediaPlayer v-if="api.currentStream.value" :streamData="localStreamData">
+                        <template #audio="audioProps">
+                            <!-- <SpectrumAnalyzer v-bind="audioProps" /> -->
+                        </template>
+                    </LocalMediaPlayer>
+                    
+                    <LocalMediaPlayer v-if="api.screenStream.value" :streamData="screenStreamData" />
                 </div>
+
                 <div class="col">
                     <h5>Remote Streams</h5>
-                </div>
-            </div>
-            <div class="row">
-                <div class="col">
-                    <MediaBroadcastPlayer v-if="props.api.currentStream.value" 
-                        :streamData="localStreamData">
-                        <template #audio="audioProps">
-                            <!-- <SpectrumAnalyzer v-bind="audioProps"></SpectrumAnalyzer> -->
-                        </template>
-                    </MediaBroadcastPlayer>
-                    <MediaBroadcastPlayer v-if="props.api.screenStream.value" 
-                        :streamData="screenStreamData"
-                    ></MediaBroadcastPlayer>
-                </div>
-                <div class="col">
-                    <MediaBroadcastPlayer v-for="(remoteStream, index) in remoteStreamsData" 
-                        :key="index" 
+                    <RemoteMediaPlayer 
+                        v-for="(remoteStream, index) in remoteStreamsData" 
+                        :key="remoteStream.metadata.peerId ?? index"
                         :streamData="remoteStream">
                         <template #audio="audioProps">
-                            <!-- <SpectrumAnalyzer v-bind="audioProps"></SpectrumAnalyzer> -->
+                            <!-- <SpectrumAnalyzer v-bind="audioProps" /> -->
                         </template>
-                    </MediaBroadcastPlayer>
-                    <MediaBroadcastPlayer v-for="(remoteScreen, index) in remoteScreensData" 
+                    </RemoteMediaPlayer>
+                    
+                    <RemoteMediaPlayer 
+                        v-for="(remoteScreen, index) in remoteScreensData" 
                         :key="index" 
-                        :streamData="remoteScreen"
-                    ></MediaBroadcastPlayer>
+                        :streamData="remoteScreen" />
                 </div>
             </div>
+
+
+
+
+
+
+
+
+
         </div>
     </div>
 </template>
@@ -60,7 +65,11 @@
     import { ref, computed, watch, onMounted, defineAsyncComponent } from 'vue'
     import { useMeStore } from '~estarter/stores/me.js'
     import { usePeer2Store } from '~socializer/stores/peers2.js'
-    import MediaBroadcastPlayer from '~socializer/components/WebRTC2/Widgets/MediaBroadcastPlayer.vue' 
+
+    import LocalMediaPlayer from '~socializer/components/WebRTC2/Widgets/Mediaplayer/LocalMediaPlayer.vue'
+    import RemoteMediaPlayer from '~socializer/components/WebRTC2/Widgets/Mediaplayer/RemoteMediaPlayer.vue'
+   // import MediaBroadcastPlayer from '~socializer/components/WebRTC2/Widgets/MediaBroadcastPlayer.vue'
+
     import LocalStreamBtn from '~socializer/components/WebRTC2/Widgets/UI/Buttons/LocalStreamBtn.vue'
     import LocalCaptureBtn from '~socializer/components/WebRTC2/Widgets/UI/Buttons/LocalCaptureBtn.vue'
     import Spinner from '~estarter/components/widgets/Spinners/Spinner1.vue'

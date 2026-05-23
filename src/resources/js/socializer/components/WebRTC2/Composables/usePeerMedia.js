@@ -108,7 +108,7 @@ export function usePeerMedia(ctx) {
         creatingVideoIds.add(videoId)
 
         try {
-            const MediaBroadcastPlayer = await import('~socializer/components/WebRTC2/Widgets/MediaBroadcastPlayer.vue')
+            const MediaBroadcastPlayer = await import('~socializer/components/WebRTC2/Widgets/Mediaplayer/MediaBroadcastPlayer.vue')
             
             // Créer un élément wrapper unique pour chaque vidéo
             const wrapper = document.createElement('div')
