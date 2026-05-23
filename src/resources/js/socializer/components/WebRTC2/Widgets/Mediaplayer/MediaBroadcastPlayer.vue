@@ -1,8 +1,9 @@
 <template>
     <div class="draggable-video" 
+        ref="container"
         v-resize="resizeOptions"
-        v-draggable="draggableOptions">
-        
+        v-draggable="draggableOptions"
+        @pointerdown="onBringToFront">
         <slot v-if="props.videoActive" name="video" :streamData="props.streamData">
             <VideoPlayer
                 ref="player"
@@ -37,8 +38,8 @@
             </div>
         </div>
 
-        <slot name="controls">
-            <div class="video-controls">
+        <div class="video-controls">
+            <slot name="controls" :streamData="props.streamData" :controls="controls">
                 <button v-if="!props.streamData.metadata?.isMe" 
                     type="button" 
                     class="btn" 
@@ -46,10 +47,11 @@
                     @click="onToggleNativeMute">
                     {{ nativeMuted ? 'Unmute' : 'Mute' }}
                 </button>
-                <button @click="controls.toggleFullscreen">Fullscreen</button>
-                <button @click="controls.togglePip">PIP</button>
-            </div>
-        </slot>
+                <button class="btn btn-primary" @click="controls.toggleFullscreen">Fullscreen</button>
+                <button class="btn btn-primary" @click="controls.togglePip">PIP</button>
+            </slot>
+        </div>
+        
     </div>
 </template>
 
@@ -73,7 +75,9 @@ const props = defineProps({
 const vResize = resizeDirective
 const vDraggable = draggableDirective
 
-const player = ref(null)
+const player = ref(null) // référence au composant vidéo/audio pour les contrôles (fullscreen, pip...)
+const container = ref(null) // référence à la div englobante pour les fonctionnalités de déplacement/redimensionnement
+
 const controls = useMediaControls(player)
 const nativeMuted = ref(false)  // mute "côté navigateur" pour l'utilisateur local
 
@@ -85,6 +89,20 @@ const isLocallyMuted = computed(() =>
 const onToggleNativeMute = () => {
     const m = controls.toggleNativeMute()
     if (m !== null) nativeMuted.value = m
+}
+
+const onBringToFront = (event) => {
+    if (!props.draggable) return
+    const el = event.currentTarget.closest('.is-draggable')
+    if (!el) return
+    
+    const siblings = document.querySelectorAll('.is-draggable')
+    let maxZ = 0
+    siblings.forEach(sib => {
+        const z = parseInt(window.getComputedStyle(sib).zIndex) || 0
+        if (z > maxZ) maxZ = z
+    })
+    el.style.zIndex = maxZ + 1
 }
 
 const resizeOptions = {

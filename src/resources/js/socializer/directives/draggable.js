@@ -5,6 +5,7 @@ export default {
 
     // 🔑 Si la directive resize a wrappé l'élément, on drag le wrapper
     const target = el._resizeDirective?.wrapper || el;
+    target.classList.add('is-draggable');
 
     let startX = 0, startY = 0, offsetX = 0, offsetY = 0;
     let isDragging = false;
@@ -66,6 +67,7 @@ export default {
     target.addEventListener('pointerdown', onPointerDown);
 
     el._cleanupDraggable = () => {
+      target.classList.remove('is-draggable');
       target.removeEventListener('pointerdown', onPointerDown);
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', onPointerUp);

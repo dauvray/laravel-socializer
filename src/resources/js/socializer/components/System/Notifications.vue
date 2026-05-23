@@ -10,9 +10,9 @@
         ></component>
     </Teleport>
 
-    <CallWebUI v-if="peers.isCallInProgress()"
+    <CallManagerBtn v-if="peers.isCallInProgress()"
         @stop-call="onStopCall"
-    ></CallWebUI>
+    ></CallManagerBtn>
 
     <ToasterNewMessage 
         v-if="NewMessageNotification"
@@ -39,7 +39,7 @@
         ],
         components: {
             AlertComponent: defineAsyncComponent(() => import('~socializer/components/System/widgets/AlertComponent.vue')),
-            CallWebUI: defineAsyncComponent(() => import('~socializer/components/System/widgets/CallWebUI.vue')),
+            CallManagerBtn: defineAsyncComponent(() => import('~socializer/components/WebRTC2/Widgets/UI/Buttons/CallManagerBtn.vue')),
             ToasterNewMessage: defineAsyncComponent(() => import('~socializer/components/System/widgets/ToasterNewMessage.vue')),
         },
         setup() {

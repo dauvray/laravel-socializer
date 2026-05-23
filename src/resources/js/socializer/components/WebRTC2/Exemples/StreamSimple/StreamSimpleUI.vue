@@ -48,15 +48,6 @@
                         :streamData="remoteScreen" />
                 </div>
             </div>
-
-
-
-
-
-
-
-
-
         </div>
     </div>
 </template>
@@ -65,11 +56,8 @@
     import { ref, computed, watch, onMounted, defineAsyncComponent } from 'vue'
     import { useMeStore } from '~estarter/stores/me.js'
     import { usePeer2Store } from '~socializer/stores/peers2.js'
-
     import LocalMediaPlayer from '~socializer/components/WebRTC2/Widgets/Mediaplayer/LocalMediaPlayer.vue'
     import RemoteMediaPlayer from '~socializer/components/WebRTC2/Widgets/Mediaplayer/RemoteMediaPlayer.vue'
-   // import MediaBroadcastPlayer from '~socializer/components/WebRTC2/Widgets/MediaBroadcastPlayer.vue'
-
     import LocalStreamBtn from '~socializer/components/WebRTC2/Widgets/UI/Buttons/LocalStreamBtn.vue'
     import LocalCaptureBtn from '~socializer/components/WebRTC2/Widgets/UI/Buttons/LocalCaptureBtn.vue'
     import Spinner from '~estarter/components/widgets/Spinners/Spinner1.vue'
