@@ -56,6 +56,8 @@ export function usePeerMedia(ctx) {
         ctx.media.currentStream = markRaw(stream)
         ctx.media.isStreaming = true
         ctx.media.isAudioStream = true
+        ctx.ui.streamStates.isVideoEnabled = false
+        ctx.ui.streamStates.isMuted = true
         return stream
     }
 

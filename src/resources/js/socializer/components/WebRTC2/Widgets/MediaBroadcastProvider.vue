@@ -7,7 +7,8 @@
 <script setup>
 
     import { useMediaBroadcast } from '~socializer/components/WebRTC2/Composables/useMediaBroadcast.js'
-    import { onBeforeUnmount, onMounted, watch } from 'vue'
+    import { onBeforeUnmount, onMounted, watch, provide } from 'vue'
+    import { WEBRTC_API_KEY } from '~socializer/components/WebRTC2/webrtc2.config.js'
 
     const props = defineProps({
         // identifiant de la room de diffusion
@@ -26,6 +27,8 @@
     })
 
     const api = useMediaBroadcast(props.mode, props.room ?? 'app', props.options)
+    // 👇 on rend api accessible à tous les descendants
+    provide(WEBRTC_API_KEY, api)
 
     onMounted(() => {
        if(props.callbacks) {

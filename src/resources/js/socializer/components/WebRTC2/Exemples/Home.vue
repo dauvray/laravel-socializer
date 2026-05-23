@@ -3,6 +3,7 @@
 
     <!--
     Exemple d'utilisation du composant de diffusion média (MediaBroadcastProvider) avec une UI de chat simple et un dashboard de rapport
+    - mode data par defaut.
     - Le MediaBroadcastProvider gère la logique de connexion, de streaming et de gestion des utilisateurs dans une room WebRTC
     - Le ChatSimpleUI affiche une interface de chat basique utilisant les fonctionnalités de data channel du WebRTC pour envoyer et recevoir des messages
     - Le DashBoard affiche des informations sur les connexions, les flux, etc. en temps réel
@@ -18,12 +19,13 @@
             hubSlug: 'admin'
         }" 
         v-slot="webrtc">
-        <DashBoard v-bind="webrtc" class="col-md-4 m-2" />
+        <Debug v-bind="webrtc" class="col-md-4 m-2" />
         <ChatSimpleUI v-bind="webrtc" class="col-md-8 m-2" />
     </MediaBroadcastProvider>
 
     <!--
     Exemple d'utilisation du composant de diffusion média (MediaBroadcastProvider) en mode stream avec une UI de dashboard et de flux simple
+    - mode stream.
     - Le MediaBroadcastProvider gère la logique de connexion, de streaming et de gestion des utilisateurs dans une room WebRTC
     - Le DashBoard affiche des informations sur les connexions, les flux, etc. en temps réel
     - Le StreamSimpleUI affiche les flux vidéo locaux et distants reçus via le WebRTC
@@ -34,7 +36,7 @@
         :room="room"
         mode="stream"
         v-slot="webrtc">
-        <DashBoard v-bind="webrtc" />
+        <Debug v-bind="webrtc" />
         <StreamSimpleUI v-bind="webrtc"/>
     </MediaBroadcastProvider>
 
@@ -46,7 +48,7 @@ import { useBreadcrumbService } from '~estarter/services/BreadcrumbService.js'
 import MediaBroadcastProvider from '~socializer/components/WebRTC2/Widgets/MediaBroadcastProvider.vue'
 import ChatSimpleUI from '~socializer/components/WebRTC2/Exemples/ChatSimple/ChatSimpleUI.vue'
 import { useChatSimple } from '~socializer/components/WebRTC2/Exemples/ChatSimple/useChatSimple.js'
-import DashBoard from '~socializer/components/WebRTC2/Widgets/UI/Report/DashBoard.vue'
+import Debug from '~socializer/components/WebRTC2/Widgets/UI/Report/Debug.vue'
 
 import StreamSimpleUI from '~socializer/components/WebRTC2/Exemples/StreamSimple/StreamSimpleUI.vue'
 

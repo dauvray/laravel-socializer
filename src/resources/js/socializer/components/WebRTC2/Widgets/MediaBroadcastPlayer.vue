@@ -6,6 +6,7 @@
         <slot v-if="videoActive" name="video" :streamData="props.streamData">
             <VideoPlayer
                 ref="player"
+                :srcObject="props.streamData.stream"
                 :controls="false"
                 :autoplay="true"
                 :loop="false"
@@ -13,14 +14,15 @@
                 :playsinline="true"
             ></VideoPlayer>
         </slot>
-        <slot v-else name="audio" :streams="[props.streamData.stream]">
-            <audio 
+        <slot v-else name="audio" :streamData="props.streamData">
+            <AudioPlayer 
                 ref="player"
+                :srcObject="props.streamData.stream"
                 :controls="true"
                 :autoplay="true"
                 :loop="false"
                 :muted="props.streamData.metadata?.isMe || false"
-            ></audio>
+            ></AudioPlayer>
         </slot>
 
         <div class="video-tools-wrapper">
@@ -62,13 +64,18 @@
 </template>
 
 <script setup>
+    //--------------------------------------------------------
+    // dépend de MediaBroadcastProvider en parent (inject api)
+    //--------------------------------------------------------
 
-    import { ref, watch, onBeforeUnmount, defineAsyncComponent, computed, onUnmounted } from 'vue'
+    import { ref, watch, onBeforeUnmount, defineAsyncComponent, computed, onUnmounted, inject } from 'vue'
+    import { WEBRTC_API_KEY } from '~socializer/components/WebRTC2/webrtc2.config.js'
     import { usePeer2Store } from '~socializer/stores/peers2.js'
     import resizeDirective from '~socializer/directives/resizable.js'
     import draggableDirective from '~socializer/directives/draggable.js'
     import IconWidget from '~estarter/components/widgets/IconWidget.vue'
     import VideoPlayer from '~estarter/components/widgets/VideoPlayer.vue'
+    import AudioPlayer from '~estarter/components/widgets/AudioPlayer.vue'
 
     const props = defineProps({
         streamData: {
@@ -95,13 +102,12 @@
             required: false,
             default: false,
         },
-        videoEnabled: {
-            type: Boolean,
-            required: false,
-            default: true,
-        },
-
     })
+
+    const api = inject(WEBRTC_API_KEY, null)
+    if (!api) {
+        throw new Error('MediaBroadcastPlayer doit être utilisé à l\'intérieur d\'un MediaBroadcastProvider')
+    }
     
     const peerStore = usePeer2Store()
 
@@ -124,8 +130,8 @@
     const draggableOptions = {
         draggable: props.draggable,
     }
-    const muted = ref(false)
-    const videoActive = ref(props.videoEnabled)
+    const muted = ref(props.streamData.metadata.isAudioMuted)
+    const videoActive = ref(props.streamData.metadata.isVideoEnabled)
 
 
 
@@ -146,6 +152,7 @@
                 muted.value = signal.payload.isMuted
                 break
             case 'VIDEO_ACTIVE_TOGGLE':
+                console.log('signal toggle video reçu dans player', signal)
                 videoActive.value = signal.payload.isActive
                 break
             default:
@@ -185,42 +192,8 @@
         }
     }
 
-    watch(
-        // on regarde à la fois la source du flux vidéo et l'élément vidéo lui même, 
-        // car il se peut que l'un des deux ne soit pas encore prêt au moment où l'autre change
-        [() => props.streamData, player],
-        async ([streamData, playerComponent]) => {
-            if (!streamData || !playerComponent || !playerComponent.nativeVideo) return
-            if (playerComponent.nativeVideo.srcObject === streamData.stream) return
-            playerComponent.nativeVideo.srcObject = streamData.stream
-
-            const playVideo = async () => {
-                try {
-                    await playerComponent.nativeVideo.play()
-                }
-                catch (e) {
-                    console.error(e)
-                }
-            }
-
-            if (playerComponent.nativeVideo.readyState >= 1) {
-                await playVideo()
-                return
-            }
-
-            playerComponent.nativeVideo.addEventListener(
-                'loadedmetadata',
-                playVideo,
-                { once: true }
-            )
-        },
-        {
-            immediate: true,
-            flush: 'post',
-        }
-    )
-    // fais watch sur props.videoEnabled pour activer/désactiver la vidéo en fonction de cette prop (utile pour les toggles de caméra dans le StreamSimpleUI)
-    watch(() => props.videoEnabled, (newVal) => {
+    // fais watch sur api.isVideoEnabled pour activer/désactiver la vidéo en fonction de cette prop (utile pour les toggles de caméra dans le StreamSimpleUI)
+    watch(api.isVideoEnabled, (newVal) => {
         videoActive.value = newVal
     })
 

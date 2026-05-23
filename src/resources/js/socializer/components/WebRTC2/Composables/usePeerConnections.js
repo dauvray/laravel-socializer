@@ -324,6 +324,8 @@ export function usePeerConnections(ctx) {
                     type,
                     room,
                     callbackKey: ctx.contextId,
+                    isAudioMuted: ctx.ui.streamStates.isMuted,
+                    isVideoEnabled: ctx.ui.streamStates.isVideoEnabled,
                 }
             }
         }

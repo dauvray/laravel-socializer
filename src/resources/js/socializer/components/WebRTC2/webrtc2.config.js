@@ -131,3 +131,6 @@ export const ENDPOINTS = {
     /** Notifier un peer de la fermeture de la connexion */
     CLOSE_CONNECTION_TO_PEER_ID: '/close-connection-to-peer-id',
 }
+
+// ─── Provide/inject (MediaBroadcastProvider) ────────────────────────────────────
+export const WEBRTC_API_KEY = Symbol('webrtcApi')

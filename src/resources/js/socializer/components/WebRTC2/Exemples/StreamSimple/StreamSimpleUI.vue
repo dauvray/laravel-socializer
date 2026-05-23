@@ -29,11 +29,9 @@
             <div class="row">
                 <div class="col">
                     <MediaBroadcastPlayer v-if="props.api.currentStream.value" 
-                        :streamData="localStreamData"
-                        :videoEnabled="props.api.isVideoEnabled"
-                        :isMuted="props.api.isMuted">
+                        :streamData="localStreamData">
                         <template #audio="audioProps">
-                            <SpectrumAnalyzer v-bind="audioProps"></SpectrumAnalyzer>
+                            <!-- <SpectrumAnalyzer v-bind="audioProps"></SpectrumAnalyzer> -->
                         </template>
                     </MediaBroadcastPlayer>
                     <MediaBroadcastPlayer v-if="props.api.screenStream.value" 
@@ -45,7 +43,7 @@
                         :key="index" 
                         :streamData="remoteStream">
                         <template #audio="audioProps">
-                            <SpectrumAnalyzer v-bind="audioProps"></SpectrumAnalyzer>
+                            <!-- <SpectrumAnalyzer v-bind="audioProps"></SpectrumAnalyzer> -->
                         </template>
                     </MediaBroadcastPlayer>
                     <MediaBroadcastPlayer v-for="(remoteScreen, index) in remoteScreensData" 
@@ -201,6 +199,8 @@
             countViewers: props.api.usersInRoom.value.length,
             currentType: props.api.currentType.value,
             isMe: true,
+            isAudioMuted: props.api.isMuted.value,
+            isVideoEnabled: props.api.isVideoEnabled.value,
         }
     }))
 
@@ -231,6 +231,8 @@
                 countViewers: apiInstance.usersInRoom?.value?.length || apiInstance.usersInRoom?.length || 0,
                 currentType: rs.remoteType,
                 peerId: rs.peerId || rs.metadata?.peerId || null, // On vérifie les deux emplacements au cas où
+                isAudioMuted: rs.metadata?.isAudioMuted ?? false,
+                isVideoEnabled: rs.metadata?.isVideoEnabled ?? false,
             }
         }))
     })
