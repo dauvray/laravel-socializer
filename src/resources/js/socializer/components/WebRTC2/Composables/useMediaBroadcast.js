@@ -97,7 +97,10 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
         clearCurrentCallUsers, // fonction pour vider la liste des utilisateurs actuellement en appel avec moi
 
         setCallInProgress, // fonction pour définir l'état d'un appel en cours
+        
         isCallInProgress, // fonction pour vérifier s'il y a un appel en cours avec au moins un utilisateur
+        callStatus, // fonction pour obtenir l'état actuel de l'appel (idle, calling, receiving, connected, closing)
+
 
         remoteStopCall, // fonction pour gérer l'arrêt d'un appel initié à distance (ex: quand un peer distant raccroche)
    
@@ -215,7 +218,11 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
         removeCurrentCallUser,
         clearCurrentCallUsers,
         setCallInProgress,
+
+        callStatus,
         isCallInProgress,
+
+
         callState,
         callInprogress,
         remoteStopCall,

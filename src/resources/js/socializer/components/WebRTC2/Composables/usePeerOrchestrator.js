@@ -678,6 +678,10 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         return context.callMachine.callInprogress.value
     }
 
+    const callStatus = () => {
+        return context.callStatus.value
+    }
+
     const remoteStopCall = async (payload) => {
         if (!payload || typeof payload !== 'object') return
 
@@ -913,7 +917,10 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         removeCurrentCallUser,
         clearCurrentCallUsers,
         setCallInProgress,
-        isCallInProgress,  
+
+        isCallInProgress, 
+        callStatus,
+        
         remoteStopCall,
 
         handleStreamReceived,

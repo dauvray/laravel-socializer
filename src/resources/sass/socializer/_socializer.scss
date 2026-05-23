@@ -179,70 +179,70 @@ $message_width: 60%;
     flex-wrap: wrap-reverse; /* Les nouvelles vidéos apparaissent en bas */
     gap: 5px;
     width: auto;
-    
-    .draggable-video {
-        position: relative;
-        cursor: grab;
-        user-select: none;
-        @extend .bg-auto;
-        @extend .shadow; 
-        @extend .rounded;
+}  
 
-        .video-tools-wrapper {
-             @extend .position-absolute;
-             top: 5px;
-             left: 5px;
-             width: 100%;
+.draggable-video {
+    position: relative;
+    cursor: grab;
+    user-select: none;
+    @extend .bg-auto;
+    @extend .shadow; 
+    @extend .rounded;
 
-            .video-tools {
-                display: flex;
-               
-                .user-info-wrapper {
-                    flex-grow: 1;
-
-                    .user-info {
-                        @extend .badge;
-                        @extend .text-bg-dark;
-                    }
-                }
-
-                .video-btns {
-                    display: none;
-                    @extend .btn-group;
-                    margin-bottom: map-get($spacers, 3);
-    
-                    button {
-                        @extend .btn;
-                        @extend .btn-sm;
-                        @extend .btn-outline-dark;
-                    }
-                }
-
-            }
-        }
-
-        .video-controls {
-            @extend .btn-group;
-            @extend .btn-group-sm;
-            display: none;
-            position: absolute;
-            top: 10px;
-            right: 5px;
-            z-index: 2;
-        }
-
-        &:hover {
-            .video-controls {
-                display: block!important;
-            }
-        }
-
-        video {
+    .video-tools-wrapper {
+            @extend .position-absolute;
+            top: 5px;
+            left: 5px;
             width: 100%;
-            height: auto;
-            @extend .rounded;
-            cursor: pointer;
+
+        .video-tools {
+            display: flex;
+            
+            .user-info-wrapper {
+                flex-grow: 1;
+
+                .user-info {
+                    @extend .badge;
+                    @extend .text-bg-dark;
+                }
+            }
+
+            .video-btns {
+                display: none;
+                @extend .btn-group;
+                margin-bottom: map-get($spacers, 3);
+
+                button {
+                    @extend .btn;
+                    @extend .btn-sm;
+                    @extend .btn-outline-dark;
+                }
+            }
+
         }
+    }
+
+    .video-controls {
+        @extend .btn-group;
+        @extend .btn-group-sm;
+        display: none;
+        position: absolute;
+        top: 10px;
+        right: 5px;
+        z-index: 2;
+    }
+
+    &:hover {
+        .video-controls {
+            display: block!important;
+        }
+    }
+
+    video {
+        width: 100%;
+        height: auto;
+        @extend .rounded;
+        cursor: pointer;
     }
 }
 
@@ -261,12 +261,12 @@ $message_width: 60%;
     position: sticky;
     z-index: 10;
     width: auto;
+    @extend .btn-group;
 
     button {
         @extend .btn;
         @extend .btn-secondary;
         @extend .btn-sm;
-        @extend .rounded-circle;
     }
 
     .btn-stop-call {

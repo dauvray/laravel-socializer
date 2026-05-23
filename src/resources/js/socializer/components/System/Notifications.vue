@@ -10,7 +10,9 @@
         ></component>
     </Teleport>
 
-    <CallManagerBtn v-if="peers.isCallInProgress()"
+    <CallManagerBtn 
+        v-if="callStatus !== 'idle'"
+        :status="callStatus"
         @stop-call="onStopCall"
     ></CallManagerBtn>
 
@@ -80,6 +82,9 @@
                 if(this.me) {
                     return this.me.channel
                 }
+            },
+            callStatus: function() {
+                return this.peers.callStatus()
             },
         },
 

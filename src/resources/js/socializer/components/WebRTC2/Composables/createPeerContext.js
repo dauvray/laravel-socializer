@@ -138,7 +138,10 @@ export function createPeerContext({ type, room, options }) {
         onAirRoom: computed(() => session.onAirRoom),
         currentCallRoomId: computed(() => session.currentCallRoomId),
         currentCallUsers: computed(() => session.currentCallUsers),
+
         callInprogress: callMachine.callInprogress,
+        callStatus: computed(() => callMachine.callState.value),
+
         usersInRoom: computed(() => connection.usersInRoom),
         // Tous les utilisateurs dans la room, moi compris.
         // Pas d'exclusion du hub : c'est `usersInRoom` brut + mySlug (sans doublon).
