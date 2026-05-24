@@ -2,21 +2,19 @@
     <div class="card">
         <div class="card-body">
             <div class="btn-group btn-group-sm" role="group">
-                <LocalStreamBtn
+                <GroupLocalStreamBtn
                     :isStreaming="props.api.isStreaming.value"
                     :streamStates="props.api.streamStates.value"
+                    :isCapturing="props.api.isCapturing.value"
                     @start_video="startWebcamStream"
                     @start_audio="startAudioStream"
                     @stop_video="stopWebcamStream"
                     @stop_audio="stopAudioStream"
                     @toggle_audio="onToggleAudioMute"
                     @toggle_video="onToggleVideoVisibility"
-                ></LocalStreamBtn>
-                <LocalCaptureBtn
-                    :isCapturing="props.api.isCapturing.value"
-                    @start-stream="startScreenCapture"
-                    @stop-stream="stopScreenCapture">
-                </LocalCaptureBtn>
+                    @start-screen="startScreenCapture"
+                    @stop-screen="stopScreenCapture"
+                ></GroupLocalStreamBtn>
             </div> 
             
             <div class="row">
@@ -58,8 +56,7 @@
     import { usePeer2Store } from '~socializer/stores/peers2.js'
     import LocalMediaPlayer from '~socializer/components/WebRTC2/Widgets/Mediaplayer/LocalMediaPlayer.vue'
     import RemoteMediaPlayer from '~socializer/components/WebRTC2/Widgets/Mediaplayer/RemoteMediaPlayer.vue'
-    import LocalStreamBtn from '~socializer/components/WebRTC2/Widgets/UI/Buttons/LocalStreamBtn.vue'
-    import LocalCaptureBtn from '~socializer/components/WebRTC2/Widgets/UI/Buttons/LocalCaptureBtn.vue'
+    import GroupLocalStreamBtn from '~socializer/components/WebRTC2/Widgets/UI/Buttons/GroupLocalStreamBtn.vue'
     import Spinner from '~estarter/components/widgets/Spinners/Spinner1.vue'
 
     const props = defineProps({

@@ -38,25 +38,26 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
         currentCallRoomId, // roomId spécifique pour les appels audio/vidéo (différent de currentRoom qui est la room "logique")
         currentCallUsers, // liste des slugs des utilisateurs actuellement en appel avec moi (utile pour gérer les connexions et l'UI d'appel)
         topology, // topologie de diffusion : 'mesh' (pair à pair), 'star' (étoile) ou 'sfu' (serveur de diffusion)
-        hubSlug, // slug du hub de diffusion (si applicable)
+        hubSlug, // slug du hub de diffusion
         isHub, // le peer est-il le hub de diffusion ?
-        isHubConnected, // le hub de diffusion est-il présent dans la room (utile pour les clients en topologie star)
+        isHubConnected, // le hub de diffusion est-il présent dans la room.
 
         // connection
-        usersInRoom, // liste des utilisateurs présents dans la room 
-
+        usersInRoom, // liste des utilisateurs remote présents dans la room 
+        allUsersInRoom, // liste de tous les utilisateurs présents dans la room (y compris le local)
+        
         // media
         currentStream, // flux média local (MediaStream) créé par getUserMedia
         screenStream, // flux de partage d'écran local (MediaStream) créé par getDisplayMedia
-        isStreaming, // indique si un flux est actuellement diffusé (utile pour l'UI et la logique métier)
-        isCapturing, // indique si on est en train de partager son écran (utile pour l'UI et la logique métier)
-        isAudioStream, // indique si le flux local est un flux audio (utile pour différencier les comportements et l'UI entre audio et vidéo)
-        remoteStreams, // liste des flux médias distants reçus (utile pour gérer les éléments vidéo et l'UI d'appel)
-        remoteScreens, // liste des flux de partage d'écran distants reçus (utile pour gérer les éléments vidéo et l'UI d'appel)
+        isStreaming, // indique si un flux est actuellement diffusé
+        isCapturing, // indique si on est en train de partager son écran
+        isAudioStream, // indique si le flux local est un flux audio
+        remoteStreams, // liste des flux médias distants reçus
+        remoteScreens, // liste des flux de partage d'écran distants reçus
 
         // ui
-        isMuted, // état muet/non muet du flux local (utile pour l'UI et la logique métier)
-        isVideoEnabled, // état vidéo activée/désactivée du flux local (utile pour l'UI et la logique métier)
+        isMuted, // état muet/non muet du flux local
+        isVideoEnabled, // état vidéo activée/désactivée du flux local
         streamStates, // objet regroupant les états liés au flux local (isMuted, isVideoEnabled, etc.)
 
         // meStore

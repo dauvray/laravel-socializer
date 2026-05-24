@@ -10,7 +10,7 @@
 
 <script>
     import IconWidget from '~estarter/components/widgets/IconWidget.vue'
-    import SpectrumAnalyzer from '~socializer/components/AudioRoom/widgets/SpectrumAnalyzer.vue'
+    import SpectrumAnalyzer from '~socializer/components/WebRTC2/Widgets/UI/Audio/SpectrumAnalyzer.vue'
 
     export default {
         name: 'AudioDefaultUserButtonUI',
