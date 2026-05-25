@@ -3,17 +3,7 @@
         <div class="card-body">
             <div class="btn-group btn-group-sm" role="group">
                 <GroupLocalStreamBtn
-                    :isStreaming="props.api.isStreaming.value"
-                    :streamStates="props.api.streamStates.value"
-                    :isCapturing="props.api.isCapturing.value"
-                    @start_video="startWebcamStream"
-                    @start_audio="startAudioStream"
-                    @stop_video="stopWebcamStream"
-                    @stop_audio="stopAudioStream"
-                    @toggle_audio="onToggleAudioMute"
-                    @toggle_video="onToggleVideoVisibility"
-                    @start-screen="startScreenCapture"
-                    @stop-screen="stopScreenCapture"
+                    :api="api"
                 ></GroupLocalStreamBtn>
             </div> 
             
@@ -132,52 +122,6 @@
             emitter: 'StreamSimpleUI',
             roomId: conn?.peer,
             payload: data
-        })
-    }
-
-    /**
-     * Methodes de contrôle des flux locaux (webcam + audio) et de partage d’écran
-     */
-
-    const startWebcamStream = () => {
-        props.api.getWebcamStream()
-    }
-
-    const stopWebcamStream = () => {
-        props.api.stopStream()
-    }
-
-    const startAudioStream = () => {
-        props.api.getAudioStream()
-    }
-
-    const stopAudioStream = () => {
-        props.api.stopAudio()
-    }
-
-    const startScreenCapture = () => {
-        props.api.startCapture()
-    }
-
-    const stopScreenCapture = () => {
-        props.api.stopCapture()
-    }
-
-    const onToggleAudioMute = () => {
-        props.api.toggleAudioMute()
-        props.api.sendData({
-            roomId: props.api.onAirRoom.value,
-            type: 'AUDIO_MUTE_TOGGLE', 
-            isMuted: props.api.isMuted.value,
-        })
-    }
-
-    const onToggleVideoVisibility = () => {
-        props.api.toggleVideoVisibility()
-        props.api.sendData({
-            roomId: props.api.onAirRoom.value,
-            type: 'VIDEO_ACTIVE_TOGGLE', 
-            isActive: props.api.isVideoEnabled.value,
         })
     }
 

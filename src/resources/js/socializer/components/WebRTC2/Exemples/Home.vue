@@ -32,19 +32,21 @@
      - les callbacks ne sont pas nécessaires ici car le StreamSimpleUI gère déjà en interne les événements de réception de flux et de données pour mettre à jour l'interface.
     -->
     <MediaBroadcastProvider
+        class="d-flex"
         :users="chatters"
         :room="room"
         mode="stream"
         v-slot="webrtc">
-        <Debug v-bind="webrtc" />
-        <StreamSimpleUI v-bind="webrtc"/>
+        <Debug v-bind="webrtc" class="col-md-4 m-2"/>
+        <StreamSimpleUI v-bind="webrtc" class="col-md-8 m-2"/>
     </MediaBroadcastProvider>
 
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed } from 'vue'
 import { useBreadcrumbService } from '~estarter/services/BreadcrumbService.js'
+import { useReverbPresence } from '~socializer/components/System/composables/useReverbChannel.js'
 import MediaBroadcastProvider from '~socializer/components/WebRTC2/Widgets/Mediaplayer/MediaBroadcastProvider.vue'
 import ChatSimpleUI from '~socializer/components/WebRTC2/Exemples/ChatSimple/ChatSimpleUI.vue'
 import { useChatSimple } from '~socializer/components/WebRTC2/Exemples/ChatSimple/useChatSimple.js'
@@ -54,14 +56,14 @@ import StreamSimpleUI from '~socializer/components/WebRTC2/Exemples/StreamSimple
 
 // --- State (Reactivité) ---
 const room = ref('room-test')
-const chatters = ref([])
-
-// --- Hooks & Services ---
-const breadcrumbService = useBreadcrumbService()
-const { addNewMessage } = useChatSimple(room.value)
-
-// --- Computed ---
 const channel = computed(() => 'server.53d35c4e73c2d')
+
+// --- Services ---
+// Remplace 'created' : en script setup, le code s'exécute à l'initialisation
+useBreadcrumbService().setBreadcrumb()
+const { addNewMessage } = useChatSimple(room.value)
+const { users: chatters } = useReverbPresence(channel)
+
 //-----------------
 // Methods 
 //-----------------
@@ -86,42 +88,4 @@ const dataCallbacks = {
     onConnectionClose: handleClose
 }
 
-//-----------------
-// Reverb
-//-----------------
-
-const initChannelEvents = () => {
-    if (channel.value) {
-        // On utilise Echo (assumé global ici comme dans ton exemple)
-        Echo.leave(channel.value)
-        Echo.join(channel.value)
-            .here((users) => {
-                chatters.value = users
-            })
-            .joining((user) => {
-                chatters.value = [...chatters.value, user]
-            })
-            .leaving((user) => {
-                chatters.value = chatters.value.filter(item => user.id !== item.id)
-            })
-            .error((error) => {
-                console.error(error)
-            })
-    }
-}
-
-// --- Lifecycle Hooks ---
-
-// Remplace 'created' : en script setup, le code s'exécute à l'initialisation
-breadcrumbService.setBreadcrumb()
-
-onMounted(() => {
-    initChannelEvents()
-})
-
-onBeforeUnmount(() => {
-    if (channel.value) {
-        Echo.leave(channel.value)
-    }
-})
 </script>
