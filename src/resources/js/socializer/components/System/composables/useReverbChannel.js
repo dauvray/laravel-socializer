@@ -45,6 +45,7 @@ export function useReverbChannel(channelName, options = {}) {
 
     // listeners ajoutés dynamiquement après le join via la méthode `listen()`
     const dynamicListeners = new Map()
+    const dynamicWhispers = new Map() 
 
     // --- Lifecycle ---------------------------------------------------------
 
@@ -103,6 +104,11 @@ export function useReverbChannel(channelName, options = {}) {
         for (const [event, handlers] of dynamicListeners.entries()) {
             handlers.forEach(h => ch.listen(event, h))
         }
+
+        // Whispers dynamiques (client events) ← NOUVEAU
+        for (const [event, handlers] of dynamicWhispers.entries()) {
+            handlers.forEach(h => ch.listenForWhisper(event, h))
+        }
     }
 
     const join = () => {
@@ -147,6 +153,18 @@ export function useReverbChannel(channelName, options = {}) {
         currentChannel?.whisper?.(event, payload)
     }
 
+    /** Ajoute dynamiquement un whisper listener (persiste à travers les reconnexions). */
+    const listenForWhisper = (event, callback) => {
+        if (!dynamicWhispers.has(event)) dynamicWhispers.set(event, [])
+        dynamicWhispers.get(event).push(callback)
+        currentChannel?.listenForWhisper?.(event, callback)
+    }
+
+    const stopListeningForWhisper = (event) => {
+        currentChannel?.stopListeningForWhisper?.(event)
+        dynamicWhispers.delete(event)
+    }
+
     // --- Auto lifecycle ----------------------------------------------------
 
     if (autoJoin) {
@@ -167,6 +185,8 @@ export function useReverbChannel(channelName, options = {}) {
         leave,
         listen,
         stopListening,
+        listenForWhisper, 
+        stopListeningForWhisper, 
         whisper,
         channel: () => currentChannel,
     }

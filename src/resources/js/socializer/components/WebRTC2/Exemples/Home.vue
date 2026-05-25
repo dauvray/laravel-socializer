@@ -7,7 +7,7 @@
     - Le MediaBroadcastProvider gère la logique de connexion, de streaming et de gestion des utilisateurs dans une room WebRTC
     - Le ChatSimpleUI affiche une interface de chat basique utilisant les fonctionnalités de data channel du WebRTC pour envoyer et recevoir des messages
     - Le DashBoard affiche des informations sur les connexions, les flux, etc. en temps réel
-    - les callbacks passés au MediaBroadcastProvider permettent de gérer les événements de réception de données, d'ouverture et de fermeture de connexions, etc. et d'y réagir dans l'UI (ici, on ajoute les messages reçus au chat local)
+    - les callbacks passées au MediaBroadcastProvider permettent de gérer les événements de réception de données, d'ouverture et de fermeture de connexions, etc. et d'y réagir ICI 
     -->
     <MediaBroadcastProvider
         class="d-flex"
@@ -44,10 +44,13 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, provide } from 'vue'
 import { useBreadcrumbService } from '~estarter/services/BreadcrumbService.js'
-import { useReverbPresence } from '~socializer/components/System/composables/useReverbChannel.js'
+
 import MediaBroadcastProvider from '~socializer/components/WebRTC2/Widgets/Mediaplayer/MediaBroadcastProvider.vue'
+import { useReverbPresence } from '~socializer/components/System/composables/useReverbChannel.js'
+import { REVERB_CHANNEL } from '~socializer/components/System/system.config.js'
+
 import ChatSimpleUI from '~socializer/components/WebRTC2/Exemples/ChatSimple/ChatSimpleUI.vue'
 import { useChatSimple } from '~socializer/components/WebRTC2/Exemples/ChatSimple/useChatSimple.js'
 import Debug from '~socializer/components/WebRTC2/Widgets/UI/Report/Debug.vue'
@@ -58,11 +61,16 @@ import StreamSimpleUI from '~socializer/components/WebRTC2/Exemples/StreamSimple
 const room = ref('room-test')
 const channel = computed(() => 'server.53d35c4e73c2d')
 
+// Un seul useReverbPresence pour toute la page
+const reverb = useReverbPresence(channel)
+const { users: chatters } = reverb
+// On met le canal à disposition de tout le sous-arbre
+provide(REVERB_CHANNEL, reverb)
+
 // --- Services ---
 // Remplace 'created' : en script setup, le code s'exécute à l'initialisation
 useBreadcrumbService().setBreadcrumb()
 const { addNewMessage } = useChatSimple(room.value)
-const { users: chatters } = useReverbPresence(channel)
 
 //-----------------
 // Methods 
@@ -87,5 +95,4 @@ const dataCallbacks = {
     onConnectionOpen: handleOpen,
     onConnectionClose: handleClose
 }
-
 </script>

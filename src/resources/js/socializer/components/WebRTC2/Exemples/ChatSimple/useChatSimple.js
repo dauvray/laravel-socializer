@@ -1,4 +1,8 @@
-import { ref, onScopeDispose } from 'vue'
+import { ref, onScopeDispose, watch } from 'vue'
+import { storeToRefs } from 'pinia'
+import { useTypingIndicator } from '~socializer/components/Chat/composables/useTypingIndicator.js'
+import { useMeStore } from '~estarter/stores/me.js'
+
 // local store pour les chats (on pourrait faire mieux avec un vrai store, mais c'est pas le sujet ici)
 // la clé de la map est le nom de la room, ce qui permet d'avoir une instance de chat par room
 // on stocke les messages dans une ref pour que ce soit réactif, et on expose une fonction pour ajouter un message
@@ -63,6 +67,16 @@ export function useChatSimple(room = '_default_', api = {}) {
 
     const messageToSend = ref('')
 
+    const meStore = useMeStore()
+    const { getMe: currentUser } = storeToRefs(meStore)
+
+
+    const { typingUsers, notifyTyping, stopTyping } = useTypingIndicator(currentUser)
+
+
+
+    const onInput = () => notifyTyping()
+
     /*----------------------
         * Logique métier
     ----------------------*/
@@ -87,6 +101,7 @@ export function useChatSimple(room = '_default_', api = {}) {
         addNewMessage(msg)
         api.sendData(msg) // passé en argument, permet d'utiliser des méthodes de useMediaBroadcast (ex: sendDataToPeer) ou d'autres méthodes de transport selon les besoins
         messageToSend.value = ''
+        stopTyping()
     }
 
     // Nettoyage auto quand le composant qui consomme ce composable est détruit
@@ -106,5 +121,7 @@ export function useChatSimple(room = '_default_', api = {}) {
         addNewMessage,   // toujours utile pour injecter des messages entrants
         messageToSend,
         send,
+        typingUsers,
+        onInput,
     }
 }

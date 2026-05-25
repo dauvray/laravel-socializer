@@ -7,17 +7,32 @@
                 </li>
             </ul>
             <div class="input-group mb-3">
-                <input type="text" class="form-control" placeholder="Votre message" v-model="messageToSend">
+                <input type="text" 
+                    class="form-control" 
+                    placeholder="Votre message" 
+                    v-model="messageToSend"
+                    @input="onInput"
+                    @keyup.enter="send">
                 <button type="button" class="btn btn-primary" @click="send">Send</button>
             </div>
+            <p v-if="typingUsers.length" class="text-muted small fst-italic">
+                <template v-if="typingUsers.length === 1">
+                    {{ typingUsers[0] }} est en train d'écrire…
+                </template>
+                <template v-else-if="typingUsers.length <= 3">
+                    {{ typingUsers.join(', ') }} sont en train d'écrire…
+                </template>
+                <template v-else>
+                    Plusieurs personnes sont en train d'écrire…
+                </template>
+            </p>
         </div>
     </div>
 </template>
 
 <script setup>
-
     import { useChatSimple } from '~socializer/components/WebRTC2/Exemples/ChatSimple/useChatSimple.js'
-    
+
     const props = defineProps({
         api: Object,
     })
@@ -29,6 +44,8 @@
             addNewMessage, 
             messageToSend,
             send,
+            typingUsers,
+            onInput,
         } = useChatSimple(
                 props.api.currentRoom.value, // état de contexte de room sélectionné
                 props.api // passé en argument, permet d'utiliser des méthodes de useMediaBroadcast (ex: sendDataToPeer) ou d'autres méthodes de transport selon les besoins
