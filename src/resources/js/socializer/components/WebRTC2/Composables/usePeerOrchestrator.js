@@ -187,16 +187,16 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
      */
 
     const initializePeerConnection = (callbacks) => {
-    // ── En topologie star, on intercepte le callback onDataReceived ──────────
-    //
-    // Pourquoi ? Quand le hub reçoit un message d'un client avec __starRoute: true,
-    // ce n'est PAS un message "métier" → c'est une instruction de routage.
-    // Le hub doit retransmettre le payload aux vrais destinataires, sans remonter
-    // le message brut à la couche feature (useMediaBroadcast).
-    //
-    // On wrappe donc le callback onDataReceived AVANT de le stocker dans le contexte.
-    // ─────────────────────────────────────────────────────────────────────────
-    const wrappedCallbacks = { ...callbacks }
+        // ── En topologie star, on intercepte le callback onDataReceived ──────────
+        //
+        // Pourquoi ? Quand le hub reçoit un message d'un client avec __starRoute: true,
+        // ce n'est PAS un message "métier" → c'est une instruction de routage.
+        // Le hub doit retransmettre le payload aux vrais destinataires, sans remonter
+        // le message brut à la couche feature (useMediaBroadcast).
+        //
+        // On wrappe donc le callback onDataReceived AVANT de le stocker dans le contexte.
+        // ─────────────────────────────────────────────────────────────────────────
+        const wrappedCallbacks = { ...callbacks }
 
         if (context.topology.value === 'star' && typeof callbacks.onDataReceived === 'function') {
             const originalOnDataReceived = callbacks.onDataReceived

@@ -1,5 +1,6 @@
 <template>
     <h1><i class="lab la-vuejs text-success"></i> Webrtc</h1>
+
     <!--
     Exemple d'utilisation du composant de diffusion média (MediaBroadcastProvider) avec une UI de chat simple et un dashboard de rapport
     - mode data par defaut.
@@ -12,7 +13,7 @@
         class="d-flex"
         :users="users"
         :room="room"
-        :callbacks="dataCallbacks"
+        :callbacks="chatDataCallbacks"
         :options="{
             topology: 'star',
             hubSlug: 'admin'
@@ -50,6 +51,8 @@ import MediaBroadcastProvider from '~socializer/components/WebRTC2/Widgets/Media
 import { useReverbPresence } from '~socializer/components/System/composables/useReverbChannel.js'
 import { REVERB_CHANNEL } from '~socializer/components/System/system.config.js'
 
+import DataSimpleUI from '~socializer/components/WebRTC2/Exemples/DataSimpleUI.vue'
+
 import ChatSimpleUI from '~socializer/components/WebRTC2/Exemples/ChatSimple/ChatSimpleUI.vue'
 import { useChatSimple } from '~socializer/components/WebRTC2/Exemples/ChatSimple/useChatSimple.js'
 
@@ -75,23 +78,36 @@ const { addNewMessage } = useChatSimple(room.value)
 // Methods 
 //-----------------
 
-// data
-const handleData = (data) => {
+// Data Callbacks
+const dataCallbacks = {
+    onDataReceived: (data) => {
+        console.log('Data reçue du serveur :', data)
+    },
+    onConnectionOpen: (conn) => {
+        console.log('connection data ouverte')
+    },
+    onConnectionClose: (conn) => {
+        console.log('connection data fermée')
+    }
+}
+
+// Chat Callbacks
+const handleChatData = (data) => {
     // Ici, on reçoit une data du serveur (via Echo), et on l'ajoute au chat local
     addNewMessage(data)
 }
 
-const handleOpen = (conn) => {
+const handleChatOpen = (conn) => {
     console.log('connection data chat ouverte dans chat')
 }
 
-const handleClose = (conn) => {
+const handleChatClose = (conn) => {
     console.log('connection data chat fermée dans chat')
 }
 
-const dataCallbacks = {
-    onDataReceived: handleData,
-    onConnectionOpen: handleOpen,
-    onConnectionClose: handleClose
+const chatDataCallbacks = {
+    onDataReceived: handleChatData,
+    onConnectionOpen: handleChatOpen,
+    onConnectionClose: handleChatClose
 }
 </script>
