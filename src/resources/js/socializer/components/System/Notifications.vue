@@ -10,224 +10,211 @@
         ></component>
     </Teleport>
 
-    <CallManagerBtn 
+    <CallManagerBtn
         v-if="callStatus !== 'idle'"
         :status="callStatus"
         @stop-call="onStopCall"
     ></CallManagerBtn>
 
-    <ToasterNewMessage 
+    <ToasterNewMessage
         v-if="NewMessageNotification"
         :event="NewMessageNotification"
         @closed="NewMessageNotification = null"
     ></ToasterNewMessage>
-
 </template>
 
-<script>
+<script setup>
+import { ref, computed, watch, onMounted, onUnmounted, inject, defineAsyncComponent } from 'vue'
+import { storeToRefs } from 'pinia'
+import { useMeStore } from '~estarter/stores/me.js'
+import { usePeer2Store } from '~socializer/stores/peers2.js'
+import { useConversationsStore } from '~socializer/stores/conversations.js'
+import { useMediaBroadcast } from '~socializer/components/WebRTC2/Composables/useMediaBroadcast.js'
+import { useReverbChannel } from '~socializer/components/System/composables/useReverbChannel.js'
 
-    import { mapActions, mapState } from 'pinia'
-    import { ref } from 'vue'
-    import { useMeStore } from '~estarter/stores/me.js'
-    import { usePeer2Store } from '~socializer/stores/peers2.js'
-    import { useMediaBroadcast } from '~socializer/components/WebRTC2/Composables/useMediaBroadcast.js'
-    import { useConversationsStore } from '~socializer/stores/conversations.js'
-    import { defineAsyncComponent } from 'vue'
+// Composants async (auto-enregistrés en script setup)
+const AlertComponent = defineAsyncComponent(() =>
+    import('~socializer/components/System/widgets/AlertComponent.vue')
+)
+const CallManagerBtn = defineAsyncComponent(() =>
+    import('~socializer/components/WebRTC2/Widgets/UI/Buttons/CallManagerBtn.vue')
+)
+const ToasterNewMessage = defineAsyncComponent(() =>
+    import('~socializer/components/System/widgets/ToasterNewMessage.vue')
+)
 
-    export default {
-        name: 'Notifications',
-        inject: [
-            "eventBus",
-        ],
-        components: {
-            AlertComponent: defineAsyncComponent(() => import('~socializer/components/System/widgets/AlertComponent.vue')),
-            CallManagerBtn: defineAsyncComponent(() => import('~socializer/components/WebRTC2/Widgets/UI/Buttons/CallManagerBtn.vue')),
-            ToasterNewMessage: defineAsyncComponent(() => import('~socializer/components/System/widgets/ToasterNewMessage.vue')),
-        },
-        setup() {
-            const notificationComponent = ref(null)
-            const notificationComponentProps = ref(null)
-            const NewMessageNotification= ref(null)
-            const heartbeatIntervalId = ref(null)
-            const peers = useMediaBroadcast()
-        
-            return {
-                peers: {...peers},
-                notificationComponent,
-                notificationComponentProps,
-                NewMessageNotification,
-                heartbeatIntervalId,
-            }
-        },
-        watch: {
-            userChannel(value) {
-                if(value) {
-                    this.initUserChannel()
-                }
-            },
-            me(value) {
-                if(value) {
-                    this.setOnlineStatus() 
-                }
-            },
-        },
-        computed : {
-            ...mapState(useMeStore, {
-                me: 'getMe',
-            }),
-            ...mapState(usePeer2Store, {
-                players: 'getPlayers',
-            }),
-            userChannel: function() {
-                if(this.me) {
-                    return this.me.channel
-                }
-            },
-            callStatus: function() {
-                return this.peers.callStatus()
-            },
+// Inject
+const eventBus = inject('eventBus')
+
+// Stores
+const meStore = useMeStore()
+const peerStore = usePeer2Store()
+const conversationsStore = useConversationsStore()
+
+// On garde la réactivité des getters avec storeToRefs
+const { getMe: me } = storeToRefs(meStore)
+// Actions : destructuration directe (pas besoin de storeToRefs)
+const { addUnreadNotifications } = meStore
+const { dispatchSignal } = peerStore
+const { addConversation } = conversationsStore
+
+// Composable
+const peers = useMediaBroadcast()
+
+// State local
+const notificationComponent = ref(null)
+const notificationComponentProps = ref(null)
+const NewMessageNotification = ref(null)
+const heartbeatIntervalId = ref(null)
+
+// Computed
+const userChannel = computed(() => me.value?.channel)
+const callStatus = computed(() => peers.callStatus())
+
+// Watchers
+watch(me, (value) => {
+    if (value) setOnlineStatus()
+})
+
+useReverbChannel(userChannel, {
+    type: 'private',
+
+    // Laravel notifications
+    onNotification: () => {
+        addUnreadNotifications(1)
+    },
+
+    listeners: {
+        // display alerts to user
+        '.AlertToUser': (event) => {
+            if (peers.isInviteDuplicate(event?.options?.inviteId)) return
+            notificationComponentProps.value = event
+            notificationComponent.value = AlertComponent
         },
 
-        async mounted() {
-            this.peers.initialize({
-                onStreamReceived: this.peers.handleStreamReceived,
-                onConnectionClose: this.peers.handleStreamRemoved
+        // connect to caller user and send localPeerId
+        '.AskToPeerID': (event) => {
+            dispatchSignal({
+                emitter: 'Notifications',
+                roomId: `${event.type}-${event.room}`,
+                type: 'PEER_CONNECTION_REQUEST',
+                payload: event,
             })
-
-            this.eventBus.$on('call-user', this.onStartCall)
-            
-            this.heartbeatIntervalId = setInterval(() => { 
-                this.setOnlineStatus() 
-            }, 120000) // every 2 minutes
         },
 
-        async unmounted() {
-            try {
-                const currentUsers = this.peers.currentCallUsers?.value ?? [];
-                if (currentUsers.length > 0 || this.peers.isCallInProgress()) {
-                    await this.peers.stopCallWithPeers([...currentUsers], false)
-                }
-            } finally {
-                Echo.leave(this.userChannel)
-                this.eventBus.$off('call-user', this.onStartCall)
+        // receive remotePeerId and connect to called user
+        '.ResponseToPeerID': (event) => {
+            dispatchSignal({
+                emitter: 'Notifications',
+                roomId: `${event.type}-${event.room}`,
+                type: 'PEER_CONNECT_TO_REMOTE_PEER',
+                payload: event,
+            })
+        },
 
-                this.peers.clearAllCallInviteRetries()
-                this.peers.clearSeenInvites()
+        // receive authorization to peer connection
+        '.ResponseToAuthorizationPeer': async (event) => {
+            peers.stopCallInviteRetry(event?.options?.inviteId)
 
-                clearInterval(this.heartbeatIntervalId)
-                this.heartbeatIntervalId = null
+            if (!event.status) {
+                window.AWN.info(`${event.fromUserSlug} est injoignable`)
+                eventBus.$emit('close-call', [
+                    { userSlug: event.fromUserSlug, type: event?.options?.type || 'visio' },
+                ])
+                return
             }
+            await peers.openCallBetweenPeer({
+                ...event,
+                options: { ...event.options },
+            })
         },
 
-        methods: {
-            ...mapActions(useConversationsStore, [
-                'addConversation',
-            ]),
-            ...mapActions(useMeStore, [
-                'addUnreadNotifications',
-            ]),
-            ...mapActions(usePeer2Store, [
-                'dispatchSignal',
-            ]),
-            initUserChannel() {
-                if(this.userChannel) {
-                    Echo.leave(this.userChannel)
-                    Echo.private(this.userChannel)
-                        // laravel notifications
-                        .notification((evt) => {
-                           this.addUnreadNotifications(1)
-                        })
-                        // display alerts to user
-                        .listen('.AlertToUser', (event) => {
-                            // stocke les invitations pour relancer si bessoin
-                            if (this.peers.isInviteDuplicate(event?.options?.inviteId)) return
-                            this.notificationComponentProps = event
-                            this.notificationComponent = 'AlertComponent'
-                        })
-                        // connect to caller user and send localPeerId
-                        .listen('.AskToPeerID', (event) => { 
-                            this.dispatchSignal({ 
-                                emitter: 'Notifications',
-                                roomId: `${event.type}-${event.room}`,
-                                type: 'PEER_CONNECTION_REQUEST', 
-                                payload: event
-                            })
-                        })
-                        // receive remotePeerId and connect to called user
-                        .listen('.ResponseToPeerID', (event) => {
-                            this.dispatchSignal({ 
-                                emitter: 'Notifications',
-                                roomId: `${event.type}-${event.room}`,
-                                type: 'PEER_CONNECT_TO_REMOTE_PEER', 
-                                payload: event
-                            })
-                        })
-                        // receive authorization to peer connection
-                        .listen('.ResponseToAuthorizationPeer', async (event) => {
-                            // Si on reçoit une réponse à une invitation, on stop les retries d'invitations pour éviter les doublons
-                            this.peers.stopCallInviteRetry(event?.options?.inviteId)
+        '.CloseConnectionToPeerID': (event) => {
+            peers.remoteStopCall(event)
+        },
 
-                            if (!event.status) {
-                                window.AWN.info(`${event.fromUserSlug} est injoignable`)
-                                this.eventBus.$emit('close-call', [{ userSlug: event.fromUserSlug, type: event?.options?.type || 'visio' }])
-                                return
-                            }
-                            await this.peers.openCallBetweenPeer({
-                                ...event,
-                                options: {
-                                    ...event.options,
-                                },
-                            })
-                        })
-                        .listen('.CloseConnectionToPeerID', (event) => {
-                            this.peers.remoteStopCall(event)
-                        })
-                        .listen('.ChatInvitation', (event) => {
-                            this.addConversation(event)
-                            AWN.info('Vous avez été invité dans une nouvelle conversation', {durations: {info: 0}})
-                        })
-                        .listen('.NewChatMessageNotification', (event) => {
-                            this.NewMessageNotification = event
-                        })
-                        // Eventbus for components
-                        .listen('.EventBusNotification', (event) => {
-                            this.eventBus.$emit(event.type, event.payload)
-                        });
-                }
-            },
-            async onResponseAlert(fromUserSlug, options, status) {
-                this.notificationComponent = null
-                switch (options.action) {
-                    case 'peer-access-permission': {
-                        await this.peers.acceptCallFromPeer({
-                            fromUserSlug,
-                            options: {
-                                ...options,
-                            },
-                            status,
-                        })
-                        break
-                    }
-                    default:
-                        break
-                }
-            },
-            setOnlineStatus() {
-                Echo.private(this.me.channel).whisper('ping', {
-                    timestamp: Date.now(),
-                    userId: this.me.id,
-                });
-            },
-            async onStopCall() {
-                const currentUsers = this.peers.currentCallUsers?.value ?? [];
-                const usersToStop = [...currentUsers];
-                this.eventBus.$emit('close-call', usersToStop)
-                await this.peers.stopCallWithPeers(usersToStop)
-            },
-            async onStartCall(toUserSlug, type) {
-                await this.peers.startCallWithPeer({toUserSlug, type})
-            },            
-        }
+        '.ChatInvitation': (event) => {
+            addConversation(event)
+            AWN.info('Vous avez été invité dans une nouvelle conversation', {
+                durations: { info: 0 },
+            })
+        },
+
+        '.NewChatMessageNotification': (event) => {
+            NewMessageNotification.value = event
+        },
+
+        // Eventbus for components
+        '.EventBusNotification': (event) => {
+            eventBus.$emit(event.type, event.payload)
+        },
+    },
+})
+
+// Méthodes
+async function onResponseAlert(fromUserSlug, options, status) {
+    notificationComponent.value = null
+    switch (options.action) {
+        case 'peer-access-permission':
+            await peers.acceptCallFromPeer({
+                fromUserSlug,
+                options: { ...options },
+                status,
+            })
+            break
+        default:
+            break
     }
-</script>
+}
 
+function setOnlineStatus() {
+    if (!me.value) return
+    Echo.private(me.value.channel).whisper('ping', {
+        timestamp: Date.now(),
+        userId: me.value.id,
+    })
+}
+
+async function onStopCall() {
+    const currentUsers = peers.currentCallUsers?.value ?? []
+    const usersToStop = [...currentUsers]
+    eventBus.$emit('close-call', usersToStop)
+    await peers.stopCallWithPeers(usersToStop)
+}
+
+async function onStartCall(toUserSlug, type) {
+    await peers.startCallWithPeer({ toUserSlug, type })
+}
+
+// Lifecycle
+onMounted(() => {
+    peers.initialize({
+        onStreamReceived: peers.handleStreamReceived,
+        onConnectionClose: peers.handleStreamRemoved,
+    })
+
+    eventBus.$on('call-user', onStartCall)
+
+    heartbeatIntervalId.value = setInterval(() => {
+        setOnlineStatus()
+    }, 120000) // toutes les 2 minutes
+})
+
+onUnmounted(async () => {
+    try {
+        const currentUsers = peers.currentCallUsers?.value ?? []
+        if (currentUsers.length > 0 || peers.isCallInProgress()) {
+            await peers.stopCallWithPeers([...currentUsers], false)
+        }
+    } finally {
+        // if (userChannel.value) Echo.leave(userChannel.value)
+        eventBus.$off('call-user', onStartCall)
+
+        peers.clearAllCallInviteRetries()
+        peers.clearSeenInvites()
+
+        clearInterval(heartbeatIntervalId.value)
+        heartbeatIntervalId.value = null
+    }
+})
+</script>
