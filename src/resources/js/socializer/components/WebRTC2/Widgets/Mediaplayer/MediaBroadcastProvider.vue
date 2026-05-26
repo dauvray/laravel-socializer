@@ -5,10 +5,9 @@
 </template>
 
 <script setup>
-
-    import { useMediaBroadcast } from '~socializer/components/WebRTC2/Composables/useMediaBroadcast.js'
     import { onBeforeUnmount, onMounted, watch, provide } from 'vue'
     import { WEBRTC_API_KEY } from '~socializer/components/WebRTC2/webrtc2.config.js'
+    import { useMediaBroadcast } from '~socializer/components/WebRTC2/Composables/useMediaBroadcast.js'
 
     const props = defineProps({
         // identifiant de la room de diffusion
@@ -26,6 +25,7 @@
         })},
     })
 
+    // Initialisation de l'API de diffusion média avec les paramètres de room, mode et options
     const api = useMediaBroadcast(props.mode, props.room ?? 'app', props.options)
     // 👇 on rend api accessible à tous les descendants
     provide(WEBRTC_API_KEY, api)
@@ -40,10 +40,12 @@
        }
     })
 
+    // Cleanup à la destruction du composant : fermeture des connexions, arrêt des flux, etc.
     onBeforeUnmount(() => {
         api.cleanup()
     })
 
+    // Watcher pour mettre à jour la liste des utilisateurs dans l'api à chaque changement de props.users
     watch(
         () => props.users,
         (newVal) => {

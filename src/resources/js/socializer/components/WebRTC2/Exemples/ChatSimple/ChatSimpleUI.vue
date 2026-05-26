@@ -15,17 +15,20 @@
                     @keyup.enter="send">
                 <button type="button" class="btn btn-primary" @click="send">Send</button>
             </div>
-            <p v-if="typingUsers.length" class="text-muted small fst-italic">
-                <template v-if="typingUsers.length === 1">
-                    {{ typingUsers[0] }} est en train d'écrire…
-                </template>
-                <template v-else-if="typingUsers.length <= 3">
-                    {{ typingUsers.join(', ') }} sont en train d'écrire…
-                </template>
-                <template v-else>
-                    Plusieurs personnes sont en train d'écrire…
-                </template>
-            </p>
+            <slot name="typingIndicator" :typingUsers="typingUsers">
+                <!-- Exemple de slot pour personnaliser l'affichage de l'indicateur de saisie -->
+                <p v-if="typingUsers.length" class="text-muted small fst-italic">
+                    <template v-if="typingUsers.length === 1">
+                        {{ typingUsers[0] }} est en train d'écrire…
+                    </template>
+                    <template v-else-if="typingUsers.length <= 3">
+                        {{ typingUsers.join(', ') }} sont en train d'écrire…
+                    </template>
+                    <template v-else>
+                        Plusieurs personnes sont en train d'écrire…
+                    </template>
+                </p>
+            </slot>
         </div>
     </div>
 </template>
