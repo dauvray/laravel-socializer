@@ -20,7 +20,16 @@
 
 import { Peer } from "peerjs"
 import { markRaw, onUnmounted, watch } from 'vue'
-import { MAX_RECONNECT_ATTEMPTS, HUB_RATE_WINDOW_MS, HUB_MAX_MESSAGES_PER_WINDOW, MAX_PAYLOAD_BYTES, PEER_DESTROY_DELAY_MS, RECONNECT_BASE_DELAY_MS, RECONNECT_MAX_DELAY_MS, STREAM_WAIT_TIMEOUT_MS } from '../webrtc2.config.js'
+import { 
+    MAX_RECONNECT_ATTEMPTS, 
+    HUB_RATE_WINDOW_MS, 
+    HUB_MAX_MESSAGES_PER_WINDOW, 
+    MAX_PAYLOAD_BYTES, 
+    PEER_DESTROY_DELAY_MS, 
+    RECONNECT_BASE_DELAY_MS, 
+    RECONNECT_MAX_DELAY_MS, 
+    SLUG_PATTERN, 
+    STREAM_WAIT_TIMEOUT_MS } from '../webrtc2.config.js'
 
 // -----------------------------------------------------------------------------
 // Registre global des contextes WebRTC actifs
@@ -133,6 +142,13 @@ function _isHubRateLimited(senderIdentity) {
     timestamps.push(now)
     _hubRateWindows.set(senderIdentity, timestamps)
     return false
+}
+
+// Validation de slug côté hub : rejette les destinataires forgés avant retransmission
+// star. SLUG_PATTERN est centralisé dans webrtc2.config.js (source de vérité partagée
+// avec usePeerOrchestrator).
+function _isValidSlug(value) {
+    return typeof value === 'string' && SLUG_PATTERN.test(value)
 }
 
 function _resolveSenderSlugFromIncomingConn(conn, ctx) {
@@ -572,10 +588,25 @@ export function usePeerTransport(ctx) {
         const room = ctx.session.onAirRoom
         const type = ctx.session.currentType
 
-        // Si `to` est fourni, on cible ces slugs. Sinon, on prend tous les users de la room.
+        // Membres réels de la room : seule source de vérité pour les destinataires.
+        const roomMembers = Array.isArray(ctx.connection.usersInRoom)
+            ? ctx.connection.usersInRoom
+            : []
+
+        // Si `to` est fourni, on le traite comme une demande de ciblage NON fiable :
+        // chaque slug doit avoir un format valide ET appartenir à la room courante.
+        // Tout slug forgé / hors room est rejeté silencieusement. Sinon (to absent),
+        // on cible tous les membres de la room.
         // Dans les deux cas, on exclut l'expéditeur (inutile de lui renvoyer son propre message).
-        const targets = (envelope.to || ctx.connection.usersInRoom)
-            .filter(slug => slug !== senderSlug)
+        let targets
+        if (Array.isArray(envelope.to)) {
+            targets = envelope.to.filter(slug =>
+                _isValidSlug(slug) && roomMembers.includes(slug)
+            )
+        } else {
+            targets = [...roomMembers]
+        }
+        targets = targets.filter(slug => slug !== senderSlug)
 
         targets.forEach(userSlug => {
             const conn = _getOpenDataConnection(room, userSlug, type)

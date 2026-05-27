@@ -19,7 +19,6 @@ utils/ (infrastructure — usage libre par tous les composables)
 ```
 
 ---
-// TODO: dans actions ligne 189 : this.signalQueues[s.roomId].length > 10 : mettre 10 dans les constantes de webtrc2
 
 ## 🟡 P2 — Améliorations (pérennisation long terme)
 

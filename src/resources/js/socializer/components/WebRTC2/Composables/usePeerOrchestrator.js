@@ -30,7 +30,7 @@ import { usePeerConnections } from '~socializer/components/WebRTC2/Composables/u
 import { usePeerTransport } from '~socializer/components/WebRTC2/Composables/usePeerTransport.js'
 import { usePeerRetry } from '~socializer/components/WebRTC2/Composables/utils/usePeerRetry.js'
 import { CALL_STATES } from '~socializer/components/WebRTC2/Composables/utils/useCallStateMachine.js'
-import { MAX_REMOTE_STREAMS, STREAM_STALE_MS, SIGNALING_STALE_MS } from '~socializer/components/WebRTC2/webrtc2.config.js'
+import { MAX_REMOTE_STREAMS, STREAM_STALE_MS, SIGNALING_STALE_MS, SLUG_PATTERN } from '~socializer/components/WebRTC2/webrtc2.config.js'
 
 export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) {
 
@@ -40,7 +40,6 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
 
     // ── Validation des inputs ────────────────────────────────────────────────
     const VALID_CALL_TYPES = ['data', 'visio', 'vocal', 'stream', 'screen', 'audio']
-    const SLUG_PATTERN = /^[a-zA-Z0-9_\-.]{1,100}$/
 
     const _isValidSlug = (value) =>
         typeof value === 'string' && SLUG_PATTERN.test(value)

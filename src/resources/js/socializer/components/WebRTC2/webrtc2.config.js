@@ -114,6 +114,14 @@ export const MAX_INVITE_RETRIES = 20
  */
 export const VALID_CONNECTION_TYPES = new Set(['data', 'stream', 'screen', 'visio', 'vocal'])
 
+// ─── Validation des slugs ──────────────────────────────────────────────────
+/**
+ * Format autorisé pour un slug utilisateur : alphanumérique + `_ - .`, de 1 à 100
+ * caractères. Source de vérité unique partagée par usePeerOrchestrator et
+ * usePeerTransport (rejet des slugs forgés avant routage/retransmission).
+ */
+export const SLUG_PATTERN = /^[a-zA-Z0-9_\-.]{1,100}$/
+
 // ─── Endpoints HTTP (signaling backend) ────────────────────────────────────
 export const ENDPOINTS = {
     /** Demander le peerId d'un utilisateur distant (connexion directe) */
