@@ -14,11 +14,12 @@ manuel du chat) avant de passer à la suivante.
 - [✅] Vérifier l'alias de résolution pour le nouveau dossier (imports `~socializer/...`)
 
 ## Phase 1 — `useChatAttachments.js` (risque faible)
-- [ ] Créer le composable : `attachedFiles`, `onFileAdded`, `removeFromList`, `clear`
-- [ ] Brancher dans le composant (template `UploadFilesTable` + `TextareaMessage`)
-- [ ] Remplacer `attachedFiles.value = []` de `onSendMessage` par `clear()`
-- [ ] Laisser `onRemoveFile(fileId)` dans le composant (couplage `messengerInput`)
-- [ ] Vérif : ajout / suppression / envoi d'un fichier
+- [✅] Créer le composable : `attachedFiles`, `onFileAdded`, `removeFromList`, `clear`
+- [✅] Brancher dans le composant (template `UploadFilesTable` + `TextareaMessage`)
+- [✅] Remplacer `attachedFiles.value = []` de `onSendMessage` par `clear()`
+      (exposé sous l'alias `clearAttachments` pour éviter la collision de nom)
+- [✅] Laisser `onRemoveFile(fileId)` dans le composant (couplage `messengerInput`)
+- [✅] Vérif : ajout / suppression / envoi d'un fichier
 
 ## Phase 2 — `useResizableMessenger.js` (risque faible)
 - [ ] Créer le composable : refs `messenger`/`messengerInput`, `updateElHeight`,

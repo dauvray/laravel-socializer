@@ -64,7 +64,7 @@
                         @update-height="updateElHeight"
                         @record-result="onRecorded"
                         @file-added="onFileAdded"
-                        @file-removed="onRemovedFile"
+                        @file-removed="removeFromList"
                     ></TextareaMessage>
                 </div>
             </div>
@@ -103,6 +103,7 @@
     import DateSeparator from './widgets/partials/DateSeparator.vue'
     import { useReverbPresence } from '~socializer/components/System/composables/useReverbChannel.js'
     import { useTypingIndicator } from './composables/useTypingIndicator.js'
+    import { useChatAttachments } from './composables/useChatAttachments.js'
 
     // Composants asynchrones
     const RoomUsersList = defineAsyncComponent(() => import('~socializer/components/Server/widgets/RoomUsersList.vue'))
@@ -181,7 +182,6 @@
     const videoContainer = '#videoContainer'
     const intersectionObserver = ref(false)
     const agentBot = ref(null)
-    const attachedFiles = ref([])
     const cssVarName = '--messenger-height'
     const initialElHeight = 50
     const ElHeight = ref(null)
@@ -193,6 +193,14 @@
     const messageContainerInner = ref(null)
     const messenger = ref(null)
     const messengerInput = ref(null)
+
+    /*------ PIÈCES JOINTES ----------*/
+    const {
+        attachedFiles,
+        onFileAdded,
+        removeFromList,
+        clear: clearAttachments,
+    } = useChatAttachments()
 
     /*------ COMPUTED ----------*/
     const channel = computed(() => {
@@ -263,7 +271,7 @@
         sendMessage(message, currentConversationId.value, attachedFiles.value)
 
          // Reset
-        attachedFiles.value = []
+        clearAttachments()
         messenger.value.style.setProperty(cssVarName, `${initialElHeight}px`);
         eventBus.$emit('sended-messenger-message');
     }
@@ -374,17 +382,9 @@
         router.push({ name: 'Teams'})
     }
 
-    function onFileAdded(file) {
-         file.preview = URL.createObjectURL(file.data)
-         attachedFiles.value.push(file)
-    }
-
+    // Reste dans le composant : croise la ref de template `messengerInput`.
     function onRemoveFile(fileId) {
        messengerInput.value.removeFile(fileId)
-    }
-
-    function onRemovedFile(file) {
-        attachedFiles.value = attachedFiles.value.filter(f => f.id !== file.id)
     }
 
     /*------ RESIZER ----------*/
