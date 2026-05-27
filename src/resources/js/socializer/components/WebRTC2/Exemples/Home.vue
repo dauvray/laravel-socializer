@@ -113,8 +113,6 @@ onMounted( async () => {
    await broadcastDataRef.value.api.initialize(dataCallbacks)
 })
 
-
-
 // Chat Callbacks
 const handleChatData = (data) => {
     // Ici, on reçoit une data du serveur (via Echo), et on l'ajoute au chat local
