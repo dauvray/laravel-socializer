@@ -31,6 +31,7 @@ export function useTypingIndicator({ currentUser, whisper } = {}) {
         return [...new Set(names)]
     })
 
+    // Hack pour forcer la réactivité de Vue sur les mutations d'une Map (add/delete).
     const touchReactivity = () => {
         typingUsers.value = new Map(typingUsers.value)
     }

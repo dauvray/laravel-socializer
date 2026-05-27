@@ -39,7 +39,7 @@ Tâche 7 → useMediaBroadcast    (intégration feature layer)
 - [-] Tâche 1 — `usePeerCore.test.js` — 25 tests ✅ (4/9 items couverts, 5 restants)
 - [ ] Tâche 2 — `usePeerConnections.test.js`
 - [ ] Tâche 3 — `usePeerMedia.test.js`
-- [ ] Tâche 4 — `usePeerTransport.test.js`
+- [-] Tâche 4 — `usePeerTransport.*.test.js` — 22 tests ✅ (sécurité couverte ; singleton/lifecycle/reconnect restants)
 - [ ] Tâche 5 — `createPeerContext.test.js`
 - [ ] Tâche 6 — `usePeerOrchestrator.test.js`
 - [ ] Tâche 7 — `useMediaBroadcast.test.js`
@@ -101,22 +101,44 @@ Tâche 7 → useMediaBroadcast    (intégration feature layer)
 
 ---
 
-### Tâche 4 — `usePeerTransport.test.js` (Peer singleton + DataChannel)
+### Tâche 4 — `usePeerTransport.*.test.js` (Peer singleton + DataChannel)
 
-**Périmètre** : singleton PeerJS, envoi de données, topologie.
+**Périmètre** : singleton PeerJS, envoi de données, topologie, **et durcissement sécurité** (auth entrante, anti-usurpation, limites de taille/débit). Découpée en plusieurs fichiers par surface.
+
+> ⚠️ **Mise à jour 2026-05-27** : le composant a reçu 5 commits sécurité. Note importante sur l'item « sendData star » : **le hub envoie en direct** (`conn.send(data)`, sans enveloppe) ; c'est le **client** qui construit l'enveloppe `__starRoute`. L'ancienne formulation « hub construit l'enveloppe » était fausse.
+
+#### ✅ Déjà couvert (3 fichiers, 22 tests)
+
+- [✅] **`usePeerTransport.incomingAuth.test.js`** (11) — `_isAuthorizedIncomingPeer` :
+  - accepte/rejette une connexion data selon l'appartenance à `usersInRoom`
+  - rejette `from` absent / format de slug invalide
+  - anti-usurpation : rejet si peerId réel mappé ≠ `from` déclaré ; accepte si concordance
+  - répond/rejette un appel one-way selon l'auth
+  - accepte connexion data **et** appel visio d'un interlocuteur d'appel direct (`session.currentCallUsers`) hors room
+- [✅] **`usePeerTransport.forwardStar.test.js`** (5) — `forwardStarMessage`, validation `envelope.to` :
+  - retransmet uniquement aux membres ciblés présents dans la room
+  - ignore slugs hors room / format invalide ; exclut toujours l'expéditeur ; diffuse à tous si `to` absent
+- [✅] **`usePeerTransport.mesh.test.js`** (6) — `sendData` mesh + limite de taille payload :
+  - diffuse un payload dans la limite à tous les membres
+  - rejette payload JSON / binaire (ArrayBuffer) > `MAX_PAYLOAD_BYTES`, accepte pile à la limite
+  - rejette payload non sérialisable ; applique la limite aussi avec `destUserSlugs` explicite
+
+#### 📋 Restant à couvrir
 
 - [ ] `setLocalPeer` : crée un `Peer`, incrémente `_peerConsumerCount`, résout la promise quand l'event `open` est déclenché
-- [ ] `setLocalPeer` singleton : deuxième appel réutilise le même Peer (pas de nouvelle instance)
-- [ ] `unregisterLocalContext` : décrément consumer count, `peer.destroy()` appelé seulement quand count == 0
-- [ ] `sendData` mesh : données envoyées à toutes les connexions ouvertes du type courant
-- [ ] `sendData` star (client) : données envoyées au hub uniquement
-- [ ] `sendData` star (hub) : enveloppe `__starRoute` construite et envoyée aux destinataires
-- [ ] `forwardStarMessage` : rate limiting `HUB_MAX_MESSAGES_PER_WINDOW` (messages excédentaires ignorés)
-- [ ] `peerUnavailableSignal` : mis à jour quand un peer répond `unavailable`
-- [ ] Reconnect guard : `_reconnectAttempts` plafonne, pas de boucle infinie
-- [ ] `contextRegistry` : retiré à la destruction, pas de fuite mémoire
+- [ ] `setLocalPeer` singleton : deuxième appel réutilise le même Peer (`_peerInitPromise` partagée, pas de nouvelle instance)
+- [ ] Ref-counting / `unregisterLocalContext` : `_peerConsumerCount` décrémenté à l'`onUnmounted`, destruction **différée** `PEER_DESTROY_DELAY_MS` planifiée à count == 0, **annulée** si un consommateur remonte avant la fin du délai
+- [ ] `_destroyPeerSingleton` : cas `localPeer` déjà null (échec init) → ne réinitialise pas le compteur ; cas nominal → `peer.destroy()`, reset des refs module-level
+- [ ] `sendData` star (client) : enveloppe `__starRoute` (`to`, `from`, `payload`) construite et envoyée au **hub uniquement**
+- [ ] `sendData` star (hub) : envoi **direct** aux destinataires (pas d'enveloppe)
+- [ ] `forwardStarMessage` rate limiting : `HUB_MAX_MESSAGES_PER_WINDOW` / `HUB_RATE_WINDOW_MS` (excédent ignoré), clé = peerId entrant réel (non `envelope.from`)
+- [ ] `forwardStarMessage` limite de taille payload : rejet > `MAX_PAYLOAD_BYTES` (JSON + binaire) et payload invalide
+- [ ] `_sweepHubRateWindows` : purge throttlée des expéditeurs déconnectés (pas de fuite mémoire sur rotation de room)
+- [ ] `peerUnavailableSignal` : handler `'error'` type `peer-unavailable` → retire la connexion échouée, invalide le peerId stale, positionne le signal réactif sur le slug cible
+- [ ] Reconnect guard : `_reconnectAttempts` avec backoff exponentiel plafonné à `MAX_RECONNECT_ATTEMPTS` (`RECONNECT_MAX_DELAY_MS`), pas de boucle infinie, reset sur `'open'`
+- [ ] `contextRegistry` : `unregisterContext` last-write-wins (ne supprime que si l'entrée appartient toujours au ctx — cf. note), retiré à l'`onUnmounted`, pas de fuite
 
-**Prérequis** : `getLastPeerInstance()` + `resetPeerMock()` + `instance._triggerEvent('open', 'peer-id')` de `__mocks__/peerjs.js` ; `vi.resetModules()` entre les tests pour réinitialiser les singletons module-level.
+**Prérequis** : `getLastPeerInstance()` + `resetPeerMock()` + `instance._triggerEvent('open', 'peer-id')` de `__mocks__/peerjs.js` ; `vi.resetModules()` entre les tests pour réinitialiser les singletons module-level (`_peerInitPromise`, `_peerConsumerCount`, `_reconnectAttempts`, `contextRegistry`, `_hubRateWindows`) ; `vi.useFakeTimers()` pour le délai de destruction et le backoff de reconnexion.
 
 ---
 
