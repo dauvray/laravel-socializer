@@ -1,5 +1,9 @@
 /**
- * useChatAttachments — fichiers joints au message en cours de rédaction.
+ * useFileAttachments — liste réactive de fichiers joints, avec aperçus.
+ *
+ * Générique : gère une liste locale de pièces jointes (add/remove/clear) et
+ * génère un aperçu objectURL par fichier. Aucun couplage au chat — réutilisable
+ * par tout formulaire avec upload de fichiers.
  *
  * Gère la liste locale des pièces jointes affichée par `UploadFilesTable`
  * et alimentée par `TextareaMessage` (events `@file-added` / `@file-removed`).
@@ -10,7 +14,7 @@
  */
 import { ref } from 'vue'
 
-export function useChatAttachments() {
+export function useFileAttachments() {
 
     // Pièces jointes du message en cours : { id, data, preview, ... }
     const attachedFiles = ref([])

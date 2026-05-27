@@ -116,26 +116,34 @@
 </template>
 
 <script setup>
-
+    // VUE & LIBS
     import { ref, computed, inject, onMounted, onBeforeUnmount, onUnmounted, watch, defineAsyncComponent } from 'vue'
-    import { useRoute } from 'vue-router'
     import { storeToRefs } from 'pinia'
-    import MessageWidget from '~socializer/components/Chat/widgets/MessageWidget.vue'
+    import { useRoute } from 'vue-router'
+
+    // STORES
     import { useChatStore } from '~socializer/stores/chat.js'
     import { useMeStore } from '~estarter/stores/me.js'
-    import IntersectionObserver from '~socializer/components/widgets/IntersectionObserver.vue'
-    import SpinnerTextWriting from '~estarter/components/widgets/Spinners/SpinnerTextWriting.vue'
-    import TextareaMessage from './widgets/partials/TextareaMessage.vue'
-    import resizable from "~socializer/directives/resizable_horizontal.js"
-    import DateSeparator from './widgets/partials/DateSeparator.vue'
-    import { useReverbPresence } from '~socializer/components/System/composables/useReverbChannel.js'
-    import { useTypingIndicator } from './composables/useTypingIndicator.js'
-    import { useChatAttachments } from './composables/useChatAttachments.js'
-    import { useChatScroll } from './composables/useChatScroll.js'
-    import { useResizableElement } from '~socializer/composables/useResizableElement.js'
-    import { shouldShowDateSeparator as computeDateSeparator } from './utils/dateSeparator.js'
 
-    // Composants asynchrones
+    // COMPOSABLES
+    import { useReverbPresence } from '~socializer/components/System/composables/useReverbChannel.js'
+    import { useResizableElement } from '~socializer/composables/useResizableElement.js'
+    import { useFileAttachments } from '~socializer/composables/useFileAttachments.js'
+    import { useStickyScroll } from '~socializer/composables/useStickyScroll.js'
+    import { useTypingIndicator } from '~socializer/components/Chat/composables/useTypingIndicator.js'
+
+    // COMPOSANTS
+    import IntersectionObserver from '~socializer/components/widgets/IntersectionObserver.vue'
+    import MessageWidget from '~socializer/components/Chat/widgets/MessageWidget.vue'
+    import SpinnerTextWriting from '~estarter/components/widgets/Spinners/SpinnerTextWriting.vue'
+    import TextareaMessage from '~socializer/components/Chat/widgets/partials/TextareaMessage.vue'
+    import DateSeparator from '~socializer/components/Chat/widgets/partials/DateSeparator.vue'
+
+    // UTILS & DIRECTIVES
+    import { shouldShowDateSeparator as computeDateSeparator } from '~socializer/components/Chat/utils/dateSeparator.js'
+    import resizable from "~socializer/directives/resizable_horizontal.js"
+
+    // COMPOSANTS ASYNCHRONES
     const RoomUsersList = defineAsyncComponent(() => import('~socializer/components/Server/widgets/RoomUsersList.vue'))
     const ModalWidget = defineAsyncComponent(() => import('~estarter/components/widgets/ModalLazy.js'))
     const UploadFilesTable = defineAsyncComponent(() => import('~socializer/components/Chat/widgets/partials/UploadFilesTable.vue'))
@@ -234,7 +242,7 @@
         onFileAdded,
         removeFromList,
         clear: clearAttachments,
-    } = useChatAttachments()
+    } = useFileAttachments()
 
     /*------ SCROLL ----------*/
     // Refs de template `messageContainer` / `messageContainerInner` possédées par
@@ -248,7 +256,7 @@
         onTriggerObserver,
         stickToBottom,
         hasNewMessages,
-    } = useChatScroll({ messages, nextPageUrl, loadConversation })
+    } = useStickyScroll({ messages, nextPageUrl, loadConversation })
 
     /*------ COMPUTED ----------*/
     const channel = computed(() => {

@@ -1,5 +1,9 @@
 /**
- * useChatScroll — gestion du défilement de la liste des messages.
+ * useStickyScroll — défilement « collé en bas » d'une liste paginée.
+ *
+ * Générique : convient à toute liste/feed qui grandit en bas et pagine en
+ * haut (chat, notifications, logs…). Aucun couplage au chat ; les dépendances
+ * passées (`messages`, `nextPageUrl`, `loadConversation`) sont quelconques.
  *
  * API exposée :
  *  - `scrollToBottomIfStuck` : scroll bas seulement si l'utilisateur y est collé
@@ -41,7 +45,7 @@ const NEAR_BOTTOM_PX = 120
 // Délai d'inactivité de scroll après lequel on réarme l'auto-scroll.
 const IDLE_REENABLE_MS = 20000
 
-export function useChatScroll({ messages, nextPageUrl, loadConversation } = {}) {
+export function useStickyScroll({ messages, nextPageUrl, loadConversation } = {}) {
 
     // Refs de template (mêmes noms que dans le composant)
     const messageContainer = ref(null)
