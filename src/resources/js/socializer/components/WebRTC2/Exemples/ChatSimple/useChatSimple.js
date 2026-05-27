@@ -70,10 +70,7 @@ export function useChatSimple(room = '_default_', api = {}) {
     const meStore = useMeStore()
     const { getMe: currentUser } = storeToRefs(meStore)
 
-
     const { typingUsers, notifyTyping, stopTyping } = useTypingIndicator(currentUser)
-
-
 
     const onInput = () => notifyTyping()
 

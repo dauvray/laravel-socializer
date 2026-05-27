@@ -53,4 +53,7 @@
         },
         { immediate: true }
     )
+
+    // Expose de l'API de diffusion média pour le composant parent
+    defineExpose({ api })
 </script>
