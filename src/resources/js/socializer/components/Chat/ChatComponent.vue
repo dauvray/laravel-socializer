@@ -1,9 +1,11 @@
 <template>
     <div class="chat-wrapper">
 
-        <RoomUsersList v-if="displayUsers" 
-            :users="chatters"
-        ></RoomUsersList>
+        <slot name="sidebar" :users="chatters">
+            <RoomUsersList v-if="displayUsers"
+                :users="chatters"
+            ></RoomUsersList>
+        </slot>
 
         <div class="chat-messages-wrapper">
             <div class="chat-messages" ref="messageContainer">
@@ -12,20 +14,36 @@
                         v-if="intersectionObserver"
                         @trigger-intersected="onTriggerObserver"
                     ></IntersectionObserver>
+                    <slot name="before-messages"></slot>
+                    <slot v-if="!messages.length"
+                        name="empty"
+                        :conversation-id="currentConversationId"
+                    ></slot>
                     <template v-for="(item, idx) in messages" :key="item.id">
-                        <DateSeparator 
-                            v-if="shouldShowDateSeparator(item, idx)"
-                            :date="item.created_at"
-                        />
-                        <MessageWidget 
-                            :class="idx === messages.length - 1 ? 'lastMessage' : null"
+                        <slot name="date-separator" :date="item.created_at">
+                            <DateSeparator
+                                v-if="shouldShowDateSeparator(item, idx)"
+                                :date="item.created_at"
+                            />
+                        </slot>
+                        <slot name="message"
                             :item="item"
-                            :conversationId="currentConversationId"
-                            @selected-emoji="onSelectedEmoji"
-                            @delete-message="onDeleteMessage"
-                            @update-message="onUpdateMessage"
-                            @show-file="onShowFileInModal"
-                        ></MessageWidget>
+                            :index="idx"
+                            :conversation-id="currentConversationId"
+                            :on-selected-emoji="onSelectedEmoji"
+                            :on-delete-message="onDeleteMessage"
+                            :on-update-message="onUpdateMessage"
+                            :on-show-file="onShowFileInModal">
+                            <MessageWidget
+                                :class="idx === messages.length - 1 ? 'lastMessage' : null"
+                                :item="item"
+                                :conversationId="currentConversationId"
+                                @selected-emoji="onSelectedEmoji"
+                                @delete-message="onDeleteMessage"
+                                @update-message="onUpdateMessage"
+                                @show-file="onShowFileInModal"
+                            ></MessageWidget>
+                        </slot>
                     </template>
                 </div>
                 <UploadFilesTable v-if="attachedFiles.length"
@@ -45,28 +63,38 @@
                 <div class="chat-messenger"
                     ref="messenger"
                     v-resizable="resizeOptions">
-                    <div v-if="actors.length" 
+                    <div v-if="actors.length"
                         class="chat-messenger-writting">
                         <SpinnerTextWriting></SpinnerTextWriting>
                         <ul>
-                            <li v-for="name in actors" 
+                            <li v-for="name in actors"
                                 :key="name"
                                 class="d-flex align-items-center">
                                 {{ name }} écrit ...
                             </li>
                         </ul>
                     </div>
-                    <TextareaMessage
-                        ref="messengerInput"
-                        @start-writting="startWriting"
-                        @stop-writting="stopWriting"
-                        @send-message="onSendMessage"
-                        @open-wysiwyg="onWysiwyg"
-                        @update-height="updateElHeight"
-                        @record-result="onRecorded"
-                        @file-added="onFileAdded"
-                        @file-removed="removeFromList"
-                    ></TextareaMessage>
+                    <slot name="input"
+                        :start-writting="startWriting"
+                        :stop-writting="stopWriting"
+                        :on-send-message="onSendMessage"
+                        :on-wysiwyg="onWysiwyg"
+                        :update-height="updateElHeight"
+                        :on-recorded="onRecorded"
+                        :on-file-added="onFileAdded"
+                        :remove-from-list="removeFromList">
+                        <TextareaMessage
+                            ref="messengerInput"
+                            @start-writting="startWriting"
+                            @stop-writting="stopWriting"
+                            @send-message="onSendMessage"
+                            @open-wysiwyg="onWysiwyg"
+                            @update-height="updateElHeight"
+                            @record-result="onRecorded"
+                            @file-added="onFileAdded"
+                            @file-removed="removeFromList"
+                        ></TextareaMessage>
+                    </slot>
                 </div>
             </div>
         </div>
@@ -81,7 +109,7 @@
             @hidden="onHideModal">
             <template #header> </template>
             <template #body>
-                <img :src="fileUrl"  /> 
+                <img :src="fileUrl"  />
             </template>
         </ModalWidget>
     </div>
