@@ -66,12 +66,23 @@ manuel du chat) avant de passer à la suivante.
       sans saut de position
 
 ## Phase 5 — Nettoyage / optionnel
-- [ ] Extraire `shouldShowDateSeparator` dans `utils/dateSeparator.js` (fonction pure)
-- [ ] (Optionnel) `useChatMessages.js` : regrouper les handlers adaptateurs du store
-      (`onSendMessage`, `onUpdateMessage`, `onSelectedEmoji`, `onDeleteMessage`,
-      `onRecorded`...)
-- [ ] (Optionnel) `useChatBot.js` : setup `agentBot` (bloc created async)
-- [ ] Relecture finale du `<script setup>` (cible ~80 lignes de câblage)
+- [✅] Extraire `shouldShowDateSeparator` dans `utils/dateSeparator.js` (fonction pure)
+      Signature `(messages, index, displaySeparator = true)`. Wrapper conservé dans
+      le composant pour ne pas toucher au `<template>` (alias import `computeDateSeparator`).
+- [⏭️] (Abandonné) `useChatMessages.js` : les handlers ciblés sont des adaptateurs
+      d'une ligne vers le store ; les extraire déplace du câblage sans isoler de
+      responsabilité autonome (et `onSendMessage` croise attachments/resize/eventBus).
+      À reconsidérer seulement si cette logique s'étoffe.
+- [⏭️] (Différé) `useChatBot.js` : concern cohérent mais tangent au typing indicator
+      et à la présence Reverb (`chatters`, `addActorWriting('Agent Bot')`). Risque moyen
+      pour un gain modeste — à tenter si la logique bot grossit.
+- [✅] Relecture finale du `<script setup>` : code mort supprimé (355 → 325 lignes)
+      - imports inutilisés : `IconWidget`, `ChatContactsButton`, `useRouter`
+      - composants async jamais montés (absents du template) : `MediaBroadcastProvider`,
+        `StreamDefaultUserButtonUI`, `CaptureDefaultUserButtonUI`
+      - bindings morts : `videoContainer`, `isContactBtnVisible`, `onAddContact`,
+        `onQuitChat`, `router`, + actions store associées (`addContactToConversation`,
+        `leaveCurrentConversation`)
 
 ---
 

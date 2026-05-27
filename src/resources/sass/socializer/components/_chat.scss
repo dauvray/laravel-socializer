@@ -50,6 +50,30 @@
                 }
             }
         }
+
+        /* Bouton flottant : apparaît quand un message arrive alors que
+           l'utilisateur est remonté dans l'historique (cf. useChatScroll). */
+        .chat-new-messages-btn {
+            @extend .btn;
+            @extend .btn-sm;
+            @extend .shadow;
+            @extend .rounded-pill;
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%);
+            bottom: calc(var(--messenger-height, 50px) + #{map-get($spacers, 3)});
+            z-index: 11;
+            white-space: nowrap;
+            border: none;
+            color: $white;
+            background-color: rgba(0, 0, 0, 0.85);
+            animation: chat-new-messages-in .18s ease-out;
+        }
+    }
+
+    @keyframes chat-new-messages-in {
+        from { opacity: 0; transform: translate(-50%, 8px); }
+        to   { opacity: 1; transform: translate(-50%, 0); }
     }
 
     .chat-messenger-sticky-wrapper {

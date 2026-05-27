@@ -12,7 +12,7 @@
                         v-if="intersectionObserver"
                         @trigger-intersected="onTriggerObserver"
                     ></IntersectionObserver>
-                    <template v-for="(item, idx) in messages" :key="idx">
+                    <template v-for="(item, idx) in messages" :key="item.id">
                         <DateSeparator 
                             v-if="shouldShowDateSeparator(item, idx)"
                             :date="item.created_at"
@@ -33,6 +33,13 @@
                     @remove-file="onRemoveFile"
                 ></UploadFilesTable>
             </div>
+            <button v-if="hasNewMessages"
+                type="button"
+                class="chat-new-messages-btn"
+                @click="scrollToBottom">
+                Nouveaux messages ↓
+            </button>
+
             <div class="chat-messenger-sticky-wrapper">
                 <div class="chat-messenger-ghost"></div>
                 <div class="chat-messenger"
@@ -83,10 +90,8 @@
 <script setup>
 
     import { ref, computed, inject, onMounted, onBeforeUnmount, onUnmounted, watch, defineAsyncComponent } from 'vue'
-    import { useRoute, useRouter } from 'vue-router'
+    import { useRoute } from 'vue-router'
     import { storeToRefs } from 'pinia'
-    import IconWidget from '~estarter/components/widgets/IconWidget.vue'
-    import ChatContactsButton from './widgets/ChatContactsButton.vue'
     import MessageWidget from '~socializer/components/Chat/widgets/MessageWidget.vue'
     import { useChatStore } from '~socializer/stores/chat.js'
     import { useMeStore } from '~estarter/stores/me.js'
@@ -100,14 +105,12 @@
     import { useChatAttachments } from './composables/useChatAttachments.js'
     import { useChatScroll } from './composables/useChatScroll.js'
     import { useResizableElement } from '~socializer/composables/useResizableElement.js'
+    import { shouldShowDateSeparator as computeDateSeparator } from './utils/dateSeparator.js'
 
     // Composants asynchrones
     const RoomUsersList = defineAsyncComponent(() => import('~socializer/components/Server/widgets/RoomUsersList.vue'))
     const ModalWidget = defineAsyncComponent(() => import('~estarter/components/widgets/ModalLazy.js'))
     const UploadFilesTable = defineAsyncComponent(() => import('~socializer/components/Chat/widgets/partials/UploadFilesTable.vue'))
-    const MediaBroadcastProvider = defineAsyncComponent(() => import('~socializer/components/WebRTC/widgets/MediaBroadcastProvider.vue'))
-    const StreamDefaultUserButtonUI = defineAsyncComponent(() => import('~socializer/components/WebRTC/widgets/ui/StreamDefaultUserButtonUI.vue'))
-    const CaptureDefaultUserButtonUI = defineAsyncComponent(() => import('~socializer/components/WebRTC/widgets/ui/CaptureDefaultUserButtonUI.vue'))
 
     // Directive locale (template : v-resizable)
     const vResizable = resizable
@@ -142,7 +145,6 @@
 
     const eventBus = inject('eventBus')
     const route = useRoute()
-    const router = useRouter()
 
     /*------ STORES ----------*/
     const chatStore = useChatStore()
@@ -154,12 +156,10 @@
         getIsBot: isBot,
     } = storeToRefs(chatStore)
     const {
-        addContactToConversation,
         loadConversation,
         resetConversation,
         sendMessage,
         receiveMessage,
-        leaveCurrentConversation,
         updateConversationInfos,
         sendEmoji,
         receiveEmoji,
@@ -175,7 +175,6 @@
 
     /*------ STATE ----------*/
     const currentConversationIdBackup = ref(null)
-    const videoContainer = '#videoContainer'
     const intersectionObserver = ref(false)
     const agentBot = ref(null)
     const initialElHeight = 50
@@ -216,8 +215,11 @@
     const {
         messageContainer,
         messageContainerInner,
-        scrollView,
+        scrollToBottomIfStuck,
+        scrollToBottom,
         onTriggerObserver,
+        stickToBottom,
+        hasNewMessages,
     } = useChatScroll({ messages, nextPageUrl, loadConversation })
 
     /*------ COMPUTED ----------*/
@@ -226,10 +228,6 @@
             return `chat.${currentConversationId.value}`
         }
         return null
-    })
-
-    const isContactBtnVisible = computed(() => {
-        return currentConversation.value && !currentConversation.value.general.chat.is_bot
     })
 
     /*------ TYPING INDICATOR ----------*/
@@ -288,6 +286,10 @@
 
         sendMessage(message, currentConversationId.value, attachedFiles.value)
 
+        // Envoyer son propre message réarme l'auto-scroll : on veut le voir
+        // apparaître en bas même si on était remonté dans l'historique.
+        stickToBottom.value = true
+
          // Reset
         clearAttachments()
         resetMessengerHeight();
@@ -332,21 +334,12 @@
     function onReceiveMessage(event) {
         receiveMessage(event)
         setTimeout(() => {
-            scrollView()
+            scrollToBottomIfStuck()
        }, 300)
     }
 
     function onDeletedMessage(vertexid) {
         deletedMessage(vertexid)
-    }
-
-    function onAddContact(identifier) {
-        addContactToConversation(identifier, currentConversationId.value)
-    }
-
-    function onQuitChat() {
-        leaveCurrentConversation()
-        router.push({ name: 'Teams'})
     }
 
     // Reste dans le composant : croise la ref de template `messengerInput`.
@@ -378,19 +371,10 @@
     }
 
     /*********** DATES *******/
-    function shouldShowDateSeparator(currentMessage, index) {
-        if(props.displaySeparator === false)  return false
-
-        // Toujours afficher le séparateur pour le premier message
-        if (index === 0) return true
-
-        const previousMessage = messages.value[index - 1]
-        const currentDate = new Date(currentMessage.created_at).toDateString()
-        const previousDate = new Date(previousMessage.created_at).toDateString()
-
-        // Afficher le séparateur si le jour est différent du message précédent
-        return currentDate !== previousDate
-    }
+    // Logique pure déléguée à utils/dateSeparator.js ; on lui passe la liste
+    // réactive + les props. Wrapper conservé pour ne pas toucher au template.
+    const shouldShowDateSeparator = (item, index) =>
+        computeDateSeparator(messages.value, index, props.displaySeparator)
 
     /*------ WATCHERS ----------*/
     // Le join/leave du canal est géré par useReverbPresence (canal réactif).
@@ -402,7 +386,6 @@
     }, { immediate: true })
 
     watch(chatters, (newVal) => {
-        console.log('chatters changed', newVal)
         emit('update-chatters', newVal)
     })
 
