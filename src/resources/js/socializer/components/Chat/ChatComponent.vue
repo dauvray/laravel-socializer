@@ -98,6 +98,7 @@
     import { useReverbPresence } from '~socializer/components/System/composables/useReverbChannel.js'
     import { useTypingIndicator } from './composables/useTypingIndicator.js'
     import { useChatAttachments } from './composables/useChatAttachments.js'
+    import { useChatScroll } from './composables/useChatScroll.js'
     import { useResizableElement } from '~socializer/composables/useResizableElement.js'
 
     // Composants asynchrones
@@ -182,8 +183,6 @@
     const fileUrl = ref(null)
 
     // Refs de template
-    const messageContainer = ref(null)
-    const messageContainerInner = ref(null)
     const messenger = ref(null)
     const messengerInput = ref(null)
 
@@ -209,6 +208,17 @@
         removeFromList,
         clear: clearAttachments,
     } = useChatAttachments()
+
+    /*------ SCROLL ----------*/
+    // Refs de template `messageContainer` / `messageContainerInner` possédées par
+    // le composable. Auto-scroll au montage + à chaque nouveau message, et
+    // pagination infinie (watch + onMounted internes au composable).
+    const {
+        messageContainer,
+        messageContainerInner,
+        scrollView,
+        onTriggerObserver,
+    } = useChatScroll({ messages, nextPageUrl, loadConversation })
 
     /*------ COMPUTED ----------*/
     const channel = computed(() => {
@@ -334,57 +344,6 @@
         addContactToConversation(identifier, currentConversationId.value)
     }
 
-    function scrollView() {
-        const el = messageContainerInner.value
-        if (el) {
-            el.scrollIntoView({ behavior: 'smooth', block: 'end' })
-        }
-    }
-
-    function waitImagesAndScroll(is_new_message = false) {
-
-        const el = messageContainerInner.value
-        if (!el) return
-
-        const images = is_new_message ? el.querySelectorAll('lastMessage') : el.querySelectorAll('img')
-
-        const total = images.length
-        if (total === 0) {
-            scrollView()
-            return
-        }
-
-        let loaded = 0
-        const checkDone = () => {
-            loaded++
-
-            if (loaded === total) {
-                scrollView()
-            }
-        }
-
-        images.forEach(img => {
-            if (img.complete) {
-                checkDone()
-            } else {
-                img.addEventListener('load', checkDone, { once: true })
-                img.addEventListener('error', checkDone, { once: true }) // au cas où une image échoue
-            }
-        })
-    }
-
-    function onTriggerObserver() {
-        if(nextPageUrl.value) {
-            const container = messageContainer.value
-            const previousScrollHeight = container.scrollHeight
-
-            loadConversation(null, nextPageUrl.value).then(() => {
-                const newScrollHeight = container.scrollHeight
-                container.scrollTop += newScrollHeight - previousScrollHeight
-            })
-        }
-    }
-
     function onQuitChat() {
         leaveCurrentConversation()
         router.push({ name: 'Teams'})
@@ -442,12 +401,6 @@
         }
     }, { immediate: true })
 
-    watch(messages, () => {
-        setTimeout(()=> {
-            waitImagesAndScroll(true)
-        }, 1000)
-    })
-
     watch(chatters, (newVal) => {
         console.log('chatters changed', newVal)
         emit('update-chatters', newVal)
@@ -467,10 +420,6 @@
     })()
 
     onMounted(() => {
-        setTimeout(()=> {
-            waitImagesAndScroll()
-        },1000)
-
         intersectionObserver.value = true
     })
 

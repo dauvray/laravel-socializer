@@ -50,15 +50,20 @@ manuel du chat) avant de passer à la suivante.
 - [✅] Vérif : indicateur "écrit..." entre 2 users + cas Agent Bot
 
 ## Phase 4 — `useChatScroll.js` (risque le plus élevé — porter à l'identique)
-- [ ] Créer le composable : refs `messageContainer`/`messageContainerInner`,
+> `scrollView` reste appelé par le composant dans `onReceiveMessage` (setTimeout 300) :
+> il est donc exposé par le composable. `waitImagesAndScroll` est interne (watch +
+> onMounted gérés dans le composable). L'`onMounted` du composant ne garde que
+> l'activation de `intersectionObserver`.
+- [✅] Créer le composable : refs `messageContainer`/`messageContainerInner`,
       `scrollView`, `waitImagesAndScroll`, `onTriggerObserver`
       (deps : `messages`, `nextPageUrl`, `loadConversation`)
-- [ ] Déplacer le `watch(messages)` et le `waitImagesAndScroll()` d'`onMounted`
+- [✅] Déplacer le `watch(messages)` et le `waitImagesAndScroll()` d'`onMounted`
       dans le composable
-- [ ] ⚠️ Conserver tels quels les `setTimeout(1000)` et le calcul de `scrollTop`
+- [✅] ⚠️ Conserver tels quels les `setTimeout(1000)` et le calcul de `scrollTop`
       à la pagination (lignes ~353-358) — NE PAS "améliorer"
-- [ ] Vérif : scroll auto au nouveau message, scroll après chargement d'images,
-      pagination infinie (scroll vers le haut) sans saut de position
+- [✅] Vérif : build OK ; reste à valider manuellement scroll auto au nouveau message,
+      scroll après chargement d'images, pagination infinie (scroll vers le haut)
+      sans saut de position
 
 ## Phase 5 — Nettoyage / optionnel
 - [ ] Extraire `shouldShowDateSeparator` dans `utils/dateSeparator.js` (fonction pure)
