@@ -125,10 +125,31 @@ function _destroyPeerSingleton(peerStore) {
 // Fenêtre glissante par expéditeur : chaque entrée est un tableau de timestamps.
 // Clé = senderIdentity (peerId entrant réel). Partagé entre contextes car le hub est unique.
 const _hubRateWindows = new Map()
+// Horodatage du dernier balayage global, pour throttler la purge des entrées
+// d'expéditeurs déconnectés à au plus une fois par fenêtre glissante.
+let _hubRateLastSweep = 0
+
+// Purge les expéditeurs dont tous les timestamps ont expiré : leurs entrées ne
+// seraient jamais nettoyées autrement (la fonction n'est plus appelée pour un
+// slug déconnecté), d'où une croissance illimitée de la Map au fil des rotations
+// de room. Suppression pendant l'itération d'une Map : sûre par spec.
+function _sweepHubRateWindows(windowStart) {
+    for (const [identity, timestamps] of _hubRateWindows) {
+        if (!timestamps.some(ts => ts > windowStart)) {
+            _hubRateWindows.delete(identity)
+        }
+    }
+}
 
 function _isHubRateLimited(senderIdentity) {
     const now = Date.now()
     const windowStart = now - HUB_RATE_WINDOW_MS
+
+    // Balayage global throttlé : évite la fuite mémoire sur slugs déconnectés.
+    if (now - _hubRateLastSweep >= HUB_RATE_WINDOW_MS) {
+        _hubRateLastSweep = now
+        _sweepHubRateWindows(windowStart)
+    }
 
     let timestamps = _hubRateWindows.get(senderIdentity) ?? []
     // Purge les timestamps hors de la fenêtre glissante

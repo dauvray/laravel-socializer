@@ -13,7 +13,7 @@
 
 - [✅] 🟠 **[HAUTE] `envelope.to` non validé ni restreint aux membres de la room** `[S]` : `forwardStarMessage` utilise `envelope.to` sans passer les slugs par `_isValidSlug()` ni vérifier qu'ils font partie de `ctx.connection.usersInRoom` — un client peut cibler des slugs arbitraires → filtrer `envelope.to` avec `_isValidSlug` ET croiser avec la liste des membres réels de la room avant retransmission
 
-- [ ] 🟠 **[MOYENNE] `_hubRateWindows` : fuite mémoire sur slugs déconnectés** `[S]` : après purge des timestamps expirés, la clé Map du slug est conservée même si le tableau est vide — avec de nombreuses rotations de room, la Map grossit indéfiniment → après `timestamps = timestamps.filter(...)`, ajouter `if (timestamps.length === 0) { _hubRateWindows.delete(senderSlug); return false }` avant de réinsérer
+- [✅] 🟠 **[MOYENNE] `_hubRateWindows` : fuite mémoire sur slugs déconnectés** `[S]` : après purge des timestamps expirés, la clé Map du slug est conservée même si le tableau est vide — avec de nombreuses rotations de room, la Map grossit indéfiniment → après `timestamps = timestamps.filter(...)`, ajouter `if (timestamps.length === 0) { _hubRateWindows.delete(senderSlug); return false }` avant de réinsérer
 
 - [ ] 🟠 **[MOYENNE] Aucune limite de taille sur les messages en mesh (DoS pair-à-pair)** :
 l’envoi direct ne filtre pas la taille — un client peut envoyer un payload de plusieurs Mo  à tous les membres → ajout de `MAX_PAYLOAD_BYTES` dans `webrtc2.config.js` et rejet de l'enveloppe si la taille reelle depasse la limite (JSON + binaire)
