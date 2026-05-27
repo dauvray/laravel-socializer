@@ -35,15 +35,9 @@
             </div>
             <div class="chat-messenger-sticky-wrapper">
                 <div class="chat-messenger-ghost"></div>
-                <div class="chat-messenger" 
+                <div class="chat-messenger"
                     ref="messenger"
-                    v-resizable="{
-                        min: initialElHeight,
-                        max: 600,
-                        position: 'top',
-                        cssVarName: cssVarName,
-                        callback: updateElHeight
-                    }">
+                    v-resizable="resizeOptions">
                     <div v-if="actors.length" 
                         class="chat-messenger-writting">
                         <SpinnerTextWriting></SpinnerTextWriting>
@@ -104,6 +98,7 @@
     import { useReverbPresence } from '~socializer/components/System/composables/useReverbChannel.js'
     import { useTypingIndicator } from './composables/useTypingIndicator.js'
     import { useChatAttachments } from './composables/useChatAttachments.js'
+    import { useResizableElement } from '~socializer/composables/useResizableElement.js'
 
     // Composants asynchrones
     const RoomUsersList = defineAsyncComponent(() => import('~socializer/components/Server/widgets/RoomUsersList.vue'))
@@ -182,9 +177,7 @@
     const videoContainer = '#videoContainer'
     const intersectionObserver = ref(false)
     const agentBot = ref(null)
-    const cssVarName = '--messenger-height'
     const initialElHeight = 50
-    const ElHeight = ref(null)
     const showModal = ref(false)
     const fileUrl = ref(null)
 
@@ -193,6 +186,21 @@
     const messageContainerInner = ref(null)
     const messenger = ref(null)
     const messengerInput = ref(null)
+
+    /*------ RESIZE HAUTEUR DU MESSENGER ----------*/
+    // Comportement générique (clamp + variable CSS + reset) délégué au composable.
+    // `resizeOptions` est branché tel quel sur la directive v-resizable.
+    const {
+        applySize: updateElHeight,
+        reset: resetMessengerHeight,
+        resizeOptions,
+    } = useResizableElement(messenger, {
+        cssVar: '--messenger-height',
+        min: initialElHeight,
+        max: 600,
+        initial: initialElHeight,
+        position: 'top',
+    })
 
     /*------ PIÈCES JOINTES ----------*/
     const {
@@ -272,7 +280,7 @@
 
          // Reset
         clearAttachments()
-        messenger.value.style.setProperty(cssVarName, `${initialElHeight}px`);
+        resetMessengerHeight();
         eventBus.$emit('sended-messenger-message');
     }
 
@@ -388,15 +396,6 @@
     }
 
     /*------ RESIZER ----------*/
-    function updateElHeight(height) {
-        if( height < initialElHeight) {
-            height = initialElHeight
-        }
-        ElHeight.value = height
-        // Appliquer dynamiquement via variable CSS
-        messenger.value.style.setProperty(cssVarName, `${ElHeight.value}px`)
-    }
-
     function onWysiwyg(opened) {
         if(opened) {
             updateElHeight(initialElHeight + 300)

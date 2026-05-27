@@ -21,13 +21,20 @@ manuel du chat) avant de passer à la suivante.
 - [✅] Laisser `onRemoveFile(fileId)` dans le composant (couplage `messengerInput`)
 - [✅] Vérif : ajout / suppression / envoi d'un fichier
 
-## Phase 2 — `useResizableMessenger.js` (risque faible)
-- [ ] Créer le composable : refs `messenger`/`messengerInput`, `updateElHeight`,
-      `onWysiwyg`, `resetHeight`, expose `initialElHeight` + `cssVarName`
-- [ ] Brancher dans le composant (directive `v-resizable`, events `@update-height`,
-      `@open-wysiwyg`)
-- [ ] Remplacer le reset de hauteur inline de `onSendMessage` par `resetHeight()`
-- [ ] Vérif : redimensionnement manuel + ouverture/fermeture WYSIWYG + reset après envoi
+## Phase 2 — `useResizableElement.js` (risque faible) ✅
+> Choix d'archi : composable **générique** `useResizableElement.js` placé dans
+> `~socializer/composables/` (et non un `useResizableMessenger.js` couplé au chat),
+> pour être réutilisable par tout composant à dimension pilotée par variable CSS.
+> Il fournit `resizeOptions` prêt à brancher sur `v-resizable` (callback câblé),
+> plus `size` / `applySize` / `reset`. La directive utilisée est bien
+> `resizable_horizontal.js` (poignée horizontale ⇒ resize **hauteur**) : pas de bug.
+> `onWysiwyg` reste dans le composant (spécifique messenger, non réutilisable).
+- [✅] Créer le composable générique : `size`, `applySize`, `reset`, `resizeOptions`
+      (config : `cssVar`, `min`, `max`, `initial`, `position`)
+- [✅] Brancher dans le composant : `v-resizable="resizeOptions"`,
+      event `@update-height` → `applySize` (alias `updateElHeight`)
+- [✅] Remplacer le reset de hauteur inline de `onSendMessage` par `resetMessengerHeight()`
+- [✅] Vérif : build OK + redimensionnement manuel / WYSIWYG / reset après envoi
 
 ## Phase 3 — `useTypingIndicator.js` (risque moyen)
 > ⚠️ Choix d'archi : transport **unifié Reverb** (au lieu du data channel WebRTC).
