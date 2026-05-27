@@ -223,14 +223,27 @@ function _isAuthorizedIncomingPeer(metadata, conn, ctx) {
         return false
     }
 
+    // Deux sources d'autorisation légitimes :
+    //  (a) membre de la room de présence courante (`usersInRoom`) — cas diffusion/chat ;
+    //  (b) interlocuteur d'une session d'appel DIRECT en cours (`session.currentCallUsers`)
+    //      — un appel visio/vocal 1-à-1 est autorisé via la signalisation backend
+    //      (peer-access-permission → acceptCallFromPeer/openCallBetweenPeer ajoute le
+    //      slug à currentCallUsers AVANT que le peer.call entrant n'arrive). Ces pairs
+    //      ne sont pas forcément membres d'une room de présence partagée.
     const usersInRoom = Array.isArray(ctx?.connection?.usersInRoom)
         ? ctx.connection.usersInRoom
         : []
+    const currentCallUsers = Array.isArray(ctx?.session?.currentCallUsers)
+        ? ctx.session.currentCallUsers
+        : []
 
-    if (!usersInRoom.includes(declaredFrom)) {
+    const isRoomMember = usersInRoom.includes(declaredFrom)
+    const isActiveCallPeer = currentCallUsers.some(u => u?.userSlug === declaredFrom)
+
+    if (!isRoomMember && !isActiveCallPeer) {
         console.warn(
-            '[WebRTC2] Connexion entrante refusée: émetteur hors de la room (non membre)',
-            { declaredFrom, senderPeerId: conn?.peer, usersInRoom }
+            "[WebRTC2] Connexion entrante refusée: émetteur ni membre de la room ni interlocuteur d'un appel en cours",
+            { declaredFrom, senderPeerId: conn?.peer, usersInRoom, currentCallUsers }
         )
         return false
     }
@@ -258,7 +271,14 @@ function registerContext(ctx) {
 
 function unregisterContext(ctx) {
     if (!ctx?.contextId) return
-    contextRegistry.delete(ctx.contextId)
+    // Ne supprimer que si l'entrée du registre appartient TOUJOURS à ce contexte.
+    // registerContext applique un last-write-wins volontaire (un contexte remonté
+    // reprend l'id d'un contexte en cours de démontage) ; sans ce garde, l'onUnmounted
+    // de l'ancien contexte effacerait l'entrée désormais détenue par le nouveau,
+    // qui ne recevrait alors plus aucune connexion entrante.
+    if (contextRegistry.get(ctx.contextId) === ctx) {
+        contextRegistry.delete(ctx.contextId)
+    }
 }
 
 function resolveContextByMetadata(metadata) {

@@ -142,4 +142,31 @@ describe('usePeerTransport — authentification des connexions entrantes', () =>
         expect(ctx.setUpConnectionListeners).not.toHaveBeenCalled()
         expect(call.close).toHaveBeenCalled()
     })
+
+    // ── Appels DIRECTS hors room de présence (currentCallUsers) ─────────────────
+    // Régression: un appel visio/vocal 1-à-1 est autorisé via la signalisation backend
+    // (acceptCallFromPeer/openCallBetweenPeer ajoute l'interlocuteur à currentCallUsers).
+    // Ces pairs ne sont pas membres d'une room de présence partagée — le garde doit
+    // néanmoins les accepter, sinon le stream remote ne s'établit jamais (reste "pending").
+
+    it("accepte une connexion data d'un interlocuteur d'appel direct (currentCallUsers) hors room", () => {
+        // mallory n'est PAS dans usersInRoom, mais une session d'appel direct l'a autorisée.
+        ctx.addCurrentCallUser('mallory', 'visio')
+        const conn = incomingConn({ from: 'mallory' })
+        peerInstance._triggerEvent('connection', conn)
+
+        expect(ctx.setUpConnectionListeners).toHaveBeenCalledWith(conn)
+        expect(conn.close).not.toHaveBeenCalled()
+    })
+
+    it("répond à un appel visio d'un interlocuteur d'appel direct (currentCallUsers) hors room", async () => {
+        ctx.addCurrentCallUser('mallory', 'visio')
+        ctx.media.currentStream = { id: 'local-stream' } // stream local présent → answer immédiat
+        const call = incomingCall({ type: 'visio', from: 'mallory' })
+        peerInstance._triggerEvent('call', call)
+
+        await vi.waitFor(() => expect(call.answer).toHaveBeenCalled())
+        expect(ctx.setUpConnectionListeners).toHaveBeenCalledWith(call)
+        expect(call.close).not.toHaveBeenCalled()
+    })
 })
