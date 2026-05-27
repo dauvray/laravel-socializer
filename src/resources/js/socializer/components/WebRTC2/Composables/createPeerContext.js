@@ -25,6 +25,7 @@ import { usePeer2Store } from '~socializer/stores/peers2.js'
 import { useServerStore } from '~socializer/stores/server.js'
 import { useMeStore } from '~estarter/stores/me.js'
 import { createCallStateMachine } from '~socializer/components/WebRTC2/Composables/utils/useCallStateMachine.js'
+import { isPayloadWithinLimit } from '~socializer/components/WebRTC2/Composables/utils/payloadSize.js'
 
 export function createPeerContext({ type, room, options }) {
 
@@ -302,8 +303,19 @@ export function createPeerContext({ type, room, options }) {
             ? connectionEvents.onConnectionOpen.callback
             : null
 
+        // Garde de taille en réception (défense-en-profondeur anti-DoS pair-à-pair) :
+        // le contrôle côté émission (sendData mesh / forwardStarMessage) est
+        // contournable par un pair malveillant qui retire le check client. On
+        // applique donc la même limite MAX_PAYLOAD_BYTES sur chaque frame entrante
+        // AVANT de la passer au callback métier ; tout payload trop volumineux ou
+        // non mesurable est abandonné silencieusement (le pair n'est pas déconnecté).
+        // Note : en topologie star, une enveloppe de routage ajoute un overhead de
+        // quelques octets au payload — négligeable face au plafond de 64 Ko.
         const handleData = (connectionEvents?.onDataReceived?.isActive)
-            ? (data) => connectionEvents.onDataReceived.callback(data, conn, conn.metadata)
+            ? (data) => {
+                if (!isPayloadWithinLimit(data, '[Recv]')) return
+                connectionEvents.onDataReceived.callback(data, conn, conn.metadata)
+            }
             : null
 
         // Wrapper nommé nécessaire pour capturer la référence et pouvoir faire conn.off()

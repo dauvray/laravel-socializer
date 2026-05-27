@@ -15,8 +15,10 @@
 
 - [✅] 🟠 **[MOYENNE] `_hubRateWindows` : fuite mémoire sur slugs déconnectés** `[S]` : après purge des timestamps expirés, la clé Map du slug est conservée même si le tableau est vide — avec de nombreuses rotations de room, la Map grossit indéfiniment → après `timestamps = timestamps.filter(...)`, ajouter `if (timestamps.length === 0) { _hubRateWindows.delete(senderSlug); return false }` avant de réinsérer
 
-- [ ] 🟠 **[MOYENNE] Aucune limite de taille sur les messages en mesh (DoS pair-à-pair)** :
+- [✅] 🟠 **[MOYENNE] Aucune limite de taille sur les messages en mesh (DoS pair-à-pair)** :
 l’envoi direct ne filtre pas la taille — un client peut envoyer un payload de plusieurs Mo  à tous les membres → ajout de `MAX_PAYLOAD_BYTES` dans `webrtc2.config.js` et rejet de l'enveloppe si la taille reelle depasse la limite (JSON + binaire)
+
+- [✅] 🟠 **[MOYENNE — complémentaire] Garde de taille en réception (défense-en-profondeur)** : le contrôle côté émission (`sendData` mesh / `forwardStarMessage`) est contournable par un pair qui retire le check client → ajout d'un garde dans `handleData` de `createPeerContext.js` qui rejette toute frame entrante dépassant `MAX_PAYLOAD_BYTES` AVANT de la passer au callback métier. Logique de mesure mutualisée dans `Composables/utils/payloadSize.js` (`getPayloadSizeBytes` / `isPayloadWithinLimit`), source de vérité unique partagée par l'émission, la retransmission hub et la réception
 
 ### usePeerTransport — Connexions entrantes
 

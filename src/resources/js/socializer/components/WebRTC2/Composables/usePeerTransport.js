@@ -28,8 +28,9 @@ import {
     PEER_DESTROY_DELAY_MS, 
     RECONNECT_BASE_DELAY_MS, 
     RECONNECT_MAX_DELAY_MS, 
-    SLUG_PATTERN, 
+    SLUG_PATTERN,
     STREAM_WAIT_TIMEOUT_MS } from '../webrtc2.config.js'
+import { getPayloadSizeBytes, isPayloadWithinLimit } from './utils/payloadSize.js'
 
 // -----------------------------------------------------------------------------
 // Registre global des contextes WebRTC actifs
@@ -196,43 +197,6 @@ function _resolveSenderSlugFromIncomingConn(conn, ctx) {
     }
 
     return null
-}
-
-function _getPayloadSizeBytes(payload) {
-    // Autorise les payloads binaires natifs navigateur
-    if (payload instanceof Blob) {
-        return { ok: true, bytes: payload.size, kind: 'blob' }
-    }
-
-    if (payload instanceof ArrayBuffer) {
-        return { ok: true, bytes: payload.byteLength, kind: 'arraybuffer' }
-    }
-
-    if (ArrayBuffer.isView(payload)) {
-        return { ok: true, bytes: payload.byteLength, kind: 'typed-array' }
-    }
-
-    // String brute
-    if (typeof payload === 'string') {
-        return { ok: true, bytes: new TextEncoder().encode(payload).length, kind: 'string' }
-    }
-
-    // JSON (objets, tableaux, nombres, booleens, null)
-    const valueType = typeof payload
-    const isJsonCompatible = payload === null || valueType === 'object' || valueType === 'number' || valueType === 'boolean'
-    if (isJsonCompatible) {
-        try {
-            const json = JSON.stringify(payload)
-            if (typeof json !== 'string') {
-                return { ok: false, reason: 'payload JSON invalide apres serialisation' }
-            }
-            return { ok: true, bytes: new TextEncoder().encode(json).length, kind: 'json' }
-        } catch (error) {
-            return { ok: false, reason: 'payload JSON non serialisable' }
-        }
-    }
-
-    return { ok: false, reason: `type non supporte (${valueType})` }
 }
 
 function registerContext(ctx) {
@@ -584,7 +548,7 @@ export function usePeerTransport(ctx) {
 
         // ── Limite de taille payload (anti-amplification DoS) ─────────────────
         // Types acceptes: JSON + binaire (Blob, File, ArrayBuffer, TypedArray)
-        const payloadSize = _getPayloadSizeBytes(envelope?.payload)
+        const payloadSize = getPayloadSizeBytes(envelope?.payload)
         if (!payloadSize.ok) {
             console.warn('[Hub] Enveloppe star ignoree: payload invalide', {
                 reason: payloadSize.reason,
@@ -660,6 +624,12 @@ export function usePeerTransport(ctx) {
         // ── TOPOLOGIE MESH ──────────────────────────────────────────────────────
         // Chaque peer est connecté à tous les autres → on envoie directement à chacun.
         if (ctx.topology.value === 'mesh') {
+            // Limite de taille payload (anti-DoS pair-à-pair) : le même `data` est
+            // diffusé à tous les pairs, on contrôle donc la taille une seule fois
+            // avant la boucle et on annule entièrement l'envoi si elle dépasse
+            // MAX_PAYLOAD_BYTES (JSON + binaire).
+            if (!isPayloadWithinLimit(data, '[Mesh]')) return
+
             const targets = destUserSlugs || ctx.connection.usersInRoom
             targets.forEach(userSlug => {
                 const conn = _getOpenDataConnection(room, userSlug, type)
