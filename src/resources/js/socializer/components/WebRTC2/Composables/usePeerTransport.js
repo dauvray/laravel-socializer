@@ -199,6 +199,58 @@ function _resolveSenderSlugFromIncomingConn(conn, ctx) {
     return null
 }
 
+// ─── Authentification des connexions/appels entrants ─────────────────────────
+// Faille [HAUTE]: localPeer.on('connection'|'call') acceptait toute connexion dont
+// le peerId était connu, sans vérifier que l'émetteur est un membre autorisé de la
+// room — un tiers connaissant un peerId pouvait ouvrir un datachannel ou déclencher
+// un appel et recevoir le stream local.
+//
+// Règle d'admission (appliquée AVANT setUpConnectionListeners / call.answer):
+//   1. `metadata.from` doit avoir un format de slug valide (_isValidSlug)
+//   2. `metadata.from` doit figurer dans `ctx.connection.usersInRoom`
+//   3. Défense-en-profondeur: si l'identité PeerJS réelle de la connexion entrante
+//      est déjà résolue à un slug connu (via la signalisation préalable qui mappe
+//      slug→peerId), ce slug doit correspondre à `metadata.from` — sinon tentative
+//      d'usurpation intra-room → rejet.
+function _isAuthorizedIncomingPeer(metadata, conn, ctx) {
+    const declaredFrom = metadata?.from
+
+    if (!_isValidSlug(declaredFrom)) {
+        console.warn(
+            '[WebRTC2] Connexion entrante refusée: `metadata.from` absent ou format de slug invalide',
+            { declaredFrom, senderPeerId: conn?.peer }
+        )
+        return false
+    }
+
+    const usersInRoom = Array.isArray(ctx?.connection?.usersInRoom)
+        ? ctx.connection.usersInRoom
+        : []
+
+    if (!usersInRoom.includes(declaredFrom)) {
+        console.warn(
+            '[WebRTC2] Connexion entrante refusée: émetteur hors de la room (non membre)',
+            { declaredFrom, senderPeerId: conn?.peer, usersInRoom }
+        )
+        return false
+    }
+
+    // Anti-usurpation: l'identité PeerJS réelle, si déjà mappée, doit correspondre
+    // au slug déclaré. Si elle n'est pas encore résolue (mapping pas prêt), on ne
+    // bloque pas sur ce seul critère pour éviter les faux négatifs (la garde 2 reste
+    // la barrière principale).
+    const resolvedSlug = _resolveSenderSlugFromIncomingConn(conn, ctx)
+    if (resolvedSlug && resolvedSlug !== declaredFrom) {
+        console.warn(
+            '[WebRTC2] Connexion entrante refusée: usurpation détectée (peerId réel ≠ `from` déclaré)',
+            { declaredFrom, resolvedSlug, senderPeerId: conn?.peer }
+        )
+        return false
+    }
+
+    return true
+}
+
 function registerContext(ctx) {
     if (!ctx?.contextId) return
     contextRegistry.set(ctx.contextId, ctx)
@@ -403,6 +455,12 @@ export function usePeerTransport(ctx) {
                     return
                 }
 
+                // Authentification: l'émetteur doit être un membre autorisé de la room.
+                if (!_isAuthorizedIncomingPeer(metadata, conn, targetCtx)) {
+                    try { conn.close() } catch (e) { /* ignore */ }
+                    return
+                }
+
                 targetCtx.setUpConnectionListeners(conn)
             })
 
@@ -424,6 +482,13 @@ export function usePeerTransport(ctx) {
                         "[WebRTC2] Aucun contexte trouvé pour call entrant — appel fermé",
                         metadata
                     )
+                    try { call.close() } catch (e) { /* ignore */ }
+                    return
+                }
+
+                // Authentification: l'appelant doit être un membre autorisé de la room
+                // (sinon il recevrait le stream local sans aucune vérification).
+                if (!_isAuthorizedIncomingPeer(metadata, call, targetCtx)) {
                     try { call.close() } catch (e) { /* ignore */ }
                     return
                 }
