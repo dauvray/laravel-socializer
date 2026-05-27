@@ -57,8 +57,8 @@
                     </div>
                     <TextareaMessage
                         ref="messengerInput"
-                        @start-writting="onStartWritting"
-                        @stop-writting="onStopWritting"
+                        @start-writting="startWriting"
+                        @stop-writting="stopWriting"
                         @send-message="onSendMessage"
                         @open-wysiwyg="onWysiwyg"
                         @update-height="updateElHeight"
@@ -70,12 +70,6 @@
             </div>
         </div>
 
-        <DataUserPeerConnection 
-            v-if="chatters && currentConversation"
-            :users="chatters"
-            :roomId="currentConversationId"
-            :callback-connection="connectionDataCallback"
-        ></DataUserPeerConnection>
         <ModalWidget
             v-if="showModal"
             target="ModalChat"
@@ -100,16 +94,15 @@
     import IconWidget from '~estarter/components/widgets/IconWidget.vue'
     import ChatContactsButton from './widgets/ChatContactsButton.vue'
     import MessageWidget from '~socializer/components/Chat/widgets/MessageWidget.vue'
-    import { usePeerStore } from '~socializer/stores/peers.js'
     import { useChatStore } from '~socializer/stores/chat.js'
     import { useMeStore } from '~estarter/stores/me.js'
-    import DataUserPeerConnection from '~socializer/components/WebRTC/widgets/DataUserPeerConnection.vue'
     import IntersectionObserver from '~socializer/components/widgets/IntersectionObserver.vue'
     import SpinnerTextWriting from '~estarter/components/widgets/Spinners/SpinnerTextWriting.vue'
     import TextareaMessage from './widgets/partials/TextareaMessage.vue'
     import resizable from "~socializer/directives/resizable_horizontal.js"
     import DateSeparator from './widgets/partials/DateSeparator.vue'
     import { useReverbPresence } from '~socializer/components/System/composables/useReverbChannel.js'
+    import { useTypingIndicator } from './composables/useTypingIndicator.js'
 
     // Composants asynchrones
     const RoomUsersList = defineAsyncComponent(() => import('~socializer/components/Server/widgets/RoomUsersList.vue'))
@@ -183,15 +176,11 @@
     const meStore = useMeStore()
     const { getMe: me } = storeToRefs(meStore)
 
-    const peerStore = usePeerStore()
-    const { sendData, closePeerConnection } = peerStore
-
     /*------ STATE ----------*/
     const currentConversationIdBackup = ref(null)
     const videoContainer = '#videoContainer'
     const intersectionObserver = ref(false)
     const agentBot = ref(null)
-    const actors = ref([])
     const attachedFiles = ref([])
     const cssVarName = '--messenger-height'
     const initialElHeight = 50
@@ -217,10 +206,25 @@
         return currentConversation.value && !currentConversation.value.general.chat.is_bot
     })
 
+    /*------ TYPING INDICATOR ----------*/
+    // Transport unique Reverb : whisper 'typing' entre users + signal serveur bot.
+    // `sendWhisper` pointe vers le canal de présence géré juste après par useReverbPresence.
+    const sendWhisper = (event, payload) => channelApi?.whisper(event, payload)
+
+    const {
+        actors,
+        onTypingWhisper,
+        removeTypingUser,
+        startWriting,
+        stopWriting,
+        addActorWriting,
+        removeActorWriting,
+    } = useTypingIndicator({ currentUser: me, whisper: sendWhisper })
+
     /*------ ECHO / REVERB ----------*/
     // Canal de présence du chat : join/leave auto au changement de conversation,
     // leave auto au démontage, et reconnexion des listeners gérés par le composable.
-    const { users: presentUsers } = useReverbPresence(channel, {
+    const channelApi = useReverbPresence(channel, {
         listeners: {
             '.receivedMsg': (event) => {
                 if(event.is_bot_answer) {
@@ -235,10 +239,15 @@
             '.updateConversationTitle': (event) => emit('update-conversation-title', event.title),
             '.botWriting': () => addActorWriting('Agent Bot'),
         },
+        whispers: {
+            typing: onTypingWhisper,
+        },
+        onLeaving: (user) => removeTypingUser(user?.id),
         onError: (error) => {
             console.error(error)
         },
     })
+    const { users: presentUsers } = channelApi
 
     // La liste des participants = utilisateurs présents (+ l'agent bot le cas échéant).
     const chatters = computed(() => {
@@ -394,62 +403,6 @@
         } else {
              updateElHeight(messengerInput.value.scrollHeight)
         }
-    }
-
-    /*------  DATA CONNECTION ----------*/
-    function connectionDataCallback(conn) {
-
-        conn.on("data", (data) => {
-            data = JSON.parse(data)
-
-            switch(data.action) {
-                case 'start_writing':
-                    addActorWriting(data.from)
-                    break
-                case 'stop_writing':
-                    removeActorWriting(data.from)
-                    break
-            }
-        });
-
-        conn.on("open", () => {
-            console.log('connection data chat ouverte', conn.connectionId)
-        });
-        conn.on("close", () => {
-            closePeerConnection(conn.metadata.from, conn.metadata.source, conn.metadata.room)
-            console.log('connection data chat fermée dans chat', conn.connectionId)
-        });
-
-    }
-
-    function onStartWritting() {
-        sendData({
-            data: {
-                action: 'start_writing',
-                from: me.value.name,
-            }
-        }, currentConversationId.value)
-    }
-
-    function onStopWritting() {
-        sendData({
-            data: {
-                action: 'stop_writing',
-                from: me.value.name,
-            }
-        }, currentConversationId.value)
-    }
-
-    function addActorWriting(name) {
-        if (!actors.value.includes(name)) {
-            actors.value.push(name)
-        }
-    }
-
-    function removeActorWriting(name) {
-        actors.value = actors.value.filter( item => {
-            return item !== name
-        })
     }
 
     /*------  MODALE ----------*/

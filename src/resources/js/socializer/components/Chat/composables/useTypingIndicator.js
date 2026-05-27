@@ -1,95 +1,92 @@
 /**
- * useTypingIndicator - Un composable pour gérer les indicateurs de saisie dans un chat.
- * 
- * Fonctionnalités :
- * - Écoute les whispers "typing" pour suivre qui est en train de taper.
- * - Permet de notifier les autres utilisateurs quand l'utilisateur actuel commence ou arrête de taper.
- * - Gère automatiquement l'expiration des indicateurs de saisie après un délai d'inactivité.
+ * useTypingIndicator — indicateurs « écrit… » du chat, via Reverb.
+ *
+ * Transport unique : le canal de présence Reverb du chat.
+ *  - Utilisateurs : client events (whisper 'typing') relayés entre clients.
+ *  - Agent Bot    : signal serveur (events `.botWriting` / `.receivedMsg`),
+ *                   ajouté explicitement via addActorWriting / removeActorWriting.
+ *
+ * Le composable ne souscrit pas lui-même au canal : il fournit le handler
+ * `onTypingWhisper` (à brancher sur l'option `whispers` de useReverbPresence)
+ * et émet via la fonction `whisper` reçue en dépendance.
+ *
+ * @param {Object}   deps
+ * @param {Ref|Object} deps.currentUser  - l'utilisateur courant (ref ou objet plat)
+ * @param {Function} deps.whisper        - (event, payload) => void, émet un client event
  */
-import { ref, computed, inject, onMounted, onBeforeUnmount, unref } from 'vue'
-import { REVERB_CHANNEL } from '~socializer/components/System/system.config.js'
+import { ref, computed, unref } from 'vue'
 
-export function useTypingIndicator(currentUser, options = {}) {
-    
-    const { idleDelay = 2000, expireDelay = 4000 } = options
+export function useTypingIndicator({ currentUser, whisper } = {}) {
 
-    const reverb = inject(REVERB_CHANNEL, null)
-    if (!reverb) {
-        console.warn('[useTypingIndicator] Aucun canal Reverb fourni (provide manquant).')
-    }
+    const me = () => unref(currentUser) // marche pour un ref ou un objet plat
 
-    const me = () => unref(currentUser) // pratique : marche pour un ref ou un objet plat
+    // Utilisateurs en train de taper, pilotés par whisper : Map<userId, name>
+    const typingUsers = ref(new Map())
+    // Acteurs ajoutés explicitement (Agent Bot : signal serveur, pas de whisper)
+    const manualActors = ref([])
 
-    // Map<userId, { name, expireTimer }>
-    const typingMap   = ref(new Map())
-    const typingUsers = computed(() =>
-        [...typingMap.value.values()].map(u => u.name)
-    )
+    // Liste unifiée de noms affichée dans le template, dédupliquée.
+    const actors = computed(() => {
+        const names = [...typingUsers.value.values(), ...manualActors.value]
+        return [...new Set(names)]
+    })
 
     const touchReactivity = () => {
-        typingMap.value = new Map(typingMap.value)
+        typingUsers.value = new Map(typingUsers.value)
     }
 
-    // --- Réception ---
+    /* ---- Réception (whisper utilisateurs) ---- */
     const onTypingWhisper = ({ userId, name, isTyping } = {}) => {
         const meId = me()?.id
-        if (!userId || !meId || userId === meId) return
-
-        const prev = typingMap.value.get(userId)
-        if (prev?.expireTimer) clearTimeout(prev.expireTimer)
+        if (!userId || userId === meId) return // on ignore nos propres whispers
 
         if (isTyping) {
-            const expireTimer = setTimeout(() => {
-                typingMap.value.delete(userId)
-                touchReactivity()
-            }, expireDelay)
-            typingMap.value.set(userId, { name, expireTimer })
-            touchReactivity()
+            typingUsers.value.set(userId, name)
         } else {
-            typingMap.value.delete(userId)
+            typingUsers.value.delete(userId)
+        }
+        touchReactivity()
+    }
+
+    /* ---- Émission (whisper utilisateurs) — binaire focus/blur ---- */
+    const startWriting = () => {
+        const u = me()
+        if (!u) return
+        whisper?.('typing', { userId: u.id, name: u.name, isTyping: true })
+    }
+
+    const stopWriting = () => {
+        const u = me()
+        if (!u) return
+        whisper?.('typing', { userId: u.id, name: u.name, isTyping: false })
+    }
+
+    // Nettoyage : un user qui quitte le canal ne doit pas rester « écrit… »
+    // (filet de sécurité si son whisper `stop` a été perdu).
+    const removeTypingUser = (userId) => {
+        if (typingUsers.value.delete(userId)) {
             touchReactivity()
         }
     }
 
-    // --- Émission (avec throttle / auto-stop) ---
-    let idleTimer = null
-    let isCurrentlyTyping = false
-
-    const notifyTyping = () => {
-        const u = me()
-        if (!u) return  // pas encore prêt → on ne whisper rien
-        if (!isCurrentlyTyping) {
-            isCurrentlyTyping = true
-            reverb?.whisper('typing', { userId: u.id, name: u.name, isTyping: true })
+    /* ---- Acteurs explicites (Agent Bot) ---- */
+    const addActorWriting = (name) => {
+        if (!manualActors.value.includes(name)) {
+            manualActors.value.push(name)
         }
-        clearTimeout(idleTimer)
-        idleTimer = setTimeout(stopTyping, idleDelay)
     }
 
-    const stopTyping = () => {
-        if (!isCurrentlyTyping) return
-        const u = me()
-        isCurrentlyTyping = false
-        clearTimeout(idleTimer)
-        if (u) reverb?.whisper('typing', { userId: u.id, name: u.name, isTyping: false })
+    const removeActorWriting = (name) => {
+        manualActors.value = manualActors.value.filter(item => item !== name)
     }
-
-    // --- Lifecycle ---
-    onMounted(() => {
-        reverb?.listenForWhisper('typing', onTypingWhisper)
-    })
-
-    onBeforeUnmount(() => {
-        reverb?.stopListeningForWhisper('typing')
-        clearTimeout(idleTimer)
-        // purge des timers expire restants
-        typingMap.value.forEach(u => clearTimeout(u.expireTimer))
-        typingMap.value.clear()
-    })
 
     return {
-        typingUsers,
-        notifyTyping,
-        stopTyping,
+        actors,
+        onTypingWhisper,
+        removeTypingUser,
+        startWriting,
+        stopWriting,
+        addActorWriting,
+        removeActorWriting,
     }
 }
