@@ -7,11 +7,12 @@
                 </li>
             </ul>
             <div class="input-group mb-3">
-                <input type="text" 
-                    class="form-control" 
-                    placeholder="Votre message" 
+                <input type="text"
+                    class="form-control"
+                    placeholder="Votre message"
                     v-model="messageToSend"
-                    @input="onInput"
+                    @focus="startWriting"
+                    @blur="stopWriting"
                     @keyup.enter="send">
                 <button type="button" class="btn btn-primary" @click="send">Send</button>
             </div>
@@ -48,7 +49,8 @@
             messageToSend,
             send,
             typingUsers,
-            onInput,
+            startWriting,
+            stopWriting,
         } = useChatSimple(
                 props.api.currentRoom.value, // état de contexte de room sélectionné
                 props.api // passé en argument, permet d'utiliser des méthodes de useMediaBroadcast (ex: sendDataToPeer) ou d'autres méthodes de transport selon les besoins
