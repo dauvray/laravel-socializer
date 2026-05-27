@@ -1,28 +1,5 @@
 <template>
     <div class="chat-wrapper">
-        <Teleport to="#room-header-tools">
-            <MediaBroadcastProvider
-                :users="chatters"
-                :room="currentConversationId"
-                v-slot="stream"
-                ><StreamDefaultUserButtonUI v-bind="stream" />
-            </MediaBroadcastProvider>
-
-            <MediaBroadcastProvider
-                :users="chatters"
-                :room="currentConversationId"
-                mode="screen"
-                v-slot="screen"
-                ><CaptureDefaultUserButtonUI v-bind="screen" />
-            </MediaBroadcastProvider>
-
-            <ChatContactsButton
-                v-if="isContactBtnVisible"
-                :conversation="currentConversation.general"
-                @add-contact="onAddContact"
-                @quit-chat="onQuitChat"
-            ></ChatContactsButton>
-        </Teleport>
 
         <RoomUsersList v-if="displayUsers" 
             :users="chatters"
@@ -115,13 +92,14 @@
     </div>
 </template>
 
-<script>
+<script setup>
 
-    import { defineAsyncComponent } from '@vue/runtime-core'
+    import { ref, computed, inject, onMounted, onBeforeUnmount, onUnmounted, watch, defineAsyncComponent } from 'vue'
+    import { useRoute, useRouter } from 'vue-router'
+    import { storeToRefs } from 'pinia'
     import IconWidget from '~estarter/components/widgets/IconWidget.vue'
     import ChatContactsButton from './widgets/ChatContactsButton.vue'
     import MessageWidget from '~socializer/components/Chat/widgets/MessageWidget.vue'
-    import { mapActions, mapState } from 'pinia'
     import { usePeerStore } from '~socializer/stores/peers.js'
     import { useChatStore } from '~socializer/stores/chat.js'
     import { useMeStore } from '~estarter/stores/me.js'
@@ -131,425 +109,429 @@
     import TextareaMessage from './widgets/partials/TextareaMessage.vue'
     import resizable from "~socializer/directives/resizable_horizontal.js"
     import DateSeparator from './widgets/partials/DateSeparator.vue'
+    import { useReverbPresence } from '~socializer/components/System/composables/useReverbChannel.js'
 
-    export default {
-        name: 'ChatComponent',
-        inject: ["eventBus"],
-        emits: [
-            'update-chatters',
-            'update-conversation-title',
-        ],
-        components: {
-            IconWidget,
-            ChatContactsButton,
-            DataUserPeerConnection,
-            IntersectionObserver,
-            MessageWidget,
-            SpinnerTextWriting,
-            DateSeparator,
-            RoomUsersList: defineAsyncComponent(() => import('~socializer/components/Server/widgets/RoomUsersList.vue')),
-            ModalWidget: defineAsyncComponent(() => import('~estarter/components/widgets/ModalLazy.js')),
-            TextareaMessage,
-            UploadFilesTable: defineAsyncComponent(() => import('~socializer/components/Chat/widgets/partials/UploadFilesTable.vue')),
-            MediaBroadcastProvider: defineAsyncComponent(() => import('~socializer/components/WebRTC/widgets/MediaBroadcastProvider.vue')),
-            StreamDefaultUserButtonUI: defineAsyncComponent(() => import('~socializer/components/WebRTC/widgets/ui/StreamDefaultUserButtonUI.vue')),
-            CaptureDefaultUserButtonUI: defineAsyncComponent(() => import('~socializer/components/WebRTC/widgets/ui/CaptureDefaultUserButtonUI.vue')),
+    // Composants asynchrones
+    const RoomUsersList = defineAsyncComponent(() => import('~socializer/components/Server/widgets/RoomUsersList.vue'))
+    const ModalWidget = defineAsyncComponent(() => import('~estarter/components/widgets/ModalLazy.js'))
+    const UploadFilesTable = defineAsyncComponent(() => import('~socializer/components/Chat/widgets/partials/UploadFilesTable.vue'))
+    const MediaBroadcastProvider = defineAsyncComponent(() => import('~socializer/components/WebRTC/widgets/MediaBroadcastProvider.vue'))
+    const StreamDefaultUserButtonUI = defineAsyncComponent(() => import('~socializer/components/WebRTC/widgets/ui/StreamDefaultUserButtonUI.vue'))
+    const CaptureDefaultUserButtonUI = defineAsyncComponent(() => import('~socializer/components/WebRTC/widgets/ui/CaptureDefaultUserButtonUI.vue'))
+
+    // Directive locale (template : v-resizable)
+    const vResizable = resizable
+
+    const props = defineProps({
+        vertexId: {
+            type: String,
+            required: false,
+            default: null,
         },
-        directives: {
-            resizable,
+        displayUsers: {
+            type: Boolean,
+            required: false,
+            default: true,
         },
-        props: {
-            vertexId: {
-                type: String,
-                required: false,
-                default: null,
-            },
-            displayUsers: {
-                type: Boolean,
-                required: false,
-                default: true,
-            },
-            displaySeparator: {
-                type: Boolean,
-                required: false,
-                default: true,
-            },
-            autoload: {
-                type: Boolean,
-                required: false,
-                default: true,
-            },
+        displaySeparator: {
+            type: Boolean,
+            required: false,
+            default: true,
         },
-        data() {
-            return {
-                currentConversationIdBackup: null,
-                channelBackup: null,
-                videoContainer: '#videoContainer',
-                intersectionObserver: false,
-                agentBot: null,
-                actors: [],
-                chatters: [],
-                attachedFiles: [],
-                cssVarName: '--messenger-height',
-                initialElHeight: 50,
-                ElHeight: null,
-                showModal: false,
-                fileUrl: null,
-            }
+        autoload: {
+            type: Boolean,
+            required: false,
+            default: true,
         },
-        computed: {
-            ...mapState(useChatStore, {
-                currentConversationId: 'getCurrentConversationId',
-                messages:'getCurrentConversationMessages',
-                currentConversation: 'getCurrentConversation',
-                nextPageUrl: 'getCurrentConversationNextUrl',
-                isBot: 'getIsBot',
-            }),
-            ...mapState(useMeStore, {
-                me: 'getMe',
-            }),
-            channel: function() {
-                if(this.currentConversation) {
-                    return `chat.${this.currentConversationId}`
+    })
+
+    const emit = defineEmits([
+        'update-chatters',
+        'update-conversation-title',
+    ])
+
+    const eventBus = inject('eventBus')
+    const route = useRoute()
+    const router = useRouter()
+
+    /*------ STORES ----------*/
+    const chatStore = useChatStore()
+    const {
+        getCurrentConversationId: currentConversationId,
+        getCurrentConversationMessages: messages,
+        getCurrentConversation: currentConversation,
+        getCurrentConversationNextUrl: nextPageUrl,
+        getIsBot: isBot,
+    } = storeToRefs(chatStore)
+    const {
+        addContactToConversation,
+        loadConversation,
+        resetConversation,
+        sendMessage,
+        receiveMessage,
+        leaveCurrentConversation,
+        updateConversationInfos,
+        sendEmoji,
+        receiveEmoji,
+        deleteMessage,
+        deletedMessage,
+        updateMessage,
+        updatedMessage,
+        sendAudio,
+    } = chatStore
+
+    const meStore = useMeStore()
+    const { getMe: me } = storeToRefs(meStore)
+
+    const peerStore = usePeerStore()
+    const { sendData, closePeerConnection } = peerStore
+
+    /*------ STATE ----------*/
+    const currentConversationIdBackup = ref(null)
+    const videoContainer = '#videoContainer'
+    const intersectionObserver = ref(false)
+    const agentBot = ref(null)
+    const actors = ref([])
+    const attachedFiles = ref([])
+    const cssVarName = '--messenger-height'
+    const initialElHeight = 50
+    const ElHeight = ref(null)
+    const showModal = ref(false)
+    const fileUrl = ref(null)
+
+    // Refs de template
+    const messageContainer = ref(null)
+    const messageContainerInner = ref(null)
+    const messenger = ref(null)
+    const messengerInput = ref(null)
+
+    /*------ COMPUTED ----------*/
+    const channel = computed(() => {
+        if(currentConversation.value) {
+            return `chat.${currentConversationId.value}`
+        }
+        return null
+    })
+
+    const isContactBtnVisible = computed(() => {
+        return currentConversation.value && !currentConversation.value.general.chat.is_bot
+    })
+
+    /*------ ECHO / REVERB ----------*/
+    // Canal de présence du chat : join/leave auto au changement de conversation,
+    // leave auto au démontage, et reconnexion des listeners gérés par le composable.
+    const { users: presentUsers } = useReverbPresence(channel, {
+        listeners: {
+            '.receivedMsg': (event) => {
+                if(event.is_bot_answer) {
+                    removeActorWriting('Agent Bot')
                 }
-                return null
+                onReceiveMessage(event)
             },
-
-            isContactBtnVisible: function() {
-                return this.currentConversation && !this.currentConversation.general.chat.is_bot
-            }
-
+            '.receivedEmoji': (event) => receiveEmoji(event),
+            '.updateChatters': (event) => updateConversationInfos(event),
+            '.deletedMessage': (event) => onDeletedMessage(event.vertexid),
+            '.updatedMsg': (event) => onUpdatedMessage(event),
+            '.updateConversationTitle': (event) => emit('update-conversation-title', event.title),
+            '.botWriting': () => addActorWriting('Agent Bot'),
         },
-        async created() {
-
-            if(this.isBot){
-                const settings = await import('~socializer/components/Chat/agentSettings.js')
-                this.agentBot = settings.coreAgentSettings.agents.find(agent => agent.bot_id == this.currentConversation.general.chat.bot_id)
-            }
-
-            if(!this.currentConversation && this.autoload) {
-                this.loadConversation(this.vertexId || this.$route.params.vertexId)
-            } 
+        onError: (error) => {
+            console.error(error)
         },
-        mounted() {
-            setTimeout(()=> {
-                this.waitImagesAndScroll()
-            },1000)
+    })
 
-            this.intersectionObserver = true
-        },
-        beforeUnmount() {
-            Echo.leave(this.channelBackup)
+    // La liste des participants = utilisateurs présents (+ l'agent bot le cas échéant).
+    const chatters = computed(() => {
+        if(isBot.value && agentBot.value) {
+            return [...presentUsers.value, agentBot.value]
+        }
+        return presentUsers.value
+    })
 
-            Echo.private(this.me.channel).whisper('leave-chat', {
-                chatId: this.currentConversationIdBackup,
-                userId: this.me.id,
-            }) 
-        },
-        unmounted() {
-            this.resetConversation(this.currentConversationIdBackup)
-        },
-        watch: {
-            currentConversation: {
-                handler(value) {
-                    if(value) {
-                        Echo.leave(this.channelBackup)
-                        // backup pour unmount
-                        this.currentConversationIdBackup = this.currentConversationId
-                        this.channelBackup = this.channel
-                        this.iniChatEvents()
-                    }
-                },
-                immediate: true,
-            },
-            messages() {
-                setTimeout(()=> {
-                    this.waitImagesAndScroll(true)
-                }, 1000)
-            },
-            chatters(newVal) {
-                console.log('chatters changed', newVal)
-                this.$emit('update-chatters', newVal)
-            }
-        },
-        methods: {
-            ...mapActions(useChatStore, [
-                'addContactToConversation',
-                'loadConversation',
-                'resetConversation',
-                'sendMessage',
-                'receiveMessage',
-                'leaveCurrentConversation',
-                'updateConversationInfos',
-                'sendEmoji',
-                'receiveEmoji',
-                'deleteMessage',
-                'deletedMessage',
-                'updateMessage',
-                'updatedMessage',
-                'sendAudio',
-            ]),
-            ...mapActions(usePeerStore, [
-                'sendData',
-                'closePeerConnection',
-            ]),
-            iniChatEvents() {
-                if(this.channel) {
-                    Echo.leave(this.channel)
-                    Echo.join(this.channel)
-                        .here((users) => {
-                            this.chatters.splice(0, this.chatters.length, ...users)
+    /*------ METHODS ----------*/
+    function onSendMessage(message) {
 
-                            if(this.isBot){
-                                this.chatters.push(this.agentBot)
-                            }
-                        })
-                        .joining((user) => {
-                            let index = this.chatters.findIndex((item) => item.id === user.id)
-                            if (index === -1) {
-                                this.chatters.push(user)
-                            }
-                        })
-                        .leaving((user) => {
-                            const index = this.chatters.findIndex(c => c.id == user.id)
-                            if (index !== -1) this.chatters.splice(index, 1)
-                        })
-                        .listen('.receivedMsg', (event) => {
-                            if(event.is_bot_answer) {
-                                this.removeActorWriting('Agent Bot')
-                            }
-                            this.onReceiveMessage(event)
-                        })
-                        .listen('.receivedEmoji', (event) => {
-                           this.receiveEmoji(event)
-                        })
-                        .listen('.updateChatters', (event) => {
-                            this.updateConversationInfos(event)
-                        })
-                        .listen('.deletedMessage', (event) => { 
-                            this.onDeletedMessage(event.vertexid)
-                        })
-                        .listen('.updatedMsg', (event) => {
-                            this.onUpdatedMessage(event)
-                        })
-                        .listen('.updateConversationTitle', (event) => {
-                           this.$emit('update-conversation-title', event.title)
-                        })
-                        .listen('.botWriting', () => {
-                           this.addActorWriting('Agent Bot')
-                        })
-                        .error((error) => {
-                            console.error(error);
-                        })
-                }
-            },
-            onSendMessage(message) {
+        sendMessage(message, currentConversationId.value, attachedFiles.value)
 
-                this.sendMessage(message, this.currentConversationId, this.attachedFiles)
+         // Reset
+        attachedFiles.value = []
+        messenger.value.style.setProperty(cssVarName, `${initialElHeight}px`);
+        eventBus.$emit('sended-messenger-message');
+    }
 
-                 // Reset
-                this.attachedFiles = []
-                this.$refs.messenger.style.setProperty(this.cssVarName, `${this.initialElHeight}px`);
-                this.eventBus.$emit('sended-messenger-message');
-            },
-            onUpdateMessage(message, messageId) {
-                this.updateMessage({
-                    message: message,
-                    messageId: messageId,
-                    chatId: this.currentConversationId,
-                })
-            },
-            onRecorded(formData) {
-                formData.append('message', '')
-                formData.append('chat_id', this.currentConversationId)
-                this.sendAudio( formData )
-            },
-            onSelectedEmoji(emoji, message) {
-                this.sendEmoji({
-                    emoji: emoji,
-                    messageId: message.id,
-                    chatId: this.currentConversationId,
-                    from: this.me.slug,
-                })
-            },
-            onDeleteMessage(messageId) {
-                this.deleteMessage({
-                    messageId: messageId,
-                    chatId: this.currentConversationId,
-                    from: this.me.slug,
-                })
-            },
-            onUpdatedMessage(payload) {
-                this.updatedMessage(payload)
-            },
-            onReceiveMessage(event) {
-                this.receiveMessage(event)
-                setTimeout(() => {
-                    this.scrollView()
-               }, 300)
-            },
-            onDeletedMessage(vertexid) {
-                this.deletedMessage(vertexid)
-            },
-            onAddContact(identifier) {
-                this.addContactToConversation(identifier, this.currentConversationId)
-            },
-            scrollView() {
-                const el = this.$refs.messageContainerInner
-                if (el) {
-                    el.scrollIntoView({ behavior: 'smooth', block: 'end' })
-                }
-            },
-            waitImagesAndScroll(is_new_message = false) {
-               
-                const el = this.$refs.messageContainerInner
-                if (!el) return
+    function onUpdateMessage(message, messageId) {
+        updateMessage({
+            message: message,
+            messageId: messageId,
+            chatId: currentConversationId.value,
+        })
+    }
 
-                const images = is_new_message ? el.querySelectorAll('lastMessage') : el.querySelectorAll('img')
+    function onRecorded(formData) {
+        formData.append('message', '')
+        formData.append('chat_id', currentConversationId.value)
+        sendAudio( formData )
+    }
 
-                const total = images.length
-                if (total === 0) {
-                    this.scrollView()
-                    return
-                }
+    function onSelectedEmoji(emoji, message) {
+        sendEmoji({
+            emoji: emoji,
+            messageId: message.id,
+            chatId: currentConversationId.value,
+            from: me.value.slug,
+        })
+    }
 
-                let loaded = 0
-                const checkDone = () => {
-                    loaded++
+    function onDeleteMessage(messageId) {
+        deleteMessage({
+            messageId: messageId,
+            chatId: currentConversationId.value,
+            from: me.value.slug,
+        })
+    }
 
-                    if (loaded === total) {
-                        this.scrollView()
-                    }
-                }
+    function onUpdatedMessage(payload) {
+        updatedMessage(payload)
+    }
 
-                images.forEach(img => {
-                    if (img.complete) {
-                        checkDone()
-                    } else {
-                        img.addEventListener('load', checkDone, { once: true })
-                        img.addEventListener('error', checkDone, { once: true }) // au cas où une image échoue
-                    }
-                })
-            },
-            onTriggerObserver() {
-                if(this.nextPageUrl) {
-                    const container = this.$refs.messageContainer
-                    const previousScrollHeight = container.scrollHeight
+    function onReceiveMessage(event) {
+        receiveMessage(event)
+        setTimeout(() => {
+            scrollView()
+       }, 300)
+    }
 
-                    this.loadConversation(null, this.nextPageUrl).then(() => {
-                        const newScrollHeight = container.scrollHeight
-                        container.scrollTop += newScrollHeight - previousScrollHeight
-                    })
-                }  
-            },
-            onQuitChat() {
-                this.leaveCurrentConversation()
-                this.$router.push({ name: 'Teams'})
-            },
-            onFileAdded(file) {
-                 file.preview = URL.createObjectURL(file.data)
-                 this.attachedFiles.push(file)
-            },
-            onRemoveFile(fileId) {
-               this.$refs.messengerInput.removeFile(fileId)
-            },
-            onRemovedFile(file) {
-                this.attachedFiles = this.attachedFiles.filter(f => f.id !== file.id)
-            },
+    function onDeletedMessage(vertexid) {
+        deletedMessage(vertexid)
+    }
 
-            /*------ RESIZER ----------*/
-            updateElHeight(height) {
-                if( height < this.initialElHeight) {
-                    height = this.initialElHeight
-                }
-                this.ElHeight = height
-                // Appliquer dynamiquement via variable CSS
-                this.$refs.messenger.style.setProperty(this.cssVarName, `${this.ElHeight}px`)
-            },
-            onWysiwyg(opened) {
-                if(opened) {
-                    this.updateElHeight(this.initialElHeight + 300)
-                } else {
-                     this.updateElHeight(this.$refs.messengerInput.scrollHeight)
-                } 
-            },
+    function onAddContact(identifier) {
+        addContactToConversation(identifier, currentConversationId.value)
+    }
 
-            /*------  DATA CONNECTION ----------*/
-            connectionDataCallback(conn) {
-
-                conn.on("data", (data) => {
-                    data = JSON.parse(data)
-
-                    switch(data.action) {
-                        case 'start_writing':
-                            this.addActorWriting(data.from)
-                            break
-                        case 'stop_writing':
-                            this.removeActorWriting(data.from)
-                            break
-                    }
-                });
-
-                conn.on("open", () => {
-                    console.log('connection data chat ouverte', conn.connectionId)
-                });
-                conn.on("close", () => {
-                    this.closePeerConnection(conn.metadata.from, conn.metadata.source, conn.metadata.room)
-                    console.log('connection data chat fermée dans chat', conn.connectionId)
-                });
-
-            },
-            onStartWritting() {
-                this.sendData({
-                    data: {
-                        action: 'start_writing',
-                        from: this.me.name,
-                    }
-                }, this.currentConversationId)
-            },
-            onStopWritting() {
-                this.sendData({
-                    data: {
-                        action: 'stop_writing',
-                        from: this.me.name,
-                    }
-                }, this.currentConversationId)
-            },
-            addActorWriting(name) {
-                if (!this.actors.includes(name)) {
-                    this.actors.push(name)
-                }
-            },
-            removeActorWriting(name) {
-                this.actors = this.actors.filter( item => {
-                    return item !== name
-                })
-            },
-            /*------  MODALE ----------*/
-            onShowFileInModal(fileUrl) {
-                this.fileUrl = fileUrl
-                this.onShowModal()
-            },
-            onShowModal() {
-                this.showModal = true
-            },
-            onHideModal() {
-                this.showModal = false
-            },
-            /*********** DATES *******/
-            shouldShowDateSeparator(currentMessage, index) {
-                if(this.displaySeparator === false)  return false
-                 
-                // Toujours afficher le séparateur pour le premier message
-                if (index === 0) return true
-                
-                const previousMessage = this.messages[index - 1]
-                const currentDate = new Date(currentMessage.created_at).toDateString()
-                const previousDate = new Date(previousMessage.created_at).toDateString()
-                
-                // Afficher le séparateur si le jour est différent du message précédent
-                return currentDate !== previousDate
-            },
+    function scrollView() {
+        const el = messageContainerInner.value
+        if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'end' })
         }
     }
+
+    function waitImagesAndScroll(is_new_message = false) {
+
+        const el = messageContainerInner.value
+        if (!el) return
+
+        const images = is_new_message ? el.querySelectorAll('lastMessage') : el.querySelectorAll('img')
+
+        const total = images.length
+        if (total === 0) {
+            scrollView()
+            return
+        }
+
+        let loaded = 0
+        const checkDone = () => {
+            loaded++
+
+            if (loaded === total) {
+                scrollView()
+            }
+        }
+
+        images.forEach(img => {
+            if (img.complete) {
+                checkDone()
+            } else {
+                img.addEventListener('load', checkDone, { once: true })
+                img.addEventListener('error', checkDone, { once: true }) // au cas où une image échoue
+            }
+        })
+    }
+
+    function onTriggerObserver() {
+        if(nextPageUrl.value) {
+            const container = messageContainer.value
+            const previousScrollHeight = container.scrollHeight
+
+            loadConversation(null, nextPageUrl.value).then(() => {
+                const newScrollHeight = container.scrollHeight
+                container.scrollTop += newScrollHeight - previousScrollHeight
+            })
+        }
+    }
+
+    function onQuitChat() {
+        leaveCurrentConversation()
+        router.push({ name: 'Teams'})
+    }
+
+    function onFileAdded(file) {
+         file.preview = URL.createObjectURL(file.data)
+         attachedFiles.value.push(file)
+    }
+
+    function onRemoveFile(fileId) {
+       messengerInput.value.removeFile(fileId)
+    }
+
+    function onRemovedFile(file) {
+        attachedFiles.value = attachedFiles.value.filter(f => f.id !== file.id)
+    }
+
+    /*------ RESIZER ----------*/
+    function updateElHeight(height) {
+        if( height < initialElHeight) {
+            height = initialElHeight
+        }
+        ElHeight.value = height
+        // Appliquer dynamiquement via variable CSS
+        messenger.value.style.setProperty(cssVarName, `${ElHeight.value}px`)
+    }
+
+    function onWysiwyg(opened) {
+        if(opened) {
+            updateElHeight(initialElHeight + 300)
+        } else {
+             updateElHeight(messengerInput.value.scrollHeight)
+        }
+    }
+
+    /*------  DATA CONNECTION ----------*/
+    function connectionDataCallback(conn) {
+
+        conn.on("data", (data) => {
+            data = JSON.parse(data)
+
+            switch(data.action) {
+                case 'start_writing':
+                    addActorWriting(data.from)
+                    break
+                case 'stop_writing':
+                    removeActorWriting(data.from)
+                    break
+            }
+        });
+
+        conn.on("open", () => {
+            console.log('connection data chat ouverte', conn.connectionId)
+        });
+        conn.on("close", () => {
+            closePeerConnection(conn.metadata.from, conn.metadata.source, conn.metadata.room)
+            console.log('connection data chat fermée dans chat', conn.connectionId)
+        });
+
+    }
+
+    function onStartWritting() {
+        sendData({
+            data: {
+                action: 'start_writing',
+                from: me.value.name,
+            }
+        }, currentConversationId.value)
+    }
+
+    function onStopWritting() {
+        sendData({
+            data: {
+                action: 'stop_writing',
+                from: me.value.name,
+            }
+        }, currentConversationId.value)
+    }
+
+    function addActorWriting(name) {
+        if (!actors.value.includes(name)) {
+            actors.value.push(name)
+        }
+    }
+
+    function removeActorWriting(name) {
+        actors.value = actors.value.filter( item => {
+            return item !== name
+        })
+    }
+
+    /*------  MODALE ----------*/
+    function onShowFileInModal(url) {
+        fileUrl.value = url
+        onShowModal()
+    }
+
+    function onShowModal() {
+        showModal.value = true
+    }
+
+    function onHideModal() {
+        showModal.value = false
+    }
+
+    /*********** DATES *******/
+    function shouldShowDateSeparator(currentMessage, index) {
+        if(props.displaySeparator === false)  return false
+
+        // Toujours afficher le séparateur pour le premier message
+        if (index === 0) return true
+
+        const previousMessage = messages.value[index - 1]
+        const currentDate = new Date(currentMessage.created_at).toDateString()
+        const previousDate = new Date(previousMessage.created_at).toDateString()
+
+        // Afficher le séparateur si le jour est différent du message précédent
+        return currentDate !== previousDate
+    }
+
+    /*------ WATCHERS ----------*/
+    // Le join/leave du canal est géré par useReverbPresence (canal réactif).
+    // On conserve uniquement la sauvegarde de l'id pour le démontage.
+    watch(currentConversationId, (value) => {
+        if(value) {
+            currentConversationIdBackup.value = value
+        }
+    }, { immediate: true })
+
+    watch(messages, () => {
+        setTimeout(()=> {
+            waitImagesAndScroll(true)
+        }, 1000)
+    })
+
+    watch(chatters, (newVal) => {
+        console.log('chatters changed', newVal)
+        emit('update-chatters', newVal)
+    })
+
+    /*------ LIFECYCLE ----------*/
+    // équivalent de created() (async non bloquant)
+    ;(async () => {
+        if(isBot.value){
+            const settings = await import('~socializer/components/Chat/agentSettings.js')
+            agentBot.value = settings.coreAgentSettings.agents.find(agent => agent.bot_id == currentConversation.value.general.chat.bot_id)
+        }
+
+        if(!currentConversation.value && props.autoload) {
+            loadConversation(props.vertexId || route.params.vertexId)
+        }
+    })()
+
+    onMounted(() => {
+        setTimeout(()=> {
+            waitImagesAndScroll()
+        },1000)
+
+        intersectionObserver.value = true
+    })
+
+    onBeforeUnmount(() => {
+        // Le canal de présence du chat est quitté automatiquement par useReverbPresence.
+        // On notifie le canal privé personnel de l'utilisateur de la sortie du chat.
+        Echo.private(me.value.channel).whisper('leave-chat', {
+            chatId: currentConversationIdBackup.value,
+            userId: me.value.id,
+        })
+    })
+
+    onUnmounted(() => {
+        resetConversation(currentConversationIdBackup.value)
+    })
 </script>
