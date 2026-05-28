@@ -34,7 +34,7 @@ l’envoi direct ne filtre pas la taille — un client peut envoyer un payload d
 
 ### Backend Laravel — UserController (signalisation)
 
-- [ ] 🔴 **[CRITIQUE] Usurpation d'identité via `closeConnectionToPeerId`** `[S]` : `fromUserSlug` est lu depuis la requête (`$request->get('fromUserSlug')`) puis broadcasté tel quel, sans le lier à l'utilisateur authentifié — un client peut forger ce champ et déclencher une fermeture de connexion en se faisant passer pour un autre utilisateur → remplacer par `Auth::user()->slug`, ignorer/refuser toute valeur cliente pour `fromUserSlug`, et journaliser les tentatives de mismatch
+- [✅] 🔴 **[CRITIQUE] Usurpation d'identité via `closeConnectionToPeerId`** `[S]` : `fromUserSlug` était lu depuis la requête (`$request->get('fromUserSlug')`) puis broadcasté tel quel, sans le lier à l'utilisateur authentifié — un client pouvait forger ce champ et déclencher une fermeture de connexion en se faisant passer pour un autre utilisateur → alignement sur le pattern déjà appliqué dans les 4 autres méthodes de signalisation du controller (`askForPeerId`, `responseToPeerId`, `responseToPeerAuthorization`, `sendAlertToUser`) : `Auth::user()->slug` est désormais utilisé comme source de vérité pour `fromUserSlug` dans le payload broadcast, la valeur cliente est ignorée, et tout mismatch (claimed_slug ≠ auth_slug) déclenche un `Log::warning` traçant `auth_user_id`, `auth_user_slug`, `claimed_slug`, `target_slug`, `ip`, `user_agent`. Nettoyage cosmétique côté front : `signalRemoteToClosePeer` (`stores/peers/actions.js`) n'envoie plus le champ `fromUserSlug` (le back l'ignore désormais).
 
 ### Architecture — Absence de chiffrement E2E
 

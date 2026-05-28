@@ -246,11 +246,9 @@ export default {
         }
     },
     signalRemoteToClosePeer(metadata){
-        const meStore = useMeStore()
         const normalizedMetadata = normalizePeerMetadata(metadata)
         AjaxService.load('/close-connection-to-peer-id', 'post', {
             toUserSlug: normalizedMetadata.from,
-            fromUserSlug: meStore.getMe?.slug != null ? String(meStore.getMe.slug) : '',
             room: normalizedMetadata.room,
             type: normalizedMetadata.source,
         })

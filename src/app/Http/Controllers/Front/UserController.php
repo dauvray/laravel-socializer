@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Http\Request;
 use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\Broadcast;
+use Illuminate\Support\Facades\Log;
 use Dauvray\Socializer\app\Http\Resources\User as UserResource;
 use Dauvray\Socializer\app\Services\Users as UserService;
 
@@ -148,12 +149,25 @@ class UserController extends Controller
     public function closeConnectionToPeerId(Request $request)
     {
         $to = config('estarter.models.user')::where('slug', $request->get('toUserSlug'))->firstOrFail();
+        $user = Auth::user();
+
+        $claimedSlug = $request->get('fromUserSlug');
+        if ($claimedSlug !== null && $claimedSlug !== '' && $claimedSlug !== $user->slug) {
+            Log::warning('Tentative d\'usurpation fromUserSlug dans closeConnectionToPeerId', [
+                'auth_user_id' => $user->id,
+                'auth_user_slug' => $user->slug,
+                'claimed_slug' => $claimedSlug,
+                'target_slug' => $request->get('toUserSlug'),
+                'ip' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+            ]);
+        }
 
         try {
             Broadcast::private('App.Models.User.'.$to->id)
             ->as('CloseConnectionToPeerID')
             ->with([
-                'fromUserSlug' => $request->get('fromUserSlug'),
+                'fromUserSlug' => $user->slug,
                 'room' => $request->get('room'),
                 'type' => $request->get('type'),
             ])
