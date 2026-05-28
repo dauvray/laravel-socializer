@@ -7,16 +7,41 @@
 ## 🗂️ Vue d'ensemble de l'architecture
 
 ```
-usePeerOrchestrator          ← Coordinateur principal (façade)
-├── createPeerContext         ← Context Factory (état partagé)
-├── usePeerCore               ← Signaling (Ajax / peerId exchange)
-├── usePeerMedia              ← MediaStream lifecycle
-├── usePeerConnections        ← WebRTC connections
-└── usePeerTransport          ← DataChannel + routage topologie
+┌─ Feature Layer (métier) ────────────────────────────────────────────────┐
+│  useMediaBroadcast            ← intentions utilisateur (start/stop,     │
+│                                 mute/toggle, join → connexions)         │
+│                                 expose l'état UI (isMuted, callState…)  │
+└──────────────────────────────────┬──────────────────────────────────────┘
+                                   │ utilise
+┌─ Technical Orchestrator ─────────▼──────────────────────────────────────┐
+│  usePeerOrchestrator          ← façade unifiée + coordination des       │
+│                                 sous-modules ; ne connaît pas l'UI      │
+└──┬───────────────┬───────────────┬───────────────┬──────────────────────┘
+   │               │               │               │
+   ▼               ▼               ▼               ▼
+createPeerContext  usePeerCore     usePeerMedia    usePeerConnections    usePeerTransport
+état partagé       Signaling       MediaStream     RTCPeerConnection     DataChannel +
+(refs, session,    (Reverb /       lifecycle       lifecycle             routage topologie
+ media, conn.)     peerId exch.)   (getUserMedia)  (offer/answer/ICE)    (mesh / star / sfu)
 
-utils/ (infrastructure — usage libre par tous les composables)
-└── usePeerRetry              ← Backoff exponentiel (timer manager générique)
+┌─ utils/ (infrastructure — usage libre par tous les composables) ────────┐
+│  usePeerRetry            ← backoff exponentiel (timer manager générique)│
+│  useCallStateMachine     ← machine d'état appel (IDLE → CALLING → …)    │
+│  sanitizeMetadata        ← validation des champs `conn.metadata` réseau │
+│  payloadSize             ← mesure + garde anti-DoS sur data channels    │
+└─────────────────────────────────────────────────────────────────────────┘
+
+webrtc2.config.js   ← constantes partagées (MAX_*, *_TIMEOUT, *_PATTERN…)
+EventBus/           ← bus d'événements applicatif (signaling Reverb, UI)
+Widgets/            ← composants Vue consommateurs (montés via provider)
 ```
+
+**Règles de couplage**
+
+- `useMediaBroadcast` n'importe **que** `usePeerOrchestrator` ; il ne touche jamais aux sous-modules ni au `peerStore`.
+- `usePeerOrchestrator` est le **seul** à instancier `createPeerContext` et à composer Core / Media / Connections / Transport.
+- Les sous-modules (`usePeerCore`, `usePeerMedia`, `usePeerConnections`, `usePeerTransport`) communiquent **uniquement** via le `context` partagé — pas d'imports croisés entre eux.
+- `utils/` est l'infra transverse : sans état partagé, importable de partout, jamais l'inverse.
 
 ---
 
