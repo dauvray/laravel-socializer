@@ -50,153 +50,131 @@
     </div>
 </template>
 
-<script>
-    import { mapActions, mapState } from 'pinia'
+<script setup>
+    // VUE & LIBS
+    import { ref, computed, watch, onBeforeUnmount, defineAsyncComponent } from 'vue'
+    import { storeToRefs } from 'pinia'
+    import { useRoute, useRouter, onBeforeRouteUpdate } from 'vue-router'
+
+    // STORES
     import { useServerStore } from '~socializer/stores/server.js'
     import { useMeStore } from '~estarter/stores/me.js'
-    import { defineAsyncComponent } from '@vue/runtime-core'
-    import { useBreadcrumbService } from '~estarter/services/BreadcrumbService.js'
-    const breadcrumbService = useBreadcrumbService()
     import { useChatStore } from '~socializer/stores/chat.js'
-    import resizable from "~socializer/directives/resizable_vertical.js";
 
-    export default {
-        name: 'Room',
-        emits: [
-            'update-users-room',
-            'joining-user-room',
-            'leaving-user-room',
-        ],
-        components: {
-            LockedRoom: defineAsyncComponent(() => import('./widgets/LockedRoom.vue')),
-            ChatComponent: defineAsyncComponent(() => import('~socializer/components/Chat/ChatComponent.vue')),
-        },
-        directives: {
-            resizable,
-        },
-        data() {
-            return {
-                users: [],
-                roomLocked: false,
-                chatWidth: 420,
-                isChatVisible: false,
-            }
-        },
-        async created() {
-            await this.loadRoom(this.$route.params.roomId)
-            this.loadDefaultContent()
-        },
-        beforeUnmount() {
-            Echo.leave(this.channel)
-            Echo.private(this.getMe.channel).whisper('leave-room', {
-                userId: this.getMe.id,
-                roomId: this.currentRoom.id,
-            })
+    // COMPOSABLES
+    import { useBreadcrumbService } from '~estarter/services/BreadcrumbService.js'
+    import { useReverbChannel } from '~socializer/components/System/composables/useReverbChannel.js'
 
-            this.resetCurrentRoom()
-        },
-        computed: {
-            ...mapState(useServerStore, {
-                currentRoom: 'getCurrentRoom',
-                ownerId: 'getOwnerId',
-                roomContent: 'getCurrentRoomContent',
-                roomChatVisible: 'getRoomChatVisible',
-            }),
-            ...mapState(useChatStore, {
-                currentConversationId: 'getCurrentConversationId',
-            }),
-            ...mapState(useMeStore, {
-                getMe: 'getMe',
-            }),
-            channel: function() {
-                if(this.currentRoom) {
-                    return `room.${this.currentRoom.id}`
-                }
-                return null
-            },
-            isOwner: function() {
-                return this.ownerId === this.getMe.vertexid
-            }
-        },
-        watch: {
-            '$route' (to, from ) {
-                // is stay on same server
-                if(to.params.hasOwnProperty('serverId') && to.params.serverId === from.params.serverId 
-                        && !to.params.hasOwnProperty('vertexId')){
-                  this.loadDefaultContent()
-                }
-                this.onUpdateBreadcrumb()
-            },
-            channel(newVal, oldVal) {
-                if(oldVal) {
-                    Echo.leave(oldVal)
-                }
-                if(newVal) {
+    // UTILS & DIRECTIVES
+    import vResizable from '~socializer/directives/resizable_vertical.js'
 
-                    // voir si utile ( room dans les composants)
-                    this.initRoomEvents()
-                }
-            },
-            currentRoom(newRoom) {
-                this.resetRoomUsers()
+    // COMPOSANTS ASYNCHRONES
+    const LockedRoom = defineAsyncComponent(() => import('./widgets/LockedRoom.vue'))
+    const ChatComponent = defineAsyncComponent(() => import('~socializer/components/Chat/ChatComponent.vue'))
 
-                if(newRoom && newRoom.hasOwnProperty('content_type') && newRoom.content_type === "locked") {
-                    this.roomLocked = true
-                }
-            }
-        },
-        methods: {
-            ...mapActions(useServerStore, [
-                'loadRoom',
-                'resetCurrentRoom',
-            ]),
-            initRoomEvents() {
-                if(this.channel) {
-                    Echo.leave(this.channel)
-                    Echo.join(this.channel)
-                        .here((users) => {
-                            this.users = users
-                            this.$emit('update-users-room', this.users)
-                        })
-                        .joining((user) => {
-                            this.users.push(user)
-                            this.$emit('joining-user-room', user)
-                            this.$emit('update-users-room', this.users)
-                        })
-                        .leaving((user) => {
-                            this.users = this.users.filter( item => {
-                                return user.id != item.id
-                            })
-                            this.$emit('leaving-user-room', user)
-                            this.$emit('update-users-room', this.users)
-                        })
-                        .error((error) => {
-                            console.error(error);
-                        })
-                }
-            },
-            loadDefaultContent() {
-                if(this.currentRoom.hasOwnProperty('content')) {
-                    const defaultContent = this.currentRoom.content[0]
-                    this.$router.push({ name: defaultContent.content_type, params: { vertexId: defaultContent.id } })
-                }
-                this.onUpdateBreadcrumb()
-            },
-            resetRoomUsers() {
-                this.users = []
-                this.$emit('update-users-room', this.users)
-            },
-            onUpdateBreadcrumb() {
-                breadcrumbService.updateBreadcrumb({
-                    name: this.currentRoom.name,
-                    id: 'content',
-                    link: null,
-                })
-            },
-            updateChatWidth(newWidth) {
-                this.chatWidth = newWidth
-            },
+    const emit = defineEmits([
+        'update-users-room',
+        'joining-user-room',
+        'leaving-user-room',
+    ])
 
-        },
+    const route = useRoute()
+    const router = useRouter()
+    const breadcrumbService = useBreadcrumbService()
+
+    const serverStore = useServerStore()
+    const chatStore = useChatStore()
+    const meStore = useMeStore()
+
+    const {
+        getCurrentRoom: currentRoom,
+        getOwnerId: ownerId,
+        // utilisé par le <Teleport> commenté du template — à réactiver avec la navigation multi-pages d'une room
+        getCurrentRoomContent: roomContent,
+        getRoomChatVisible: roomChatVisible,
+    } = storeToRefs(serverStore)
+    const { getCurrentConversationId: currentConversationId } = storeToRefs(chatStore)
+    const { getMe } = storeToRefs(meStore)
+    const { loadRoom, resetCurrentRoom } = serverStore
+
+    const roomLocked = ref(false)
+    const chatWidth = ref(420)
+    const isChatVisible = ref(false)
+    const chat = ref(null)
+
+    const channelName = computed(() => {
+        if (currentRoom.value) {
+            return `room.${currentRoom.value.id}`
+        }
+        return null
+    })
+
+    const meChannelName = computed(() => getMe.value?.channel ?? null)
+
+    const isOwner = computed(() => ownerId.value === getMe.value.vertexid)
+
+    const onUpdateBreadcrumb = () => {
+        breadcrumbService.updateBreadcrumb({
+            name: currentRoom.value.name,
+            id: 'content',
+            link: null,
+        })
     }
+
+    const loadDefaultContent = () => {
+        if (currentRoom.value.hasOwnProperty('content')) {
+            const defaultContent = currentRoom.value.content[0]
+            router.push({ name: defaultContent.content_type, params: { vertexId: defaultContent.id } })
+        }
+        onUpdateBreadcrumb()
+    }
+
+    const updateChatWidth = (newWidth) => {
+        chatWidth.value = newWidth
+    }
+
+    watch(currentRoom, (newRoom) => {
+        if (newRoom && newRoom.hasOwnProperty('content_type') && newRoom.content_type === 'locked') {
+            roomLocked.value = true
+        }
+    })
+
+    onBeforeRouteUpdate((to, from) => {
+        // is stay on same server
+        if (to.params.hasOwnProperty('serverId') && to.params.serverId === from.params.serverId
+                && !to.params.hasOwnProperty('vertexId')) {
+            loadDefaultContent()
+        }
+        onUpdateBreadcrumb()
+    })
+
+    // S'exécute avant les leave() auto enregistrés par les useReverbChannel ci-dessous.
+    onBeforeUnmount(() => {
+        whisperMe('leave-room', {
+            userId: getMe.value.id,
+            roomId: currentRoom.value.id,
+        })
+        resetCurrentRoom()
+    })
+
+    const { whisper: whisperMe } = useReverbChannel(meChannelName, {
+        type: 'private',
+    })
+
+    const { users } = useReverbChannel(channelName, {
+        type: 'presence',
+        onJoining: (user) => emit('joining-user-room', user),
+        onLeaving: (user) => emit('leaving-user-room', user),
+        onError: (err) => console.error(err),
+    })
+
+    watch(users, (val) => {
+        emit('update-users-room', val)
+    })
+
+    const initRoom = async () => {
+        await loadRoom(route.params.roomId)
+        loadDefaultContent()
+    }
+    initRoom()
 </script>
