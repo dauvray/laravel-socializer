@@ -69,9 +69,7 @@ Widgets/            ← composants Vue consommateurs (montés via provider)
 
 ### Sécurité
 
-- [ ] **Valider tous les slugs entrants** : `userSlug` d'un peer distant peut être forgé — valider format/longueur
-- [ ] **Rate limiting local** : limiter les requêtes Ajax (ask-to-peer-id) pour éviter le spam involontaire
-- [ ] **Sanitiser les métadonnées** : `conn.metadata` vient du réseau → valider avant usage
+- [ ] **Rate limiting client sur les requêtes Ajax `/ask-to-peer-id`** `[S]` : `usePeerCore` appelle `ENDPOINTS.ASK_TO_PEER_ID` sans throttle côté émission — un mount/unmount rapide ou une boucle de retry peut spammer le backend. Scope distinct du rate limiting hub (`_isHubRateLimited`, qui couvre les enveloppes star data-channel sur identité PeerJS réelle). Pas un vecteur d'attaque (route authentifiée), mais protection contre le spam involontaire
 
 ### usePeerTransport
 
