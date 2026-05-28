@@ -1,5 +1,10 @@
 ## 🔐 Sécurisation de l'application
 
+> ✅ Audit clôturé — toutes les failles corrigées.
+> Ce document est conservé comme **rapport d'audit + journal de décisions architecturales**.
+> Pour les nouvelles tâches sécu, créer un nouveau fichier daté.
+
+
 > Failles identifiées le 20 mai 2026 par audit de sécurité de `usePeerOrchestrator`, `usePeerTransport`, `usePeerCore`.  
 > Sévérité : 🔴 Critique · 🟠 Haute · 🟡 Faible
 

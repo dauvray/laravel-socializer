@@ -43,4 +43,4 @@ Si un cas d'usage futur impose la confidentialité vis-à-vis du hub, la voie re
 
 ## Sécurité — autres garanties
 
-Voir [`SECURITY_TODOLIST.md`](SECURITY_TODOLIST.md) pour le détail des correctifs appliqués (authentification des connexions entrantes, anti-usurpation d'identité, rate limiting, gardes de taille, sanitisation des métadonnées).
+Voir [`SECURITY_AUDIT.md`](SECURITY_AUDIT.md) pour le détail des correctifs appliqués (authentification des connexions entrantes, anti-usurpation d'identité, rate limiting, gardes de taille, sanitisation des métadonnées).

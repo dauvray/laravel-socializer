@@ -528,10 +528,20 @@ export function usePeerTransport(ctx) {
                 }
 
                 const getLocalStream = () => targetCtx.media?.currentStream || null
+                const getLocalScreenStream = () => targetCtx.media?.screenStream || null
                 const isOneWay = callType === 'stream' || callType === 'screen'
 
                 if (isOneWay) {
-                    call.answer(getLocalStream() || undefined)
+                    // 'screen' : strictement unidirectionnel par connexion. Si le récepteur
+                    // partage lui aussi son écran, il initie sa propre peer.call séparée.
+                    // Répondre avec currentStream (webcam) injecterait B-webcam dans la
+                    // connexion 'screen' du caller → doublon avec la connexion 'visio'
+                    // déjà active (remoteStreamsMap aurait `B-visio` ET `B-screen`
+                    // pointant sur le même MediaStream).
+                    const answerStream = callType === 'screen'
+                        ? (getLocalScreenStream() || undefined)
+                        : (getLocalStream() || undefined)
+                    call.answer(answerStream)
                     targetCtx.setUpConnectionListeners(call)
                     return
                 }
