@@ -50,7 +50,7 @@ Widgets/            ← composants Vue consommateurs (montés via provider)
 ### createPeerContext
 
 - [x] **`waitForMeReady()` timeout hardcodé (15s)** `[S]` : rendre configurable via options
-- [ ] **`session.closingUsers = new Set()` exposé directement** `[S]` : remplacer par des accesseurs pour éviter la corruption externe
+- [x] **`session.closingUsers = new Set()` exposé directement** `[S]` : remplacer par des accesseurs pour éviter la corruption externe
 - [ ] **`media.videoContainer = '#videoContainer'` hardcodé** `[S]` : injecter via options pour la testabilité
 
 ### Architecture

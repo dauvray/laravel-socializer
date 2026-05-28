@@ -57,7 +57,6 @@
     import { defineAsyncComponent } from '@vue/runtime-core'
     import { useBreadcrumbService } from '~estarter/services/BreadcrumbService.js'
     const breadcrumbService = useBreadcrumbService()
-    import ChatComponent from '~socializer/components/Chat/ChatComponent.vue'
     import { useChatStore } from '~socializer/stores/chat.js'
     import resizable from "~socializer/directives/resizable_vertical.js";
 
@@ -70,7 +69,7 @@
         ],
         components: {
             LockedRoom: defineAsyncComponent(() => import('./widgets/LockedRoom.vue')),
-            ChatComponent,
+            ChatComponent: defineAsyncComponent(() => import('~socializer/components/Chat/ChatComponent.vue')),
         },
         directives: {
             resizable,

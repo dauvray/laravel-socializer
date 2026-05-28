@@ -697,9 +697,9 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         const roomId = payload?.room || context.session.currentCallRoomId || context.currentRoom.value
 
         if (!remoteSlug || !_isValidSlug(remoteSlug)) return
-        if (context.callMachine.closingUsers.has(remoteSlug)) return
+        if (context.callMachine.isUserClosing(remoteSlug)) return
 
-        context.callMachine.closingUsers.add(remoteSlug)
+        context.callMachine.markUserClosing(remoteSlug)
 
         await stopCallWithPeers([{ userSlug: remoteSlug, type: remoteType }], false, {
             mode: 'partial',
@@ -721,7 +721,7 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
             })
         }
 
-        context.callMachine.closingUsers.delete(remoteSlug)
+        context.callMachine.unmarkUserClosing(remoteSlug)
 
         context.eventBus.$emit('close-call', [{
             userSlug: remoteSlug,
@@ -830,9 +830,9 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         const roomId = meta?.room || context.session.currentCallRoomId || null
 
         if (!remoteSlug) return
-        if (context.callMachine.closingUsers.has(remoteSlug)) return
+        if (context.callMachine.isUserClosing(remoteSlug)) return
 
-        context.callMachine.closingUsers.add(remoteSlug)
+        context.callMachine.markUserClosing(remoteSlug)
 
         try {
             const videoId = `remote-${remoteSlug}-${remoteType}`
@@ -865,7 +865,7 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         } catch (error) {
             console.error('Error removing video element:', error)
         } finally {
-            context.callMachine.closingUsers.delete(remoteSlug)
+            context.callMachine.unmarkUserClosing(remoteSlug)
         }
     }
 

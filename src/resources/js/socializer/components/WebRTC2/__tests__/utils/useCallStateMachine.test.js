@@ -32,9 +32,9 @@ describe('createCallStateMachine', () => {
             expect(fsm.isStopping.value).toBe(false)
         })
 
-        it('closingUsers est un Set vide', () => {
-            expect(fsm.closingUsers).toBeInstanceOf(Set)
-            expect(fsm.closingUsers.size).toBe(0)
+        it('aucun utilisateur n\'est marqué comme closing', () => {
+            expect(fsm.isUserClosing('alice')).toBe(false)
+            expect(fsm.isUserClosing('bob')).toBe(false)
         })
     })
 
@@ -224,11 +224,12 @@ describe('createCallStateMachine', () => {
             expect(fsm.callState.value).toBe(CALL_STATES.IDLE)
         })
 
-        it('vide closingUsers', () => {
-            fsm.closingUsers.add('alice')
-            fsm.closingUsers.add('bob')
+        it('démarque tous les utilisateurs closing', () => {
+            fsm.markUserClosing('alice')
+            fsm.markUserClosing('bob')
             fsm.reset()
-            expect(fsm.closingUsers.size).toBe(0)
+            expect(fsm.isUserClosing('alice')).toBe(false)
+            expect(fsm.isUserClosing('bob')).toBe(false)
         })
 
         it('mutex idempotent : deux transitions CLOSING consécutives (via reset) ne bloquent pas', () => {
@@ -240,22 +241,27 @@ describe('createCallStateMachine', () => {
         })
     })
 
-    // ── closingUsers ────────────────────────────────────────────────────────
+    // ── accesseurs closing (garde par utilisateur) ──────────────────────────
 
-    describe('closingUsers (garde par utilisateur)', () => {
-        it('peut contenir plusieurs slugs simultanément', () => {
-            fsm.closingUsers.add('alice')
-            fsm.closingUsers.add('bob')
-            expect(fsm.closingUsers.has('alice')).toBe(true)
-            expect(fsm.closingUsers.has('bob')).toBe(true)
-            expect(fsm.closingUsers.size).toBe(2)
+    describe('accesseurs closing (garde par utilisateur)', () => {
+        it('peut marquer plusieurs slugs simultanément', () => {
+            fsm.markUserClosing('alice')
+            fsm.markUserClosing('bob')
+            expect(fsm.isUserClosing('alice')).toBe(true)
+            expect(fsm.isUserClosing('bob')).toBe(true)
+        })
+
+        it('unmarkUserClosing retire un utilisateur du marquage', () => {
+            fsm.markUserClosing('alice')
+            fsm.unmarkUserClosing('alice')
+            expect(fsm.isUserClosing('alice')).toBe(false)
         })
 
         it('est orthogonal à callState (n\'affecte pas callInprogress)', () => {
             fsm.transition(CALL_STATES.CALLING)
             fsm.transition(CALL_STATES.CONNECTED)
-            fsm.closingUsers.add('alice')
-            // closingUsers ne change pas callState
+            fsm.markUserClosing('alice')
+            // marquer un utilisateur closing ne change pas callState
             expect(fsm.callState.value).toBe(CALL_STATES.CONNECTED)
         })
     })

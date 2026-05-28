@@ -40,7 +40,7 @@ const VALID_TRANSITIONS = {
  * Remplace les trois flags éparpillés dans createPeerContext :
  *   - session.callInprogress  → dérivé : callInprogress = (state !== IDLE)
  *   - session.isStoppingCall  → dérivé : isStopping     = (state === CLOSING)
- *   - session.closingUsers    → intégré : closingUsers  (Set par utilisateur)
+ *   - session.closingUsers    → encapsulé : isUserClosing / markUserClosing / unmarkUserClosing
  *
  * @param {string} contextId  Identifiant du contexte peer (utilisé dans les avertissements)
  */
@@ -53,8 +53,16 @@ export function createCallStateMachine(contextId = '') {
      * Utilisé par remoteStopCall et handleStreamRemoved pour éviter les doublons.
      * Orthogonal à l'état global : plusieurs fermetures partielles peuvent coexister
      * en état CONNECTED sans déclencher de CLOSING global.
+     *
+     * Reste privé à la closure — l'API publique passe par les accesseurs
+     * isUserClosing / markUserClosing / unmarkUserClosing pour éviter toute
+     * mutation externe non prévue (clear, iteration, etc.).
      */
     const closingUsers = new Set()
+
+    const isUserClosing     = (slug) => closingUsers.has(slug)
+    const markUserClosing   = (slug) => closingUsers.add(slug)
+    const unmarkUserClosing = (slug) => closingUsers.delete(slug)
 
     // ── Transitions ────────────────────────────────────────────────────────────
 
@@ -97,7 +105,9 @@ export function createCallStateMachine(contextId = '') {
         transition,
         callInprogress,
         isStopping,
-        closingUsers,
+        isUserClosing,
+        markUserClosing,
+        unmarkUserClosing,
         reset,
         CALL_STATES,
     }
