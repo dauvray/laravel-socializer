@@ -20,11 +20,12 @@
                         :conversation-id="currentConversationId"
                     ></slot>
                     <template v-for="(item, idx) in messages" :key="item.id">
-                        <slot name="date-separator" :date="item.created_at">
-                            <DateSeparator
-                                v-if="shouldShowDateSeparator(item, idx)"
-                                :date="item.created_at"
-                            />
+                        <slot
+                            v-if="separatorIndexes.has(idx)"
+                            name="date-separator"
+                            :date="item.created_at"
+                        >
+                            <DateSeparator :date="item.created_at" />
                         </slot>
                         <slot name="message"
                             :item="item"
@@ -35,7 +36,7 @@
                             :on-update-message="onUpdateMessage"
                             :on-show-file="onShowFileInModal">
                             <MessageWidget
-                                :class="idx === messages.length - 1 ? 'lastMessage' : null"
+                                :class="idx === lastIndex ? 'lastMessage' : null"
                                 :item="item"
                                 :conversationId="currentConversationId"
                                 @selected-emoji="onSelectedEmoji"
@@ -407,10 +408,22 @@
     }
 
     /*********** DATES *******/
-    // Logique pure déléguée à utils/dateSeparator.js ; on lui passe la liste
-    // réactive + les props. Wrapper conservé pour ne pas toucher au template.
-    const shouldShowDateSeparator = (item, index) =>
-        computeDateSeparator(messages.value, index, props.displaySeparator)
+    // Pré-calcul des index où afficher un séparateur. Mémoïsé via computed :
+    // ne s'invalide que si `messages` ou `displaySeparator` changent, au lieu
+    // d'être recalculé pour chaque item à chaque rendu.
+    const separatorIndexes = computed(() => {
+        const set = new Set()
+        if(!props.displaySeparator) return set
+        const list = messages.value
+        for(let i = 0; i < list.length; i++) {
+            if(computeDateSeparator(list, i, true)) set.add(i)
+        }
+        return set
+    })
+
+    // Cache `messages.length - 1` au lieu de le recalculer pour chaque item
+    // dans le binding `:class="idx === messages.length - 1 ? 'lastMessage' : null"`.
+    const lastIndex = computed(() => messages.value.length - 1)
 
     /*------ WATCHERS ----------*/
     // Le join/leave du canal est géré par useReverbPresence (canal réactif).
