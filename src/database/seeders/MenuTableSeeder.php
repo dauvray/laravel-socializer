@@ -35,7 +35,7 @@ class MenuTableSeeder extends Seeder
                             "group" => null,
                             "class" => null,
                             "layout_class_container" => "container-fluid",
-                            "icon" => null,
+                            "icon" => 'las la-comments',
                             "permission" => null
                         ]
                     ],
@@ -48,7 +48,7 @@ class MenuTableSeeder extends Seeder
                             "group" => null,
                             "class" => null,
                             "layout_class_container" => null,
-                            "icon" => 'las la-project-diagram',
+                            "icon" => 'las la-sitemap',
                             "permission" => null
                         ]
                     ],
@@ -76,7 +76,7 @@ class MenuTableSeeder extends Seeder
                             "group" => null,
                             "class" => null,
                             "layout_class_container" => null,
-                            "icon" => 'las la-users',
+                            "icon" => 'las la-stream',
                             "permission" => null
                         ]
                     ],
@@ -91,7 +91,7 @@ class MenuTableSeeder extends Seeder
                             "group" => null,
                             "class" => null,
                             "layout_class_container" => null,
-                            "icon" => null,
+                            "icon" => 'las la-address-card',
                             "permission" => null
                         ]
                         ],
