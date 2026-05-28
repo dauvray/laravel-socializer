@@ -207,11 +207,23 @@ function _resolveSenderSlugFromIncomingConn(conn, ctx) {
 //
 // Règle d'admission (appliquée AVANT setUpConnectionListeners / call.answer):
 //   1. `metadata.from` doit avoir un format de slug valide (_isValidSlug)
-//   2. `metadata.from` doit figurer dans `ctx.connection.usersInRoom`
-//   3. Défense-en-profondeur: si l'identité PeerJS réelle de la connexion entrante
-//      est déjà résolue à un slug connu (via la signalisation préalable qui mappe
-//      slug→peerId), ce slug doit correspondre à `metadata.from` — sinon tentative
-//      d'usurpation intra-room → rejet.
+//   2. L'émetteur doit être autorisé via L'UN des deux chemins suivants :
+//      (a) Chemin présence : `metadata.from` ∈ `ctx.connection.usersInRoom` — cas
+//          diffusion/chat dans une room de présence Reverb partagée.
+//      (b) Chemin appel direct : `peerStore.getRemotePeerId(metadata.from)` existe
+//          ET est égal à l'identité PeerJS réelle de la connexion (`conn.peer`).
+//          Le mapping slug→peerId est exclusivement alimenté par la signalisation
+//          backend `peer-access-permission` (acceptCallFromPeer côté récepteur,
+//          openCallBetweenPeer côté initiateur), donc sa présence ET sa correspondance
+//          tiennent lieu d'autorisation ET d'anti-usurpation en une seule condition.
+//   3. Pour le chemin présence : défense-en-profondeur — si l'identité PeerJS réelle
+//      est déjà résolue à un slug connu (via le mapping global), ce slug doit
+//      correspondre à `metadata.from` — sinon tentative d'usurpation intra-room → rejet.
+//
+// Important : `ctx.session.currentCallUsers` n'est PAS consulté ici. C'est un état UI
+// (qui voir/raccrocher) alimenté à partir de la même signalisation, mais réutiliser un
+// état applicatif comme allowlist de sécurité couple politique et affichage et laisse
+// passer une connexion entrante avant que le mapping peerId ne soit prêt.
 function _isAuthorizedIncomingPeer(metadata, conn, ctx) {
     const declaredFrom = metadata?.from
 
@@ -223,42 +235,40 @@ function _isAuthorizedIncomingPeer(metadata, conn, ctx) {
         return false
     }
 
-    // Deux sources d'autorisation légitimes :
-    //  (a) membre de la room de présence courante (`usersInRoom`) — cas diffusion/chat ;
-    //  (b) interlocuteur d'une session d'appel DIRECT en cours (`session.currentCallUsers`)
-    //      — un appel visio/vocal 1-à-1 est autorisé via la signalisation backend
-    //      (peer-access-permission → acceptCallFromPeer/openCallBetweenPeer ajoute le
-    //      slug à currentCallUsers AVANT que le peer.call entrant n'arrive). Ces pairs
-    //      ne sont pas forcément membres d'une room de présence partagée.
     const usersInRoom = Array.isArray(ctx?.connection?.usersInRoom)
         ? ctx.connection.usersInRoom
         : []
-    const currentCallUsers = Array.isArray(ctx?.session?.currentCallUsers)
-        ? ctx.session.currentCallUsers
-        : []
+    const senderPeerId = conn?.peer ? String(conn.peer) : null
 
     const isRoomMember = usersInRoom.includes(declaredFrom)
-    const isActiveCallPeer = currentCallUsers.some(u => u?.userSlug === declaredFrom)
 
-    if (!isRoomMember && !isActiveCallPeer) {
+    // Chemin (b) — appel direct vérifié : exige le mapping signalé ET la correspondance
+    // avec le peerId PeerJS réel. Les deux vérifications sont fusionnées : si l'une
+    // manque, ce chemin échoue et seul (a) peut autoriser.
+    const mappedPeerId = ctx?.peerStore?.getRemotePeerId?.(declaredFrom)
+    const isVerifiedDirectCallPeer =
+        !!mappedPeerId && !!senderPeerId && String(mappedPeerId) === senderPeerId
+
+    if (!isRoomMember && !isVerifiedDirectCallPeer) {
         console.warn(
-            "[WebRTC2] Connexion entrante refusée: émetteur ni membre de la room ni interlocuteur d'un appel en cours",
-            { declaredFrom, senderPeerId: conn?.peer, usersInRoom, currentCallUsers }
+            "[WebRTC2] Connexion entrante refusée: émetteur ni membre de la room ni interlocuteur autorisé (mapping peerId absent/non concordant)",
+            { declaredFrom, senderPeerId, usersInRoom, hasMappedPeerId: !!mappedPeerId }
         )
         return false
     }
 
-    // Anti-usurpation: l'identité PeerJS réelle, si déjà mappée, doit correspondre
-    // au slug déclaré. Si elle n'est pas encore résolue (mapping pas prêt), on ne
-    // bloque pas sur ce seul critère pour éviter les faux négatifs (la garde 2 reste
-    // la barrière principale).
-    const resolvedSlug = _resolveSenderSlugFromIncomingConn(conn, ctx)
-    if (resolvedSlug && resolvedSlug !== declaredFrom) {
-        console.warn(
-            '[WebRTC2] Connexion entrante refusée: usurpation détectée (peerId réel ≠ `from` déclaré)',
-            { declaredFrom, resolvedSlug, senderPeerId: conn?.peer }
-        )
-        return false
+    // Anti-usurpation chemin (a) — si membre de room et que le peerId réel est
+    // déjà résolu à un autre slug, rejet. Pour le chemin (b), la correspondance
+    // mappedPeerId === senderPeerId est déjà vérifiée plus haut.
+    if (isRoomMember) {
+        const resolvedSlug = _resolveSenderSlugFromIncomingConn(conn, ctx)
+        if (resolvedSlug && resolvedSlug !== declaredFrom) {
+            console.warn(
+                '[WebRTC2] Connexion entrante refusée: usurpation détectée (peerId réel ≠ `from` déclaré)',
+                { declaredFrom, resolvedSlug, senderPeerId }
+            )
+            return false
+        }
     }
 
     return true

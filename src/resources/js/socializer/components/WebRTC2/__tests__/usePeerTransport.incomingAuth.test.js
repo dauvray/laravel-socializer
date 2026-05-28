@@ -143,30 +143,54 @@ describe('usePeerTransport — authentification des connexions entrantes', () =>
         expect(call.close).toHaveBeenCalled()
     })
 
-    // ── Appels DIRECTS hors room de présence (currentCallUsers) ─────────────────
-    // Régression: un appel visio/vocal 1-à-1 est autorisé via la signalisation backend
-    // (acceptCallFromPeer/openCallBetweenPeer ajoute l'interlocuteur à currentCallUsers).
-    // Ces pairs ne sont pas membres d'une room de présence partagée — le garde doit
-    // néanmoins les accepter, sinon le stream remote ne s'établit jamais (reste "pending").
+    // ── Appels DIRECTS hors room de présence (mapping peerId vérifié) ───────────
+    // Un appel visio/vocal 1-à-1 est autorisé via la signalisation backend
+    // (peer-access-permission → acceptCallFromPeer/openCallBetweenPeer peuple
+    // peerStore.remotePeersId AVANT que la peer.call entrante n'arrive). Le garde
+    // s'appuie exclusivement sur ce mapping (et NON sur currentCallUsers qui n'est
+    // qu'un état UI), donc la présence du slug dans le mapping ET la correspondance
+    // avec le peerId réel tiennent lieu d'autorisation ET d'anti-usurpation.
 
-    it("accepte une connexion data d'un interlocuteur d'appel direct (currentCallUsers) hors room", () => {
-        // mallory n'est PAS dans usersInRoom, mais une session d'appel direct l'a autorisée.
-        ctx.addCurrentCallUser('mallory', 'visio')
-        const conn = incomingConn({ from: 'mallory' })
+    it("accepte une connexion data d'un interlocuteur d'appel direct (mapping peerId) hors room", () => {
+        // mallory n'est PAS dans usersInRoom, mais la signalisation a peuplé le mapping.
+        ctx.peerStore.addRemotePeerId('mallory', 'peer-mallory')
+        const conn = incomingConn({ from: 'mallory' }, 'peer-mallory')
         peerInstance._triggerEvent('connection', conn)
 
         expect(ctx.setUpConnectionListeners).toHaveBeenCalledWith(conn)
         expect(conn.close).not.toHaveBeenCalled()
     })
 
-    it("répond à un appel visio d'un interlocuteur d'appel direct (currentCallUsers) hors room", async () => {
-        ctx.addCurrentCallUser('mallory', 'visio')
+    it("répond à un appel visio d'un interlocuteur d'appel direct (mapping peerId) hors room", async () => {
+        ctx.peerStore.addRemotePeerId('mallory', 'peer-mallory')
         ctx.media.currentStream = { id: 'local-stream' } // stream local présent → answer immédiat
-        const call = incomingCall({ type: 'visio', from: 'mallory' })
+        const call = incomingCall({ type: 'visio', from: 'mallory' }, 'peer-mallory')
         peerInstance._triggerEvent('call', call)
 
         await vi.waitFor(() => expect(call.answer).toHaveBeenCalled())
         expect(ctx.setUpConnectionListeners).toHaveBeenCalledWith(call)
         expect(call.close).not.toHaveBeenCalled()
+    })
+
+    it("rejette une connexion data d'un slug dans currentCallUsers mais SANS mapping peerId (l'état UI ne fait pas autorité)", () => {
+        // Garantit qu'on ne regresse pas vers l'ancienne allowlist basée sur currentCallUsers.
+        ctx.addCurrentCallUser('mallory', 'visio')
+        // PAS d'appel à peerStore.addRemotePeerId — le mapping signalé est absent.
+        const conn = incomingConn({ from: 'mallory' }, 'peer-mallory')
+        peerInstance._triggerEvent('connection', conn)
+
+        expect(ctx.setUpConnectionListeners).not.toHaveBeenCalled()
+        expect(conn.close).toHaveBeenCalled()
+    })
+
+    it("rejette une connexion data d'un interlocuteur d'appel direct dont le peerId réel ne correspond pas au mapping", () => {
+        // mallory est mappée à 'peer-mallory' via signalisation, mais la connexion entrante
+        // arrive avec un autre peerId — usurpation rejetée par le chemin appel direct.
+        ctx.peerStore.addRemotePeerId('mallory', 'peer-mallory')
+        const conn = incomingConn({ from: 'mallory' }, 'peer-attacker')
+        peerInstance._triggerEvent('connection', conn)
+
+        expect(ctx.setUpConnectionListeners).not.toHaveBeenCalled()
+        expect(conn.close).toHaveBeenCalled()
     })
 })

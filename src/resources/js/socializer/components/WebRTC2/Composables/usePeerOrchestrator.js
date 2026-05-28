@@ -498,6 +498,14 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
             const room = payload?.options?.room || null
             const type = _isValidCallType(payload?.options?.type) ? payload.options.type : 'visio'
 
+            // Mapping peerId vérifié de l'initiateur : DOIT être posé AVANT que sa peer.call
+            // n'arrive (autrement _isAuthorizedIncomingPeer ne pourra pas valider l'identité
+            // PeerJS réelle). `core.sendAuthorizationRemotePeerId` écrase ensuite
+            // `payload.options.peerId` avec le peerId LOCAL — d'où l'enregistrement ici.
+            if (payload?.options?.peerId) {
+                context.peerStore.addRemotePeerId(fromUserSlug, payload.options.peerId)
+            }
+
             if (!context.callMachine.transition(CALL_STATES.RECEIVING)) return
             await _enterCallSession({ fromUserSlug, room, type })
         }
