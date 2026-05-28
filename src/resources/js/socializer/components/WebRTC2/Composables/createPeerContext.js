@@ -27,6 +27,7 @@ import { useMeStore } from '~estarter/stores/me.js'
 import { createCallStateMachine } from '~socializer/components/WebRTC2/Composables/utils/useCallStateMachine.js'
 import { isPayloadWithinLimit } from '~socializer/components/WebRTC2/Composables/utils/payloadSize.js'
 import { sanitizeMetadataType } from '~socializer/components/WebRTC2/Composables/utils/sanitizeMetadata.js'
+import { ME_READY_TIMEOUT_MS } from '~socializer/components/WebRTC2/webrtc2.config.js'
 
 export function createPeerContext({ type, room, options }) {
 
@@ -182,10 +183,16 @@ export function createPeerContext({ type, room, options }) {
 
     // HELPERS (fonctions utilitaires, actions synchrones)
 
+    // Timeout par défaut configurable au niveau de l'instance via `options.meReadyTimeoutMs`,
+    // sinon valeur partagée `ME_READY_TIMEOUT_MS` du fichier de config.
+    const _defaultMeReadyTimeoutMs = Number.isFinite(options?.meReadyTimeoutMs)
+        ? options.meReadyTimeoutMs
+        : ME_READY_TIMEOUT_MS
+
     // Attendre que le peer soit prêt (ex: meStore.getMe.slug disponible) avant de faire des actions dépendantes du peerId
     // Utilise un watchEffect réactif (effectScope détaché) plutôt qu'un polling setTimeout.
     // Se résout dès que meStore.getMe.slug ET peerStore.lastLocalPeerId sont disponibles.
-    const waitForMeReady = (timeoutMs = 15000) => {
+    const waitForMeReady = (timeoutMs = _defaultMeReadyTimeoutMs) => {
         return new Promise((resolve) => {
             let resolved = false
             let timeoutId = null

@@ -99,6 +99,14 @@ export const RECONNECT_MAX_DELAY_MS = 30_000
  */
 export const STREAM_WAIT_TIMEOUT_MS = 5_000
 
+// ─── Attente identité locale (createPeerContext.waitForMeReady) ──────────
+/**
+ * Durée maximale (ms) d'attente que `meStore.getMe.slug` ET
+ * `peerStore.lastLocalPeerId` soient disponibles avant d'abandonner.
+ * Surchargeable via `options.meReadyTimeoutMs` à la création du contexte.
+ */
+export const ME_READY_TIMEOUT_MS = 15_000
+
 // ─── Invitations d'appel (usePeerCore) ────────────────────────────────────
 /**
  * Nombre maximum d'invitations d'appel simultanément en attente de réponse
