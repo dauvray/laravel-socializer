@@ -5,28 +5,27 @@
     </section>
 </template>
 
-<script>
+<script setup>
 
-    import { mapState } from 'pinia'
+    import { computed } from 'vue'
+    import { storeToRefs } from 'pinia'
     import { useServerStore } from '~socializer/stores/server.js'
 
-    export default {
-        name: 'RoomHeader',
-        computed: {
-            ...mapState(useServerStore, {
-                currentRoom: 'getCurrentRoom',
-            }),
-            cover: function() {
-                if(this.currentRoom && this.currentRoom.image && this.currentRoom.image.length) {
-                    const cover = this.currentRoom.image[0]
-                    return `/serve-thumbnail/${cover.name}/large/${cover.preview}`
-                }
-            },
-            backgroundStyle() {
-                return this.cover
-                    ? { backgroundImage: `url(${this.cover})`, backgroundSize: 'cover' }
-                    : {};
-            }
+    defineOptions({ name: 'RoomHeader' })
+
+    const serverStore = useServerStore()
+    const { getCurrentRoom: currentRoom } = storeToRefs(serverStore)
+
+    const cover = computed(() => {
+        if (currentRoom.value && currentRoom.value.image && currentRoom.value.image.length) {
+            const c = currentRoom.value.image[0]
+            return `/serve-thumbnail/${c.name}/large/${c.preview}`
         }
-    }
+    })
+
+    const backgroundStyle = computed(() => {
+        return cover.value
+            ? { backgroundImage: `url(${cover.value})`, backgroundSize: 'cover' }
+            : {}
+    })
 </script>

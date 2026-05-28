@@ -46,7 +46,6 @@
             ></ChatComponent>
         </div>
 
-
     </div>
 </template>
 
