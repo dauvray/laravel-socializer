@@ -26,6 +26,7 @@ import { useServerStore } from '~socializer/stores/server.js'
 import { useMeStore } from '~estarter/stores/me.js'
 import { createCallStateMachine } from '~socializer/components/WebRTC2/Composables/utils/useCallStateMachine.js'
 import { isPayloadWithinLimit } from '~socializer/components/WebRTC2/Composables/utils/payloadSize.js'
+import { sanitizeMetadataType } from '~socializer/components/WebRTC2/Composables/utils/sanitizeMetadata.js'
 
 export function createPeerContext({ type, room, options }) {
 
@@ -250,7 +251,10 @@ export function createPeerContext({ type, room, options }) {
         // core events — handlers nommés pour pouvoir les passer à conn.off()
         //------------------
         const handleOpen = () => {
-            console.trace("connection " + (conn.metadata?.type || "unknown") + " ouverte dans Context", conn.metadata)
+            // `conn.metadata.type` est contrôlé par le pair distant : on n'expose que la
+            // valeur si elle appartient à VALID_CONNECTION_TYPES (cf. sanitizeMetadataType),
+            // sinon "unknown". Évite d'imprimer un type forgé dans la trace.
+            console.trace("connection " + (sanitizeMetadataType(conn.metadata?.type) || "unknown") + " ouverte dans Context", conn.metadata)
         }
 
         const handleClose = () => {
@@ -260,10 +264,14 @@ export function createPeerContext({ type, room, options }) {
             }
             closeHandled = true
 
-            console.log("connection " + (conn.metadata?.type || "unknown") + " fermée dans Context", conn.metadata)
+            // Sanitization du type (contrôlé par le pair distant) avant utilisation comme
+            // clé de store et dans les logs — un type forgé serait sinon utilisé tel quel
+            // par peerStore.removePeerConnectionInstance.
+            const type = sanitizeMetadataType(conn.metadata?.type)
+
+            console.log("connection " + (type || "unknown") + " fermée dans Context", conn.metadata)
 
             const room = conn.metadata?.room
-            const type = conn.metadata?.type
             const storedSlug = conn.metadata?.slug
 
             // Détection robuste du peer distant (évite de supprimer mon propre slug)

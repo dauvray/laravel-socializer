@@ -31,6 +31,7 @@ import {
     SLUG_PATTERN,
     STREAM_WAIT_TIMEOUT_MS } from '../webrtc2.config.js'
 import { getPayloadSizeBytes, isPayloadWithinLimit } from './utils/payloadSize.js'
+import { sanitizeMetadataType } from './utils/sanitizeMetadata.js'
 
 // -----------------------------------------------------------------------------
 // Registre global des contextes WebRTC actifs
@@ -499,9 +500,12 @@ export function usePeerTransport(ctx) {
             // ---------------------------------------------------------------------
             peerStore.localPeer.on('call', async (call) => {
                 const metadata = call?.metadata || {}
-                const callType = metadata?.type
+                // `metadata.type` est fourni par le pair distant : on le passe par la
+                // sanitization centralisée (VALID_CONNECTION_TYPES) avant tout usage,
+                // puis on exclut 'data' qui n'a pas de sens sur une MediaConnection.
+                const callType = sanitizeMetadataType(metadata?.type)
 
-                if (callType !== 'stream' && callType !== 'screen' && callType !== 'visio' && callType !== 'vocal') {
+                if (!callType || callType === 'data') {
                     return
                 }
 

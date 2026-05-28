@@ -30,7 +30,7 @@ l’envoi direct ne filtre pas la taille — un client peut envoyer un payload d
 
 ### usePeerCore — Signalisation
 
-- [ ] 🟡 **[FAIBLE] `conn.metadata` non sanitisé avant usage** `[S]` : les métadonnées PeerJS viennent du réseau et sont utilisées directement (`metadata.from`, `metadata.type`, `metadata.room`) sans validation de format ni de longueur → valider chaque champ consommé avec les guards existants (`_isValidSlug`, `_isValidCallType`) et tronquer/rejeter les valeurs inattendues
+- [✅] 🟡 **[FAIBLE] `conn.metadata` non sanitisé avant usage** `[S]` : les métadonnées PeerJS viennent du réseau et étaient consommées directement (`metadata.type` comme clé de store dans `removePeerConnectionInstance`, comme étiquette de log non bornée dans `setUpConnectionListeners`). **Correctif :** utilitaire centralisé `Composables/utils/sanitizeMetadata.js` (`sanitizeMetadataType`) qui rejette toute valeur hors `VALID_CONNECTION_TYPES` (retour `null`). Appliqué dans `createPeerContext.setUpConnectionListeners` (handleOpen/handleClose — log et clé de store) et dans le dispatcher `localPeer.on('call')` de `usePeerTransport` (remplace la whitelist inline `stream|screen|visio|vocal` par `sanitizeMetadataType` + exclusion explicite de `'data'`). **Périmètre restreint à `metadata.type`** (les autres champs `from`/`room`/`slug` sont déjà couverts en amont : `from` par `_isAuthorizedIncomingPeer`, `room`/`slug` no-op dans `removePeerConnectionInstance` si absents). Couvert par `__tests__/utils/sanitizeMetadata.test.js`.
 
 ### Backend Laravel — UserController (signalisation)
 
