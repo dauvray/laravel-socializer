@@ -94,10 +94,11 @@
 
 </template>
 
-<script>
+<script setup>
 
-    import { defineAsyncComponent } from '@vue/runtime-core'
-    import { mapActions, mapState } from 'pinia'
+    import { ref, computed, watch, onMounted, onBeforeUnmount, defineAsyncComponent } from 'vue'
+    import { useRoute, useRouter } from 'vue-router'
+    import { storeToRefs } from 'pinia'
     import { useServerStore } from '~socializer/stores/server.js'
     import { usePeerStore } from '~socializer/stores/peers.js'
     import { useMeStore } from '~estarter/stores/me.js'
@@ -107,301 +108,299 @@
     import FormsSettingHelper from '~socializer/services/FormsSetting.js'
     import IconWidget from '~estarter/components/widgets/IconWidget.vue'
     import Gravatar from '~estarter/components/widgets/Gravatar.vue'
-    import resizable from "~socializer/directives/resizable_vertical.js"
+    import vResizable from "~socializer/directives/resizable_vertical.js"
     import { useAjaxService } from '~estarter/services/AjaxService.js'
     import { useBreakpoints } from '~socializer/composables/useBreakpoints'
-    const AjaxService = useAjaxService()
     import { useBreadcrumbService } from '~estarter/services/BreadcrumbService.js'
+    import { useReverbChannel } from '~socializer/components/System/composables/useReverbChannel.js'
+
+    const SettingsModal = defineAsyncComponent(() => import('~socializer/components/Server/widgets/SettingsModal.vue'))
+    const PageComponent = defineAsyncComponent(() => import('~socializer/components/Page/PageComponent.vue'))
+
+    defineOptions({ name: 'Server' })
+
+    const emit = defineEmits([
+        'update-users-server',
+        'joining-user-server',
+        'leaving-user-server',
+    ])
+
+    const AjaxService = useAjaxService()
     const breadcrumbService = useBreadcrumbService()
+    const route = useRoute()
+    const router = useRouter()
+    const breakpoints = useBreakpoints()
 
-    export default {
-        name: 'Server',
-        emits: [
-            'update-users-server',
-            'joining-user-server',
-            'leaving-user-server',
-        ],
-        directives: {
-            resizable,
-        },
-        components: {
-            RoomSidebar,
-            RoomHeader,
-         //   ServerList,
-            IconWidget,
-            SettingsModal: defineAsyncComponent(() => import('~socializer/components/Server/widgets/SettingsModal.vue')),
-            PageComponent: defineAsyncComponent(() => import('~socializer/components/Page/PageComponent.vue')),
-            Gravatar,
-        },
-        data() {
-            return {
-                initialSidebarWidth: 200,
-                sidebarWidth : null,
-                roomParamsKey: 0,
-                isLoading: false,
-                showModal: false,
-                canValidate: false,
-                currentQuestionnaire: null,
-                isNewQuestionnaire: null,
-                modelPlaceholder: null,
-                currentRoomUsers: [],
-                serverUsers: [],
-                breakpoints: useBreakpoints(),
+    const serverStore = useServerStore()
+    const peerStore = usePeerStore()
+    const meStore = useMeStore()
+
+    const { getIsStreaming: isStreaming, getIsCapturing: isCapturing } = storeToRefs(peerStore)
+    const { getMe } = storeToRefs(meStore)
+    const {
+        getCurrentServer: currentServer,
+        getCurrentRoom: currentRoom,
+        getIsRoomStreamable: isRoomStreamable,
+        getServerRooms: rooms,
+        getOwnerId: ownerId,
+        getServerPage: serverPage,
+    } = storeToRefs(serverStore)
+
+    const {
+        loadServer,
+        createRoom,
+        createSubContent,
+        resetServer,
+        deleteUserServer,
+        deleteRoom,
+        removeRoom,
+        resetCurrentRoom,
+        addNewRoom,
+        updateRoom,
+        updateServer,
+        sortDownRoom,
+        sortUpRoom,
+        addRoomModule,
+    } = serverStore
+
+    const initialSidebarWidth = 200
+    const sidebarWidth = ref(null)
+    const roomParamsKey = ref(0)
+    const isLoading = ref(false)
+    const showModal = ref(false)
+    const canValidate = ref(false)
+    const currentQuestionnaire = ref(null)
+    const isNewQuestionnaire = ref(null)
+    const modelPlaceholder = ref(null)
+    const currentRoomUsers = ref([])
+
+    const channelName = computed(() => {
+        return currentServer.value ? `server.${currentServer.value.id}` : null
+    })
+
+    const meChannelName = computed(() => getMe.value?.channel ?? null)
+
+    const showServerPage = computed(() => {
+        return serverPage.value && route.name === 'server'
+    })
+
+    const currentRoomId = computed(() => {
+        if(currentRoom.value) {
+            return currentRoom.value.id
+        }
+        return null
+    })
+
+    const setMainContentMargin = computed(() => {
+        let margin = 0
+
+        if(sidebarWidth.value > initialSidebarWidth) {
+            margin = sidebarWidth.value - initialSidebarWidth
+        }
+
+        return {
+            width: `calc(100% - ${margin}px)`,
+            marginLeft: `${margin}px`
+        }
+    })
+
+    const isOwner = computed(() => {
+        return ownerId.value === getMe.value.vertexid
+    })
+
+    function initLoadServer(serverId) {
+        isLoading.value = true
+        loadServer(serverId)
+        .then( res => {
+            if(!res) {
+                router.push({ name: 'serverList'})
             }
-        },
-        computed: {
-            ...mapState(usePeerStore, {
-                isStreaming: 'getIsStreaming',
-                isCapturing: 'getIsCapturing',
-            }),
-            ...mapState(useMeStore, {
-                getMe: 'getMe',
-            }),
-            ...mapState(useServerStore, {
-                currentServer: 'getCurrentServer',
-                currentRoom: 'getCurrentRoom',
-                isRoomStreamable: 'getIsRoomStreamable',
-                rooms: 'getServerRooms',
-                ownerId: 'getOwnerId',
-                serverPage: 'getServerPage',
-            }),
-            channel: function() {
-                if(this.currentServer) {
-                    return `server.${this.currentServer.id}`
-                }
-                return null
-            },
-            showServerPage: function() {
-                return this.serverPage && this.$route.name === 'server'
-            },
-            currentRoomId: function() {
-                if(this.currentRoom) {
-                    return this.currentRoom.id
-                }
-                return null
-            },
-            setMainContentMargin: function() {
-                let margin = 0
 
-                if(this.sidebarWidth > this.initialSidebarWidth) {
-                    margin = this.sidebarWidth - this.initialSidebarWidth
-                }
+            onUpdateBreadcrumb()
+        })
+    }
 
-                return { 
-                    width: `calc(100% - ${margin}px)`, 
-                    marginLeft: `${margin}px` 
-                }
-            },
-            isOwner: function() {
-                return this.ownerId === this.getMe.vertexid
-            },
-        },
-        created() {
-            this.initLoadServer(this.$route.params.serverId)
-        },
-        mounted() {
-            this.sidebarWidth = this.initialSidebarWidth
-        },
-        beforeUnmount() {
-            Echo.leave(this.channel)
-            Echo.private(this.getMe.channel).whisper('leave-server', {
-                userId: this.getMe.id,
-                serverId: this.currentServer.id,
-            })
-            this.resetServer()
-        },
-        watch: {
-            '$route' (to, from) {
-                if( to.params.hasOwnProperty('serverId') && to.params.serverId != from.params.serverId ) {
-                    this.initLoadServer(to.params.serverId)
-                }
-                this.onUpdateBreadcrumb()
-            },
-            currentServer(value) {
-                if(value) {
-                    this.iniServerEvents()
-                }
-            }
-        },
-        methods: {
-            ...mapActions(useServerStore, [
-                'loadServer',
-                'createRoom',
-                'createSubContent',
-                'resetServer',
-                'deleteUserServer',
-                'deleteRoom',
-                'removeRoom',
-                'resetCurrentRoom',
-                'addNewRoom',
-                'updateRoom',
-                'updateServer',
-                'sortDownRoom',
-                'sortUpRoom',
-                'addRoomModule',
-            ]),
-            initLoadServer(serverId) {
-                this.isLoading = true
-                this.loadServer(serverId)
-                .then( res => {
-                    if(!res) {
-                        this.$router.push({ name: 'serverList'})
-                    }
+    function onChangeServer(serverId) {
+        router.push({ name: 'server', params: { serverId: serverId }})
+    }
 
-                    this.onUpdateBreadcrumb()
-                }) 
-            },
-            onChangeServer(serverId) {
-                this.$router.push({ name: 'server', params: { serverId: serverId }})
-            },
-            async iniServerEvents() {
-                if(this.channel) {
-                    Echo.leave(this.channel)
-                    Echo.join(this.channel)
-                        .here((users) => {
-                            this.serverUsers = users
-                            this.$emit('update-users-server', this.users)
-                        })
-                        .joining((user) => {
-                            this.serverUsers.push(user)
-                            this.$emit('joining-user-server', user)
-                            this.$emit('update-users-server', this.serverUsers)
-                        })
-                        .leaving((user) => {
-                            this.serverUsers = this.serverUsers.filter( item => {
-                                return user.id != item.id
-                            })
-                            this.$emit('leaving-user-server', user)
-                            this.$emit('update-users-server', this.serverUsers)
-                        })
-                        .listen('.roomCreated', (event) => {
-                            if(!this.rooms.some(item => item.id === event.id)) {
-                                this.addNewRoom(event)
-                            }
-                        })
-                        .listen('.subRoomCreated', (event) => {
-                            if(this.currentRoom.id === event.parent_id) {
-                                this.createSubContent(event, true)
-                            }
-                        })
-                        .listen('.roomUpdated', (event) => {
-                            if(this.rooms.some(item => item.id === event.room.id)) {
-                                this.updateRoom(event.room, true)
-                            }
-                        })
-                        .listen('.roomDeleted', (event) => {
-                            if(this.rooms.some(item => item.id === event.room_id)) {
-                                this.deleteRoom(event.room_id, true)
-                                this.kickFromRoom(event.room_id)
-                            }
-                        })
-                        .listen('.serverUpdated', (event) => {
-                            if(this.currentServer.id === event.server.id) {
-                                this.updateServer(event.server, true)
-                            }
-                        })
-                        .error((error) => {
-                            console.error(error);
-                        })
+    function onEditServer(server) {
+        showModal.value = true
+        isNewQuestionnaire.value = false
+        modelPlaceholder.value = server
+        currentQuestionnaire.value = FormsSettingHelper.questionnaires.createServer
+    }
 
-                        this.isLoading = false
-                }
-            },
-            onEditServer(server) {
-                this.showModal = true
-                this.isNewQuestionnaire = false
-                this.modelPlaceholder = server
-                this.currentQuestionnaire = FormsSettingHelper.questionnaires.createServer
-            },
-            onDeleteServer(serverId) {
-               this.deleteUserServer(serverId)
-               .then( () => {
-                    this.$router.push({ name: 'serverList'})
-               })
-            },
-            onCreateRoom() {
-                this.showModal = true
-                this.isNewQuestionnaire = true
-                this.modelPlaceholder = null
-                this.currentQuestionnaire = FormsSettingHelper.questionnaires.createServerRoom
-            },
-            onEditRoom(room) {
-                this.showModal = true
-                this.isNewQuestionnaire = false
-                this.modelPlaceholder = room
-                this.currentQuestionnaire = FormsSettingHelper.questionnaires.createServerRoom
-            },
-            onDeleteRoom(roomId) {
-                this.deleteRoom(roomId)
-                .then(() => {
-                    this.kickFromRoom(roomId)
-                })
-            },
-            kickFromRoom(roomId) {
-                if(this.currentRoom && this.currentRoom.id === roomId) {
-                    this.$router.push({ name: 'server', params: { serverId: this.currentServer.id } })
-                }
-            },
-            onCancelEditModal() {
-                this.showModal = false
-                this.currentQuestionnaire = null
-            },
-            onQuestionnaireData(formData){
-                this.canValidate = false
-                
-                // create room serve
-                if(this.currentQuestionnaire === FormsSettingHelper.questionnaires.createServerRoom) {
-                    
-                    if(this.isNewQuestionnaire) {
-                        this.createRoom({
-                            room: formData.get('model'),
-                            serverId: this.currentServer.id
-                        })
-                    // update room 
-                    } else {
-                        this.updateRoom(formData)
-                    }
+    function onDeleteServer(serverId) {
+        deleteUserServer(serverId)
+        .then( () => {
+            router.push({ name: 'serverList'})
+        })
+    }
 
-                } 
+    function onCreateRoom() {
+        showModal.value = true
+        isNewQuestionnaire.value = true
+        modelPlaceholder.value = null
+        currentQuestionnaire.value = FormsSettingHelper.questionnaires.createServerRoom
+    }
 
-                // update server
-                if(this.currentQuestionnaire === FormsSettingHelper.questionnaires.createServer) {
-                    this.updateServer(formData)
-                }
+    function onEditRoom(room) {
+        showModal.value = true
+        isNewQuestionnaire.value = false
+        modelPlaceholder.value = room
+        currentQuestionnaire.value = FormsSettingHelper.questionnaires.createServerRoom
+    }
 
-                // add room module
-                if(this.currentQuestionnaire === FormsSettingHelper.questionnaires.createRoomModule) {
-                    this.addRoomModule(formData)
-                }
-            },
-            onUpdateRoomUsers(users) {
-                this.currentRoomUsers = [...users]
-            },
-            onSortUpRoom(index) {
-                this.sortUpRoom(index)
-                this.roomParamsKey++
-            },
-            onSortDownRoom(index) {
-                this.sortDownRoom(index)
-                this.roomParamsKey++
-            },
-            onAddModule() {
-                this.showModal = true
-                this.isNewQuestionnaire = true
-                this.modelPlaceholder = null
-                this.currentQuestionnaire = FormsSettingHelper.questionnaires.createRoomModule
-            },
-            updateSidebarWidth(newWidth){
-                this.sidebarWidth = newWidth;
-            },
-            onUpdateBreadcrumb() {
-                breadcrumbService.updateBreadcrumb({
-                    name: this.currentServer.name,
-                    id: 'server_name',
-                    link: { name: 'server', params: { serverId: this.currentServer.id } },
-                    internal: true
-                })
-            },
+    function onDeleteRoom(roomId) {
+        deleteRoom(roomId)
+        .then(() => {
+            kickFromRoom(roomId)
+        })
+    }
+
+    function kickFromRoom(roomId) {
+        if(currentRoom.value && currentRoom.value.id === roomId) {
+            router.push({ name: 'server', params: { serverId: currentServer.value.id } })
         }
     }
+
+    function onCancelEditModal() {
+        showModal.value = false
+        currentQuestionnaire.value = null
+    }
+
+    function onQuestionnaireData(formData) {
+        canValidate.value = false
+
+        // create room serve
+        if(currentQuestionnaire.value === FormsSettingHelper.questionnaires.createServerRoom) {
+
+            if(isNewQuestionnaire.value) {
+                createRoom({
+                    room: formData.get('model'),
+                    serverId: currentServer.value.id
+                })
+            // update room
+            } else {
+                updateRoom(formData)
+            }
+
+        }
+
+        // update server
+        if(currentQuestionnaire.value === FormsSettingHelper.questionnaires.createServer) {
+            updateServer(formData)
+        }
+
+        // add room module
+        if(currentQuestionnaire.value === FormsSettingHelper.questionnaires.createRoomModule) {
+            addRoomModule(formData)
+        }
+    }
+
+    function onUpdateRoomUsers(users) {
+        currentRoomUsers.value = [...users]
+    }
+
+    function onSortUpRoom(index) {
+        sortUpRoom(index)
+        roomParamsKey.value++
+    }
+
+    function onSortDownRoom(index) {
+        sortDownRoom(index)
+        roomParamsKey.value++
+    }
+
+    function onAddModule() {
+        showModal.value = true
+        isNewQuestionnaire.value = true
+        modelPlaceholder.value = null
+        currentQuestionnaire.value = FormsSettingHelper.questionnaires.createRoomModule
+    }
+
+    function updateSidebarWidth(newWidth) {
+        sidebarWidth.value = newWidth
+    }
+
+    function onUpdateBreadcrumb() {
+        breadcrumbService.updateBreadcrumb({
+            name: currentServer.value.name,
+            id: 'server_name',
+            link: { name: 'server', params: { serverId: currentServer.value.id } },
+            internal: true
+        })
+    }
+
+    initLoadServer(route.params.serverId)
+
+    onMounted(() => {
+        sidebarWidth.value = initialSidebarWidth
+    })
+
+    // S'exécute avant les leave() auto enregistrés par les useReverbChannel ci-dessous.
+    onBeforeUnmount(() => {
+        whisperMe('leave-server', {
+            userId: getMe.value.id,
+            serverId: currentServer.value.id,
+        })
+        resetServer()
+    })
+
+    const { whisper: whisperMe } = useReverbChannel(meChannelName, {
+        type: 'private',
+    })
+
+    const { users: serverUsers } = useReverbChannel(channelName, {
+        type: 'presence',
+        listeners: {
+            '.roomCreated': (event) => {
+                if(!rooms.value.some(item => item.id === event.id)) {
+                    addNewRoom(event)
+                }
+            },
+            '.subRoomCreated': (event) => {
+                if(currentRoom.value.id === event.parent_id) {
+                    createSubContent(event, true)
+                }
+            },
+            '.roomUpdated': (event) => {
+                if(rooms.value.some(item => item.id === event.room.id)) {
+                    updateRoom(event.room, true)
+                }
+            },
+            '.roomDeleted': (event) => {
+                if(rooms.value.some(item => item.id === event.room_id)) {
+                    deleteRoom(event.room_id, true)
+                    kickFromRoom(event.room_id)
+                }
+            },
+            '.serverUpdated': (event) => {
+                if(currentServer.value.id === event.server.id) {
+                    updateServer(event.server, true)
+                }
+            },
+        },
+        onJoining: (user) => emit('joining-user-server', user),
+        onLeaving: (user) => emit('leaving-user-server', user),
+        onError: (err) => console.error(err),
+    })
+
+    watch(serverUsers, (users) => {
+        emit('update-users-server', users)
+    })
+
+    watch(currentServer, (value) => {
+        if(value) {
+            isLoading.value = false
+        }
+    })
+
+    watch(route, (to, from) => {
+        if( to.params.hasOwnProperty('serverId') && to.params.serverId != from.params.serverId ) {
+            initLoadServer(to.params.serverId)
+        }
+        onUpdateBreadcrumb()
+    })
 </script>
