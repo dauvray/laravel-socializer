@@ -95,25 +95,34 @@
 </template>
 
 <script setup>
-
+    // VUE & LIBS
     import { ref, computed, watch, onMounted, onBeforeUnmount, defineAsyncComponent } from 'vue'
     import { useRoute, useRouter } from 'vue-router'
     import { storeToRefs } from 'pinia'
+
+    // STORES
     import { useServerStore } from '~socializer/stores/server.js'
     import { usePeerStore } from '~socializer/stores/peers.js'
     import { useMeStore } from '~estarter/stores/me.js'
-    import RoomSidebar from './widgets/RoomSidebar.vue'
-    import RoomHeader from './RoomHeader.vue'
-  //  import ServerList from './widgets/ServerList.vue'
-    import FormsSettingHelper from '~socializer/services/FormsSetting.js'
-    import IconWidget from '~estarter/components/widgets/IconWidget.vue'
-    import Gravatar from '~estarter/components/widgets/Gravatar.vue'
-    import vResizable from "~socializer/directives/resizable_vertical.js"
+
+    // COMPOSABLES
     import { useAjaxService } from '~estarter/services/AjaxService.js'
     import { useBreakpoints } from '~socializer/composables/useBreakpoints'
     import { useBreadcrumbService } from '~estarter/services/BreadcrumbService.js'
     import { useReverbChannel } from '~socializer/components/System/composables/useReverbChannel.js'
 
+    // UTILS & DIRECTIVES
+    import vResizable from "~socializer/directives/resizable_vertical.js"
+    import FormsSettingHelper from '~socializer/services/FormsSetting.js'
+    import IconWidget from '~estarter/components/widgets/IconWidget.vue'
+    import Gravatar from '~estarter/components/widgets/Gravatar.vue'
+
+    // COMPOSANTS
+    import RoomSidebar from './widgets/RoomSidebar.vue'
+    import RoomHeader from './RoomHeader.vue'
+  //import ServerList from './widgets/ServerList.vue'
+
+    // COMPOSANTS ASYNCHRONES
     const SettingsModal = defineAsyncComponent(() => import('~socializer/components/Server/widgets/SettingsModal.vue'))
     const PageComponent = defineAsyncComponent(() => import('~socializer/components/Page/PageComponent.vue'))
 

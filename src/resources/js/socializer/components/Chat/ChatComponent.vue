@@ -133,16 +133,16 @@
     import { useStickyScroll } from '~socializer/composables/useStickyScroll.js'
     import { useTypingIndicator } from '~socializer/components/Chat/composables/useTypingIndicator.js'
 
-    // COMPOSANTS
+    // UTILS & DIRECTIVES
+    import { shouldShowDateSeparator as computeDateSeparator } from '~socializer/components/Chat/utils/dateSeparator.js'
+    import resizable from "~socializer/directives/resizable_horizontal.js"
     import IntersectionObserver from '~socializer/components/widgets/IntersectionObserver.vue'
+
+    // COMPOSANTS
     import MessageWidget from '~socializer/components/Chat/widgets/MessageWidget.vue'
     import SpinnerTextWriting from '~estarter/components/widgets/Spinners/SpinnerTextWriting.vue'
     import TextareaMessage from '~socializer/components/Chat/widgets/partials/TextareaMessage.vue'
     import DateSeparator from '~socializer/components/Chat/widgets/partials/DateSeparator.vue'
-
-    // UTILS & DIRECTIVES
-    import { shouldShowDateSeparator as computeDateSeparator } from '~socializer/components/Chat/utils/dateSeparator.js'
-    import resizable from "~socializer/directives/resizable_horizontal.js"
 
     // COMPOSANTS ASYNCHRONES
     const RoomUsersList = defineAsyncComponent(() => import('~socializer/components/Server/widgets/RoomUsersList.vue'))
