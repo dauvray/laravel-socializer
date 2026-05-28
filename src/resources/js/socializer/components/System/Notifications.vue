@@ -24,24 +24,23 @@
 </template>
 
 <script setup>
+// VUE & LIBS
 import { ref, computed, watch, onMounted, onUnmounted, inject, defineAsyncComponent } from 'vue'
 import { storeToRefs } from 'pinia'
+
+// STORES
 import { useMeStore } from '~estarter/stores/me.js'
 import { usePeer2Store } from '~socializer/stores/peers2.js'
 import { useConversationsStore } from '~socializer/stores/conversations.js'
+
+// COMPOSABLES
 import { useMediaBroadcast } from '~socializer/components/WebRTC2/Composables/useMediaBroadcast.js'
 import { useReverbChannel } from '~socializer/components/System/composables/useReverbChannel.js'
 
-// Composants async (auto-enregistrés en script setup)
-const AlertComponent = defineAsyncComponent(() =>
-    import('~socializer/components/System/widgets/AlertComponent.vue')
-)
-const CallManagerBtn = defineAsyncComponent(() =>
-    import('~socializer/components/WebRTC2/Widgets/UI/Buttons/CallManagerBtn.vue')
-)
-const ToasterNewMessage = defineAsyncComponent(() =>
-    import('~socializer/components/System/widgets/ToasterNewMessage.vue')
-)
+// COMPOSANTS ASYNCHRONES
+const AlertComponent = defineAsyncComponent(() =>import('~socializer/components/System/widgets/AlertComponent.vue'))
+const CallManagerBtn = defineAsyncComponent(() =>import('~socializer/components/WebRTC2/Widgets/UI/Buttons/CallManagerBtn.vue'))
+const ToasterNewMessage = defineAsyncComponent(() =>import('~socializer/components/System/widgets/ToasterNewMessage.vue'))
 
 // Inject
 const eventBus = inject('eventBus')
@@ -78,12 +77,10 @@ watch(me, (value) => {
 
 useReverbChannel(userChannel, {
     type: 'private',
-
     // Laravel notifications
     onNotification: () => {
         addUnreadNotifications(1)
     },
-
     listeners: {
         // display alerts to user
         '.AlertToUser': (event) => {
