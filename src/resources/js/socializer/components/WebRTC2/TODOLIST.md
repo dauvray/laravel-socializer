@@ -4,38 +4,6 @@
 
 ---
 
-## 🗂️ Vue d'ensemble de l'architecture
-
-```
-┌─ Feature Layer (métier) ────────────────────────────────────────────────┐
-│  useMediaBroadcast            ← intentions utilisateur (start/stop,     │
-│                                 mute/toggle, join → connexions)         │
-│                                 expose l'état UI (isMuted, callState…)  │
-└──────────────────────────────────┬──────────────────────────────────────┘
-                                   │ utilise
-┌─ Technical Orchestrator ─────────▼──────────────────────────────────────┐
-│  usePeerOrchestrator          ← façade unifiée + coordination des       │
-│                                 sous-modules ; ne connaît pas l'UI      │
-└──┬───────────────┬───────────────┬───────────────┬──────────────────────┘
-   │               │               │               │
-   ▼               ▼               ▼               ▼
-createPeerContext  usePeerCore     usePeerMedia    usePeerConnections    usePeerTransport
-état partagé       Signaling       MediaStream     RTCPeerConnection     DataChannel +
-(refs, session,    (Reverb /       lifecycle       lifecycle             routage topologie
- media, conn.)     peerId exch.)   (getUserMedia)  (offer/answer/ICE)    (mesh / star / sfu)
-
-┌─ utils/ (infrastructure — usage libre par tous les composables) ────────┐
-│  usePeerRetry            ← backoff exponentiel (timer manager générique)│
-│  useCallStateMachine     ← machine d'état appel (IDLE → CALLING → …)    │
-│  sanitizeMetadata        ← validation des champs `conn.metadata` réseau │
-│  payloadSize             ← mesure + garde anti-DoS sur data channels    │
-└─────────────────────────────────────────────────────────────────────────┘
-
-webrtc2.config.js   ← constantes partagées (MAX_*, *_TIMEOUT, *_PATTERN…)
-EventBus/           ← bus d'événements applicatif (signaling Reverb, UI)
-Widgets/            ← composants Vue consommateurs (montés via provider)
-```
-
 **Règles de couplage**
 
 - `useMediaBroadcast` n'importe **que** `usePeerOrchestrator` ; il ne touche jamais aux sous-modules ni au `peerStore`.
