@@ -11,7 +11,7 @@
   ],
   "require": {
     "php": "^8.2",
-    "laravel/framework": "^12.0",
+    "laravel/framework": "^13.0",
     "vesoft-inc/nebula-php": "dev-main"
   },
   "autoload": {
