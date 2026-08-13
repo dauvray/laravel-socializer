@@ -48,9 +48,11 @@ export function createMockContext(overrides = {}) {
     const media = reactive({
         videoContainer: '#videoContainer',
         currentStream: null,
+        screenStream: null,
         remoteStreamsMap: new Map(),
         isStreaming: false,
         isCapturing: false,
+        isAudioStream: false,
         ...(overrides.media ?? {}),
     })
 
@@ -98,30 +100,83 @@ export function createMockContext(overrides = {}) {
     // ── peerStore mock ────────────────────────────────────────────────────────
     const _connections = {}
     const _players = []
-    const _remotePeerIds = {}
-    const _waitingRemotePeerIds = {}
+    // ⚠️ De vraies Map, comme dans peers2/state.js : la recovery `peer-unavailable`
+    // de usePeerTransport fait une recherche inverse en itérant
+    // `peerStore.remotePeersId.entries()` — un objet nu la rendrait inerte.
+    const _remotePeerIds = new Map()
+    const _waitingRemotePeerIds = new Map()
     const _signalQueueRooms = {}
 
     const peerStore = {
         lastLocalPeerId: overrides.peerStore?.lastLocalPeerId ?? null,
         getLocalPeerId: overrides.peerStore?.getLocalPeerId ?? 'local-peer-id-mock',
         getLocalPeer: overrides.peerStore?.getLocalPeer ?? null,
-        getConnections: computed(() => _connections),
+        // ⚠️ Objet nu, PAS un computed : les getters Pinia sont auto-déballés, et le code
+        // sous test lit `ctx.peerStore.getConnections?.[room]` sans `.value`. Enveloppé
+        // dans un computed, tout accès retournait undefined → `hasOpenConnection`
+        // systématiquement false (faux négatif silencieux).
+        getConnections: _connections,
         getPlayers: _players,
 
-        getRemotePeerId: vi.fn((slug) => _remotePeerIds[slug] ?? null),
-        addRemotePeerId: vi.fn((slug, peerId) => { _remotePeerIds[slug] = peerId }),
-        removeRemotePeerId: vi.fn((slug) => { delete _remotePeerIds[slug] }),
+        // Exposées telles quelles : la recovery du transport les parcourt directement.
+        remotePeersId: _remotePeerIds,
+        waitingRemotePeerId: _waitingRemotePeerIds,
 
-        getWaitingRemotePeerId: vi.fn((slug) => _waitingRemotePeerIds[slug] ?? null),
-        addWaitingRemotePeerId: vi.fn((slug, data) => {
-            _waitingRemotePeerIds[slug] = { ...data, createdAt: Date.now() }
+        getRemotePeerId: vi.fn((slug) => _remotePeerIds.get(slug) ?? null),
+        hasRemotePeerId: vi.fn((slug) => _remotePeerIds.has(slug)),
+        addRemotePeerId: vi.fn((slug, peerId) => { _remotePeerIds.set(slug, peerId) }),
+        // Fidèle au store réel : le mapping n'est supprimé que si le pair n'apparaît
+        // plus dans AUCUNE room de `connections` (cf. peers2/actions.js:217).
+        removeRemotePeerId: vi.fn((slug) => {
+            const stillConnected = Object.values(_connections).some((room) => slug in room)
+            if (!stillConnected) _remotePeerIds.delete(slug)
         }),
-        removeWaitingRemotePeerId: vi.fn((slug) => { delete _waitingRemotePeerIds[slug] }),
+        // Invalidation inconditionnelle : le peerId est mort, pas « peut-être encore
+        // utile ailleurs ». Purge aussi le waiting pour ne pas étrangler la re-demande.
+        invalidateRemotePeerId: vi.fn((slug) => {
+            _remotePeerIds.delete(slug)
+            _waitingRemotePeerIds.delete(slug)
+        }),
+
+        getWaitingRemotePeerId: vi.fn((slug) => _waitingRemotePeerIds.get(slug) ?? null),
+        hasWaitingRemotePeerId: vi.fn((slug) => _waitingRemotePeerIds.has(slug)),
+        addWaitingRemotePeerId: vi.fn((slug, data) => {
+            _waitingRemotePeerIds.set(slug, { ...data, createdAt: Date.now() })
+        }),
+        removeWaitingRemotePeerId: vi.fn((slug) => { _waitingRemotePeerIds.delete(slug) }),
 
         getQueueForRoom: vi.fn((room) => _signalQueueRooms[room] ?? []),
         createSignalQueueRoom: vi.fn((room) => { _signalQueueRooms[room] = [] }),
         clearSignalQueueRoom: vi.fn((room) => { delete _signalQueueRooms[room] }),
+
+        // Prépare la structure imbriquée room → slug → type → [] à partir du `config`
+        // produit par _buildPeerConnectionConfig (cf. peers2/actions.js:15).
+        prepareRoomConnection: vi.fn((payload) => {
+            const { room, slug, type } = payload?.options?.metadata ?? {}
+            if (!_connections[room]) _connections[room] = {}
+            if (!_connections[room][slug]) _connections[room][slug] = {}
+            if (!_connections[room][slug][type]) _connections[room][slug][type] = []
+        }),
+        storePeerConnection: vi.fn((room, slug, type, conn) => {
+            _connections[room][slug][type].push(conn)
+        }),
+        // Ferme les instances sans les retirer du store — le retrait est le rôle de
+        // clearConnectionsRoom / removePeerConnectionInstance (cf. peers2/actions.js:80).
+        closePeerConnection: vi.fn((room, slug, type) => {
+            const list = _connections[room]?.[slug]?.[type]
+            if (!Array.isArray(list)) return
+            list.forEach((conn) => {
+                if (!conn || typeof conn !== 'object') return
+                if (conn.__ctxClosing === true || conn.__ctxCloseHandled === true) return
+                if (!Object.hasOwn(conn, 'peer')) return
+                if (type === 'data' && conn.open !== true) return
+                conn.__ctxClosing = true
+                conn.close?.()
+                if (type !== 'data' && conn.peerConnection?.signalingState !== 'closed') {
+                    conn.peerConnection?.close?.()
+                }
+            })
+        }),
 
         addPeerConnectionInstance: vi.fn((room, slug, type, conn) => {
             if (!_connections[room]) _connections[room] = {}
@@ -134,11 +189,16 @@ export function createMockContext(overrides = {}) {
             if (!list) return
             const idx = list.indexOf(conn)
             if (idx !== -1) list.splice(idx, 1)
+            if (list.length === 0) peerStore.clearConnectionsRoom(room, slug, type)
         }),
+        // Fidèle au store réel : supprime la clé et remonte la purge sur les parents
+        // devenus vides (cf. peers2/actions.js:154) — un slug sans type disparaît de la
+        // room, ce dont dépend removeRemotePeerId.
         clearConnectionsRoom: vi.fn((room, slug, type) => {
-            if (_connections[room]?.[slug]?.[type]) {
-                _connections[room][slug][type] = []
-            }
+            if (!_connections[room]?.[slug]) return
+            delete _connections[room][slug][type]
+            if (Object.keys(_connections[room][slug]).length === 0) delete _connections[room][slug]
+            if (Object.keys(_connections[room]).length === 0) delete _connections[room]
         }),
 
         setLocalPeer: vi.fn(),

@@ -35,6 +35,28 @@ export function useConnectionPool(ctx, { core, connections }) {
     const retryManager = usePeerRetry(ctx)
 
     /**
+     * Le flux exigé par ce type de connexion est-il réellement émettable ?
+     *
+     * Réplique la précondition de `usePeerConnections.connectToPeer`, qui pour `stream`
+     * et `screen` sort par un `return true` **sans rien ouvrir** quand le flux local
+     * n'est pas (encore) valide. Vu du moteur de retry, ce `true` est ambigu : il dit
+     * « pas d'erreur », pas « connexion établie ». Ce prédicat lève l'ambiguïté sans
+     * changer le contrat de connectToPeer, en distinguant « rien à envoyer, abandonner »
+     * de « pas encore prêt, réessayer ».
+     *
+     * @param {string} type
+     * @returns {boolean}
+     */
+    const _canEmitStreamFor = (type) => {
+        // Un data channel n'a aucun flux à porter : toujours émettable.
+        if (type === 'data') return true
+
+        const stream = type === 'screen' ? ctx.media.screenStream : ctx.media.currentStream
+        return stream instanceof MediaStream
+            && stream.getTracks().some(track => track.readyState === 'live')
+    }
+
+    /**
      * LOGIQUE DE TENTATIVE (Callback pour le RetryManager)
      * Détermine si on doit continuer à essayer de se connecter à un user.
      */
@@ -58,6 +80,18 @@ export function useConnectionPool(ctx, { core, connections }) {
 
         // 3. Si on a un ID, on tente la connexion (même si waiting a sauté)
         if (remotePeerId) {
+            // ⚠️ Les deux tentatives sont INDÉPENDANTES : ne jamais sortir entre les deux.
+            // Le type principal et le partage d'écran partagent la même chaîne de retry
+            // (usePeerRetry._retryKey ne discrimine pas le type), donc un `return`
+            // prématuré ici condamne l'autre tentative avec lui. Le cas critique est
+            // l'écran : `requestRemotePeerConnection` envoie toujours `type: currentType`,
+            // jamais `'screen'` — ce moteur est donc le SEUL à ouvrir la connexion d'écran
+            // vers un arrivant. Un `return` avant la branche ci-dessous et le partage
+            // d'écran n'atteint jamais personne (symptôme observé : « aléatoire », parce
+            // que ça ne cassait que si A n'avait pas aussi un flux webcam actif).
+            // On accumule donc l'état et on ne décide qu'à la fin.
+            let settled = true
+
             if (!mainTypeOpen) {
                 const connected = connections.connectToPeer({
                     userSlug,
@@ -65,21 +99,36 @@ export function useConnectionPool(ctx, { core, connections }) {
                     type: ctx.currentType.value,
                     room,
                 })
-                // Si la connexion principale a échoué pour une vraie raison (ex: visio sans stream prêt)
-                // on continue à reessayer plutôt que de s'arrêter prématurément
-                if (!connected) return false
+
+                // Deux raisons distinctes de différer :
+                // - `connected === false` : échec réel (ex: visio sans flux prêt)
+                // - `connected === true` mais rien d'ouvert : pour `stream`/`screen`,
+                //   connectToPeer sort par true sans rien ouvrir quand le flux local n'est
+                //   pas encore valide. Conclure ici **annulait** le retry au lieu de le
+                //   différer, et la connexion n'était plus jamais rouverte une fois le flux
+                //   prêt.
+                if (!connected || !_canEmitStreamFor(ctx.currentType.value)) settled = false
             }
 
             if (ctx.media.isCapturing && !screenOpen) {
-                connections.connectToPeer({
+                const connected = connections.connectToPeer({
                     userSlug,
                     peerId: remotePeerId,
                     type: 'screen',
                     room,
                 })
+
+                if (!connected || !_canEmitStreamFor('screen')) settled = false
             }
 
-            return true
+            // `false` = « rien n'est encore conclu, redemander plus tard ». Quand A ne
+            // partage QUE son écran, le type principal n'aura jamais de flux : le retry
+            // ira donc jusqu'à MAX_RETRY_ATTEMPTS puis abandonnera avec un warn, alors que
+            // la connexion d'écran est établie depuis longtemps. Borné et sans conséquence
+            // fonctionnelle. Distinguer « n'aura jamais de flux » de « pas encore de flux »
+            // n'est pas décidable ici — cf. l'item TODOLIST sur le type envoyé par
+            // requestRemotePeerConnection.
+            return settled
         }
 
         // 4. Signalisation stale : On ne demande l'ID que si on est toujours en attente (waiting)

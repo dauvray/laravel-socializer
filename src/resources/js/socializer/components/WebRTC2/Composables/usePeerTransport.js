@@ -406,7 +406,9 @@ export function usePeerTransport(ctx) {
                 if (!failedPeerId) return
 
                 contextRegistry.forEach((registeredCtx) => {
-                    // Recherche inverse peerId → userSlug dans ce contexte
+                    // Recherche inverse peerId → userSlug dans ce contexte.
+                    // C'est la SEULE précondition : dès qu'on sait à quel pair appartenait
+                    // ce peerId mort, on a tout ce qu'il faut pour l'invalider.
                     let targetSlug = null
                     for (const [slug, peerId] of (registeredCtx.peerStore.remotePeersId?.entries?.() ?? [])) {
                         if (String(peerId) === String(failedPeerId)) {
@@ -417,20 +419,32 @@ export function usePeerTransport(ctx) {
                     if (!targetSlug) return
 
                     const room = registeredCtx.session.currentCallRoomId || registeredCtx.session.currentRoom
-                    const type = registeredCtx.session.currentType
 
-                    // Ne traiter que les contextes qui ont réellement une connexion vers ce peerId
-                    const conns = [...(registeredCtx.peerStore.getConnections?.[room]?.[targetSlug]?.[type] ?? [])]
-                    const failedConns = conns.filter(conn => conn?.peer === String(failedPeerId))
-                    if (failedConns.length === 0) return
-
-                    // 1. Retirer la connexion échouée du store (libère le guard hasOpenConnection)
-                    failedConns.forEach(conn => {
-                        registeredCtx.peerStore.removePeerConnectionInstance(room, targetSlug, type, conn)
+                    // 1. Retirer les connexions échouées du store (libère le guard
+                    //    hasOpenConnection, dont le fallback considère « ouverte » une
+                    //    MediaConnection sans peerConnection exploitable).
+                    //    ⚠️ Balayer aussi 'screen' : un partage d'écran est stocké sous ce
+                    //    type, jamais sous session.currentType — on ne le trouvait donc
+                    //    jamais, et sa connexion morte bloquait le retry.
+                    const types = new Set([registeredCtx.session.currentType, 'screen'])
+                    types.forEach((type) => {
+                        const conns = [...(registeredCtx.peerStore.getConnections?.[room]?.[targetSlug]?.[type] ?? [])]
+                        conns
+                            .filter(conn => conn?.peer === String(failedPeerId))
+                            .forEach(conn => {
+                                registeredCtx.peerStore.removePeerConnectionInstance(room, targetSlug, type, conn)
+                            })
                     })
 
-                    // 2. Invalider le peerId stale pour forcer une nouvelle demande de signalisation
-                    registeredCtx.peerStore.removeRemotePeerId(targetSlug)
+                    // 2. Invalider le peerId mort pour forcer une nouvelle demande de
+                    //    signalisation.
+                    //    ⚠️ Inconditionnel, et SANS exiger d'avoir retrouvé une connexion
+                    //    stockée : `peer.call()` peut échouer avant l'enregistrement, et
+                    //    l'ancien garde `failedConns.length === 0` abandonnait alors avant
+                    //    toute invalidation. Le peerId restait « collant » et le pair
+                    //    devenait définitivement injoignable (cf. invalidateRemotePeerId,
+                    //    qui explique pourquoi removeRemotePeerId ne convient pas ici).
+                    registeredCtx.peerStore.invalidateRemotePeerId(targetSlug)
 
                     // 3. Notifier l'orchestrateur via signal réactif pour relancer le cycle complet.
                     // usePeerOrchestrator observe ce signal via watch() → pas de couplage par mutation.

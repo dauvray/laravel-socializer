@@ -200,7 +200,11 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
             connections.closePeerConnection({
                 room: context.session.currentCallRoomId || context.session.currentRoom,
                 type: context.session.currentType,
-                clearSignalQueue: true,
+                // Symétrique de stopScreenCapture, qui garde délibérément la file « pour le
+                // stream webcam actif » : arrêter la webcam pendant un partage d'écran ne
+                // doit pas vider la file de signaux dont la connexion d'écran a encore
+                // besoin (elle n'est ouverte que par le moteur de retry).
+                clearSignalQueue: !context.media.isCapturing,
             })
 
             media.stopCurrentStream()

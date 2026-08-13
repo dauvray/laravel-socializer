@@ -21,8 +21,23 @@
 
                 <div class="col">
                     <h5>Remote Streams</h5>
-                    <RemoteMediaPlayer 
-                        v-for="(remoteStream, index) in remoteStreamsData" 
+
+                    <!--
+                        Pair présent dans la room dont aucun flux n'est encore arrivé.
+                        L'établissement (signalisation → peer.call → ICE, plus le backoff
+                        de retry) peut prendre plusieurs secondes : sans cette vignette,
+                        l'écran reste vide et l'attente se lit comme une panne.
+                        L'attente est bornée — cf. useAwaitedStreams.
+                    -->
+                    <div v-for="slug in awaitedPeers" :key="`awaited-${slug}`" class="draggable-video">
+                        <div class="video-loading">
+                            <Spinner color="#ffffff" />
+                            <span class="video-loading-label">{{ slug }} — en attente du flux…</span>
+                        </div>
+                    </div>
+
+                    <RemoteMediaPlayer
+                        v-for="(remoteStream, index) in remoteStreamsData"
                         :key="remoteStream.metadata.peerId ?? index"
                         :streamData="remoteStream">
                         <template #audio="audioProps">
@@ -48,6 +63,7 @@
     import RemoteMediaPlayer from '~socializer/components/WebRTC2/Widgets/Mediaplayer/RemoteMediaPlayer.vue'
     import GroupLocalStreamBtn from '~socializer/components/WebRTC2/Widgets/UI/Buttons/GroupLocalStreamBtn.vue'
     import Spinner from '~estarter/components/widgets/Spinners/Spinner1.vue'
+    import { useAwaitedStreams } from '~socializer/components/WebRTC2/Widgets/Mediaplayer/Composables/useAwaitedStreams.js'
 
     const props = defineProps({
         api: Object,
@@ -55,6 +71,9 @@
 
     const meStore = useMeStore()
     const peerStore = usePeer2Store()
+
+    // Pairs présents sans flux : vignette d'attente, bornée dans le temps.
+    const { awaitedPeers } = useAwaitedStreams(props.api)
 
     const SpectrumAnalyzer = defineAsyncComponent({
         // La fonction de chargement (le dynamic import)

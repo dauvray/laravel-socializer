@@ -530,14 +530,11 @@ describe('useCallManager', () => {
             expect(core.notifyCloseConnectionToPeer).not.toHaveBeenCalled()
         })
 
-        it('purge tous les flux du pair, quel que soit leur type', async () => {
+        it('ne touche jamais aux flux des autres pairs', async () => {
             enterConnectedCall()
             ctx.addCurrentCallUser('bob', 'visio')
             ctx.media.remoteStreamsMap.set('alice-visio', {
                 stream: {}, remoteSlug: 'alice', remoteType: 'visio',
-            })
-            ctx.media.remoteStreamsMap.set('alice-screen', {
-                stream: {}, remoteSlug: 'alice', remoteType: 'screen',
             })
             ctx.media.remoteStreamsMap.set('bob-visio', {
                 stream: {}, remoteSlug: 'bob', remoteType: 'visio',
@@ -546,10 +543,60 @@ describe('useCallManager', () => {
             await cm.handleRemoteDeparture(departure())
 
             expect(ctx.media.remoteStreamsMap.has('alice-visio')).toBe(false)
-            expect(ctx.media.remoteStreamsMap.has('alice-screen')).toBe(false)
-            expect(media.removeVideoElement).toHaveBeenCalledWith('remote-alice-screen')
-            // Les flux des autres participants ne sont pas touchés
             expect(ctx.media.remoteStreamsMap.has('bob-visio')).toBe(true)
+        })
+
+        it('arrêt d\'un seul flux : ne retire que le type qui s\'est fermé', async () => {
+            // Symptôme rapporté : A diffuse webcam + écran, A stoppe sa webcam → l'écran
+            // disparaissait aussi chez B. La fermeture de la connexion `stream` de A est un
+            // arrêt PARTIEL, pas un départ.
+            //
+            // ⚠️ Aucun stub de connexion ici, volontairement. La version précédente de ce
+            // test pilotait `hasOpenConnection` et passait au vert alors que le produit
+            // restait cassé : côté RÉCEPTEUR, usePeerTransport n'enregistre jamais les
+            // connexions entrantes dans le store, donc ce prédicat y répond toujours false.
+            // Le mock fournissait une information que le vrai store ne peut pas donner.
+            enterConnectedCall()
+            ctx.addCurrentCallUser('bob', 'visio')
+            ctx.media.remoteStreamsMap.set('alice-stream', {
+                stream: {}, remoteSlug: 'alice', remoteType: 'stream',
+            })
+            ctx.media.remoteStreamsMap.set('alice-screen', {
+                stream: {}, remoteSlug: 'alice', remoteType: 'screen',
+            })
+
+            // handleRemoteDeparture avale ses exceptions dans un try/catch : sans ce garde,
+            // une purge qui JETTE avant d'atteindre `alice-screen` rendrait ce test vert
+            // pour la mauvaise raison. C'est exactement ce qui s'est produit une fois.
+            const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+            await cm.handleRemoteDeparture(departure({ type: 'stream' }))
+
+            expect(errorSpy).not.toHaveBeenCalled()
+            expect(ctx.media.remoteStreamsMap.has('alice-stream')).toBe(false)
+            expect(ctx.media.remoteStreamsMap.has('alice-screen')).toBe(true)
+            expect(media.removeVideoElement).not.toHaveBeenCalledWith('remote-alice-screen')
+            errorSpy.mockRestore()
+        })
+
+        it('chaque fermeture emporte son propre type', async () => {
+            // Départ réel : les deux connexions se ferment, chacune routée avec son type
+            // (le wrapping de onConnectionClose dépend du MODE du contexte, pas du type de
+            // la connexion) — au total le pair est bien entièrement nettoyé.
+            enterConnectedCall()
+            ctx.addCurrentCallUser('bob', 'visio')
+            ctx.media.remoteStreamsMap.set('alice-stream', {
+                stream: {}, remoteSlug: 'alice', remoteType: 'stream',
+            })
+            ctx.media.remoteStreamsMap.set('alice-screen', {
+                stream: {}, remoteSlug: 'alice', remoteType: 'screen',
+            })
+
+            await cm.handleRemoteDeparture(departure({ type: 'stream' }))
+            await cm.handleRemoteDeparture(departure({ type: 'screen' }))
+
+            expect(ctx.media.remoteStreamsMap.has('alice-stream')).toBe(false)
+            expect(ctx.media.remoteStreamsMap.has('alice-screen')).toBe(false)
         })
 
         it('purge un flux reçu sur ma connexion sortante (metadata.from = mon slug)', async () => {

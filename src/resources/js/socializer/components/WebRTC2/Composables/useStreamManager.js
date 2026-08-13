@@ -82,6 +82,39 @@ export function useStreamManager(ctx, { media, callManager }) {
         }
     }
 
+    /**
+     * Retire l'entrée d'un flux distant quand ses pistes se terminent réellement.
+     *
+     * Filet indispensable en mode `stream` : aucun player n'y est créé (cf. plus bas), donc
+     * `usePeerMedia._bindStreamCleanup` ne tourne pas et le registre ne dépendait que des
+     * événements de fermeture PeerJS — sinon de l'éviction TTL, qui ne s'exécute qu'à
+     * l'arrivée d'un nouveau flux. Un flux mort sans `close` laissait donc une vignette
+     * figée. C'est ce filet qui permet à `useCallManager._purgePeerStreams` de ne retirer
+     * QUE le type qui s'est fermé, sans risque de fuite.
+     *
+     * Écouteurs `{ once: true }` et handler idempotent : pas de désinscription à tenir
+     * (un écouteur résiduel sur une piste déjà morte est sans effet), et l'entrée n'est
+     * supprimée que si elle porte toujours CE flux — elle a pu être remplacée entre-temps.
+     */
+    const _bindRemoteStreamCleanup = (stream, streamKey) => {
+        // `getTracks` est vérifié séparément de `instanceof` : un flux peut satisfaire le
+        // type sans exposer l'API (implémentations partielles, doublures de test).
+        if (!(stream instanceof MediaStream) || typeof stream.getTracks !== 'function') return
+
+        const onDead = () => {
+            const current = ctx.media.remoteStreamsMap.get(streamKey)
+            if (!current || current.stream !== stream) return
+
+            media.removeVideoElement(`remote-${current.remoteSlug}-${current.remoteType}`)
+            ctx.media.remoteStreamsMap.delete(streamKey)
+        }
+
+        stream.getTracks().forEach((track) => {
+            track.addEventListener('ended', onDead, { once: true })
+            track.addEventListener('inactive', onDead, { once: true })
+        })
+    }
+
     const handleStreamReceived = async (stream, conn, metadata) => {
         const ready = await ctx.waitForMeReady()
         if (!ready) return
@@ -114,6 +147,10 @@ export function useStreamManager(ctx, { media, callManager }) {
             peerId: conn?.peer || null,
             createdAt: Date.now(),
         })
+
+        // Le registre doit suivre la vie réelle du flux, pas seulement les événements de
+        // connexion : cf. _bindRemoteStreamCleanup.
+        _bindRemoteStreamCleanup(stream, streamKey)
 
         // Côté récepteur : le stream entrant confirme que la connexion est établie.
         // La transition RECEIVING → CONNECTED est décidée par la couche appels.

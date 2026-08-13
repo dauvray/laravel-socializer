@@ -232,6 +232,26 @@ $message_width: 60%;
         z-index: 2;
     }
 
+    // Attente d'image sur un flux déjà reçu : recouvre le cadre noir du <video>
+    // le temps des premières frames.
+    .video-loading {
+        position: absolute;
+        inset: 0;
+        z-index: 1; // sous .video-controls (2), au-dessus du <video>
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: map-get($spacers, 2);
+        background-color: rgba(0, 0, 0, .55);
+        pointer-events: none; // ne bloque ni le drag ni les contrôles au survol
+
+        .video-loading-label {
+            @extend .badge;
+            @extend .text-bg-dark;
+        }
+    }
+
     &:hover {
         .video-controls {
             display: block!important;

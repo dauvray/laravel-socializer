@@ -225,6 +225,29 @@ export default {
         this.remotePeersId.set(userSlug, peerId)
     },
 
+    /**
+     * Invalide un peerId distant devenu injoignable (PeerJS `peer-unavailable`).
+     *
+     * ⚠️ À NE PAS confondre avec removeRemotePeerId, qui est **conditionnel** : celui-ci
+     * exprime « ce pair a quitté cette room » et conserve donc volontairement le mapping
+     * tant que le pair apparaît dans une autre room. Or plusieurs contextes partagent ce
+     * store (le `data-app` de System/Notifications.vue est monté en permanence), si bien
+     * qu'un pair y figure presque toujours : utiliser removeRemotePeerId pour invalider
+     * un peerId mort en faisait un no-op, et le peerId périmé restait « collant » — plus
+     * aucune connexion ne pouvait être rétablie sans rechargement.
+     *
+     * Ici l'information est différente et certaine : ce peerId n'existe plus côté serveur
+     * de signalisation. On supprime donc sans condition, et on purge aussi le drapeau
+     * d'attente — sinon la re-demande déclenchée juste après serait étranglée par le
+     * garde d'âge SIGNALING_STALE_MS de requestRemotePeerConnection.
+     *
+     * @param {string} userSlug
+     */
+    invalidateRemotePeerId(userSlug) {
+        this.remotePeersId.delete(userSlug)
+        this.waitingRemotePeerId.delete(userSlug)
+    },
+
     // Gérer les connexions en attente d’un peer id distant
     addWaitingRemotePeerId(userSlug, data) {
         this.waitingRemotePeerId.set(userSlug, {

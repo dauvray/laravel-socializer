@@ -182,6 +182,87 @@ describe('useStreamManager', () => {
         })
     })
 
+    // ── Nettoyage par fin de pistes ─────────────────────────────────────────
+
+    describe('fin de vie réelle d\'un flux distant', () => {
+
+        /** Piste factice dont on peut déclencher les événements de fin. */
+        const track = () => {
+            const listeners = {}
+            return {
+                readyState: 'live',
+                addEventListener: vi.fn((event, handler) => { listeners[event] = handler }),
+                removeEventListener: vi.fn(),
+                _emit: (event) => listeners[event]?.(),
+            }
+        }
+
+        /** Flux reconnu par `instanceof` ET exposant getTracks (happy-dom ne l'implémente pas). */
+        const streamWith = (tracks) => {
+            const stream = Object.create(MediaStream.prototype)
+            stream.getTracks = () => tracks
+            return stream
+        }
+
+        it('retire l\'entrée quand les pistes du flux se terminent', async () => {
+            const t = track()
+            await sm.handleStreamReceived(streamWith([t]), fakeConn())
+            expect(ctx.media.remoteStreamsMap.has('alice-visio')).toBe(true)
+
+            t._emit('ended')
+
+            expect(ctx.media.remoteStreamsMap.has('alice-visio')).toBe(false)
+            expect(media.removeVideoElement).toHaveBeenCalledWith('remote-alice-visio')
+        })
+
+        it('écoute aussi `inactive`', async () => {
+            const t = track()
+            await sm.handleStreamReceived(streamWith([t]), fakeConn())
+
+            t._emit('inactive')
+
+            expect(ctx.media.remoteStreamsMap.has('alice-visio')).toBe(false)
+        })
+
+        it('ne touche pas les autres flux du même pair', async () => {
+            const webcam = track()
+            const screen = track()
+            await sm.handleStreamReceived(streamWith([webcam]), fakeConn())
+            await sm.handleStreamReceived(
+                streamWith([screen]),
+                fakeConn({ metadata: { from: 'alice', type: 'screen', room: 'call-room-1' } })
+            )
+
+            webcam._emit('ended')
+
+            expect(ctx.media.remoteStreamsMap.has('alice-visio')).toBe(false)
+            expect(ctx.media.remoteStreamsMap.has('alice-screen')).toBe(true)
+        })
+
+        it('idempotent : ne supprime pas une entrée déjà remplacée par un autre flux', async () => {
+            const oldTrack = track()
+            await sm.handleStreamReceived(streamWith([oldTrack]), fakeConn())
+
+            // Le pair renvoie un nouveau flux sous la même clé (reconnexion).
+            const replacement = streamWith([track()])
+            ctx.media.remoteStreamsMap.set('alice-visio', {
+                stream: replacement, remoteSlug: 'alice', remoteType: 'visio',
+            })
+
+            oldTrack._emit('ended')
+
+            expect(ctx.media.remoteStreamsMap.get('alice-visio')?.stream).toBe(replacement)
+        })
+
+        it('tolère un flux sans getTracks (implémentation partielle)', async () => {
+            // happy-dom n'expose pas getTracks : le garde doit éviter le crash.
+            await expect(
+                sm.handleStreamReceived(Object.create(MediaStream.prototype), fakeConn())
+            ).resolves.not.toThrow()
+            expect(ctx.media.remoteStreamsMap.has('alice-visio')).toBe(true)
+        })
+    })
+
     // ── handleStreamRemoved ─────────────────────────────────────────────────
 
     describe('handleStreamRemoved', () => {

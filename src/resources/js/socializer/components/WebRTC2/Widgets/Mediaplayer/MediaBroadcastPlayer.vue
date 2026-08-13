@@ -12,8 +12,23 @@
                 :autoplay="true"
                 :muted="isLocallyMuted"
                 :playsinline="true"
+                @can-play="isBuffering = false"
+                @playing="isBuffering = false"
+                @waiting="isBuffering = true"
+                @stalled="isBuffering = true"
+                @error="isBuffering = false"
             />
         </slot>
+
+        <!--
+            Un flux distant est présent mais aucune image n'est encore décodée : sans ce
+            retour visuel, l'attente (négociation ICE, premières frames) se lit comme un
+            cadre noir, donc comme une panne.
+        -->
+        <div v-if="showSpinner" class="video-loading" aria-live="polite">
+            <Spinner1 color="#ffffff" />
+            <span class="video-loading-label">Connexion au flux…</span>
+        </div>
         <slot v-else name="audio" :streamData="props.streamData">
             <AudioPlayer 
                 ref="player"
@@ -56,10 +71,11 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, useSlots } from 'vue'
 import VideoPlayer from '~estarter/components/widgets/VideoPlayer.vue'
 import AudioPlayer from '~estarter/components/widgets/AudioPlayer.vue'
 import IconWidget from '~estarter/components/widgets/IconWidget.vue'
+import Spinner1 from '~estarter/components/widgets/Spinners/Spinner1.vue'
 import resizeDirective from '~socializer/directives/resizable.js'
 import draggableDirective from '~socializer/directives/draggable.js'
 import { useMediaControls } from '~socializer/components/WebRTC2/Widgets/Mediaplayer/Composables/useMediaControls.js'
@@ -78,8 +94,23 @@ const vDraggable = draggableDirective
 const player = ref(null) // référence au composant vidéo/audio pour les contrôles (fullscreen, pip...)
 const container = ref(null) // référence à la div englobante pour les fonctionnalités de déplacement/redimensionnement
 
+const slots = useSlots()
+
 const controls = useMediaControls(player)
 const nativeMuted = ref(false)  // mute "côté navigateur" pour l'utilisateur local
+
+// Attente d'image : vrai jusqu'à ce que le <video> annonce pouvoir jouer.
+const isBuffering = ref(true)
+
+// Le spinner n'a de sens que si un flux est réellement attendu sur ce slot.
+// ⚠️ Neutralisé quand le consommateur fournit son propre slot `video` : nos écouteurs
+// `can-play` ne seraient alors jamais branchés et le spinner tournerait à vie.
+const showSpinner = computed(() =>
+    isBuffering.value
+    && props.videoActive
+    && !!props.streamData?.stream
+    && !slots.video
+)
 
 // si c'est mon propre flux, on mute toujours localement (sinon écho)
 const isLocallyMuted = computed(() => 
@@ -96,6 +127,9 @@ const onToggleNativeMute = () => {
 // suivant. Repasser par le ref (et non par el.muted) laisse Vue repatcher le binding.
 watch(() => props.streamData?.stream, () => {
     nativeMuted.value = false
+    // Même raison pour le spinner : sur une instance recyclée, l'ancien `can-play` avait
+    // déjà éteint l'attente — sans ce reset, le flux suivant s'afficherait sans spinner.
+    isBuffering.value = true
 })
 
 const onBringToFront = (event) => {

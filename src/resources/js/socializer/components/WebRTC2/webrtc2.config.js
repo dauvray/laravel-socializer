@@ -69,6 +69,22 @@ export const MAX_REMOTE_STREAMS = 12
  */
 export const STREAM_STALE_MS = 300_000
 
+/**
+ * Durée (ms) pendant laquelle l'UI signale « en attente du flux » pour un pair présent
+ * dans la room dont aucun flux n'est encore arrivé (cf. useAwaitedStreams).
+ *
+ * ⚠️ C'est nécessairement une heuristique : un récepteur ne peut PAS savoir localement
+ * qu'un pair diffuse. `usersInRoom` liste tous les présents, diffuseurs ou non, et pour
+ * un appel one-way (`stream`/`screen`) le récepteur répond par `call.answer()` sans
+ * stocker la connexion — il n'existe donc aucune trace observable avant l'événement
+ * `stream`, qui est justement le moment où le flux arrive. Passé ce délai, on considère
+ * que le pair ne diffuse pas, plutôt que de laisser un spinner tourner indéfiniment.
+ *
+ * Dimensionné au-dessus du backoff de connexion (MAX_RETRY_ATTEMPTS plafonné à 10 s par
+ * tentative) pour ne pas abandonner avant que l'établissement ait eu sa chance.
+ */
+export const AWAITED_STREAM_TIMEOUT_MS = 20_000
+
 // ─── Signalisation stale ──────────────────────────────────────────────────
 /**
  * Durée (ms) après laquelle une entrée "waiting" dans le store de signalisation

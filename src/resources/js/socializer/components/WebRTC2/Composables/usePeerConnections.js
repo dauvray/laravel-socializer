@@ -171,9 +171,14 @@ export function usePeerConnections(ctx) {
                 ctx.peerStore.removeWaitingRemotePeerId(userSlug)
             }
 
-            if (!ctx.peerStore.hasRemotePeerId(userSlug)) {
-                ctx.peerStore.addRemotePeerId(userSlug, peerId)
-            }
+            // Écriture systématique : ce peerId vient de la signalisation backend
+            // (PEER_CONNECT_TO_REMOTE_PEER ou peer-access-permission), donc de l'état
+            // courant du pair — strictement plus frais que ce que porte le store.
+            // ⚠️ Ne PAS remettre de garde `if (!hasRemotePeerId)` : la connexion
+            // s'ouvrait bien avec le peerId frais, mais le store gardait l'ancien, que
+            // requestOrConnectPeer réutilisait ensuite en boucle. Un peerId mort devenait
+            // ainsi « collant » et le pair définitivement injoignable.
+            ctx.peerStore.addRemotePeerId(userSlug, peerId)
 
             const config = _buildPeerConnectionConfig({
                 ...payload,

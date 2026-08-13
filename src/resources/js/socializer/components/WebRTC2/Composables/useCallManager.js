@@ -319,6 +319,26 @@ export function useCallManager(ctx, { core, media, connections, transport, pool 
 
         ctx.media.remoteStreamsMap.forEach((entry, key) => {
             if (entry?.remoteSlug !== userSlug) return
+
+            // Une fermeture de connexion = UN type retiré. Les autres flux du pair
+            // survivent : A qui arrête sa webcam garde son partage d'écran chez les
+            // récepteurs.
+            //
+            // ⚠️ Ne PAS élargir la purge à tous les types du pair, et ne pas tenter de
+            // la conditionner à `connections.hasOpenConnection` : côté RÉCEPTEUR il n'y a
+            // rien à observer, `usePeerTransport` n'enregistre jamais les connexions
+            // entrantes dans le store (un appel one-way se contente de `call.answer()` +
+            // `setUpConnectionListeners`). Ce prédicat y répond donc toujours false.
+            //
+            // La purge élargie qui existait ici réparait une fuite de `alice-screen`, mais
+            // sa cause réelle était la résolution du pair par `metadata.from` — corrigée
+            // depuis par `entry.remoteSlug`. Chaque fermeture arrive maintenant avec son
+            // propre `conn.metadata.type` et est routée pour tous les types en mode stream,
+            // donc le pair finit bien entièrement nettoyé. Le filet pour un flux qui meurt
+            // SANS événement de fermeture est le nettoyage par fin de pistes de
+            // `useStreamManager`.
+            if (entry.remoteType !== declaredType) return
+
             media.removeVideoElement(`remote-${entry.remoteSlug}-${entry.remoteType}`)
             ctx.media.remoteStreamsMap.delete(key)
         })

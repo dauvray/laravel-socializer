@@ -8,10 +8,15 @@
 
 ## ✅ Déjà réalisé
 
+> Décomptes vérifiés par `npx vitest run --reporter=dot` le **2026-08-13** : **377 tests WebRTC2**
+> sur 16 fichiers, ~1,5 s. Les chiffres de ce document avaient divergé du réel — ne pas les
+> mettre à jour de mémoire, les relire dans la sortie du runner.
+
 - [x] **Infrastructure** : `vitest.config.js`, `setup.js` (mocks globaux : mediaDevices, RTCPeerConnection, crypto, Pinia)
-- [x] **`utils/useCallStateMachine.test.js`** — 35 tests : transitions FSM, computed dérivés, reset(), closingUsers
+- [x] **`utils/useCallStateMachine.test.js`** — 36 tests : transitions FSM, computed dérivés, reset(), closingUsers
 - [x] **`utils/usePeerRetry.test.js`** — 15 tests : scheduleRetry, clearRetry, clearAll, fake timers, erreurs fatales, cleanup onUnmounted
-- [-] **`usePeerCore.test.js`** — 25 tests (partiel) : requestRemotePeerConnection (7), responseRemotePeerConnection (3), requestAuthorizationRemotePeerId (10 — inclut MAX_INVITE_RETRIES), sendAuthorizationRemotePeerId (5)
+- [x] **`utils/payloadSize.test.js`** — 12 tests · **`utils/sanitizeMetadata.test.js`** — 5 tests
+- [-] **`usePeerCore.test.js`** — 27 tests (partiel) : requestRemotePeerConnection, responseRemotePeerConnection, requestAuthorizationRemotePeerId (inclut MAX_INVITE_RETRIES), sendAuthorizationRemotePeerId
 
 ---
 
@@ -20,14 +25,19 @@
 ### Ordre recommandé
 
 ```
-Tâche 1 → usePeerCore          (Ajax + signaling pur)
-Tâche 2 → usePeerConnections   (connexions PeerJS factices)
-Tâche 3 → usePeerMedia         (DOM + MediaStream)
-Tâche 4 → usePeerTransport     (singleton Peer + DataChannel)
-Tâche 5 → createPeerContext    (context factory + lifecycle)
-Tâche 6 → usePeerOrchestrator  (intégration composition — réduite depuis l'extraction des couches)
+Tâche 1 → usePeerCore          (Ajax + signaling pur)               ◐ 4/9 items
+Tâche 2 → usePeerConnections   (connexions PeerJS factices)         ✅
+Tâche 3 → usePeerMedia         (DOM + MediaStream)                  ✅ (.players + .streams)
+Tâche 4 → usePeerTransport     (singleton Peer + DataChannel)       ◐ sécurité seule
+Tâche 5 → createPeerContext    (context factory + lifecycle)        ✅
+Tâche 6 → usePeerOrchestrator  (intégration composition)            ⛔ bloquée — voir ci-dessous
 Tâche 7 → useMediaBroadcast    (intégration feature layer)
 ```
+
+⛔ **La tâche 6 est volontairement bloquée** : le wrapping du routage star qu'elle doit couvrir
+est justement ce que la TODOLIST prévoit de *déplacer* dans `usePeerTransport` (item `[L]`,
+ouvert). Écrire ces tests avant le déménagement revient à les jeter. Reprendre la tâche 6 —
+puis la 7 — **après** cet item.
 
 Les couches extraites de l'orchestrateur (`useConnectionPool`, `useCallManager`,
 `useStreamManager`, `useSignalingQueue`) se testent avec des mocks `vi.fn()` pour les
@@ -43,19 +53,22 @@ passthroughs média — soit ~245 lignes.
 ### Avancement
 
 - [x] Infrastructure (vitest.config.js, setup.js, helpers, mocks)
-- [x] `utils/useCallStateMachine.test.js` — 35 tests ✅
+- [x] `utils/useCallStateMachine.test.js` — 36 tests ✅
 - [x] `utils/usePeerRetry.test.js` — 15 tests ✅
-- [-] Tâche 1 — `usePeerCore.test.js` — 25 tests ✅ (4/9 items couverts, 5 restants)
-- [ ] Tâche 2 — `usePeerConnections.test.js`
-- [ ] Tâche 3 — `usePeerMedia.test.js`
-- [-] Tâche 4 — `usePeerTransport.*.test.js` — 22 tests ✅ (sécurité couverte ; singleton/lifecycle/reconnect restants)
-- [ ] Tâche 5 — `createPeerContext.test.js`
-- [ ] Tâche 6 — `usePeerOrchestrator.test.js`
+- [-] Tâche 1 — `usePeerCore.test.js` — 27 tests ✅ (4/9 items couverts, 5 restants)
+- [x] Tâche 2 — `usePeerConnections.test.js` — 47 tests ✅ (voir ci-dessous)
+- [-] Tâche 3 — `usePeerMedia` — 34 tests ✅ répartis en deux fichiers : `.players` 15 (pool d'instances) + `.streams` 19 (flux locaux). Périmètre couvert
+- [-] Tâche 4 — `usePeerTransport.*.test.js` — 24 tests ✅ (sécurité couverte ; singleton/lifecycle/reconnect restants)
+- [x] Tâche 5 — `createPeerContext.test.js` — 46 tests ✅ (voir ci-dessous)
+- [ ] Tâche 6 — `usePeerOrchestrator.test.js` — **à ne pas ouvrir maintenant** : le wrapping du routage star doit d'abord déménager dans `usePeerTransport` (item `[L]` de la TODOLIST), sinon les tests sont à jeter
 - [ ] Tâche 7 — `useMediaBroadcast.test.js`
 - [x] `useConnectionPool.test.js` — 31 tests ✅ : `requestOrConnectPeer` (6), logique de tentative/retry (8 — dont garde `isShuttingDown`, signalisation stale, connexion screen, clearRetry/clearAllRetries), `syncUsersConnections` (9 — lock concurrent, `waitForMeReady` négatif, nettoyage des partants, fan-out mesh/star-hub/star-client/sfu), recovery `peerUnavailableSignal` (3), cleanup (2)
-- [x] `useStreamManager.test.js` — 25 tests ✅ : `handleStreamReceived` (13 — clé canonique, résolution du slug, idempotence, mode stream sans player, éviction TTL et FIFO), `handleStreamRemoved` (12 — départ complet, full stop conditionnel, garde par participant, dédoublonnage concurrent, libération de la garde sur exception)
-- [x] `useSignalingQueue.test.js` — 12 tests ✅ : routage (5 — table de routes, `payload` seul passé au handler, warn sur type inconnu, enveloppe `payload.type` des Widgets ignorée sans warn, warn sur signal sans aucun type), **absence de précondition asynchrone (2 — non-régression : route sans attendre `waitForMeReady`, route même pendant un arrêt)**, erreurs (1), cleanup (4 — `stopSignaling` idempotent, démontage, plus rien routé après l'arrêt)
-- [x] `useCallManager.test.js` — 50 tests ✅ : `startCallWithPeer` (9 — dont « aucune mutation si appel en cours » et room imposée), `acceptCallFromPeer` (8 — dont **ordre mapping peerId avant transition**), `openCallBetweenPeer` (5), `stopCallWithPeers` (8 — partial vs full, ordre du cleanup, mutex CLOSING, exception → pas de blocage), `remoteStopCall` (6 — dont dédoublonnage concurrent), `resetCallState` (1), room d'appel (4), état (1), verbes FSM pour la couche streams (5), retries d'invitation (3)
+- [x] `useStreamManager.test.js` — 19 tests ✅ : `handleStreamReceived` (clé canonique, résolution du slug, idempotence, mode stream sans player, éviction TTL et FIFO), `handleStreamRemoved` (départ complet, full stop conditionnel, garde par participant, dédoublonnage concurrent, libération de la garde sur exception)
+- [x] `useSignalingQueue.test.js` — 19 tests ✅ : routage (table de routes, `payload` seul passé au handler, warn sur type inconnu, enveloppe `payload.type` des Widgets ignorée sans warn, warn sur signal sans aucun type), **absence de précondition asynchrone (non-régression : route sans attendre `waitForMeReady`, route même pendant un arrêt)**, détecteur de coalescence (`seq`), erreurs, cleanup (`stopSignaling` idempotent, démontage, plus rien routé après l'arrêt)
+- [x] `useCallManager.test.js` — 62 tests ✅ : `startCallWithPeer` (dont « aucune mutation si appel en cours » et room imposée), `acceptCallFromPeer` (dont **ordre mapping peerId avant transition**), `openCallBetweenPeer`, `stopCallWithPeers` (partial vs full, ordre du cleanup, mutex CLOSING, exception → pas de blocage), `remoteStopCall` (dont dédoublonnage concurrent), `handleRemoteDeparture` (séquence unifiée des deux chemins de départ), `resetCallState`, room d'appel, verbes FSM pour la couche streams, retries d'invitation
+- [x] `usePeerConnections.test.js` — 47 tests ✅ : `getRoomUsersDiff` (7 — arrivants/partants, filtrage de mon slug, `waitForMeReady` négatif, sérialisation du mutex, verrou non bloqué par une exception), `hasOpenConnection` (12 — data/media, fallback `signalingState`, `peerConnection` illisible, room d'appel prioritaire), `connectToPeer` (22 — gardes anti-soi/verrou/`MAX_PEERS_PER_ROOM`, branche par type, validations de config, métadonnées produites), `closePeerConnection` (7 — sélectif vs global, oubli conditionnel du peerId, `clearSignalQueue`)
+- [x] `createPeerContext.test.js` — 46 tests ✅ : isolation/initialisation (6), `waitForMeReady` (5 — dont **non-régression du timer de secours** : aucun faux « a expiré » sur identité déjà prête), eventBus (3 — bus injecté, fallback no-op, bus incomplet rejeté), `setUpConnectionListeners` (17 — branchement, idempotence WeakSet, cleanup/rebranchement, garde de taille en réception, close métier unique, `handleClose` : retrait du store, oubli conditionnel du peerId, slug distant vs le mien, type forgé neutralisé), `storeConnectionEventCallbacks` (3), garde de teardown (2), helpers `currentCallUsers` (5), projections calculées (3), `destroy`/`onUnmounted` (4)
+- [x] `usePeerMedia.streams.test.js` — 19 tests ✅ : `startCurrentStream` (4 — contraintes issues de `streamStates`, markRaw), `stopCurrentStream` (3), `startAudioStream` (2 — alignement de l'UI), `startScreenCapture`/`stopScreenCapture` (5), nettoyage de fin de vie d'un flux (5 — `ended`/`inactive`, idempotence du binding, désinscription, garde `instanceof MediaStream`)
 
 ---
 
@@ -81,16 +94,17 @@ passthroughs média — soit ~245 lignes.
 
 **Périmètre** : ouverture/fermeture de connexions PeerJS, diff de room.
 
-- [ ] `getRoomUsersDiff` : nouveaux users détectés, users partis détectés, mon propre slug filtré
-- [ ] `getRoomUsersDiff` mutex : deux appels concurrents retournent des diff cohérents (pas de TOCTOU)
-- [ ] `hasOpenConnection` — DataConnection : `conn.open === true` → true, `conn.open === false` → false
-- [ ] `hasOpenConnection` — MediaConnection : `connectionState` closed/failed → false, connected → true
-- [ ] `connectToPeer` : guard `inFlightConnections` (pas de double tentative), guard `MAX_PEERS_PER_ROOM`
-- [ ] `closePeerConnection` : fermeture sélective (liste `users`), fermeture globale, `clearSignalQueue`
+- [✅] `getRoomUsersDiff` : nouveaux users détectés, users partis détectés, mon propre slug filtré
+- [✅] `getRoomUsersDiff` mutex : deux appels concurrents retournent des diff cohérents (pas de TOCTOU) ; une exception ne bloque pas le verrou
+- [✅] `hasOpenConnection` — DataConnection : `conn.open === true` → true, `conn.open === false` → false
+- [✅] `hasOpenConnection` — MediaConnection : `connectionState` closed/failed/disconnected → false, connected → true ; fallback `signalingState` ; lecture défensive si l'objet jette
+- [✅] `connectToPeer` : guard `inFlightConnections` (pas de double tentative), guard `MAX_PEERS_PER_ROOM`, branche par type, validations de `_buildPeerConnectionConfig`
+- [✅] `closePeerConnection` : fermeture sélective (liste `users`), fermeture globale, `clearSignalQueue`
 - [✅] ~~Signal watcher / `onUnmounted`~~ : déplacés dans `useSignalingQueue.test.js`
 
-**Prérequis** : `createMockDataConnection()` et `createMockMediaConnection()` de `__mocks__/peerjs.js` ; injecter des connexions factices dans `peerStore._connections` du `createMockContext`.
+**Prérequis** : `createMockDataConnection()` et `createMockMediaConnection()` de `__mocks__/peerjs.js` ; injecter des connexions factices via `peerStore.addPeerConnectionInstance()` du `createMockContext`, et fournir un `peerStore.getLocalPeer` factice (`connect`/`call`) — il vaut `null` par défaut.
 **Depuis l'extraction de `useSignalingQueue`** : ce composable n'enregistre plus aucun hook de lifecycle → il s'appelle **directement, sans `withSetup`**, comme `useCallManager` / `useStreamManager`.
+⚠️ Les branches `stream`/`screen`/`visio` filtrent sur `stream instanceof MediaStream` **et** sur au moins une piste `readyState === 'live'` : construire de vraies instances `MediaStream` (happy-dom expose la classe) avec un `getTracks()` surchargé — `MediaStreamTrack` a un constructeur illégal.
 
 ---
 
@@ -98,19 +112,21 @@ passthroughs média — soit ~245 lignes.
 
 **Périmètre** : getUserMedia, cycle de vie des éléments vidéo Vue.
 
-- [ ] `startCurrentStream` : `getUserMedia` appelé avec les bonnes contraintes, `currentStream` mis à jour, stream marqué `markRaw`
-- [ ] `stopCurrentStream` : `track.stop()` appelé sur chaque track, `currentStream` null, `isStreaming` false
-- [ ] `startAudioStream` : `getUserMedia` appelé avec les bonnes contraintes, `currentStream` mis à jour, stream marqué `markRaw`, contexte correctement mis à jour
-- [ ] `startScreenCapture` : `getUserMedia` appelé avec les bonnes contraintes, `screenStream` mis à jour, stream marqué `markRaw`, contexte correctement mis à jour
-- [ ] `stopScreenCapture` : `track.stop()` appelé sur chaque track, `screenStream` null, `isCapturing` false
-- [ ] `createVideoElement` : guard `creatingVideoIds` (idempotent sur appels concurrents), container absent → erreur claire, `peerStore.addPlayer` appelé
-- [ ] `createVideoElement` : `VideoComponent.vue` importé dynamiquement (mock via `vi.mock`)
-- [ ] `removeVideoElement` : guard `removingVideoIds`, `app.unmount()` appelé, wrapper DOM retiré, `peerStore.removePlayer` appelé
-- [ ] `cleanupCallPlayers` : nettoie uniquement les entrées `local-webcam` et `remote-*`, ignore les autres
-- [ ] `_bindStreamCleanup` : listener `track.ended` déclenche `removeVideoElement`, idempotent (pas de double binding)
-- [ ] `_unbindStreamCleanup` : listeners retirés sur `removeVideoElement`
+Découpée en deux fichiers : `usePeerMedia.players.test.js` (pool d'instances) et
+`usePeerMedia.streams.test.js` (flux locaux + fin de vie d'un flux).
 
-**Prérequis** : `vi.mock('~socializer/components/WebRTC2/Widgets/VideoComponent.vue', ...)` pour le dynamic import ; helper `createMockContainer()` (div attachée au document pour que `querySelector` fonctionne).
+- [✅] `startCurrentStream` : `getUserMedia` appelé avec les bonnes contraintes, `currentStream` mis à jour, stream marqué `markRaw`
+- [✅] `stopCurrentStream` : `track.stop()` appelé sur chaque track, `currentStream` null, `isStreaming` false, `isAudioStream` false
+- [✅] `startAudioStream` : contraintes audio seul, `currentStream` mis à jour, alignement de l'UI (`isVideoEnabled` false, `isMuted` true)
+- [✅] `startScreenCapture` : `getDisplayMedia` avec/sans audio système, `screenStream` mis à jour sans écraser `currentStream`
+- [✅] `stopScreenCapture` : `track.stop()` appelé sur chaque track, `screenStream` null, `isCapturing` false
+- [✅] `createVideoElement` / `removeVideoElement` / `cleanupCallPlayers` / `destroyPlayers` : couverts par `usePeerMedia.players.test.js` (recyclage des slots, idempotence, teardown terminal)
+- [✅] `_bindStreamCleanup` : `ended` et `inactive` déclenchent `removeVideoElement`, idempotent (pas de double binding), garde `instanceof MediaStream`
+- [✅] `_unbindStreamCleanup` : listeners retirés sur `removeVideoElement`
+
+**Prérequis** : `vi.mock` du `MediaBroadcastPlayer.vue` (le dynamic import passe par `PlayerHost.vue`) ; un `<div id="videoContainer">` dans `document.body` pour que `querySelector` réussisse.
+⚠️ Les `vi.fn()` globaux de `setup.js` ne sont **pas** réinitialisés entre les tests (pas de `clearMocks` dans `vitest.config.js`) : faire `navigator.mediaDevices.getUserMedia.mockReset()` en `beforeEach`, sinon les compteurs d'appels s'accumulent.
+⚠️ Le flux factice de `setup.js` est un objet nu, or `_bindStreamCleanup` filtre sur `stream instanceof MediaStream` → construire de vraies instances avec `getTracks()` surchargé.
 
 ---
 
@@ -159,19 +175,24 @@ passthroughs média — soit ~245 lignes.
 
 **Périmètre** : création du contexte isolé, helpers, lifecycle.
 
-- [ ] Isolation : deux appels `createPeerContext` produisent des `contextId` différents, états indépendants
-- [ ] Session init : `type`, `room`, `topology`, `hubSlug` correctement propagés
-- [ ] `addCurrentCallUser` / `removeCurrentCallUser` / `clearCurrentCallUsers` : mutations et retours corrects, pas de doublon (même slug + type)
-- [ ] `storeConnectionEventCallbacks` : idempotent (`isActive` guard), clés inconnues ignorées, callback non-fonction ignoré
-- [ ] `setUpConnectionListeners` : handlers bindés, idempotent (WeakSet — double appel ignoré), cleanup retourné désincrit les handlers
-- [ ] `setUpConnectionListeners` `handleClose` : retire la connexion du store, supprime le `remotePeerId` si user hors room
-- [ ] `waitForMeReady` : résout `true` dès que `meStore.getMe.slug` et `peerStore.lastLocalPeerId` sont disponibles
-- [ ] `waitForMeReady` timeout : résout `false` après `timeoutMs` si les données n'arrivent pas
-- [ ] `destroy()` : vide `remoteStreamsMap`, remet `callMachine` en IDLE, vide `usersInRoom`
-- [ ] `onUnmounted` → appelle `destroy()`
-- [ ] EventBus fallback : si `eventBus` non fourni via inject, les `$emit/$on/$off` sont des no-op (pas de crash)
+- [✅] Isolation : deux appels `createPeerContext` produisent des `contextId` différents, états indépendants
+- [✅] Session init : `type`, `room`, `topology`, `hubSlug`, `videoContainer` correctement propagés (+ valeurs par défaut)
+- [✅] File de signaux créée au montage (`onBeforeMount`) ; `lastRoomSignal` suit bien le dernier signal **de ce contexte**
+- [✅] `addCurrentCallUser` / `removeCurrentCallUser` / `clearCurrentCallUsers` : mutations et retours corrects, pas de doublon (même slug + type)
+- [✅] `storeConnectionEventCallbacks` : idempotent (`isActive` guard), clés inconnues ignorées, callback non-fonction ignoré
+- [✅] `setUpConnectionListeners` : handlers bindés, idempotent (WeakSet — double appel ignoré), cleanup retourné désinscrit les handlers et autorise un rebranchement
+- [✅] `setUpConnectionListeners` `handleClose` : retire la connexion du store, supprime le `remotePeerId` si user hors room, ne confond pas mon slug avec le distant, neutralise un `type` forgé, idempotent
+- [✅] Garde de taille en réception : payload > `MAX_PAYLOAD_BYTES` abandonné avant le callback métier
+- [✅] `waitForMeReady` : résout `true` dès que `meStore.getMe.slug` et `peerStore.lastLocalPeerId` sont disponibles ; positionne `session.isHub`
+- [✅] `waitForMeReady` timeout : résout `false` après `timeoutMs` si les données n'arrivent pas
+- [✅] `waitForMeReady` **non-régression** : aucun faux « a expiré » 15 s après coup sur une identité déjà prête (timer armé avant `scope.run()`)
+- [✅] `beginShutdown` / `endShutdown` : compteur ré-entrant, plancher à 0
+- [✅] `destroy()` : vide `remoteStreamsMap`, remet `callMachine` en IDLE, vide `usersInRoom`, supprime la file de signaux, **conserve** `shutdownCount`
+- [✅] `onUnmounted` → appelle `destroy()`
+- [✅] EventBus fallback : si `eventBus` non fourni via inject (ou interface incomplète), les `$emit/$on/$off` sont des no-op (pas de crash)
 
-**Prérequis** : `vi.mock` pour les 4 imports (`~socializer/stores/peers2`, `~estarter/stores/me`, `~socializer/stores/server`, `~estarter/services/AjaxService`) ; `withSetup` avec `provides: { eventBus: mockEventBus() }`.
+**Prérequis** : `withSetup` avec `provides: { eventBus: mockEventBus() }` — obligatoire (`inject`, `onBeforeMount`, `onUnmounted`).
+**Pas de `vi.mock` des 4 imports** (contrairement à ce que prévoyait ce plan) : `peers2`, `me` et `server` sont des stores Pinia d'options **sans effet de bord à l'instanciation**, et `setup.js` pose déjà une Pinia fraîche avant chaque test → on les utilise pour de vrai, ce qui couvre au passage la vraie intégration store ↔ contexte (notamment la suppression **conditionnelle** de `removeRemotePeerId`). `useAjaxService()` est seulement instancié, jamais appelé.
 
 ---
 

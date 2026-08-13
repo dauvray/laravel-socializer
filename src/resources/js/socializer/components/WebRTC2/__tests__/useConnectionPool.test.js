@@ -17,6 +17,17 @@ const FIRST_RETRY_MS = 1400
 // Délai suffisant pour couvrir la 2e tentative (2000ms + jitter)
 const SECOND_RETRY_MS = 2400
 
+/**
+ * Vrai MediaStream avec une piste vivante : le pool réplique la précondition de
+ * connectToPeer, qui filtre sur `instanceof MediaStream` + une piste `live`.
+ * (MediaStreamTrack a un constructeur illégal, d'où la surcharge de getTracks.)
+ */
+const liveStream = () => {
+    const stream = new MediaStream()
+    stream.getTracks = () => [{ readyState: 'live' }]
+    return stream
+}
+
 describe('useConnectionPool', () => {
     let ctx
     let app
@@ -161,6 +172,129 @@ describe('useConnectionPool', () => {
 
             expect(connections.connectToPeer).not.toHaveBeenCalled()
             expect(core.requestRemotePeerConnection).not.toHaveBeenCalled()
+        })
+
+        it('partage d\'écran SEUL : tente quand même la connexion screen', async () => {
+            // Cas non couvert jusqu'ici, et le seul qui compte pour un partage d'écran :
+            // A capture son écran SANS diffuser sa webcam. Le type principal n'a alors
+            // aucun flux à émettre, mais ça ne doit pas empêcher la tentative 'screen' —
+            // c'est le SEUL chemin qui l'ouvre (requestRemotePeerConnection n'envoie
+            // jamais type:'screen').
+            ctx.session.currentType = 'stream'
+            ctx.media.currentStream = null
+            ctx.media.isCapturing = true
+            ctx.media.screenStream = liveStream()
+            ctx.peerStore.addRemotePeerId('alice', 'peer-alice')
+
+            pool.requestOrConnectPeer('alice')
+            connections.connectToPeer.mockClear()
+            await vi.advanceTimersByTimeAsync(FIRST_RETRY_MS)
+
+            expect(connections.connectToPeer).toHaveBeenCalledWith(
+                expect.objectContaining({ userSlug: 'alice', type: 'screen' })
+            )
+        })
+
+        it('écran + webcam : les deux tentatives ont lieu', async () => {
+            ctx.session.currentType = 'stream'
+            ctx.media.currentStream = liveStream()
+            ctx.media.isCapturing = true
+            ctx.media.screenStream = liveStream()
+            ctx.peerStore.addRemotePeerId('alice', 'peer-alice')
+
+            pool.requestOrConnectPeer('alice')
+            connections.connectToPeer.mockClear()
+            await vi.advanceTimersByTimeAsync(FIRST_RETRY_MS)
+
+            expect(connections.connectToPeer).toHaveBeenCalledWith(
+                expect.objectContaining({ type: 'stream' })
+            )
+            expect(connections.connectToPeer).toHaveBeenCalledWith(
+                expect.objectContaining({ type: 'screen' })
+            )
+        })
+
+        it('un échec du type principal n\'empêche pas la tentative screen', async () => {
+            ctx.session.currentType = 'visio'
+            ctx.media.currentStream = null
+            ctx.media.isCapturing = true
+            ctx.media.screenStream = liveStream()
+            ctx.peerStore.addRemotePeerId('alice', 'peer-alice')
+            // visio sans flux → connectToPeer renvoie false (seul type à signaler l'échec)
+            connections.connectToPeer.mockImplementation(({ type }) => type !== 'visio')
+
+            pool.requestOrConnectPeer('alice')
+            connections.connectToPeer.mockClear()
+            await vi.advanceTimersByTimeAsync(FIRST_RETRY_MS)
+
+            expect(connections.connectToPeer).toHaveBeenCalledWith(
+                expect.objectContaining({ type: 'screen' })
+            )
+        })
+
+        it('sans capture d\'écran, aucune tentative screen', async () => {
+            ctx.media.isCapturing = false
+            ctx.peerStore.addRemotePeerId('alice', 'peer-alice')
+
+            pool.requestOrConnectPeer('alice')
+            await vi.advanceTimersByTimeAsync(FIRST_RETRY_MS)
+
+            expect(connections.connectToPeer).not.toHaveBeenCalledWith(
+                expect.objectContaining({ type: 'screen' })
+            )
+        })
+
+        it('diffère la tentative quand connectToPeer n\'a rien ouvert faute de flux prêt', async () => {
+            // connectToPeer renvoie true sans rien ouvrir (stream local pas encore valide).
+            // Avant correctif, ce true ANNULAIT le retry → la connexion n'était jamais
+            // rouverte une fois le flux prêt.
+            ctx.session.currentType = 'stream'
+            ctx.media.currentStream = null
+            ctx.peerStore.addRemotePeerId('alice', 'peer-alice')
+
+            pool.requestOrConnectPeer('alice')
+            expect(connections.connectToPeer).toHaveBeenCalledTimes(1)
+
+            await vi.advanceTimersByTimeAsync(FIRST_RETRY_MS)
+            expect(connections.connectToPeer).toHaveBeenCalledTimes(2)
+        })
+
+        it('conclut dès que le flux local devient émettable', async () => {
+            ctx.session.currentType = 'stream'
+            ctx.media.currentStream = null
+            ctx.peerStore.addRemotePeerId('alice', 'peer-alice')
+            pool.requestOrConnectPeer('alice')
+
+            // Le flux arrive : la tentative suivante ouvre réellement la connexion.
+            const stream = new MediaStream()
+            stream.getTracks = () => [{ readyState: 'live' }]
+            ctx.media.currentStream = stream
+
+            await vi.advanceTimersByTimeAsync(FIRST_RETRY_MS)
+            connections.connectToPeer.mockClear()
+            await vi.advanceTimersByTimeAsync(SECOND_RETRY_MS)
+
+            expect(connections.connectToPeer).not.toHaveBeenCalled()
+        })
+
+        it('data : conclut après une tentative, sans empiler les connexions', async () => {
+            // Non-régression du filet de retry : un data channel n'attend aucun flux, donc
+            // une tentative sans erreur suffit à conclure. Si on réessayait tant que
+            // `conn.open` est false, chaque tour rappellerait peer.connect() et empilerait
+            // des DataConnection en double — d'où le prédicat _canEmitStreamFor plutôt
+            // qu'une boucle sur hasOpenConnection.
+            ctx.peerStore.addRemotePeerId('alice', 'peer-alice')
+
+            pool.requestOrConnectPeer('alice')
+            connections.connectToPeer.mockClear()
+
+            await vi.advanceTimersByTimeAsync(FIRST_RETRY_MS)
+            expect(connections.connectToPeer).toHaveBeenCalledTimes(1)
+
+            // Plus rien ensuite : le retry s'est arrêté.
+            connections.connectToPeer.mockClear()
+            await vi.advanceTimersByTimeAsync(SECOND_RETRY_MS)
+            expect(connections.connectToPeer).not.toHaveBeenCalled()
         })
 
         it('replanifie une tentative quand connectToPeer échoue', async () => {
@@ -418,6 +552,34 @@ describe('useConnectionPool', () => {
             await nextTick()
 
             expect(core.requestRemotePeerConnection).not.toHaveBeenCalled()
+        })
+
+        it('un drapeau d\'attente résiduel empêcherait toute re-demande', async () => {
+            // Caractérise la raison d'être de la purge du waiting dans
+            // peerStore.invalidateRemotePeerId : ici on simule une invalidation
+            // INCOMPLÈTE (mapping supprimé, waiting laissé). Le pool retombe alors dans
+            // `else if (!waiting)` → il ne demande rien et le pair reste injoignable.
+            ctx.peerStore.addWaitingRemotePeerId('alice', { room: ctx.session.currentRoom, type: ctx.session.currentType })
+
+            ctx.peerUnavailableSignal.value = 'alice'
+            await nextTick()
+
+            expect(connections.connectToPeer).not.toHaveBeenCalled()
+            expect(core.requestRemotePeerConnection).not.toHaveBeenCalled()
+        })
+
+        it('après une invalidation complète, le peerId est redemandé', async () => {
+            // Chaîne réelle : usePeerTransport invalide (mapping + waiting) puis émet le
+            // signal ; le pool doit alors relancer une demande de signalisation.
+            ctx.peerStore.addRemotePeerId('alice', 'peer-mort')
+            ctx.peerStore.addWaitingRemotePeerId('alice', { room: ctx.session.currentRoom, type: ctx.session.currentType })
+            ctx.peerStore.invalidateRemotePeerId('alice')
+
+            ctx.peerUnavailableSignal.value = 'alice'
+            await nextTick()
+
+            expect(core.requestRemotePeerConnection).toHaveBeenCalledWith('alice')
+            expect(connections.connectToPeer).not.toHaveBeenCalled()
         })
     })
 
