@@ -42,8 +42,12 @@
  *
  * ⚠️ La consommation reste « dernier signal de la room » (ctx.lastRoomSignal), pas un
  *    drain de la file : deux signaux dispatchés dans le même tick n'en déclenchent
- *    qu'un. Voir TODOLIST.md (item « Drainer réellement la file de signaux ») pour la
- *    condition de déclenchement et les pièges avant de changer ça.
+ *    qu'un. Aucun chemin actuel ne produit ça (un event Reverb = une frame WS = une
+ *    tâche de boucle d'événement, et un seul producteur : Notifications.vue), mais la
+ *    sémantique est désormais **instrumentée** : `dispatchSignal` estampille chaque
+ *    signal d'un `seq` monotone par room et `_route` loggue tout trou dans la suite.
+ *    Le drain (curseur, drain sérialisé, garde de ré-entrance, rewind) reste conditionné
+ *    à ce warn — voir TODOLIST.md (« Drainer réellement la file de signaux »).
  */
 
 import { watch, onUnmounted } from 'vue'
@@ -54,9 +58,48 @@ export function useSignalingQueue(ctx, { routes = {} } = {}) {
     // moment où stopSignaling() est appelé — unwatch() n'annule pas un callback parti.
     let _stopped = false
 
+    // Dernier `seq` observé pour cette room (null = pas encore initialisé) : sert
+    // uniquement au détecteur de coalescence, jamais au routage lui-même.
+    let _lastSeq = null
+
+    /**
+     * Détecte un signal perdu par la sémantique « dernier signal gagne ».
+     * Le compteur avance sur TOUT signal observé — y compris ceux qu'on n'arrive pas à
+     * router (type inconnu, enveloppe sans type) : sinon le trou deviendrait permanent
+     * et chaque signal suivant serait signalé à tort.
+     * @param {Object} signal - Enveloppe { roomId, type, payload, ts, seq }
+     */
+    const _checkSequence = (signal) => {
+        // Tolère l'absence de seq : enveloppes poussées hors de dispatchSignal.
+        if (typeof signal.seq !== 'number') return
+
+        const missing = _lastSeq === null ? 0 : signal.seq - _lastSeq - 1
+
+        if (missing > 0) {
+            // Les entrées manquantes sont encore dans la file au moment du log (plafond
+            // de 10 par room) : on les nomme quand le store le permet, sinon on se
+            // contente du compte.
+            const queue = ctx.peerStore?.getQueueForRoom?.(ctx.contextId) ?? []
+            const lost = queue
+                .filter(s => s?.seq > _lastSeq && s.seq < signal.seq)
+                .map(s => s.type ?? '?')
+                .join(', ')
+
+            console.warn(
+                `[useSignalingQueue] ${missing} signal(s) non routé(s) (seq ${_lastSeq + 1}→${signal.seq - 1})`
+                + (lost ? ` : ${lost}` : '')
+                + ' — coalescence dans le même tick, cf. TODOLIST « Drainer réellement la file de signaux »'
+            )
+        }
+
+        if (_lastSeq === null || signal.seq > _lastSeq) {
+            _lastSeq = signal.seq
+        }
+    }
+
     /**
      * Route un signal entrant vers son handler.
-     * @param {Object} signal - Enveloppe { roomId, type, payload, ts }
+     * @param {Object} signal - Enveloppe { roomId, type, payload, ts, seq }
      * @returns {Promise<void>}
      */
     const _route = async (signal) => {
@@ -64,10 +107,20 @@ export function useSignalingQueue(ctx, { routes = {} } = {}) {
         // survenir que pour un callback déjà en file d'attente au moment de l'arrêt.
         if (_stopped) return
 
-        if (!signal?.type) {
+        // File vidée en pleine session (clearSignalQueueRoom, appelé par stopWebcamStream
+        // et stopCallWithPeers alors que le watcher tourne encore) : lastRoomSignal
+        // repasse à null. Ce n'est pas un signal abandonné, ne pas le warner.
+        if (!signal) {
+            console.debug('[useSignalingQueue] file de signaux vidée')
+            return
+        }
+
+        _checkSequence(signal)
+
+        if (!signal.type) {
             // Enveloppe des Widgets (type dans `payload.type`, scopée sur un peerId) :
             // légitimement hors de ce routage, cf. l'avertissement en tête de fichier.
-            if (signal?.payload?.type) {
+            if (signal.payload?.type) {
                 console.debug('[useSignalingQueue] enveloppe datachannel ignorée', signal.payload.type)
             } else {
                 console.warn('[useSignalingQueue] signal sans type — abandonné', signal)

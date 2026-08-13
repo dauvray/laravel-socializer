@@ -176,9 +176,20 @@ export default {
     // Gérer les signaux provenant des autres composants (Notifications.vue)
     dispatchSignal(signal) {
 
-        const s = { ...signal, ts: Date.now() }
+        const key = signal.roomId
+
+        // `seq` monotone PAR CLÉ DE FILE : useSignalingQueue ne consomme que le dernier
+        // signal de la room (at(-1)), donc deux dispatch dans le même tick n'en
+        // déclencheraient qu'un — le trou dans la suite des seq est la seule preuve
+        // possible de cette perte (cf. TODOLIST « Détecter un signal coalescé »).
+        // ⚠️ Un compteur global créerait un trou à chaque signal d'une AUTRE room, donc
+        // un faux positif ; et il n'est volontairement pas supprimé par
+        // clearSignalQueueRoom, pour rester monotone à travers les vidages de file
+        // (sinon le consommateur devrait détecter un rewind).
+        this.signalSeq[key] = (this.signalSeq[key] ?? 0) + 1
+
+        const s = { ...signal, ts: Date.now(), seq: this.signalSeq[key] }
         this.lastSignal = s
-        const key = s.roomId
 
         if (!this.signalQueues[key]) {
             this.signalQueues[key] = []
@@ -186,11 +197,14 @@ export default {
         this.signalQueues[key].push(s)
 
          // Garde un historique limité par room
-        if (this.signalQueues[s.roomId].length > 10) {
-            this.signalQueues[s.roomId].shift()
+        if (this.signalQueues[key].length > 10) {
+            this.signalQueues[key].shift()
         }
     },
     clearSignalQueueRoom(roomId) {
+        // ⚠️ signalSeq[roomId] n'est PAS supprimé : le compteur doit rester monotone
+        // à travers les vidages, sinon le seq repartirait à 1 et le détecteur de
+        // coalescence de useSignalingQueue verrait un rewind.
         delete this.signalQueues[roomId]
     },
     createSignalQueueRoom(roomId) {

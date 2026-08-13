@@ -199,4 +199,86 @@ describe('useSignalingQueue', () => {
             expect(routes.PEER_CONNECTION_REQUEST).not.toHaveBeenCalled()
         })
     })
+
+    // ── détection de coalescence ────────────────────────────────────────────
+
+    describe('détection de coalescence', () => {
+
+        // La consommation est « dernier signal de la room » (at(-1)) : deux signaux
+        // dispatchés dans le même tick n'en déclenchent qu'un. Aucun chemin de prod ne
+        // produit ça aujourd'hui — le `seq` monotone posé par dispatchSignal est la seule
+        // preuve possible que ça arrive un jour. Ces tests valident le détecteur, pas un
+        // drain (cf. TODOLIST « Drainer réellement la file de signaux »).
+
+        const missedWarn = (count) =>
+            expect.stringContaining(`${count} signal(s) non routé(s)`)
+
+        it('warne sur un trou de seq et route quand même le signal reçu', async () => {
+            await pushSignal({ type: 'PEER_CONNECTION_REQUEST', payload: {}, seq: 1 })
+            await pushSignal({ type: 'PEER_CONNECT_TO_REMOTE_PEER', payload: { userSlug: 'bob' }, seq: 3 })
+
+            expect(warnSpy).toHaveBeenCalledWith(missedWarn(1))
+            // Le détecteur observe, il n'interrompt pas le routage
+            expect(routes.PEER_CONNECT_TO_REMOTE_PEER).toHaveBeenCalledTimes(1)
+        })
+
+        it('détecte la coalescence réelle : deux signaux poussés dans le même tick', async () => {
+            ctx.peerStore._pushSignal({ type: 'PEER_CONNECTION_REQUEST', payload: {}, seq: 1 })
+            await flushSignals()
+
+            // Même tick : le watcher ne verra que le dernier
+            ctx.peerStore._pushSignal({ type: 'PEER_CONNECTION_REQUEST', payload: {}, seq: 2 })
+            ctx.peerStore._pushSignal({ type: 'PEER_CONNECT_TO_REMOTE_PEER', payload: { userSlug: 'bob' }, seq: 3 })
+            await flushSignals()
+
+            expect(routes.PEER_CONNECTION_REQUEST).toHaveBeenCalledTimes(1)
+            expect(routes.PEER_CONNECT_TO_REMOTE_PEER).toHaveBeenCalledTimes(1)
+            expect(warnSpy).toHaveBeenCalledWith(missedWarn(1))
+        })
+
+        it('ne warne pas sur des seq consécutifs', async () => {
+            await pushSignal({ type: 'PEER_CONNECTION_REQUEST', payload: {}, seq: 1 })
+            await pushSignal({ type: 'PEER_CONNECT_TO_REMOTE_PEER', payload: {}, seq: 2 })
+            await pushSignal({ type: 'PEER_CONNECTION_REQUEST', payload: {}, seq: 3 })
+
+            expect(warnSpy).not.toHaveBeenCalled()
+        })
+
+        it('ne warne pas sur le premier signal, quel que soit son seq', async () => {
+            // Le compteur du store survit aux remontages du composable (HMR, provider
+            // remonté) : le premier seq observé initialise, il ne prouve aucune perte.
+            await pushSignal({ type: 'PEER_CONNECTION_REQUEST', payload: {}, seq: 42 })
+
+            expect(warnSpy).not.toHaveBeenCalled()
+            expect(routes.PEER_CONNECTION_REQUEST).toHaveBeenCalledTimes(1)
+        })
+
+        it('ne warne pas quand les enveloppes n\'ont pas de seq', async () => {
+            await pushSignal({ type: 'PEER_CONNECTION_REQUEST', payload: {} })
+            await pushSignal({ type: 'PEER_CONNECT_TO_REMOTE_PEER', payload: {} })
+
+            expect(warnSpy).not.toHaveBeenCalled()
+        })
+
+        it('avance le compteur sur un signal non routable (pas de trou permanent)', async () => {
+            await pushSignal({ type: 'SIGNAL_INEXISTANT', payload: {}, seq: 1 })
+            warnSpy.mockClear() // on ne garde que le warn « aucun handler »
+
+            await pushSignal({ type: 'PEER_CONNECT_TO_REMOTE_PEER', payload: {}, seq: 2 })
+
+            expect(routes.PEER_CONNECT_TO_REMOTE_PEER).toHaveBeenCalledTimes(1)
+            expect(warnSpy).not.toHaveBeenCalled()
+        })
+
+        it('ne warne pas quand la file est vidée en pleine session', async () => {
+            // clearSignalQueueRoom (stopWebcamStream, stopCallWithPeers) fait repasser
+            // lastRoomSignal à null alors que le watcher tourne encore.
+            await pushSignal({ type: 'PEER_CONNECTION_REQUEST', payload: {}, seq: 1 })
+
+            ctx.peerStore._clearSignals()
+            await flushSignals()
+
+            expect(warnSpy).not.toHaveBeenCalled()
+        })
+    })
 })
