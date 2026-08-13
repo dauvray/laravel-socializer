@@ -155,6 +155,10 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
             clearSignalQueue: true,
         })
 
+        // Teardown terminal : le pool de players garde ses instances montées entre
+        // deux flux, c'est ici (et seulement ici) qu'on les démonte pour de bon.
+        media.destroyPlayers()
+
         transport.unregisterLocalContext()
     }
 

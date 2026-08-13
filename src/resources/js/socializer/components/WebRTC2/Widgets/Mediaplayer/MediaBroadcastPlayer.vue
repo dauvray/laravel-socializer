@@ -56,7 +56,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import VideoPlayer from '~estarter/components/widgets/VideoPlayer.vue'
 import AudioPlayer from '~estarter/components/widgets/AudioPlayer.vue'
 import IconWidget from '~estarter/components/widgets/IconWidget.vue'
@@ -90,6 +90,13 @@ const onToggleNativeMute = () => {
     const m = controls.toggleNativeMute()
     if (m !== null) nativeMuted.value = m
 }
+
+// L'instance est recyclée d'un flux à l'autre par le pool (cf. PlayerHost) : sans ça,
+// le mute natif choisi par l'utilisateur sur le flux précédent resterait actif sur le
+// suivant. Repasser par le ref (et non par el.muted) laisse Vue repatcher le binding.
+watch(() => props.streamData?.stream, () => {
+    nativeMuted.value = false
+})
 
 const onBringToFront = (event) => {
     if (!props.draggable) return
