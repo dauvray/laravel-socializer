@@ -10,7 +10,7 @@ Constantes et endpoints centralisés dans [`webrtc2.config.js`](webrtc2.config.j
 
 ## Architecture
 
-Les composables sont empilés en couches strictes — contexte, sous-modules (core / media / connections / transport), puis `useConnectionPool` → `useCallManager` → orchestrateur. Le schéma complet et la règle qui le tient (« une couche ne reçoit jamais de callback vers une couche supérieure ») sont dans [`CONVENTIONS.md`](CONVENTIONS.md#ordre-des-couches) : à lire avant toute extraction ou tout ajout de composable.
+Les composables sont empilés en couches strictes — contexte, sous-modules (core / media / connections / transport), puis `useConnectionPool` → `useCallManager` → `useStreamManager` → `useSignalingQueue` → orchestrateur. Le schéma complet et la règle qui le tient (« une couche ne reçoit jamais de callback vers une couche supérieure ») sont dans [`CONVENTIONS.md`](CONVENTIONS.md#ordre-des-couches) : à lire avant toute extraction ou tout ajout de composable.
 
 ## Modèle de confiance
 

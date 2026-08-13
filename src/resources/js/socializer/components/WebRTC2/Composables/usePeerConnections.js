@@ -20,7 +20,7 @@
  * - orchestrer le réseau WebRTC entre les peers
  * 
  */
-import { watch, markRaw, onUnmounted } from 'vue'
+import { markRaw } from 'vue'
 import { MAX_PEERS_PER_ROOM, VALID_CONNECTION_TYPES } from '../webrtc2.config.js'
 
 export function usePeerConnections(ctx) {
@@ -362,19 +362,10 @@ export function usePeerConnections(ctx) {
         )
     }
 
-    const stopSignalWatch = watch(ctx.lastRoomSignal, async (signal) => {
-        if (!signal || !ctx.SIGNAL_TYPES.connections.includes(signal.type)) return
-
-        switch (signal.type) {
-            case 'PEER_CONNECT_TO_REMOTE_PEER':
-                await connectToPeer(signal.payload)
-                break
-        }
-    })
-
-    onUnmounted(() => {
-        stopSignalWatch()
-    })
+    // ⚠️ Le routage des signaux entrants (PEER_CONNECT_TO_REMOTE_PEER → connectToPeer)
+    // vit dans useSignalingQueue. Conséquence : ce composable n'enregistre plus aucun
+    // hook de lifecycle Vue — ne pas en réintroduire ici sans raison (il reste
+    // instanciable et testable hors setup()).
 
     return {
         getNewUsersInRoom,

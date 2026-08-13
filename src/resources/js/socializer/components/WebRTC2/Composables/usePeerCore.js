@@ -16,7 +16,7 @@
  * - agir comme serveur de signalisation côté client
  * - préparer les informations nécessaires aux connexions 
  */
-import { watch, onUnmounted } from 'vue'
+import { onUnmounted } from 'vue'
 import { usePeerRetry } from '~socializer/components/WebRTC2/Composables/utils/usePeerRetry.js'
 import { ENDPOINTS, MAX_INVITE_RETRIES, SIGNALING_STALE_MS } from '~socializer/components/WebRTC2/webrtc2.config.js'
 
@@ -102,21 +102,35 @@ export function usePeerCore(ctx) {
 
     /**
      * Répond à une demande de connexion d'un peer distant en lui envoyant notre peerId.
-     * @param {*} fromUserSlug 
-     * @param {*} type 
-     * @param {*} room 
+     *
+     * @param {Object} payload - { fromUserSlug, room, type }
+     * @returns {Promise<boolean>} false si le peer local n'est pas prêt ou si le POST échoue
      */
     const responseRemotePeerConnection = async (payload) => {
 
+        // Sans peerId local on POSTerait `peerId: null` : le pair distant ne pourrait
+        // jamais se connecter et rien ne réessaierait sur ce chemin. Symétrique de la
+        // garde de requestRemotePeerConnection.
+        // ⚠️ Cette garde reste nécessaire malgré le waitForMeReady de useSignalingQueue :
+        // celui-ci attend `peerStore.lastLocalPeerId` (réactif), alors qu'on lit ici
+        // `localPeer.id`, remis à null par peer.reconnect() — les deux peuvent diverger.
+        const localPeerId = ctx.peerStore.getLocalPeerId
+        if (!localPeerId) {
+            console.warn('[usePeerCore] responseRemotePeerConnection: localPeer pas encore prêt')
+            return false
+        }
+
         try {
             await ctx.AjaxService.load(ENDPOINTS.RESPONSE_TO_PEER_ID, 'post', {
-                peerId: ctx.peerStore.getLocalPeerId,
+                peerId: localPeerId,
                 toUserSlug: payload.fromUserSlug,
                 room: payload.room,
                 type: payload.type
             })
+            return true
         } catch (e) {
             console.error('[usePeerCore] responseRemotePeerConnection failed:', e)
+            return false
         }
     }
 
@@ -214,22 +228,11 @@ export function usePeerCore(ctx) {
         }
     }
 
-    /*------  Signal Watcher ----------*/
-
-    const stopSignalWatch = watch(ctx.lastRoomSignal, async (signal) => {
-        if (!signal || !ctx.SIGNAL_TYPES.core.includes(signal.type)) return
-
-        switch (signal.type) {
-            case 'PEER_CONNECTION_REQUEST':
-                await responseRemotePeerConnection(signal.payload)
-                break
-            default:
-                break
-        }
-    })
+    // ⚠️ Le routage des signaux entrants (PEER_CONNECTION_REQUEST →
+    // responseRemotePeerConnection) vit dans useSignalingQueue : ce composable
+    // n'expose que les verbes de signalisation, il n'observe plus la file.
 
     onUnmounted(() => {
-        stopSignalWatch()
         clearAllCallInviteRetries()
     })
 

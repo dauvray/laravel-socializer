@@ -30,10 +30,11 @@ Tâche 7 → useMediaBroadcast    (intégration feature layer)
 ```
 
 Les couches extraites de l'orchestrateur (`useConnectionPool`, `useCallManager`,
-`useStreamManager`) se testent avec des mocks `vi.fn()` pour les dépendances injectées
-— c'est tout l'intérêt de l'injection descendante. `useCallManager` et
+`useStreamManager`, `useSignalingQueue`) se testent avec des mocks `vi.fn()` pour les
+dépendances injectées — c'est tout l'intérêt de l'injection descendante. `useCallManager` et
 `useStreamManager` n'enregistrent aucun hook de lifecycle : ils s'appellent
-directement, **sans** `withSetup`. Ce qui reste à couvrir en tâche 6 :
+directement, **sans** `withSetup` ; `useConnectionPool` et `useSignalingQueue` posent un
+`watch` + un `onUnmounted`, donc `withSetup` est obligatoire pour eux. Ce qui reste à couvrir en tâche 6 :
 `initializePeerConnection` (wrapping star + chaînage des handlers de flux) et les
 passthroughs média — soit ~245 lignes.
 
@@ -53,6 +54,7 @@ passthroughs média — soit ~245 lignes.
 - [ ] Tâche 7 — `useMediaBroadcast.test.js`
 - [x] `useConnectionPool.test.js` — 31 tests ✅ : `requestOrConnectPeer` (6), logique de tentative/retry (8 — dont garde `isShuttingDown`, signalisation stale, connexion screen, clearRetry/clearAllRetries), `syncUsersConnections` (9 — lock concurrent, `waitForMeReady` négatif, nettoyage des partants, fan-out mesh/star-hub/star-client/sfu), recovery `peerUnavailableSignal` (3), cleanup (2)
 - [x] `useStreamManager.test.js` — 25 tests ✅ : `handleStreamReceived` (13 — clé canonique, résolution du slug, idempotence, mode stream sans player, éviction TTL et FIFO), `handleStreamRemoved` (12 — départ complet, full stop conditionnel, garde par participant, dédoublonnage concurrent, libération de la garde sur exception)
+- [x] `useSignalingQueue.test.js` — 12 tests ✅ : routage (5 — table de routes, `payload` seul passé au handler, warn sur type inconnu, enveloppe `payload.type` des Widgets ignorée sans warn, warn sur signal sans aucun type), **absence de précondition asynchrone (2 — non-régression : route sans attendre `waitForMeReady`, route même pendant un arrêt)**, erreurs (1), cleanup (4 — `stopSignaling` idempotent, démontage, plus rien routé après l'arrêt)
 - [x] `useCallManager.test.js` — 50 tests ✅ : `startCallWithPeer` (9 — dont « aucune mutation si appel en cours » et room imposée), `acceptCallFromPeer` (8 — dont **ordre mapping peerId avant transition**), `openCallBetweenPeer` (5), `stopCallWithPeers` (8 — partial vs full, ordre du cleanup, mutex CLOSING, exception → pas de blocage), `remoteStopCall` (6 — dont dédoublonnage concurrent), `resetCallState` (1), room d'appel (4), état (1), verbes FSM pour la couche streams (5), retries d'invitation (3)
 
 ---
@@ -62,14 +64,14 @@ passthroughs média — soit ~245 lignes.
 **Périmètre** : couche HTTP/Ajax pure, sans WebRTC.
 
 - [✅] `requestRemotePeerConnection` : POST Ajax déclenché, `addWaitingRemotePeerId` appelé, throttling SIGNALING_STALE_MS (pas de 2e requête si `waiting` récent)
-- [✅] `responseRemotePeerConnection` : POST avec `peerId` local correct
+- [✅] `responseRemotePeerConnection` : POST avec `peerId` local correct, garde `!getLocalPeerId` (aucun POST, `false`), booléen de retour
 - [✅] `requestAuthorizationRemotePeerId` : envoi immédiat + retry via `inviteRetryManager`, retourne un `inviteId`
 - [✅] `sendAuthorizationRemotePeerId` : envoi avec `status: true` (inclut peerId) vs `status: false` (type seulement)
 - [ ] `notifyCloseConnectionToPeer` : POST avec room/type/fromUserSlug
-- [ ] Signal watcher : un signal `PEER_CONNECTION_REQUEST` dans `lastRoomSignal` déclenche `responseRemotePeerConnection`
+- [✅] ~~Signal watcher~~ : déplacé dans `useSignalingQueue.test.js` (le routage ne vit plus ici)
 - [ ] `stopCallInviteRetry` / `stopCallInviteRetryForUser` / `clearAllCallInviteRetries` : cancellent les retries correspondants
 - [✅] Limite `MAX_INVITE_RETRIES` : la plus ancienne entrée est évincée quand la Map est pleine *(couvert dans requestAuthorizationRemotePeerId)*
-- [ ] `onUnmounted` : watcher stoppé + inviteRetryManager vidé
+- [ ] `onUnmounted` : inviteRetryManager vidé
 
 **Prérequis** : `createMockContext()` suffit (AjaxService injecté via ctx) ; `vi.useFakeTimers()` pour les retries.
 
@@ -85,10 +87,10 @@ passthroughs média — soit ~245 lignes.
 - [ ] `hasOpenConnection` — MediaConnection : `connectionState` closed/failed → false, connected → true
 - [ ] `connectToPeer` : guard `inFlightConnections` (pas de double tentative), guard `MAX_PEERS_PER_ROOM`
 - [ ] `closePeerConnection` : fermeture sélective (liste `users`), fermeture globale, `clearSignalQueue`
-- [ ] Signal watcher : `PEER_CONNECT_TO_REMOTE_PEER` déclenche l'action correspondante
-- [ ] `onUnmounted` : watcher stoppé
+- [✅] ~~Signal watcher / `onUnmounted`~~ : déplacés dans `useSignalingQueue.test.js`
 
 **Prérequis** : `createMockDataConnection()` et `createMockMediaConnection()` de `__mocks__/peerjs.js` ; injecter des connexions factices dans `peerStore._connections` du `createMockContext`.
+**Depuis l'extraction de `useSignalingQueue`** : ce composable n'enregistre plus aucun hook de lifecycle → il s'appelle **directement, sans `withSetup`**, comme `useCallManager` / `useStreamManager`.
 
 ---
 

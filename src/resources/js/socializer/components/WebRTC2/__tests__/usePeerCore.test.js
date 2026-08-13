@@ -159,11 +159,31 @@ describe('usePeerCore', () => {
             )
         })
 
-        it('ne throw pas si le POST Ajax échoue (erreur avalée)', async () => {
+        it('ne throw pas si le POST Ajax échoue (erreur avalée) et retourne false', async () => {
             ctx.AjaxService.load.mockRejectedValue(new Error('Network error'))
             const payload = buildPayload()
 
-            await expect(core.responseRemotePeerConnection(payload)).resolves.toBeUndefined()
+            await expect(core.responseRemotePeerConnection(payload)).resolves.toBe(false)
+        })
+
+        it('ne POSTe rien et retourne false si le peer local n\'est pas encore prêt', async () => {
+            // Sans peerId local, le POST enverrait `peerId: null` : le pair distant ne
+            // pourrait jamais se connecter et rien ne réessaierait sur ce chemin.
+            ctx.peerStore.getLocalPeerId = null
+            const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+            const result = await core.responseRemotePeerConnection(buildPayload())
+
+            expect(result).toBe(false)
+            expect(ctx.AjaxService.load).not.toHaveBeenCalled()
+            expect(warnSpy).toHaveBeenCalledWith(
+                expect.stringContaining('localPeer pas encore prêt')
+            )
+            warnSpy.mockRestore()
+        })
+
+        it('retourne true quand le POST aboutit', async () => {
+            await expect(core.responseRemotePeerConnection(buildPayload())).resolves.toBe(true)
         })
     })
 

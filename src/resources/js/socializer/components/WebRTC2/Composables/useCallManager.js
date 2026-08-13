@@ -229,10 +229,10 @@ export function useCallManager(ctx, { core, media, connections, transport, pool 
             if (!ctx.callMachine.transition(CALL_STATES.CLOSING)) return
         }
 
+        ctx.beginShutdown()  // 🛑 Bloquer les retries immédiatement
+
         try {
             const roomId = options?.roomId || ctx.session.currentCallRoomId || ctx.currentRoom.value
-
-            ctx.beginShutdown()  // 🛑 Bloquer les retries immédiatement
 
             const callType = ctx.session.currentType || 'visio'
 
@@ -263,8 +263,7 @@ export function useCallManager(ctx, { core, media, connections, transport, pool 
                     clearSignalQueue: false,
                 })
 
-                ctx.endShutdown()  // ✅ Réactiver les retries après partial close
-                return
+                return  // ✅ endShutdown dans le finally
             }
 
             // === MODE FULL ===
@@ -280,10 +279,14 @@ export function useCallManager(ctx, { core, media, connections, transport, pool 
             media.removeVideoElement('local-webcam')
             ctx.session.currentCallRoomId = null
 
-            ctx.endShutdown()  // ✅ Réactiver après cleanup complet
-
             resetCallState()  // → callMachine.reset() : CLOSING → IDLE
         } finally {
+            // ✅ Réactive les retries quoi qu'il arrive. Sans ce finally, une exception
+            // dans la fenêtre laissait shutdownCount à ≥ 1 pour la vie du contexte :
+            // le moteur de retry sortait alors par `return true` (donc ANNULÉ, pas
+            // différé) et plus aucune connexion ne se rétablissait, silencieusement.
+            ctx.endShutdown()
+
             // Filet de sécurité : si resetCallState n'a pas été appelé (exception),
             // garantir qu'on ne reste pas coincé en état CLOSING.
             if (ctx.callMachine.isStopping.value) {

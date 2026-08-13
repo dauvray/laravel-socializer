@@ -5,13 +5,13 @@
  *
  * 👉 gère :
  * - point d’entrée unique pour tout le système peer
- * - composition des couches Core / Media / Connections / Transport / Pool / Call / Stream
+ * - composition des couches Core / Media / Connections / Transport / Pool / Call / Stream / Signaling
  * - exposition d’une API simple aux features (useMediaBroadcast)
  *
  * 👉 utilise :
  * - createPeerContext (instance isolée)
  * - usePeerCore / usePeerMedia / usePeerConnections / usePeerTransport (sous-modules)
- * - useConnectionPool → useCallManager → useStreamManager (couches empilées)
+ * - useConnectionPool → useCallManager → useStreamManager → useSignalingQueue (couches empilées)
  *
  * 👉 ne connaît PAS :
  * - UI métier (aucun état type isMuted, isVideoCall…)
@@ -35,6 +35,7 @@ import { usePeerTransport } from '~socializer/components/WebRTC2/Composables/use
 import { useConnectionPool } from '~socializer/components/WebRTC2/Composables/useConnectionPool.js'
 import { useCallManager } from '~socializer/components/WebRTC2/Composables/useCallManager.js'
 import { useStreamManager } from '~socializer/components/WebRTC2/Composables/useStreamManager.js'
+import { useSignalingQueue } from '~socializer/components/WebRTC2/Composables/useSignalingQueue.js'
 import { isValidCallType } from '~socializer/components/WebRTC2/Composables/utils/validators.js'
 
 export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) {
@@ -63,6 +64,17 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
 
     // 4. Couche streams : elle dépend de la couche appels, jamais l'inverse
     const streamManager = useStreamManager(context, { media, callManager })
+
+    // 5. Couche signalisation : route les signaux serveur entrants vers les handlers.
+    //    Instanciée en dernier — personne ne consomme ses verbes, donc elle peut router
+    //    vers n'importe quelle couche sans jamais créer de callback ascendant.
+    //    Cette table est l'unique source de vérité du routage des signaux.
+    const signaling = useSignalingQueue(context, {
+        routes: {
+            PEER_CONNECTION_REQUEST:     core.responseRemotePeerConnection,
+            PEER_CONNECT_TO_REMOTE_PEER: connections.connectToPeer,
+        },
+    })
 
    /**
      * 🔥 Glue logique (SEUL endroit où on mixe les couches)
@@ -147,6 +159,10 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
     const cleanupPeerConnection = () => {
         context.beginShutdown()  // 🛑 Guard permanent : reste actif après le teardown terminal
 
+        // En tête du teardown : un signal PEER_CONNECT_TO_REMOTE_PEER arrivant pendant
+        // le cleanup rouvrirait une connexion juste après closePeerConnection().
+        signaling.stopSignaling()
+
         pool.stopPool()  // Arrête l'observation du signal peer-unavailable + les retries en vol
 
         connections.closePeerConnection({
@@ -176,20 +192,25 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
     const stopWebcamStream = () => {
         context.beginShutdown()
 
-        pool.clearAllRetries()
-        connections.closePeerConnection({
-            room: context.session.currentCallRoomId || context.session.currentRoom,
-            type: context.session.currentType,
-            clearSignalQueue: true,
-        })
+        // ⚠️ try/finally obligatoire : une exception ici laisserait shutdownCount à ≥ 1
+        // pour la vie du contexte, ce qui désactive silencieusement le moteur de retry
+        // (_handleConnectionAttempt sort par `return true`, donc ANNULE les retries).
+        try {
+            pool.clearAllRetries()
+            connections.closePeerConnection({
+                room: context.session.currentCallRoomId || context.session.currentRoom,
+                type: context.session.currentType,
+                clearSignalQueue: true,
+            })
 
-        media.stopCurrentStream()
-        media.removeVideoElement('local-webcam')
-        context.session.currentCallRoomId = null
-        context.ui.streamStates.isVideoEnabled = true
-        context.ui.streamStates.isMuted = false
-
-        context.endShutdown()
+            media.stopCurrentStream()
+            media.removeVideoElement('local-webcam')
+            context.session.currentCallRoomId = null
+            context.ui.streamStates.isVideoEnabled = true
+            context.ui.streamStates.isMuted = false
+        } finally {
+            context.endShutdown()
+        }
     }
 
     const startAudioStream = async () => {

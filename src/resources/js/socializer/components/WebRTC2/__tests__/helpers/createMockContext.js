@@ -89,15 +89,10 @@ export function createMockContext(overrides = {}) {
         onStreamReceived:  { callback: vi.fn(), isActive: false },
     })
 
-    // ── Signal types ──────────────────────────────────────────────────────────
-    const SIGNAL_TYPES = {
-        core: ['PEER_CONNECTION_REQUEST'],
-        connections: ['PEER_CONNECT_TO_REMOTE_PEER'],
-    }
-
     // ── Signals ───────────────────────────────────────────────────────────────
+    // Le routage vit dans useSignalingQueue, qui n'observe que `lastRoomSignal` :
+    // pas de SIGNAL_TYPES ni de file complète exposés (cf. createPeerContext).
     const _signalQueue = ref([])
-    const roomSignals = computed(() => _signalQueue.value)
     const lastRoomSignal = computed(() => _signalQueue.value.at(-1) ?? null)
 
     // ── peerStore mock ────────────────────────────────────────────────────────
@@ -264,7 +259,6 @@ export function createMockContext(overrides = {}) {
 
     return {
         contextId,
-        roomSignals,
         lastRoomSignal,
 
         // infra
@@ -280,7 +274,6 @@ export function createMockContext(overrides = {}) {
         ui,
         connection,
         lifecycle,
-        SIGNAL_TYPES,
         connectionEvents,
 
         // FSM

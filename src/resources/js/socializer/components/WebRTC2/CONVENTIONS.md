@@ -14,8 +14,13 @@ createPeerContext                         source de vérité unique (état, stor
        └─ useConnectionPool               retry, établissement, sync room → connexions
             └─ useCallManager             cycle d'appel (invite → accept → open → stop → reset)
                  └─ useStreamManager      registre des flux distants + players + départs
-                      └─ usePeerOrchestrator   composition + façade, aucune logique métier
+                      └─ useSignalingQueue   routage des signaux serveur entrants
+                           └─ usePeerOrchestrator   composition + façade, aucune logique métier
 ```
+
+`useSignalingQueue` est instanciée **en dernier** précisément parce qu'elle ne fait que
+consommer des verbes : personne ne consomme les siens, donc sa table `routes` peut
+pointer vers n'importe quelle couche sans jamais créer de callback ascendant.
 
 **Règle : une couche ne reçoit jamais de callback vers une couche supérieure.** Les
 dépendances descendent par injection explicite depuis l'orchestrateur
@@ -37,6 +42,7 @@ l'orchestrateur passé de main en main.
 | `media.remoteStreamsMap` | `useStreamManager` (ajout/TTL/éviction), `useCallManager` (purge au départ d'un pair) | `ctx.remoteStreams` / `remoteScreens` en lecture |
 | séquence de départ d'un pair | `useCallManager.handleRemoteDeparture` | point d'entrée unique quel que soit le transport qui l'annonce |
 | timers de retry connexion | `useConnectionPool` | `clearRetry` / `clearAllRetries` |
+| routage des signaux serveur | `useSignalingQueue` (table `routes` construite par l'orchestrateur) | exposer un verbe et l'inscrire dans la table — pas de `watch` sur `ctx.lastRoomSignal` ailleurs |
 
 **Départ d'un pair : un fait métier, deux transports.** « Tel pair quitte l'appel »
 arrive soit par le signal serveur `CloseConnectionToPeerID` (→ `remoteStopCall`), soit

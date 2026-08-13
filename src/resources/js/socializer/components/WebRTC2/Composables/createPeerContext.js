@@ -117,22 +117,13 @@ export function createPeerContext({ type, room, options }) {
     // ne réactiverait plus le garde.
     const endShutdown   = () => { lifecycle.shutdownCount = Math.max(0, lifecycle.shutdownCount - 1) }
 
-    // SIGNAUX DISPOS
-    const SIGNAL_TYPES = {
-        core: [
-            'PEER_CONNECTION_REQUEST',
-        ],
-        connections: [
-            'PEER_CONNECT_TO_REMOTE_PEER',
-        ], 
-    }
-
-    // SIGNAUX reçus pour la room
-    const roomSignals = computed(() =>
-        peerStore.getQueueForRoom(contextId)
-    )
-
-    // dernier signal reçu pour la room
+    // Dernier signal reçu pour la room — seule source observée par useSignalingQueue,
+    // qui détient la table de routage type de signal → handler.
+    // ⚠️ Ne PAS exposer ici la file complète sous forme de
+    // `computed(() => peerStore.getQueueForRoom(contextId))` : ce computed ne tracerait
+    // que la *clé* `signalQueues[contextId]`, qu'un `push` ne touche pas — il ne serait
+    // jamais invalidé et aucun watch ne se déclencherait dessus (piège historique).
+    // `at(-1)` fonctionne parce qu'il lit `length` + un index.
     const lastRoomSignal = computed(() => {
         return peerStore.getLastRoomSignal(contextId)
     })
@@ -239,6 +230,16 @@ export function createPeerContext({ type, room, options }) {
                 resolve(value)
             }
 
+            // Timeout de sécurité — une seule alarme, pas de boucle de polling.
+            // ⚠️ Armé AVANT scope.run() : le watchEffect s'exécute immédiatement, donc
+            // _resolve(true) peut partir de façon synchrone. Si le setTimeout était
+            // déclaré après, ce clearTimeout porterait sur `null` → le timer survivrait
+            // et cracherait un faux « a expiré » 15 s plus tard, sur un contexte sain.
+            timeoutId = setTimeout(() => {
+                console.warn('waitForMeReady a expiré après', timeoutMs, 'ms')
+                _resolve(false)
+            }, timeoutMs)
+
             scope.run(() => {
                 watchEffect(() => {
                     const slug = meStore.getMe?.slug
@@ -252,12 +253,6 @@ export function createPeerContext({ type, room, options }) {
                     }
                 })
             })
-
-            // Timeout de sécurité — une seule alarme, pas de boucle de polling
-            timeoutId = setTimeout(() => {
-                console.warn('waitForMeReady a expiré après', timeoutMs, 'ms')
-                _resolve(false)
-            }, timeoutMs)
         })
     }
 
@@ -526,9 +521,8 @@ export function createPeerContext({ type, room, options }) {
         
     return {
         contextId,
-        roomSignals,
         lastRoomSignal,
-        
+
         // infra
         peerStore,
         meStore,
@@ -542,7 +536,6 @@ export function createPeerContext({ type, room, options }) {
         ui,
         connection,
         lifecycle,
-        SIGNAL_TYPES,
         connectionEvents,
 
         // machine d'état d'appel (remplace callInprogress / isStoppingCall / closingUsers)
