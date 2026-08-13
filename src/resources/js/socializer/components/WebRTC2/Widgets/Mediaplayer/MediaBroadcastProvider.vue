@@ -22,6 +22,7 @@
         options: { type: Object, default: () => ({
             topology: 'mesh', // topologie de diffusion : 'mesh' (pair à pair), 'star' (étoile) ou 'sfu' (serveur de diffusion)
             hubSlug: null, // slug du hub de diffusion (si topologie 'star', qui joue le role de centralisateur des connexions)
+            videoContainer: '#videoContainer', // conteneur HTML pour l'affichage des flux vidéo
         })},
     })
 

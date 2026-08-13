@@ -17,9 +17,9 @@
 
 ### createPeerContext
 
-- [x] **`waitForMeReady()` timeout hardcodé (15s)** `[S]` : rendre configurable via options
-- [x] **`session.closingUsers = new Set()` exposé directement** `[S]` : remplacer par des accesseurs pour éviter la corruption externe
-- [ ] **`media.videoContainer = '#videoContainer'` hardcodé** `[S]` : injecter via options pour la testabilité
+- [X] **`waitForMeReady()` timeout hardcodé (15s)** `[S]` : rendre configurable via options
+- [X] **`session.closingUsers = new Set()` exposé directement** `[S]` : remplacer par des accesseurs pour éviter la corruption externe
+- [X] **`media.videoContainer = '#videoContainer'` hardcodé** `[S]` : injecter via options pour la testabilité
 
 ### Architecture
 
@@ -80,6 +80,7 @@ Phase 3 — Architecture (P2)           effort / projet
 ## 💡 Patterns à adopter
 
 ### Injection protective
+
 ```javascript
 const safeInject = (key, fallback = null) => {
     try {
@@ -92,6 +93,7 @@ const safeInject = (key, fallback = null) => {
 ```
 
 ### Lifecycle cleanup manager
+
 ```javascript
 const lifecycle = {
     watchers: [],
@@ -110,6 +112,7 @@ const lifecycle = {
 ```
 
 ### Map avec TTL et limite
+
 ```javascript
 const createBoundedMap = (maxSize = 1000, ttlMs = 300000) => {
     const map = new Map()
@@ -134,6 +137,7 @@ const createBoundedMap = (maxSize = 1000, ttlMs = 300000) => {
 ```
 
 ### Machine d'état appel
+
 ```javascript
 const CALL_STATES = {
     IDLE: 'idle',

@@ -31,7 +31,8 @@
         :callbacks="chatDataCallbacks"
         :options="{
             topology: 'star',
-            hubSlug: 'admin'
+            hubSlug: 'admin',
+            videoContainer: '#videoContainer'
         }" 
         v-slot="webrtc">
         <Debug v-bind="webrtc" class="col-md-4 m-2" />
@@ -47,13 +48,13 @@
      - les callbacks ne sont pas nécessaires ici car le StreamSimpleUI gère déjà en interne les événements de réception de flux et de données pour mettre à jour l'interface.
     -->
     <MediaBroadcastProvider
-        class="d-flex"
+        class="row g-2"
         :users="users"
         :room="room"
         mode="stream"
         v-slot="webrtc">
-        <Debug v-bind="webrtc" class="col-md-4 m-2"/>
-        <StreamSimpleUI v-bind="webrtc" class="col-md-8 m-2"/>
+        <Debug v-bind="webrtc" class="col-md-4"/>
+        <StreamSimpleUI v-bind="webrtc" class="col-md-8"/>
     </MediaBroadcastProvider>
 </template>
 
@@ -73,7 +74,7 @@ import StreamSimpleUI from '~socializer/components/WebRTC2/Exemples/StreamSimple
 
 // --- State (Reactivité) ---
 const room = ref('room-test')
-const channel = computed(() => 'server.53d35c4e73c2d')
+const channel = computed(() => 'server.0e64e1713d940')
 
 // --- Services ---
 // Un seul useReverbPresence pour toute la page

@@ -68,7 +68,7 @@ export function createPeerContext({ type, room, options }) {
 
     // MEDIA STATE
     const media = reactive({
-        videoContainer: '#videoContainer',
+        videoContainer: options.videoContainer || '#videoContainer', // conteneur HTML pour l'affichage des flux vidéo
         currentStream: null,
         screenStream: null,  
         remoteStreamsMap: shallowReactive(new Map()), // Map pour stocker les flux distants avec une clé composite (userSlug-type) pour éviter les collisions
