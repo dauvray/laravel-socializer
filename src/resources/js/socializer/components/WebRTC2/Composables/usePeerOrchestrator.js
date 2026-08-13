@@ -129,7 +129,7 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
                 // Si senderSlug === mySlug, c'est notre propre conn sortante qui se ferme :
                 // le remote peut encore streamer via PC-2 (connexion inverse) — ne pas le retirer.
                 if (!mySlug || !senderSlug || senderSlug !== mySlug) {
-                    await streamManager.handleStreamRemoved(conn, conn?.metadata)
+                    await streamManager.handleStreamRemoved(conn)
                 }
 
 

@@ -50,7 +50,9 @@ export function createCallStateMachine(contextId = '') {
 
     /**
      * Garde par utilisateur pour les fermetures individuelles concurrentes.
-     * Utilisé par remoteStopCall et handleStreamRemoved pour éviter les doublons.
+     * Utilisé par `useCallManager.handleRemoteDeparture` — point d'entrée unique du
+     * départ d'un pair — pour dédoublonner les deux transports qui peuvent l'annoncer
+     * (signal serveur / fermeture de connexion PeerJS).
      * Orthogonal à l'état global : plusieurs fermetures partielles peuvent coexister
      * en état CONNECTED sans déclencher de CLOSING global.
      *

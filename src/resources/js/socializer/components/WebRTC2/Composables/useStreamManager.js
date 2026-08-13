@@ -6,21 +6,24 @@
  * 👉 gère :
  * - le registre des flux distants (`ctx.media.remoteStreamsMap`) : clé canonique
  *   `slug-type`, éviction TTL + FIFO pour rester borné
- * - la création/suppression des players DOM des flux distants
+ * - la création des players DOM des flux distants
  * - la résolution du pair distant à partir des métadonnées d'une connexion
- * - le départ d'un pair dont la connexion se ferme
  *
  * 👉 utilise (par injection, jamais par import) :
- * - usePeerMedia (players), useCallManager (FSM d'appel + fermeture complète)
+ * - usePeerMedia (players), useCallManager (FSM d'appel + séquence de départ)
  *
  * 👉 ne connaît PAS :
  * - l'orchestrateur : aucune couche supérieure ne lui est injectée
  * - `ctx.callMachine` : toute décision d'état d'appel passe par `callManager`
  * - PeerJS : elle ne reçoit que des `conn` déjà ouvertes et leurs métadonnées
+ * - la **séquence de départ d'un pair** : elle résout le pair concerné et délègue
+ *   à `callManager.handleRemoteDeparture` (propriétaire unique, quel que soit le
+ *   transport qui a annoncé le départ)
  *
  * 👉 rôle :
  * - branchement des callbacks `onStreamReceived` / `onConnectionClose`
  * - garder le registre de flux cohérent avec ce qui est réellement affiché
+ * - traduire un event de transport (`conn` fermée) en fait métier (« tel pair part »)
  *
  * ⚠️ Le pooling des instances Vue des players reste dans `usePeerMedia`
  * (`createVideoElement` monte une app par flux) — cf. TODOLIST.
@@ -89,8 +92,11 @@ export function useStreamManager(ctx, { media, callManager }) {
 
         if (!remoteSlug) return
 
-        // Clé canonique basée sur l'identité sémantique (slug + type), indépendante de l'objet conn.
-        // Garantit que handleStreamReceived et handleStreamRemoved utilisent la même clé.
+        // Clé canonique basée sur l'identité sémantique (slug + type), indépendante de l'objet conn :
+        // garantit l'idempotence de la réception d'un même flux.
+        // ⚠️ Les champs `remoteSlug` / `remoteType` stockés dans l'entrée sont la source de
+        // vérité de l'identité du pair — la purge au départ (`useCallManager._purgePeerStreams`)
+        // les lit plutôt que de re-parser la clé ou `metadata.from`.
         const streamKey = `${remoteSlug}-${remoteType}`
 
         if (ctx.media.remoteStreamsMap.has(streamKey)) {
@@ -128,53 +134,31 @@ export function useStreamManager(ctx, { media, callManager }) {
         }
     }
 
-    const handleStreamRemoved = async (conn, metadata) => {
+    /**
+     * Déclencheur 2 : la connexion PeerJS d'un pair se ferme.
+     *
+     * Cette couche ne fait que ce qui lui appartient — **résoudre quel pair distant
+     * porte cette connexion** à partir de ses métadonnées — puis délègue la séquence
+     * de départ au CallManager, propriétaire unique de cette séquence (le déclencheur
+     * 1 est le signal serveur `CloseConnectionToPeerID` → `remoteStopCall`).
+     *
+     * `waitForMeReady` reste ici : c'est la précondition de `_resolveRemoteSlug`
+     * (besoin de `mySlug` pour distinguer le distant de soi-même), pas celle de la
+     * séquence de départ.
+     */
+    const handleStreamRemoved = async (conn) => {
         const ready = await ctx.waitForMeReady()
         if (!ready) return
 
         const meta = conn?.metadata || {}
         const remoteSlug = _resolveRemoteSlug(meta)
-        const remoteType = meta?.type || 'visio'
-        const roomId = meta?.room || ctx.session.currentCallRoomId || null
-
         if (!remoteSlug) return
-        if (callManager.isRemoteClosing(remoteSlug)) return
 
-        callManager.beginRemoteClosing(remoteSlug)
-
-        try {
-            const videoId = `remote-${remoteSlug}-${remoteType}`
-            media.removeVideoElement(videoId)
-
-            // Clé canonique identique à handleStreamReceived → suppression en passe unique.
-            const streamKey = `${remoteSlug}-${remoteType}`
-            ctx.media.remoteStreamsMap.delete(streamKey)
-
-            ctx.removeCurrentCallUser(remoteSlug)
-
-            ctx.eventBus.$emit('close-call', [{
-                userSlug: remoteSlug,
-                type: remoteType
-            }])
-
-            /*
-                En mode stream (broadcast unidirectionnel), le cycle de vie du stream local est géré explicitement par l'utilisateur via stopStream().
-                Un pair distant qui se déconnecte ne doit pas déclencher l'arrêt du broadcast local.
-                La logique stopCallWithPeers full ne concerne que les modes d'appel bidirectionnels (visio, vocal)
-                 où raccrocher côté distant justifie de tout fermer localement.
-            */
-            if (ctx.session.currentType !== 'stream' && ctx.session.currentCallUsers.length === 0) {
-                await callManager.stopCallWithPeers([], false, {
-                    mode: 'full',
-                    roomId,
-                })
-            }
-
-        } catch (error) {
-            console.error('Error removing video element:', error)
-        } finally {
-            callManager.endRemoteClosing(remoteSlug)
-        }
+        await callManager.handleRemoteDeparture({
+            userSlug: remoteSlug,
+            type: meta?.type || 'visio',
+            roomId: meta?.room || ctx.session.currentCallRoomId || null,
+        })
     }
 
     return {

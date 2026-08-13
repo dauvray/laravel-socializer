@@ -99,7 +99,7 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
         remoteStopCall, // fonction pour gérer l'arrêt d'un appel initié à distance (ex: quand un peer distant raccroche)
    
         handleStreamReceived, // fonction pour gérer la réception d'un flux distant (ex: ajouter le flux à un player vidéo)
-        handleStreamRemoved, // fonction pour gérer la suppression d'un flux distant (ex: retirer le flux d'un player vidéo et nettoyer les ressources associées)
+        handleStreamRemoved, // callback onConnectionClose : traduit la fermeture d'une connexion PeerJS en départ du pair distant (même séquence que remoteStopCall, qui part du signal serveur)
    
         stopCallInviteRetry, // fonction pour stopper les tentatives de retry d'invitation à un appel (ex: lorsqu'on reçoit une réponse à une invitation)
         clearAllCallInviteRetries, // fonction pour stopper toutes les tentatives de retry d'invitation à un appel (ex: lorsqu'on quitte la room ou que le composant est détruit)

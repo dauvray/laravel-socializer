@@ -473,6 +473,194 @@ describe('useCallManager', () => {
         })
     })
 
+    // ── handleRemoteDeparture ───────────────────────────────────────────────
+    //
+    // Séquence unique de départ d'un pair, partagée par les deux transports :
+    // signal serveur (via remoteStopCall) et fermeture de connexion PeerJS (via
+    // useStreamManager.handleStreamRemoved). Les cas ci-dessous couvrent ce que
+    // les deux anciens chemins faisaient différemment.
+
+    describe('handleRemoteDeparture', () => {
+
+        const departure = (overrides = {}) => ({
+            userSlug: 'alice',
+            type: 'visio',
+            roomId: 'call-room-1',
+            ...overrides,
+        })
+
+        /** Place un appel visio connecté avec alice */
+        const enterConnectedCall = () => {
+            cm.startCallWithPeer({ toUserSlug: 'alice', type: 'visio' })
+            ctx.callMachine.transition(CALL_STATES.CONNECTED)
+            connections.closePeerConnection.mockClear()
+        }
+
+        it('ignore un slug invalide, même venu des métadonnées d\'une connexion', async () => {
+            enterConnectedCall()
+
+            expect(await cm.handleRemoteDeparture(departure({ userSlug: 'not a slug!' }))).toBe(false)
+            expect(await cm.handleRemoteDeparture(departure({ userSlug: null }))).toBe(false)
+            expect(connections.closePeerConnection).not.toHaveBeenCalled()
+            expect(ctx.eventBus.$emit).not.toHaveBeenCalled()
+        })
+
+        it('ignore un départ déjà en cours de traitement pour ce pair', async () => {
+            enterConnectedCall()
+            ctx.callMachine.markUserClosing('alice')
+
+            expect(await cm.handleRemoteDeparture(departure())).toBe(false)
+            expect(connections.closePeerConnection).not.toHaveBeenCalled()
+        })
+
+        it('coupe le transport et les retries du pair parti (fuite si le départ n\'arrive que par PeerJS)', async () => {
+            enterConnectedCall()
+            ctx.addCurrentCallUser('bob', 'visio')  // un participant restant : isole l'arrêt partiel
+
+            await cm.handleRemoteDeparture(departure())
+
+            expect(pool.clearRetry).toHaveBeenCalledWith('alice')
+            expect(ctx.peerStore.removeWaitingRemotePeerId).toHaveBeenCalledWith('alice')
+            expect(connections.closePeerConnection).toHaveBeenCalledWith({
+                room: 'call-room-1',
+                type: 'visio',
+                users: ['alice'],
+                clearSignalQueue: false,
+            })
+            expect(core.notifyCloseConnectionToPeer).not.toHaveBeenCalled()
+        })
+
+        it('purge tous les flux du pair, quel que soit leur type', async () => {
+            enterConnectedCall()
+            ctx.addCurrentCallUser('bob', 'visio')
+            ctx.media.remoteStreamsMap.set('alice-visio', {
+                stream: {}, remoteSlug: 'alice', remoteType: 'visio',
+            })
+            ctx.media.remoteStreamsMap.set('alice-screen', {
+                stream: {}, remoteSlug: 'alice', remoteType: 'screen',
+            })
+            ctx.media.remoteStreamsMap.set('bob-visio', {
+                stream: {}, remoteSlug: 'bob', remoteType: 'visio',
+            })
+
+            await cm.handleRemoteDeparture(departure())
+
+            expect(ctx.media.remoteStreamsMap.has('alice-visio')).toBe(false)
+            expect(ctx.media.remoteStreamsMap.has('alice-screen')).toBe(false)
+            expect(media.removeVideoElement).toHaveBeenCalledWith('remote-alice-screen')
+            // Les flux des autres participants ne sont pas touchés
+            expect(ctx.media.remoteStreamsMap.has('bob-visio')).toBe(true)
+        })
+
+        it('purge un flux reçu sur ma connexion sortante (metadata.from = mon slug)', async () => {
+            enterConnectedCall()
+            ctx.addCurrentCallUser('bob', 'visio')
+            // Côté initiateur, le flux distant arrive sur MA connexion : metadata.from
+            // porte mon slug. Seul `remoteSlug` identifie correctement le pair.
+            ctx.media.remoteStreamsMap.set('alice-visio', {
+                stream: {},
+                metadata: { from: 'me', slug: 'alice', type: 'visio' },
+                remoteSlug: 'alice',
+                remoteType: 'visio',
+            })
+
+            await cm.handleRemoteDeparture(departure())
+
+            expect(ctx.media.remoteStreamsMap.has('alice-visio')).toBe(false)
+        })
+
+        it('retire le player du type annoncé même sans entrée de registre', async () => {
+            enterConnectedCall()
+            ctx.addCurrentCallUser('bob', 'visio')
+
+            await cm.handleRemoteDeparture(departure())
+
+            expect(media.removeVideoElement).toHaveBeenCalledWith('remote-alice-visio')
+        })
+
+        it('ferme tout l\'appel quand le dernier participant part', async () => {
+            enterConnectedCall()
+
+            await cm.handleRemoteDeparture(departure())
+
+            expect(media.stopCurrentStream).toHaveBeenCalled()
+            expect(ctx.callMachine.callState.value).toBe(CALL_STATES.IDLE)
+        })
+
+        it('émet close-call avant le full stop', async () => {
+            enterConnectedCall()
+
+            await cm.handleRemoteDeparture(departure())
+
+            const emitOrder = ctx.eventBus.$emit.mock.invocationCallOrder[0]
+            const stopOrder = media.stopCurrentStream.mock.invocationCallOrder[0]
+            expect(ctx.eventBus.$emit).toHaveBeenCalledWith('close-call', [
+                { userSlug: 'alice', type: 'visio' },
+            ])
+            expect(emitOrder).toBeLessThan(stopOrder)
+        })
+
+        it('mode stream : ni fermeture de transport ni arrêt du broadcast local', async () => {
+            enterConnectedCall()
+            ctx.session.currentType = 'stream'
+            ctx.media.remoteStreamsMap.set('alice-stream', {
+                stream: {}, remoteSlug: 'alice', remoteType: 'stream',
+            })
+
+            await cm.handleRemoteDeparture(departure({ type: 'stream' }))
+
+            expect(connections.closePeerConnection).not.toHaveBeenCalled()
+            expect(media.stopCurrentStream).not.toHaveBeenCalled()
+            // …mais le pair est bien retiré et l'UI prévenue
+            expect(ctx.media.remoteStreamsMap.has('alice-stream')).toBe(false)
+            expect(ctx.session.currentCallUsers).toEqual([])
+            expect(ctx.eventBus.$emit).toHaveBeenCalledWith('close-call', [
+                { userSlug: 'alice', type: 'stream' },
+            ])
+        })
+
+        it('libère la garde par utilisateur même si le nettoyage échoue', async () => {
+            enterConnectedCall()
+            connections.closePeerConnection.mockImplementation(() => {
+                throw new Error('connexion déjà détruite')
+            })
+            const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+            await cm.handleRemoteDeparture(departure())
+
+            expect(ctx.callMachine.isUserClosing('alice')).toBe(false)
+            expect(consoleError).toHaveBeenCalled()
+            consoleError.mockRestore()
+        })
+
+        it('ne tente pas de full stop depuis IDLE (pas de warn de transition invalide)', async () => {
+            // Cas du second transport : le premier a déjà fait le full stop, la FSM
+            // est revenue à IDLE et la liste de participants est vide.
+            const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+            await cm.handleRemoteDeparture(departure())
+
+            expect(ctx.callMachine.callState.value).toBe(CALL_STATES.IDLE)
+            expect(media.stopCurrentStream).not.toHaveBeenCalled()
+            expect(consoleWarn).not.toHaveBeenCalledWith(
+                expect.stringContaining('Transition invalide')
+            )
+            consoleWarn.mockRestore()
+        })
+
+        it('relâche le garde de shutdown une fois tous les arrêts concurrents terminés', async () => {
+            enterConnectedCall()
+            ctx.addCurrentCallUser('bob', 'visio')
+
+            await Promise.all([
+                cm.handleRemoteDeparture(departure()),
+                cm.handleRemoteDeparture(departure({ userSlug: 'bob' })),
+            ])
+
+            expect(ctx.isShuttingDown.value).toBe(false)
+        })
+    })
+
     // ── resetCallState ──────────────────────────────────────────────────────
 
     describe('resetCallState', () => {

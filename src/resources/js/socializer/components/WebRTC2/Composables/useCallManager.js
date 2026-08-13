@@ -7,6 +7,8 @@
  * - les transitions de la machine d'état d'appel (ctx.callMachine)
  * - l'ID de room d'appel et la liste des participants
  * - l'arrêt partiel (un pair) et complet (tout l'appel), local ou distant
+ * - le **départ d'un pair** (`handleRemoteDeparture`) : séquence unique quel que
+ *   soit le transport qui l'a annoncé (signal serveur ou fermeture PeerJS)
  * - les retries d'invitation (délégués à usePeerCore)
  *
  * 👉 utilise (par injection, jamais par import) :
@@ -290,44 +292,114 @@ export function useCallManager(ctx, { core, media, connections, transport, pool 
         }
     }
 
+    /*---------------------
+    | DÉPART D'UN PAIR
+    ------------------------*/
+
+    /**
+     * Purge les players et les entrées de registre d'un pair, quel que soit le type
+     * de flux (visio + screen d'un même pair partent ensemble).
+     *
+     * ⚠️ Le filtre est `entry.remoteSlug` — normalisé à l'écriture par
+     * `useStreamManager.handleStreamReceived` — et non `entry.metadata.from` :
+     * côté initiateur, le flux distant arrive sur MA connexion sortante, dont
+     * `metadata.from` porte MON slug (cf. `_buildPeerConnectionConfig`). Filtrer sur
+     * `metadata.from` ne matchait donc jamais côté appelant, et l'entrée fuyait.
+     *
+     * @param {string} userSlug     Pair qui part
+     * @param {string} declaredType Type annoncé par le déclencheur : son player peut
+     *                              exister sans entrée de registre (raccroché avant
+     *                              l'arrivée du premier flux).
+     */
+    const _purgePeerStreams = (userSlug, declaredType) => {
+        media.removeVideoElement(`remote-${userSlug}-${declaredType}`)
+
+        ctx.media.remoteStreamsMap.forEach((entry, key) => {
+            if (entry?.remoteSlug !== userSlug) return
+            media.removeVideoElement(`remote-${entry.remoteSlug}-${entry.remoteType}`)
+            ctx.media.remoteStreamsMap.delete(key)
+        })
+    }
+
+    /**
+     * Séquence unique de départ d'un pair.
+     *
+     * « Un pair quitte l'appel » est un seul fait métier, mais il arrive par deux
+     * transports qui peuvent se déclencher tous les deux pour un même départ, dans
+     * un ordre non déterministe :
+     *   1. signal serveur `CloseConnectionToPeerID` → `remoteStopCall`
+     *   2. fermeture de la connexion PeerJS       → `useStreamManager.handleStreamRemoved`
+     *
+     * Le déclencheur ne change PAS la séquence : c'est le **mode courant** qui décide
+     * de la politique. En mode `stream` (broadcast unidirectionnel), le cycle de vie
+     * du flux local appartient à l'utilisateur (`stopStream()`) : un départ distant
+     * ne doit ni fermer le transport, ni arrêter la diffusion locale.
+     *
+     * `close-call` est idempotent par contrat : les deux déclencheurs peuvent
+     * l'émettre pour un même départ (fenêtre de course inter-transports).
+     *
+     * @returns {boolean} true si la séquence a été exécutée (false = ignorée)
+     */
+    const handleRemoteDeparture = async ({ userSlug, type, roomId }) => {
+        if (!userSlug || !isValidSlug(userSlug)) return false
+        if (isRemoteClosing(userSlug)) return false
+
+        const isCallMode = ctx.session.currentType !== 'stream'
+
+        beginRemoteClosing(userSlug)
+
+        try {
+            // Coupe le lien réseau, les retries et le waiting peerId de CE pair.
+            // Indispensable aussi quand le déclencheur est la fermeture PeerJS : sans
+            // ça, une coupure brutale (onglet fermé, pas de signal serveur) laissait
+            // le remotePeerId enregistré et le retry armé → reconnexion vers un pair
+            // qui vient de partir.
+            if (isCallMode) {
+                await stopCallWithPeers([{ userSlug, type }], false, {
+                    mode: 'partial',
+                    roomId,
+                })
+            }
+
+            ctx.removeCurrentCallUser(userSlug)
+            _purgePeerStreams(userSlug, type)
+
+            ctx.eventBus.$emit('close-call', [{ userSlug, type }])
+
+            // Plus personne en ligne → on ferme tout. `canTransition` évite le warn
+            // de transition invalide quand le second déclencheur arrive après un full
+            // stop déjà effectué par le premier (FSM déjà revenue à IDLE).
+            if (isCallMode
+                && ctx.session.currentCallUsers.length === 0
+                && ctx.callMachine.canTransition(CALL_STATES.CLOSING)) {
+                await stopCallWithPeers([], false, {
+                    mode: 'full',
+                    roomId,
+                })
+            }
+        } catch (error) {
+            console.error(`[useCallManager] départ du pair ${userSlug}`, error)
+        } finally {
+            // Toujours relâcher le garde : sinon tout départ ultérieur de ce pair
+            // serait silencieusement avalé par `isRemoteClosing`.
+            endRemoteClosing(userSlug)
+        }
+
+        return true
+    }
+
+    /**
+     * Déclencheur 1 : le distant a raccroché (signal serveur `CloseConnectionToPeerID`).
+     * Adapte le payload de signalisation puis délègue à la séquence commune.
+     */
     const remoteStopCall = async (payload) => {
         if (!payload || typeof payload !== 'object') return
 
-        const remoteSlug = payload?.fromUserSlug || null
-        const remoteType = isValidCallType(payload?.type) ? payload.type : 'visio'
-        const roomId = payload?.room || ctx.session.currentCallRoomId || ctx.currentRoom.value
-
-        if (!remoteSlug || !isValidSlug(remoteSlug)) return
-        if (isRemoteClosing(remoteSlug)) return
-
-        beginRemoteClosing(remoteSlug)
-
-        await stopCallWithPeers([{ userSlug: remoteSlug, type: remoteType }], false, {
-            mode: 'partial',
-            roomId,
+        await handleRemoteDeparture({
+            userSlug: payload?.fromUserSlug || null,
+            type: isValidCallType(payload?.type) ? payload.type : 'visio',
+            roomId: payload?.room || ctx.session.currentCallRoomId || ctx.currentRoom.value,
         })
-
-        ctx.removeCurrentCallUser(remoteSlug)
-        media.removeVideoElement(`remote-${remoteSlug}-${remoteType}`)
-        ctx.media.remoteStreamsMap.forEach((value, key) => {
-            if (value?.metadata?.from === remoteSlug) {
-                ctx.media.remoteStreamsMap.delete(key)
-            }
-        })
-
-        if (ctx.session.currentCallUsers.length === 0) {
-            await stopCallWithPeers([], false, {
-                mode: 'full',
-                roomId,
-            })
-        }
-
-        endRemoteClosing(remoteSlug)
-
-        ctx.eventBus.$emit('close-call', [{
-            userSlug: remoteSlug,
-            type: remoteType,
-        }])
     }
 
     const resetCallState = () => {
@@ -361,6 +433,9 @@ export function useCallManager(ctx, { core, media, connections, transport, pool 
         stopCallWithPeers,
         remoteStopCall,
         resetCallState,
+
+        // départ d'un pair — séquence unique, quel que soit le transport
+        handleRemoteDeparture,
 
         // room d'appel
         setCurrentCallRoomId,

@@ -2,7 +2,9 @@
  * useStreamManager.test.js — Couche streams
  *
  * Périmètre : registre des flux distants (clé canonique, TTL, éviction), players
- * DOM des flux distants, départ d'un pair dont la connexion se ferme.
+ * DOM des flux distants, et **résolution** du pair distant d'une connexion qui se
+ * ferme — la séquence de départ elle-même appartient au CallManager
+ * (`handleRemoteDeparture`, testée dans useCallManager.test.js).
  * `media` et `callManager` sont injectés sous forme de mocks : la couche streams
  * ne les importe jamais et ne touche jamais `ctx.callMachine` directement.
  */
@@ -16,7 +18,6 @@ describe('useStreamManager', () => {
     let sm
     let media
     let callManager
-    let closingUsers
 
     /** Connexion PeerJS factice */
     const fakeConn = (overrides = {}) => ({
@@ -36,14 +37,12 @@ describe('useStreamManager', () => {
             removeVideoElement: vi.fn(),
         }
 
-        // Garde par participant : on reproduit la sémantique du CallManager sans lui
-        closingUsers = new Set()
+        // La séquence de départ appartient au CallManager : cette couche ne fait que
+        // résoudre le pair concerné et déléguer (cf. useCallManager.test.js pour la
+        // séquence elle-même).
         callManager = {
             markCallConnected: vi.fn(),
-            isRemoteClosing: vi.fn((slug) => closingUsers.has(slug)),
-            beginRemoteClosing: vi.fn((slug) => closingUsers.add(slug)),
-            endRemoteClosing: vi.fn((slug) => closingUsers.delete(slug)),
-            stopCallWithPeers: vi.fn().mockResolvedValue(undefined),
+            handleRemoteDeparture: vi.fn().mockResolvedValue(true),
         }
 
         sm = useStreamManager(ctx, { media, callManager })
@@ -201,98 +200,39 @@ describe('useStreamManager', () => {
 
             await sm.handleStreamRemoved(fakeConn())
 
-            expect(media.removeVideoElement).not.toHaveBeenCalled()
+            expect(callManager.handleRemoteDeparture).not.toHaveBeenCalled()
             expect(ctx.media.remoteStreamsMap.size).toBe(1)
-        })
-
-        it('retire le player, l\'entrée du registre et le participant', async () => {
-            await sm.handleStreamRemoved(fakeConn())
-
-            expect(media.removeVideoElement).toHaveBeenCalledWith('remote-alice-visio')
-            expect(ctx.media.remoteStreamsMap.has('alice-visio')).toBe(false)
-            expect(ctx.session.currentCallUsers).toEqual([])
-        })
-
-        it('émet close-call pour le pair parti', async () => {
-            await sm.handleStreamRemoved(fakeConn())
-
-            expect(ctx.eventBus.$emit).toHaveBeenCalledWith('close-call', [
-                { userSlug: 'alice', type: 'visio' },
-            ])
-        })
-
-        it('ferme tout l\'appel quand le dernier participant part', async () => {
-            await sm.handleStreamRemoved(fakeConn())
-
-            expect(callManager.stopCallWithPeers).toHaveBeenCalledWith([], false, {
-                mode: 'full',
-                roomId: 'call-room-1',
-            })
-        })
-
-        it('ne ferme pas l\'appel s\'il reste des participants', async () => {
-            ctx.addCurrentCallUser('bob', 'visio')
-
-            await sm.handleStreamRemoved(fakeConn())
-
-            expect(callManager.stopCallWithPeers).not.toHaveBeenCalled()
-        })
-
-        it('mode stream : le départ d\'un pair n\'arrête jamais le broadcast local', async () => {
-            ctx.session.currentType = 'stream'
-
-            await sm.handleStreamRemoved(fakeConn())
-
-            expect(ctx.media.remoteStreamsMap.has('alice-visio')).toBe(false)
-            expect(callManager.stopCallWithPeers).not.toHaveBeenCalled()
-        })
-
-        it('encadre le traitement par la garde du CallManager', async () => {
-            await sm.handleStreamRemoved(fakeConn())
-
-            expect(callManager.beginRemoteClosing).toHaveBeenCalledWith('alice')
-            expect(callManager.endRemoteClosing).toHaveBeenCalledWith('alice')
-            expect(closingUsers.has('alice')).toBe(false)
-        })
-
-        it('ignore un départ déjà en cours de traitement', async () => {
-            closingUsers.add('alice')
-
-            await sm.handleStreamRemoved(fakeConn())
-
-            expect(media.removeVideoElement).not.toHaveBeenCalled()
-            expect(callManager.beginRemoteClosing).not.toHaveBeenCalled()
-        })
-
-        it('dédoublonne deux fermetures concurrentes du même pair', async () => {
-            const first = sm.handleStreamRemoved(fakeConn())
-            const second = sm.handleStreamRemoved(fakeConn())
-            await Promise.all([first, second])
-
-            const closeCallEmissions = ctx.eventBus.$emit.mock.calls
-                .filter(([event]) => event === 'close-call')
-            expect(closeCallEmissions).toHaveLength(1)
         })
 
         it('ignore une connexion dont l\'émetteur est indistinguable de moi', async () => {
             await sm.handleStreamRemoved(fakeConn({ metadata: { from: 'me' } }))
 
-            expect(callManager.beginRemoteClosing).not.toHaveBeenCalled()
+            expect(callManager.handleRemoteDeparture).not.toHaveBeenCalled()
             expect(ctx.media.remoteStreamsMap.size).toBe(1)
         })
 
-        it('libère la garde même si le nettoyage échoue', async () => {
-            media.removeVideoElement.mockImplementation(() => {
-                throw new Error('DOM cassé')
-            })
-            const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
-
+        it('délègue le départ au CallManager avec le pair résolu depuis les métadonnées', async () => {
             await sm.handleStreamRemoved(fakeConn())
 
-            expect(callManager.endRemoteClosing).toHaveBeenCalledWith('alice')
-            expect(closingUsers.has('alice')).toBe(false)
-            expect(consoleError).toHaveBeenCalled()
-            consoleError.mockRestore()
+            expect(callManager.handleRemoteDeparture).toHaveBeenCalledWith({
+                userSlug: 'alice',
+                type: 'visio',
+                roomId: 'call-room-1',
+            })
+        })
+
+        it('résout le pair distant depuis metadata.slug sur une connexion sortante', async () => {
+            // Connexion que J'AI ouverte : metadata.from porte mon slug, le distant
+            // est dans metadata.slug.
+            await sm.handleStreamRemoved(fakeConn({
+                metadata: { from: 'me', slug: 'alice', type: 'visio', room: 'call-room-1' },
+            }))
+
+            expect(callManager.handleRemoteDeparture).toHaveBeenCalledWith({
+                userSlug: 'alice',
+                type: 'visio',
+                roomId: 'call-room-1',
+            })
         })
 
         it('retombe sur la room d\'appel courante quand les métadonnées n\'en portent pas', async () => {
@@ -300,10 +240,19 @@ describe('useStreamManager', () => {
 
             await sm.handleStreamRemoved({ metadata: { from: 'alice', type: 'visio' } })
 
-            expect(callManager.stopCallWithPeers).toHaveBeenCalledWith([], false, {
-                mode: 'full',
+            expect(callManager.handleRemoteDeparture).toHaveBeenCalledWith({
+                userSlug: 'alice',
+                type: 'visio',
                 roomId: 'fallback-room',
             })
+        })
+
+        it('ne nettoie plus rien elle-même : le registre et les players sont du ressort du CallManager', async () => {
+            await sm.handleStreamRemoved(fakeConn())
+
+            expect(media.removeVideoElement).not.toHaveBeenCalled()
+            expect(ctx.media.remoteStreamsMap.has('alice-visio')).toBe(true)
+            expect(ctx.eventBus.$emit).not.toHaveBeenCalled()
         })
     })
 })

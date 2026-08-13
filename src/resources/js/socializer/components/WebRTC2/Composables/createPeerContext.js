@@ -95,16 +95,27 @@ export function createPeerContext({ type, room, options }) {
     // les arrêts de stream, lu par la couche connexions (useConnectionPool) pour ne
     // relancer aucun retry pendant un cleanup. Vit ici parce que les deux couches
     // vivent dans des fichiers distincts.
-    // ⚠️ Booléen volontairement, pas un compteur : le comportement historique veut
-    // qu'un arrêt qui se termine relâche le garde (cf. TODOLIST — non ré-entrant).
+    //
+    // ⚠️ Compteur, pas booléen : le garde doit être ré-entrant. Plusieurs arrêts
+    // peuvent se chevaucher (deux départs de pairs concurrents → deux arrêts
+    // partiels, un arrêt de stream pendant un raccroché…) ; avec un booléen, le
+    // premier `endShutdown` réautorisait les retries alors que le second arrêt
+    // était encore en vol.
+    //
+    // Corollaire volontaire : un `beginShutdown` sans `endShutdown` laisse le garde
+    // actif pour de bon — c'est exactement ce qu'attendent les teardowns terminaux
+    // (`cleanupPeerConnection`, `onUnmounted` de useConnectionPool).
     const lifecycle = reactive({
-        isShuttingDown: false,
+        shutdownCount: 0,
     })
 
     // Accesseurs plutôt qu'écriture directe, pour la même raison que closingUsers
     // dans callMachine : éviter la corruption depuis l'extérieur.
-    const beginShutdown = () => { lifecycle.isShuttingDown = true }
-    const endShutdown   = () => { lifecycle.isShuttingDown = false }
+    const beginShutdown = () => { lifecycle.shutdownCount += 1 }
+    // Plancher à 0 : un `endShutdown` orphelin (chemin d'erreur, double finally)
+    // ne doit jamais rendre le compteur négatif, sinon un arrêt légitime suivant
+    // ne réactiverait plus le garde.
+    const endShutdown   = () => { lifecycle.shutdownCount = Math.max(0, lifecycle.shutdownCount - 1) }
 
     // SIGNAUX DISPOS
     const SIGNAL_TYPES = {
@@ -162,7 +173,7 @@ export function createPeerContext({ type, room, options }) {
         callStatus: computed(() => callMachine.callState.value),
 
         // Garde de teardown : exposé en lecture seule (seuls beginShutdown/endShutdown écrivent)
-        isShuttingDown: computed(() => lifecycle.isShuttingDown),
+        isShuttingDown: computed(() => lifecycle.shutdownCount > 0),
 
         usersInRoom: computed(() => connection.usersInRoom),
         // Tous les utilisateurs dans la room, moi compris.
@@ -499,7 +510,7 @@ export function createPeerContext({ type, room, options }) {
         // Réinitialise la liste des utilisateurs en room
         connection.usersInRoom = []
 
-        // ⚠️ lifecycle.isShuttingDown n'est PAS réinitialisé : le garde doit rester
+        // ⚠️ lifecycle.shutdownCount n'est PAS réinitialisé : le garde doit rester
         // actif après le teardown terminal pour bloquer tout retry résiduel.
     }
 

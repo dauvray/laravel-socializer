@@ -70,13 +70,15 @@ export function createMockContext(overrides = {}) {
     })
 
     // ── Lifecycle state (garde de teardown partagé) ───────────────────────────
+    // Compteur ré-entrant, comme createPeerContext : `endShutdown` ne relâche le
+    // garde que quand tous les arrêts en cours sont terminés.
     const lifecycle = reactive({
-        isShuttingDown: false,
+        shutdownCount: 0,
         ...(overrides.lifecycle ?? {}),
     })
 
-    const beginShutdown = vi.fn(() => { lifecycle.isShuttingDown = true })
-    const endShutdown   = vi.fn(() => { lifecycle.isShuttingDown = false })
+    const beginShutdown = vi.fn(() => { lifecycle.shutdownCount += 1 })
+    const endShutdown   = vi.fn(() => { lifecycle.shutdownCount = Math.max(0, lifecycle.shutdownCount - 1) })
 
     // ── Connection events ─────────────────────────────────────────────────────
     const connectionEvents = reactive({
@@ -292,7 +294,7 @@ export function createMockContext(overrides = {}) {
         currentCallUsers,
         callInprogress: callMachine.callInprogress,
         callStatus: computed(() => callMachine.callState.value),
-        isShuttingDown: computed(() => lifecycle.isShuttingDown),
+        isShuttingDown: computed(() => lifecycle.shutdownCount > 0),
         usersInRoom,
         allUsersInRoom,
         topology,

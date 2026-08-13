@@ -33,9 +33,28 @@ l'orchestrateur passé de main en main.
 | État | Seul à le muter | Les autres couches passent par |
 |---|---|---|
 | `callMachine` (FSM d'appel) | `useCallManager` | `markCallConnected`, `isRemoteClosing` / `beginRemoteClosing` / `endRemoteClosing` |
-| `lifecycle.isShuttingDown` | `useCallManager`, orchestrateur (arrêts de stream), `useConnectionPool` (unmount) | `ctx.isShuttingDown` en lecture |
-| `media.remoteStreamsMap` | `useStreamManager` (ajout/TTL/éviction), `useCallManager` (purge au raccroché) | `ctx.remoteStreams` / `remoteScreens` en lecture |
+| `lifecycle.shutdownCount` | `useCallManager`, orchestrateur (arrêts de stream), `useConnectionPool` (unmount) | `ctx.isShuttingDown` en lecture (`count > 0`) |
+| `media.remoteStreamsMap` | `useStreamManager` (ajout/TTL/éviction), `useCallManager` (purge au départ d'un pair) | `ctx.remoteStreams` / `remoteScreens` en lecture |
+| séquence de départ d'un pair | `useCallManager.handleRemoteDeparture` | point d'entrée unique quel que soit le transport qui l'annonce |
 | timers de retry connexion | `useConnectionPool` | `clearRetry` / `clearAllRetries` |
+
+**Départ d'un pair : un fait métier, deux transports.** « Tel pair quitte l'appel »
+arrive soit par le signal serveur `CloseConnectionToPeerID` (→ `remoteStopCall`), soit
+par la fermeture de la connexion PeerJS (→ `useStreamManager.handleStreamRemoved`).
+Les deux peuvent se déclencher pour un même départ, dans un ordre non déterministe
+(aller-retour serveur vs P2P direct) — d'où le garde par participant `closingUsers`.
+Les deux **doivent** converger vers `handleRemoteDeparture` : c'est le déclencheur qui
+varie, jamais la séquence. Historiquement les deux chemins avaient chacun leur version
+de la séquence, et **aucune n'était complète** (l'une oubliait la fermeture du
+transport et des retries, l'autre purgeait le registre sur une clé qui ne matchait pas
+côté initiateur) : la correction dépendait de quel transport arrivait en premier.
+Corollaire : `close-call` est **idempotent par contrat** — un même départ peut
+l'émettre deux fois si les deux transports se réveillent hors de la fenêtre du garde.
+
+Ce qui différencie encore les deux appelants est uniquement ce qui leur appartient :
+`remoteStopCall` valide et adapte un payload de signalisation, `handleStreamRemoved`
+résout le pair distant depuis `conn.metadata` (d'où son `waitForMeReady`, qui est la
+précondition de `_resolveRemoteSlug` et non de la séquence de départ).
 
 L'état *plat* partagé (`session.currentCallUsers`, via `ctx.addCurrentCallUser` &co.)
 n'a pas de propriétaire unique : il n'a pas d'invariant de transition à protéger,
@@ -55,6 +74,8 @@ contrairement à la FSM. C'est la raison de la différence de traitement.
 - **PeerId local** : `ctx.peerStore.getLocalPeerId` — jamais le triple fallback historique `localPeer?.id || localPeer?._id || lastLocalPeerId`
 - **Retry peer** : un seul système, `usePeerRetry` — pas de Map `inviteRetries` parallèle
 - **Clé `remoteStreamsMap`** : `slug+type` canonique, passe unique (la double-passe historique venait d'une clé non fiable)
+- **Identité du pair d'une entrée de `remoteStreamsMap`** : `entry.remoteSlug` — jamais `entry.metadata.from`. Sur une connexion **sortante**, `metadata.from` porte **mon** slug (cf. `_buildPeerConnectionConfig`), et le flux distant arrive bien sur cette connexion : filtrer sur `metadata.from` ne matche donc rien côté initiateur. `remoteSlug` / `remoteType` sont normalisés à l'écriture par `handleStreamReceived` — c'est ce qu'il faut lire
+- **Garde de teardown** : `beginShutdown`/`endShutdown` sont un **compteur** ré-entrant. Un `beginShutdown` sans `endShutdown` (teardown terminal) laisse volontairement le garde actif pour de bon
 - **Flags sur objets PeerJS tiers** : interdit (pas de `conn.__ctxListenersBound` etc.) — utiliser un `WeakSet` interne
 - **API orchestrateur** : façade explicite minimale — pas de `...spread` des composables internes
 - **Stream local** : attente via `watch` réactif — pas de polling `while (!stream && attempts < N)`
