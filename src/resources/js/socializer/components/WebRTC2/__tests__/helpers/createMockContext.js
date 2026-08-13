@@ -20,6 +20,7 @@
 import { reactive, computed, ref } from 'vue'
 import { vi } from 'vitest'
 import { createCallStateMachine } from '~socializer/components/WebRTC2/Composables/utils/useCallStateMachine.js'
+import { isValidSlug } from '~socializer/components/WebRTC2/Composables/utils/validators.js'
 import { mockEventBus } from './mockEventBus.js'
 
 export function createMockContext(overrides = {}) {
@@ -50,6 +51,8 @@ export function createMockContext(overrides = {}) {
         currentStream: null,
         screenStream: null,
         remoteStreamsMap: new Map(),
+        // Pairs dont un flux est annoncé mais pas encore reçu (cf. createPeerContext)
+        announcedStreamsMap: new Map(),
         isStreaming: false,
         isCapturing: false,
         isAudioStream: false,
@@ -255,6 +258,7 @@ export function createMockContext(overrides = {}) {
     const currentStream      = computed(() => media.currentStream)
     const isStreaming        = computed(() => media.isStreaming)
     const isCapturing        = computed(() => media.isCapturing)
+    const announcedStreamPeers = computed(() => Array.from(media.announcedStreamsMap.keys()))
     const mySlug             = computed(() => meStore.getMe?.slug)
     const myName             = computed(() => meStore.getMe?.name)
 
@@ -306,9 +310,23 @@ export function createMockContext(overrides = {}) {
         return session.currentCallUsers
     }
 
+    // ── announcedStreams helpers ──────────────────────────────────────────────
+    // Fidèles aux accesseurs de createPeerContext : slug valide et jamais soi-même.
+    const markAnnouncedStream = vi.fn((userSlug, source = 'signal') => {
+        if (!isValidSlug(userSlug)) return false
+        if (userSlug === meStore.getMe?.slug) return false
+        media.announcedStreamsMap.set(userSlug, { source, at: Date.now() })
+        return true
+    })
+    const clearAnnouncedStream = vi.fn((userSlug) => {
+        if (!userSlug) return false
+        return media.announcedStreamsMap.delete(userSlug)
+    })
+
     // ── destroy ───────────────────────────────────────────────────────────────
     const destroy = vi.fn(() => {
         media.remoteStreamsMap.clear()
+        media.announcedStreamsMap.clear()
         media.currentStream = null
         session.currentCallUsers = []
         media.isStreaming = false
@@ -357,6 +375,7 @@ export function createMockContext(overrides = {}) {
         currentStream,
         isStreaming,
         isCapturing,
+        announcedStreamPeers,
         mySlug,
         myName,
 
@@ -370,6 +389,8 @@ export function createMockContext(overrides = {}) {
         addCurrentCallUser,
         removeCurrentCallUser,
         clearCurrentCallUsers,
+        markAnnouncedStream,
+        clearAnnouncedStream,
 
         // signal réactif
         peerUnavailableSignal,

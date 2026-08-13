@@ -143,6 +143,25 @@ describe('usePeerTransport — authentification des connexions entrantes', () =>
         expect(call.close).toHaveBeenCalled()
     })
 
+    // ── Trace « un flux de ce pair est en route » ───────────────────────────────
+    // Un appel one-way n'existe que si l'émetteur a un flux vivant, et cet événement
+    // arrive dès la réception de l'offre — avant ICE, donc avant le `stream`. C'est ce
+    // qui permet à l'UI d'attendre un pair déjà en train de diffuser quand on arrive
+    // dans la room, sans heuristique (cf. useAwaitedStreams / useBroadcastPresence).
+
+    it('enregistre le pair comme diffuseur dès l\'appel one-way entrant', () => {
+        peerInstance._triggerEvent('call', incomingCall({ from: 'bob' }))
+
+        expect(ctx.markAnnouncedStream).toHaveBeenCalledWith('bob', 'call')
+        expect(ctx.announcedStreamPeers.value).toEqual(['bob'])
+    })
+
+    it('n\'enregistre rien pour un appel refusé', () => {
+        peerInstance._triggerEvent('call', incomingCall({ from: 'mallory' }))
+
+        expect(ctx.announcedStreamPeers.value).toEqual([])
+    })
+
     // ── Appels DIRECTS hors room de présence (mapping peerId vérifié) ───────────
     // Un appel visio/vocal 1-à-1 est autorisé via la signalisation backend
     // (peer-access-permission → acceptCallFromPeer/openCallBetweenPeer peuple

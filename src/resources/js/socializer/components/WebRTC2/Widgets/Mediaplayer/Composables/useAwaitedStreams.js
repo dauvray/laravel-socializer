@@ -1,23 +1,32 @@
 /**
  * ⏳ useAwaitedStreams (UI)
  *
- * Expose les pairs présents dans la room dont aucun flux n'est encore arrivé, pour que
- * l'UI puisse afficher une vignette d'attente au lieu de… rien. Sans ce retour, le délai
- * d'établissement (signalisation → peer.call → ICE, plus le backoff de retry) se lit
- * comme une panne.
+ * Expose les pairs dont un flux est ANNONCÉ mais pas encore arrivé, pour que l'UI
+ * puisse afficher une vignette d'attente au lieu de… rien. Sans ce retour, le délai
+ * d'établissement (ICE, premières frames, backoff de retry) se lit comme une panne.
  *
  * 👉 ne gère PAS :
  * - l'attente d'image sur un flux DÉJÀ reçu → c'est l'overlay de MediaBroadcastPlayer,
  *   qui s'appuie sur les events du <video> et n'a donc besoin d'aucune heuristique
  *
- * ⚠️ Heuristique assumée, et sa raison : un récepteur ne peut pas savoir localement qu'un
- * pair diffuse. `usersInRoom` contient tous les présents, diffuseurs ou non, et pour un
- * appel one-way (`stream`/`screen`) le récepteur fait `call.answer()` **sans stocker la
- * connexion** (cf. usePeerTransport) — il n'existe aucune trace observable avant
- * l'événement `stream`, qui est précisément l'arrivée du flux. On borne donc l'attente
- * dans le temps : passé `timeoutMs`, on cesse de signaler le pair plutôt que de laisser
- * un spinner tourner à vie. La seule alternative exacte serait d'annoncer l'état de
- * diffusion sur le data channel (nouveau type de signal).
+ * ✅ PLUS D'HEURISTIQUE (2026-08-13). Ce composable attendait auparavant **tout** pair
+ * présent dans `usersInRoom`, faute de pouvoir savoir localement qui diffuse : un
+ * membre qui ne diffusait pas affichait donc une vignette d'attente pendant tout le
+ * délai d'abandon (symptôme rapporté : « le spinner s'affiche même si aucun stream
+ * n'est actif, puis disparaît »). La source est désormais un FAIT, `announcedStreamPeers`
+ * (`ctx.media.announcedStreamsMap`), alimenté par deux chemins exacts :
+ *   - l'annonce `BROADCAST_STATE` reçue sur le data channel (useBroadcastPresence) ;
+ *   - l'appel one-way entrant, qui n'existe que si l'émetteur a un flux vivant
+ *     (usePeerTransport) et arrive dès l'offre, avant ICE.
+ * Conséquence : **aucune vignette quand personne ne diffuse**, et un pair qui arrête sa
+ * diffusion voit son annonce purgée (useCallManager.handleRemoteDeparture) — d'où la
+ * disparition de l'ancienne mémoire `served`, qui compensait ça au prix d'un pair
+ * définitivement non attendu.
+ *
+ * ⚠️ `timeoutMs` reste, mais comme FILET et non comme mécanisme : un pair peut avoir
+ * annoncé un flux qui n'arrivera jamais (canal data vivant, chemin média cassé). Sans
+ * borne, la vignette tournerait à vie. Une nouvelle annonce du même pair réarme
+ * l'attente (l'abandon n'est pas définitif tant qu'il reste dans la room).
  */
 import { computed, ref, unref, watch, onUnmounted } from 'vue'
 import { AWAITED_STREAM_TIMEOUT_MS } from '~socializer/components/WebRTC2/webrtc2.config.js'
@@ -25,7 +34,7 @@ import { AWAITED_STREAM_TIMEOUT_MS } from '~socializer/components/WebRTC2/webrtc
 /**
  * @param {Object} api                  API retournée par useMediaBroadcast
  * @param {Object} [options]
- * @param {number} [options.timeoutMs]  Durée d'attente avant abandon
+ * @param {number} [options.timeoutMs]  Durée d'attente avant abandon (filet)
  * @returns {{ awaitedPeers: import('vue').ComputedRef<string[]>, isAwaiting: import('vue').ComputedRef<boolean> }}
  */
 export function useAwaitedStreams(api, { timeoutMs = AWAITED_STREAM_TIMEOUT_MS } = {}) {
@@ -33,12 +42,6 @@ export function useAwaitedStreams(api, { timeoutMs = AWAITED_STREAM_TIMEOUT_MS }
     // Slugs pour lesquels on a cessé d'attendre (délai écoulé). Tableau plutôt que Set :
     // réassigné à chaque changement, donc réactif sans artifice.
     const abandoned = ref([])
-
-    // Slugs dont on a DÉJÀ vu un flux. On ne les attend plus jamais : l'arrêt d'une
-    // diffusion est une décision de l'émetteur, pas une attente. Sans ça, couper sa webcam
-    // faisait réapparaître un spinner de 20 s chez tous les récepteurs, comme si le flux
-    // allait revenir.
-    const served = ref([])
 
     const timers = new Map()
 
@@ -50,17 +53,16 @@ export function useAwaitedStreams(api, { timeoutMs = AWAITED_STREAM_TIMEOUT_MS }
         return new Set(entries.map((entry) => entry?.remoteSlug).filter(Boolean))
     })
 
-    // Mémorise tout pair vu en train de diffuser, avant même de calculer l'attente.
-    watch(streamingSlugs, (slugs) => {
-        const fresh = [...slugs].filter((slug) => !served.value.includes(slug))
-        if (fresh.length) served.value = [...served.value, ...fresh]
-    }, { immediate: true })
+    // Pairs dont un flux est annoncé (data channel) ou déjà en route (appel entrant).
+    const announcedSlugs = computed(() => new Set(_read(api?.announcedStreamPeers)))
 
+    // Intersection avec `usersInRoom` : une annonce résiduelle d'un pair déjà parti ne
+    // doit rien afficher, quel que soit l'ordre des purges.
     const awaitedPeers = computed(() =>
         _read(api?.usersInRoom).filter(
             (slug) => slug
+                && announcedSlugs.value.has(slug)
                 && !streamingSlugs.value.has(slug)
-                && !served.value.includes(slug)
                 && !abandoned.value.includes(slug)
         )
     )
@@ -74,7 +76,7 @@ export function useAwaitedStreams(api, { timeoutMs = AWAITED_STREAM_TIMEOUT_MS }
     }
 
     // Un timer par pair attendu : il s'arme à la première apparition et se désarme dès
-    // que le flux arrive (ou que le pair quitte la room).
+    // que le flux arrive (ou que l'annonce tombe).
     watch(awaitedPeers, (slugs) => {
         slugs.forEach((slug) => {
             if (timers.has(slug)) return
@@ -86,25 +88,20 @@ export function useAwaitedStreams(api, { timeoutMs = AWAITED_STREAM_TIMEOUT_MS }
             }, timeoutMs))
         })
 
-        // Désarme ce qui n'est plus attendu (flux reçu, ou pair parti).
+        // Désarme ce qui n'est plus attendu (flux reçu, annonce tombée, pair parti).
         ;[...timers.keys()]
             .filter((slug) => !slugs.includes(slug))
             .forEach(_clearTimer)
     }, { immediate: true })
 
-    // Un pair qui quitte la room doit repartir d'une ardoise vierge : s'il revient et
-    // diffuse, on doit l'attendre à nouveau. Vaut pour les deux mémoires.
-    watch(() => _read(api?.usersInRoom), (slugs) => {
-        const present = new Set(slugs)
-
-        const keptAbandoned = abandoned.value.filter((slug) => present.has(slug))
-        if (keptAbandoned.length !== abandoned.value.length) {
-            abandoned.value = keptAbandoned
-        }
-
-        const keptServed = served.value.filter((slug) => present.has(slug))
-        if (keptServed.length !== served.value.length) {
-            served.value = keptServed
+    // Une annonce qui tombe remet l'ardoise à zéro : si le pair rediffuse (ou revient
+    // dans la room), sa nouvelle annonce doit réafficher une vignette même si la
+    // précédente attente avait expiré. Sans ça, un unique abandon rendait le pair
+    // silencieux pour toute la session.
+    watch(announcedSlugs, (slugs) => {
+        const kept = abandoned.value.filter((slug) => slugs.has(slug))
+        if (kept.length !== abandoned.value.length) {
+            abandoned.value = kept
         }
     })
 

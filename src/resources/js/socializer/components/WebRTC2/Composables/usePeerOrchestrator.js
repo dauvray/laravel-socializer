@@ -35,6 +35,7 @@ import { usePeerTransport } from '~socializer/components/WebRTC2/Composables/use
 import { useConnectionPool } from '~socializer/components/WebRTC2/Composables/useConnectionPool.js'
 import { useCallManager } from '~socializer/components/WebRTC2/Composables/useCallManager.js'
 import { useStreamManager } from '~socializer/components/WebRTC2/Composables/useStreamManager.js'
+import { useBroadcastPresence } from '~socializer/components/WebRTC2/Composables/useBroadcastPresence.js'
 import { useSignalingQueue } from '~socializer/components/WebRTC2/Composables/useSignalingQueue.js'
 import { isValidCallType } from '~socializer/components/WebRTC2/Composables/utils/validators.js'
 
@@ -65,7 +66,12 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
     // 4. Couche streams : elle dépend de la couche appels, jamais l'inverse
     const streamManager = useStreamManager(context, { media, callManager })
 
-    // 5. Couche signalisation : route les signaux serveur entrants vers les handlers.
+    // 5. Couche présence de diffusion : annonce `BROADCAST_STATE` sur le data channel.
+    //    Ne dépend que du transport ; personne ne consomme ses verbes en interne (l'UI
+    //    lit la projection `announcedStreamPeers`), donc aucun cycle possible.
+    const presence = useBroadcastPresence(context, { transport })
+
+    // 6. Couche signalisation : route les signaux serveur entrants vers les handlers.
     //    Instanciée en dernier — personne ne consomme ses verbes, donc elle peut router
     //    vers n'importe quelle couche sans jamais créer de callback ascendant.
     //    Cette table est l'unique source de vérité du routage des signaux.
@@ -81,41 +87,64 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
      */
 
     const initializePeerConnection = (callbacks) => {
-        // ── En topologie star, on intercepte le callback onDataReceived ──────────
+        // ── Interception du callback onDataReceived ──────────────────────────────
         //
-        // Pourquoi ? Quand le hub reçoit un message d'un client avec __starRoute: true,
-        // ce n'est PAS un message "métier" → c'est une instruction de routage.
-        // Le hub doit retransmettre le payload aux vrais destinataires, sans remonter
-        // le message brut à la couche feature (useMediaBroadcast).
+        // Deux messages transitent sur le data channel sans être « métier » :
         //
-        // On wrappe donc le callback onDataReceived AVANT de le stocker dans le contexte.
+        //   1. les enveloppes de routage star (`__starRoute: true`) : quand le hub en
+        //      reçoit une, c'est une instruction de retransmission, pas un message.
+        //      Le check isHub se fait ici (et non à l'init) car isHub peut être null au
+        //      moment de l'initialisation (résolu après waitForMeReady).
+        //   2. les annonces de diffusion (`BROADCAST_STATE`) : protocole d'infra
+        //      (useBroadcastPresence). Consommées ici, elles ne remontent jamais à
+        //      l'app — un pair ne peut donc pas les injecter dans un flux de chat.
+        //
+        // Le wrap est désormais TOUJOURS posé (même sans callback applicatif) : sans lui
+        // `handleData` ne serait pas branché et les annonces seraient perdues.
         // ─────────────────────────────────────────────────────────────────────────
         const wrappedCallbacks = { ...callbacks }
 
-        if (context.topology.value === 'star' && typeof callbacks.onDataReceived === 'function') {
-            const originalOnDataReceived = callbacks.onDataReceived
+        const originalOnDataReceived = typeof callbacks?.onDataReceived === 'function'
+            ? callbacks.onDataReceived
+            : null
 
-            wrappedCallbacks.onDataReceived = (data, conn) => {
-                const isRoutingEnvelope = data?.__starRoute === true
-                const isHubUser = context.isHub.value === true
+        wrappedCallbacks.onDataReceived = (data, conn, metadata) => {
+            const isRoutingEnvelope = data?.__starRoute === true
+            const isHubUser = context.isHub.value === true
 
-                // Le hub intercepte les enveloppes de routage et les retransmet.
-                // Le check isHub se fait ici (et non à l'init) car isHub peut être
-                // null au moment de l'initialisation (résolu après waitForMeReady).
-                // Hub: route l'enveloppe puis affiche le message "métier" (payload)
-                if (isRoutingEnvelope && isHubUser) {
-                    transport.forwardStarMessage(data, conn)
+            // Hub: route l'enveloppe puis traite le message "métier" (payload)
+            if (context.topology.value === 'star' && isRoutingEnvelope && isHubUser) {
+                transport.forwardStarMessage(data, conn)
+
+                if (data?.payload) {
+                    // Le hub est aussi un récepteur : l'annonce d'un de ses clients le
+                    // concerne. Au-delà de lui, l'identité d'origine est perdue par la
+                    // retransmission (cf. limite documentée dans useBroadcastPresence).
+                    if (presence.handleBroadcastStateMessage(data.payload, conn)) return
 
                     // On remonte au chat un objet normalisé pour éviter Invalid Date
-                    if (data?.payload) {
-                        originalOnDataReceived(data.payload)
-                    }
-                    return
+                    originalOnDataReceived?.(data.payload)
                 }
-
-                // Message normal → on appelle le callback fourni par useMediaBroadcast
-                originalOnDataReceived(data)
+                return
             }
+
+            if (presence.handleBroadcastStateMessage(data, conn)) return
+
+            // Message normal → on appelle le callback fourni par useMediaBroadcast
+            // (arité préservée : les apps lisent `conn.peer` pour scoper leurs signaux)
+            originalOnDataReceived?.(data, conn, metadata)
+        }
+
+        // Wrap onConnectionOpen : une connexion data qui s'ouvre est le seul moment
+        // fiable pour annoncer une diffusion en cours à un arrivant (avant, le canal
+        // n'existe pas). Toujours posé, pour la même raison que ci-dessus.
+        const originalOnConnectionOpen = typeof callbacks?.onConnectionOpen === 'function'
+            ? callbacks.onConnectionOpen
+            : null
+
+        wrappedCallbacks.onConnectionOpen = (conn) => {
+            presence.announceBroadcastStateTo(conn)
+            originalOnConnectionOpen?.(conn)
         }
 
         // Wrap onStreamReceived : chaîne le tracking interne (remoteStreamsMap) avant le callback utilisateur.
@@ -164,6 +193,7 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         signaling.stopSignaling()
 
         pool.stopPool()  // Arrête l'observation du signal peer-unavailable + les retries en vol
+        presence.stopBroadcastPresence()  // Plus d'annonce pendant/après le teardown
 
         connections.closePeerConnection({
             room: context.session.currentCallRoomId || context.session.currentRoom,
@@ -334,6 +364,10 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         handleStreamReceived: streamManager.handleStreamReceived,
         handleStreamRemoved: streamManager.handleStreamRemoved,
 
+        // annonce de diffusion (useBroadcastPresence) — l'émission automatique couvre
+        // les cas normaux ; le verbe reste exposé pour une re-annonce explicite.
+        announceBroadcastState: presence.announceBroadcastState,
+
         /*---------------------------------
         | ÉTAT INTERNE (observable / debug)
         ----------------------------------*/
@@ -374,6 +408,7 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         isAudioStream: context.isAudioStream,
         remoteStreams: context.remoteStreams,
         remoteScreens: context.remoteScreens,
+        announcedStreamPeers: context.announcedStreamPeers,
 
         // ui
         isMuted: context.isMuted,

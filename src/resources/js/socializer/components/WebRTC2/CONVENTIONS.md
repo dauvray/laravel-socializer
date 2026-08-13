@@ -14,8 +14,9 @@ createPeerContext                         source de vérité unique (état, stor
        └─ useConnectionPool               retry, établissement, sync room → connexions
             └─ useCallManager             cycle d'appel (invite → accept → open → stop → reset)
                  └─ useStreamManager      registre des flux distants + players + départs
-                      └─ useSignalingQueue   routage des signaux serveur entrants
-                           └─ usePeerOrchestrator   composition + façade, aucune logique métier
+                      └─ useBroadcastPresence  annonce « je diffuse » sur le data channel
+                           └─ useSignalingQueue   routage des signaux serveur entrants
+                                └─ usePeerOrchestrator   composition + façade, aucune logique métier
 ```
 
 `useSignalingQueue` est instanciée **en dernier** précisément parce qu'elle ne fait que
@@ -43,6 +44,7 @@ l'orchestrateur passé de main en main.
 | séquence de départ d'un pair | `useCallManager.handleRemoteDeparture` | point d'entrée unique quel que soit le transport qui l'annonce |
 | timers de retry connexion | `useConnectionPool` | `clearRetry` / `clearAllRetries` |
 | routage des signaux serveur | `useSignalingQueue` (table `routes` construite par l'orchestrateur) | exposer un verbe et l'inscrire dans la table — pas de `watch` sur `ctx.lastRoomSignal` ailleurs |
+| `media.announcedStreamsMap` (« un flux de ce pair est en route ») | deux écrivains assumés, chacun sur la seule information qu'il voit : `useBroadcastPresence` (annonce `BROADCAST_STATE`) et `usePeerTransport` (appel one-way entrant) ; purge au départ par `useCallManager.handleRemoteDeparture` | accesseurs `ctx.markAnnouncedStream` / `ctx.clearAnnouncedStream` (jamais d'écriture directe), lecture via `ctx.announcedStreamPeers` |
 
 **Départ d'un pair : un fait métier, deux transports.** « Tel pair quitte l'appel »
 arrive soit par le signal serveur `CloseConnectionToPeerID` (→ `remoteStopCall`), soit
@@ -61,6 +63,18 @@ Ce qui différencie encore les deux appelants est uniquement ce qui leur apparti
 `remoteStopCall` valide et adapte un payload de signalisation, `handleStreamRemoved`
 résout le pair distant depuis `conn.metadata` (d'où son `waitForMeReady`, qui est la
 précondition de `_resolveRemoteSlug` et non de la séquence de départ).
+
+**Signaux datachannel : deux enveloppes, deux consommateurs.** La file du store porte les
+signaux **serveur** (`{ roomId: '<type>-<room>', type, payload }`, routés par
+`useSignalingQueue`) et les projections d'état des Widgets
+(`{ roomId: '<peerId>', payload: { type } }`, ex. `AUDIO_MUTE_TOGGLE`, lues par
+`useRemotePeerState`) — ces dernières restent hors du routage serveur. Un troisième cas
+existe depuis l'annonce de diffusion : `BROADCAST_STATE` est consommé **par l'infra**,
+dans le wrap `onDataReceived` de l'orchestrateur, et n'atteint jamais l'app. C'est ce qui
+évite d'imposer un câblage à chaque consommateur (et interdit à un pair d'injecter ce
+type dans un flux de chat). Corollaire de sécurité : l'identité de l'émetteur d'un message
+datachannel se lit **toujours** depuis la connexion (`resolveRemoteSlug`, authentifiée à
+l'admission), jamais depuis un champ du payload.
 
 L'état *plat* partagé (`session.currentCallUsers`, via `ctx.addCurrentCallUser` &co.)
 n'a pas de propriétaire unique : il n'a pas d'invariant de transition à protéger,

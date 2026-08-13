@@ -616,6 +616,18 @@ describe('useCallManager', () => {
             expect(ctx.media.remoteStreamsMap.has('alice-visio')).toBe(false)
         })
 
+        it('oublie l\'annonce de diffusion du pair parti', async () => {
+            // Sinon l'UI d'attente le ferait « spinner » après un arrêt volontaire :
+            // c'est cette purge qui remplace la mémoire `served` de useAwaitedStreams.
+            enterConnectedCall()
+            ctx.addCurrentCallUser('bob', 'visio')
+            ctx.markAnnouncedStream('alice', 'signal')
+
+            await cm.handleRemoteDeparture(departure())
+
+            expect(ctx.announcedStreamPeers.value).toEqual([])
+        })
+
         it('retire le player du type annoncé même sans entrée de registre', async () => {
             enterConnectedCall()
             ctx.addCurrentCallUser('bob', 'visio')

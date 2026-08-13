@@ -30,29 +30,17 @@
  */
 
 import { MAX_REMOTE_STREAMS, STREAM_STALE_MS } from '~socializer/components/WebRTC2/webrtc2.config.js'
+import { resolveRemoteSlug } from '~socializer/components/WebRTC2/Composables/utils/resolveRemoteSlug.js'
 
 export function useStreamManager(ctx, { media, callManager }) {
 
     /**
-     * Détermine le slug du pair distant à partir des métadonnées d'une connexion.
-     * Retourne null si on ne peut pas distinguer le distant de soi-même.
+     * Slug du pair distant porté par une connexion (règle `from` puis `slug`, cf. le
+     * util — partagée avec useBroadcastPresence, qui résout la même identité en
+     * réception). Retourne null si on ne peut pas distinguer le distant de soi-même.
      */
-    const _resolveRemoteSlug = (metadata = {}) => {
-         if (!metadata) return null
-
-        const mySlug = ctx.meStore.getMe?.slug || null
-        if (!mySlug) return null
-
-        if (metadata.from && metadata.from !== mySlug) {
-            return metadata.from
-        }
-
-        if (metadata.slug && metadata.slug !== mySlug) {
-            return metadata.slug
-        }
-
-        return null
-    }
+    const _resolveRemoteSlug = (metadata = {}) =>
+        resolveRemoteSlug(metadata, ctx.meStore.getMe?.slug || null)
 
     /**
      * Supprime les entrées stales (trop anciennes ou map trop grande) de remoteStreamsMap.

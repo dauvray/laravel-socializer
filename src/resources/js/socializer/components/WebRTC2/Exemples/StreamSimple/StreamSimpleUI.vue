@@ -23,11 +23,12 @@
                     <h5>Remote Streams</h5>
 
                     <!--
-                        Pair présent dans la room dont aucun flux n'est encore arrivé.
-                        L'établissement (signalisation → peer.call → ICE, plus le backoff
-                        de retry) peut prendre plusieurs secondes : sans cette vignette,
-                        l'écran reste vide et l'attente se lit comme une panne.
-                        L'attente est bornée — cf. useAwaitedStreams.
+                        Pair dont un flux est ANNONCÉ (annonce data channel, ou appel
+                        entrant déjà reçu) mais pas encore arrivé : l'établissement
+                        (ICE, premières frames) peut prendre plusieurs secondes et sans
+                        cette vignette l'attente se lit comme une panne.
+                        Un pair qui ne diffuse pas n'apparaît JAMAIS ici — cf.
+                        useAwaitedStreams / useBroadcastPresence.
                     -->
                     <div v-for="slug in awaitedPeers" :key="`awaited-${slug}`" class="draggable-video">
                         <div class="video-loading">

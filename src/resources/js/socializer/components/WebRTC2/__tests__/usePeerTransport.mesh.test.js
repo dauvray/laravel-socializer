@@ -107,4 +107,34 @@ describe('usePeerTransport — sendData mesh (limite de taille payload)', () => 
 
         expect(sendSpies.bob).not.toHaveBeenCalled()
     })
+
+    // ── getDataReachablePeers ────────────────────────────────────────────────
+    // Permet aux envois opportunistes (annonce de diffusion) de se taire au lieu de
+    // remplir la console d'un warn par destinataire injoignable.
+
+    describe('getDataReachablePeers', () => {
+
+        it('liste les membres ayant une connexion data ouverte', () => {
+            expect(transport.getDataReachablePeers()).toEqual(['bob', 'carol'])
+        })
+
+        it('exclut un membre sans connexion', () => {
+            ctx.connection.usersInRoom = ['bob', 'carol', 'dave']
+
+            expect(transport.getDataReachablePeers()).toEqual(['bob', 'carol'])
+        })
+
+        it('exclut une connexion fermée ou sans datachannel actif', () => {
+            conns[ROOM].bob[TYPE][0].open = false
+            conns[ROOM].carol[TYPE][0].chunker = null
+
+            expect(transport.getDataReachablePeers()).toEqual([])
+        })
+
+        it('retourne une liste vide sans aucune connexion', () => {
+            ctx.connection.usersInRoom = []
+
+            expect(transport.getDataReachablePeers()).toEqual([])
+        })
+    })
 })

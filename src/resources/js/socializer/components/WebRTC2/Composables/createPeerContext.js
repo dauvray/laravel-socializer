@@ -25,6 +25,7 @@ import { usePeer2Store } from '~socializer/stores/peers2.js'
 import { useServerStore } from '~socializer/stores/server.js'
 import { useMeStore } from '~estarter/stores/me.js'
 import { createCallStateMachine } from '~socializer/components/WebRTC2/Composables/utils/useCallStateMachine.js'
+import { isValidSlug } from '~socializer/components/WebRTC2/Composables/utils/validators.js'
 import { isPayloadWithinLimit } from '~socializer/components/WebRTC2/Composables/utils/payloadSize.js'
 import { sanitizeMetadataType } from '~socializer/components/WebRTC2/Composables/utils/sanitizeMetadata.js'
 import { ME_READY_TIMEOUT_MS } from '~socializer/components/WebRTC2/webrtc2.config.js'
@@ -70,8 +71,18 @@ export function createPeerContext({ type, room, options }) {
     const media = reactive({
         videoContainer: options.videoContainer || '#videoContainer', // conteneur HTML pour l'affichage des flux vidéo
         currentStream: null,
-        screenStream: null,  
+        screenStream: null,
         remoteStreamsMap: shallowReactive(new Map()), // Map pour stocker les flux distants avec une clé composite (userSlug-type) pour éviter les collisions
+        // Pairs dont un flux est ANNONCÉ mais pas encore reçu (clé: slug du pair).
+        // Réponse exacte à « ai-je une raison d'attendre un flux de ce pair ? », que
+        // `usersInRoom` ne peut pas donner (il liste les présents, diffuseurs ou non).
+        // Deux écrivains, chacun sur la seule information qu'il voit passer — cf. la
+        // table des propriétaires dans CONVENTIONS.md :
+        //   - useBroadcastPresence : annonce `BROADCAST_STATE` reçue sur le data channel
+        //   - usePeerTransport     : appel one-way entrant (`peer.on('call')`), qui
+        //                            n'existe que si le distant a un flux vivant
+        // Vidé au départ du pair (useCallManager.handleRemoteDeparture).
+        announcedStreamsMap: shallowReactive(new Map()),
         isStreaming: false,
         isCapturing: false,
         isAudioStream: false, // flag pour différencier les flux audio des flux vidéo (utile pour l'UI et la gestion des streams)
@@ -189,6 +200,9 @@ export function createPeerContext({ type, room, options }) {
         screenStream: computed(() => media.screenStream),
         remoteStreams: computed(() => Array.from(media.remoteStreamsMap.values()).filter(e => e.remoteType !== 'screen')),
         remoteScreens: computed(() => Array.from(media.remoteStreamsMap.values()).filter(e => e.remoteType === 'screen')),
+        // Pairs qui ont annoncé un flux (ou dont un appel est entré) — consommé par
+        // l'UI d'attente (useAwaitedStreams) et rien d'autre.
+        announcedStreamPeers: computed(() => Array.from(media.announcedStreamsMap.keys())),
         isStreaming: computed(() => media.isStreaming),
         isCapturing: computed(() => media.isCapturing),
         isAudioStream: computed(() => media.isAudioStream),
@@ -339,8 +353,12 @@ export function createPeerContext({ type, room, options }) {
         //------------------
         // custom events — handlers nommés pour pouvoir les passer à conn.off()
         //------------------
+        // Wrapper nommé (et non le callback nu) pour passer la connexion : `conn.on('open')`
+        // n'émet aucun argument, alors que les consommateurs en attendent un
+        // (`onConnectionOpen: (conn) => …`, cf. Exemples/Home.vue) — et l'annonce de
+        // diffusion en a besoin pour savoir SUR QUELLE connexion émettre.
         const handleCustomOpen = (connectionEvents?.onConnectionOpen?.isActive)
-            ? connectionEvents.onConnectionOpen.callback
+            ? () => connectionEvents.onConnectionOpen.callback(conn)
             : null
 
         // Garde de taille en réception (défense-en-profondeur anti-DoS pair-à-pair) :
@@ -477,6 +495,30 @@ export function createPeerContext({ type, room, options }) {
     }
 
     /**
+     * Accesseurs de `media.announcedStreamsMap` — « un flux de ce pair est en route ».
+     *
+     * Accesseurs plutôt qu'écriture directe, pour la même raison que
+     * beginShutdown/endShutdown : deux couches y écrivent (annonce data channel et
+     * appel entrant), la validation du slug doit donc tenir à un seul endroit.
+     * `source` n'est que de la traçabilité (debug) : la présence de la clé est le fait.
+     *
+     * @param {string} userSlug
+     * @param {'signal'|'call'} source
+     */
+    const markAnnouncedStream = (userSlug, source = 'signal') => {
+        if (!isValidSlug(userSlug)) return false
+        if (userSlug === meStore.getMe?.slug) return false
+
+        media.announcedStreamsMap.set(userSlug, { source, at: Date.now() })
+        return true
+    }
+
+    const clearAnnouncedStream = (userSlug) => {
+        if (!userSlug) return false
+        return media.announcedStreamsMap.delete(userSlug)
+    }
+
+    /**
      * Lifecycle hooks
      */
     onBeforeMount(() => {
@@ -492,6 +534,7 @@ export function createPeerContext({ type, room, options }) {
 
         // Libère les références aux streams distants
         media.remoteStreamsMap.clear()
+        media.announcedStreamsMap.clear()
         media.currentStream = null
 
         // Réinitialise les états de session
@@ -554,6 +597,8 @@ export function createPeerContext({ type, room, options }) {
         addCurrentCallUser,
         removeCurrentCallUser,
         clearCurrentCallUsers,
+        markAnnouncedStream,
+        clearAnnouncedStream,
 
         // signal réactif (usePeerTransport → usePeerOrchestrator)
         peerUnavailableSignal,

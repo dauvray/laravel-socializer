@@ -54,6 +54,8 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
         isAudioStream, // indique si le flux local est un flux audio
         remoteStreams, // liste des flux médias distants reçus
         remoteScreens, // liste des flux de partage d'écran distants reçus
+        announcedStreamPeers, // slugs des pairs dont un flux est annoncé mais pas encore reçu (UI d'attente)
+        announceBroadcastState, // re-annonce explicite de mon état de diffusion aux pairs joignables
 
         // ui
         isMuted, // état muet/non muet du flux local
@@ -251,6 +253,8 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
         isAudioStream,
         remoteStreams,
         remoteScreens,
+        announcedStreamPeers,
+        announceBroadcastState,
 
         // ui
         isMuted,

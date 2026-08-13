@@ -546,6 +546,16 @@ export function usePeerTransport(ctx) {
                 const isOneWay = callType === 'stream' || callType === 'screen'
 
                 if (isOneWay) {
+                    // Trace exacte « un flux de ce pair est en route » : un appel one-way
+                    // n'est émis que si l'émetteur a un flux vivant (cf. connectToPeer), et
+                    // cet événement arrive dès la réception de l'offre — avant ICE, donc
+                    // avant le `stream`. C'est ce qui couvre la fenêtre « A diffuse déjà,
+                    // B arrive » que l'annonce data channel ne peut pas couvrir (le canal
+                    // data naît avec l'appel). `metadata.from` est authentifié juste au-dessus
+                    // par _isAuthorizedIncomingPeer : sur un appel ENTRANT c'est bien le
+                    // distant, et il ne peut pas être le slug d'un autre membre.
+                    targetCtx.markAnnouncedStream?.(metadata?.from, 'call')
+
                     // 'screen' : strictement unidirectionnel par connexion. Si le récepteur
                     // partage lui aussi son écran, il initie sa propre peer.call séparée.
                     // Répondre avec currentStream (webcam) injecterait B-webcam dans la
@@ -626,6 +636,24 @@ export function usePeerTransport(ctx) {
 
         // cherche une connexion ouverte avec un datachannel actif (fallback conn=null si aucune)
         return roomConnections.find(conn => conn?.open && conn?.chunker) ?? null
+    }
+
+    /**
+     * Slugs de la room joignables MAINTENANT par le data channel.
+     *
+     * Exposé parce que `sendData` warne par destinataire injoignable : un appelant dont
+     * l'envoi est opportuniste (annonce de diffusion) doit pouvoir se taire au lieu de
+     * remplir la console sur un chemin normal. En star, la seule connexion d'un client
+     * est celle du hub — la liste vaut donc « ai-je un canal du tout ? ».
+     *
+     * @returns {string[]}
+     */
+    const getDataReachablePeers = () => {
+        const room = ctx.session.onAirRoom
+        const type = ctx.session.currentType
+        const users = Array.isArray(ctx.connection.usersInRoom) ? ctx.connection.usersInRoom : []
+
+        return users.filter(userSlug => !!_getOpenDataConnection(room, userSlug, type))
     }
 
     // ─────────────────────────────────────────────────────────────────────────────
@@ -807,6 +835,7 @@ export function usePeerTransport(ctx) {
         setLocalPeer,
         unregisterLocalContext,
         sendData,
+        getDataReachablePeers,
         forwardStarMessage,
     }
 }

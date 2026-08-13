@@ -387,6 +387,13 @@ export function useCallManager(ctx, { core, media, connections, transport, pool 
             ctx.removeCurrentCallUser(userSlug)
             _purgePeerStreams(userSlug, type)
 
+            // Plus rien n'est en vol de la part de ce pair : son annonce de diffusion (ou
+            // la trace de son appel entrant) doit tomber ici, sinon l'UI d'attente le
+            // ferait « spinner » après un arrêt volontaire — exactement le symptôme
+            // qu'avait la mémoire `served` de useAwaitedStreams, en mieux : s'il relance
+            // sa diffusion, la nouvelle annonce fait réapparaître la vignette.
+            ctx.clearAnnouncedStream?.(userSlug)
+
             ctx.eventBus.$emit('close-call', [{ userSlug, type }])
 
             // Plus personne en ligne → on ferme tout. `canTransition` évite le warn
