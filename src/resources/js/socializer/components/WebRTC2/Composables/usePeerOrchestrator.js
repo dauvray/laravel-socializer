@@ -1,16 +1,17 @@
 /**
  * 🔧 usePeerOrchestrator (Technical Orchestrator)
- * 
- *  point d’entrée unique + coordination + DOM
+ *
+ *  point d’entrée unique + composition + DOM
  *
  * 👉 gère :
  * - point d’entrée unique pour tout le système peer
- * - coordination entre Core / Media / Connections / Transport
+ * - composition des couches Core / Media / Connections / Transport / Pool / Call / Stream
  * - exposition d’une API simple aux features (useMediaBroadcast)
  *
  * 👉 utilise :
  * - createPeerContext (instance isolée)
- * - usePeerCore / usePeerMedia / usePeerConnections / usePeerTransport
+ * - usePeerCore / usePeerMedia / usePeerConnections / usePeerTransport (sous-modules)
+ * - useConnectionPool → useCallManager → useStreamManager (couches empilées)
  *
  * 👉 ne connaît PAS :
  * - UI métier (aucun état type isMuted, isVideoCall…)
@@ -18,36 +19,28 @@
  *
  * 👉 rôle :
  * - façade technique unifiée
- * - éviter que les couches supérieures manipulent directement les sous-modules
- * 
+ * - composition : la seule logique qui reste ici est le wrapping des callbacks de
+ *   connexion (routage star, chaînage des handlers de flux) et les passthroughs média
+ *
+ * ⚠️ ORDRE DES COUCHES (cf. CONVENTIONS.md) : une couche ne reçoit jamais de
+ * callback vers une couche supérieure. L'orchestrateur injecte donc le pool dans le
+ * CallManager et le CallManager dans le StreamManager, jamais l'inverse.
  */
 
-import { onUnmounted, ref, watch } from 'vue'
 import { createPeerContext } from '~socializer/components/WebRTC2/Composables/createPeerContext.js'
 import { usePeerCore } from '~socializer/components/WebRTC2/Composables/usePeerCore.js'
 import { usePeerMedia } from '~socializer/components/WebRTC2/Composables/usePeerMedia.js'
 import { usePeerConnections } from '~socializer/components/WebRTC2/Composables/usePeerConnections.js'
 import { usePeerTransport } from '~socializer/components/WebRTC2/Composables/usePeerTransport.js'
-import { usePeerRetry } from '~socializer/components/WebRTC2/Composables/utils/usePeerRetry.js'
-import { CALL_STATES } from '~socializer/components/WebRTC2/Composables/utils/useCallStateMachine.js'
-import { MAX_REMOTE_STREAMS, STREAM_STALE_MS, SIGNALING_STALE_MS, SLUG_PATTERN } from '~socializer/components/WebRTC2/webrtc2.config.js'
+import { useConnectionPool } from '~socializer/components/WebRTC2/Composables/useConnectionPool.js'
+import { useCallManager } from '~socializer/components/WebRTC2/Composables/useCallManager.js'
+import { useStreamManager } from '~socializer/components/WebRTC2/Composables/useStreamManager.js'
+import { isValidCallType } from '~socializer/components/WebRTC2/Composables/utils/validators.js'
 
 export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) {
 
-    const syncUsersConnectionsLock = ref(false)
-    const isShuttingDown = ref(false)  // 🔒 Guard pour bloquer les retries pendant le cleanup
-
-
     // ── Validation des inputs ────────────────────────────────────────────────
-    const VALID_CALL_TYPES = ['data', 'visio', 'vocal', 'stream', 'screen', 'audio']
-
-    const _isValidSlug = (value) =>
-        typeof value === 'string' && SLUG_PATTERN.test(value)
-
-    const _isValidCallType = (value) =>
-        typeof value === 'string' && VALID_CALL_TYPES.includes(value)
-
-    const normalizedType = _isValidCallType(type) ? type : 'data'
+    const normalizedType = isValidCallType(type) ? type : 'data'
     const normalizedRoom = (typeof room === 'string' && room.trim().length > 0) ? room.trim() : 'app'
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -62,124 +55,14 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
     const connections = usePeerConnections(context)
     const transport = usePeerTransport(context)
 
-    // 2. Initialisation du moteur de Retry
-    const retryManager = usePeerRetry(context)
+    // 2. Couche connexions : retry, établissement, synchronisation de la room
+    const pool = useConnectionPool(context, { core, connections })
 
-    /**
-     * LOGIQUE DE TENTATIVE (Callback pour le RetryManager)
-     * Détermine si on doit continuer à essayer de se connecter à un user.
-     */
-    const _handleConnectionAttempt = async (userSlug) => {
-        // 🛑 Ne relance RIEN si on est en train d'arrêter
-        if (isShuttingDown.value) return true
+    // 3. Couche appels : elle dépend du pool, jamais l'inverse
+    const callManager = useCallManager(context, { core, media, connections, transport, pool })
 
-        const room = context.session.currentCallRoomId || context.currentRoom.value
-        const mainTypeOpen = connections.hasOpenConnection(userSlug, null, context.currentType.value)
-        const screenOpen = !context.media.isCapturing
-            || connections.hasOpenConnection(userSlug, null, 'screen')
-
-        // 1. Succès ultime : connexion établie
-        if (mainTypeOpen && screenOpen) return true
-
-        const remotePeerId = context.peerStore.getRemotePeerId(userSlug)
-        const waiting = context.peerStore.getWaitingRemotePeerId(userSlug)
-
-        // 2. Sécurité : Si on n'a plus d'ID ET plus d'intention (waiting), l'user est vraiment parti.
-        if (!remotePeerId && !waiting) return true
-
-        // 3. Si on a un ID, on tente la connexion (même si waiting a sauté)
-        if (remotePeerId) {
-            if (!mainTypeOpen) {
-                const connected = connections.connectToPeer({
-                    userSlug,
-                    peerId: remotePeerId,
-                    type: context.currentType.value,
-                    room,
-                })
-                // Si la connexion principale a échoué pour une vraie raison (ex: visio sans stream prêt)
-                // on continue à reessayer plutôt que de s'arrêter prématurément
-                if (!connected) return false
-            }
-
-            if (context.media.isCapturing && !screenOpen) {
-                connections.connectToPeer({
-                    userSlug,
-                    peerId: remotePeerId,
-                    type: 'screen',
-                    room,
-                })
-            }
-
-            return true
-        }
-
-        // 4. Signalisation stale : On ne demande l'ID que si on est toujours en attente (waiting)
-        if (waiting) {
-            const age = Date.now() - (waiting.createdAt ?? 0)
-            if (age >= SIGNALING_STALE_MS) {
-                core.requestRemotePeerConnection(userSlug)
-            }
-        }
-
-        return false
-    }
-
-    /**
-     * Tente de se connecter à un peer distant ou de demander une connexion si nécessaire.
-     *
-     * @param {string} userSlug - L'identifiant de l'utilisateur pour lequel la connexion est tentée.
-     * @returns {void}
-     */
-    const _requestOrConnectPeer = (userSlug, type = null) => {
-        if (!userSlug) return
-        const effectiveType = type || context.currentType.value
-        if (connections.hasOpenConnection(userSlug, null, effectiveType)) return
-
-        const remotePeerId = context.peerStore.getRemotePeerId(userSlug)
-        const waiting = context.peerStore.getWaitingRemotePeerId(userSlug)
-        
-        if (remotePeerId) {
-            connections.connectToPeer({
-                userSlug,
-                peerId: remotePeerId,
-                type: effectiveType,
-                room: context.session.currentCallRoomId || context.currentRoom.value,
-            })
-        } else if (!waiting) {
-            // On ne demande que si on n'est pas déjà en train d'attendre
-            core.requestRemotePeerConnection(userSlug)
-        }
-
-        // On lance le moteur de retry (qui surveillera l'évolution vers 'open')
-        retryManager.scheduleRetry(userSlug, 0, _handleConnectionAttempt)
-    }
-
-    // ── Recovery watch : peer-unavailable ──────────────────────────────────────
-    // usePeerTransport écrit le slug du peer indisponible dans context.peerUnavailableSignal.
-    // On observe ce signal ici (watch réactif) pour relancer le cycle de connexion.
-    // Plus propre que la mutation implicite de hooks.onPeerUnavailable.
-    // ─────────────────────────────────────────────────────────────────────────
-    const unwatchPeerUnavailable = watch(context.peerUnavailableSignal, (userSlug) => {
-        if (!userSlug) return
-        if (isShuttingDown.value) return
-        if (!_isValidSlug(userSlug)) return
-        _requestOrConnectPeer(userSlug)
-        // On remet le signal à null pour pouvoir détecter une prochaine émission
-        // (watch ne se re-déclenche pas si la valeur ne change pas).
-        context.peerUnavailableSignal.value = null
-    })
-
-    // Filet de sécurité : stoppe le watcher et les timers de retry si le composant
-    // est détruit sans que cleanupPeerConnection() ait été appelé explicitement
-    // (navigation abrupte, erreur, lazy-unmount, etc.).
-    // ⚠️ NE PAS appeler cleanupPeerConnection() ici : createPeerContext.destroy()
-    // s'exécute en premier (FIFO) et vide la session, ce qui rendrait
-    // connections.closePeerConnection() inefficace.
-    onUnmounted(() => {
-        isShuttingDown.value = true   // 🛑 Bloque tout retry post-unmount
-        unwatchPeerUnavailable()      // Arrête l'observation du signal peer-unavailable
-        retryManager.clearAll()       // Libère tous les timers de retry en vol
-    })
+    // 4. Couche streams : elle dépend de la couche appels, jamais l'inverse
+    const streamManager = useStreamManager(context, { media, callManager })
 
    /**
      * 🔥 Glue logique (SEUL endroit où on mixe les couches)
@@ -227,7 +110,7 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         // Sans ce wrap, handleStreamReceived n'est jamais appelé et remoteStreams reste vide.
         const originalOnStreamReceived = callbacks?.onStreamReceived ?? null
         wrappedCallbacks.onStreamReceived = async (stream, conn, metadata) => {
-            await handleStreamReceived(stream, conn, metadata)
+            await streamManager.handleStreamReceived(stream, conn, metadata)
             if (typeof originalOnStreamReceived === 'function') {
                 originalOnStreamReceived(stream, conn, metadata)
             }
@@ -246,7 +129,7 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
                 // Si senderSlug === mySlug, c'est notre propre conn sortante qui se ferme :
                 // le remote peut encore streamer via PC-2 (connexion inverse) — ne pas le retirer.
                 if (!mySlug || !senderSlug || senderSlug !== mySlug) {
-                    await handleStreamRemoved(conn, conn?.metadata)
+                    await streamManager.handleStreamRemoved(conn, conn?.metadata)
                 }
 
 
@@ -262,10 +145,10 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
     }
 
     const cleanupPeerConnection = () => {
-        isShuttingDown.value = true  // 🛑 Guard permanent : reste actif après le teardown terminal
-        
-        unwatchPeerUnavailable()  // Arrête l'observation du signal peer-unavailable
-        retryManager.clearAll()
+        context.beginShutdown()  // 🛑 Guard permanent : reste actif après le teardown terminal
+
+        pool.stopPool()  // Arrête l'observation du signal peer-unavailable + les retries en vol
+
         connections.closePeerConnection({
             room: context.session.currentCallRoomId || context.session.currentRoom,
             type: context.session.currentType,
@@ -273,67 +156,6 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         })
 
         transport.unregisterLocalContext()
-    }    
-
-    const syncUsersConnections = async (users) => {
-        if (!Array.isArray(users)) return
-    
-        if (syncUsersConnectionsLock.value) {
-            return
-        }
-
-        syncUsersConnectionsLock.value = true
-
-        try {
-
-            // on attend d’avoir les infos de contexte nécessaires (meStore ready) avant de faire quoi que ce soit.
-            const ready = await context.waitForMeReady()
-            if (!ready) {
-                return
-            }
-
-            const { newUsers, removedUsers } = await connections.getRoomUsersDiff(users)
-
-            // Nettoyage des peers qui ne sont plus dans la room.
-            removedUsers.forEach(userSlug => {
-                const activeRoom = context.session.currentCallRoomId || context.currentRoom.value
-                retryManager.clearRetry(userSlug)
-                context.peerStore.removeWaitingRemotePeerId(userSlug)
-                context.peerStore.removeRemotePeerId(userSlug)
-                context.peerStore.clearConnectionsRoom(activeRoom, userSlug, context.currentType.value)
-
-                // Fermer aussi la connexion 'screen' si elle existe
-                if (context.media.isCapturing) {
-                    context.peerStore.clearConnectionsRoom(activeRoom, userSlug, 'screen')
-                }
-            })
-
-            // Mesh: tout le monde se connecte à tout le monde.
-            if (context.topology.value === 'mesh') {
-                newUsers.forEach(user => {
-                    _requestOrConnectPeer(user.slug)
-
-                    // Si on est en train de partager l'écran, initier aussi la connexion 'screen'
-                    if (context.media.isCapturing) {
-                        _requestOrConnectPeer(user.slug, 'screen')
-                    }
-                })
-            }
-            // Star: le hub se connecte à tout le monde, les clients seulement au hub.
-            else if (context.topology.value === 'star' && context.hubSlug.value) {
-                if (context.isHub.value) {
-                    newUsers.forEach(user => {
-                        _requestOrConnectPeer(user.slug)
-                    })
-                } else {
-                    _requestOrConnectPeer(context.hubSlug.value)
-                }
-            }
-            // SFU: pas de maillage pair à pair côté client.
-
-        } finally {
-            syncUsersConnectionsLock.value = false
-        }
     }
 
     const sendDataToPeer = (data, destUserSlugs = null) => {
@@ -343,14 +165,14 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
     const startWebcamStream = async () => {
         await media.startCurrentStream()
         context.usersInRoom.value.forEach(userSlug => {
-            _requestOrConnectPeer(userSlug)
+            pool.requestOrConnectPeer(userSlug)
         })
     }
 
     const stopWebcamStream = () => {
-        isShuttingDown.value = true
-        
-        retryManager.clearAll()
+        context.beginShutdown()
+
+        pool.clearAllRetries()
         connections.closePeerConnection({
             room: context.session.currentCallRoomId || context.session.currentRoom,
             type: context.session.currentType,
@@ -362,14 +184,14 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         context.session.currentCallRoomId = null
         context.ui.streamStates.isVideoEnabled = true
         context.ui.streamStates.isMuted = false
-        
-        isShuttingDown.value = false
+
+        context.endShutdown()
     }
 
     const startAudioStream = async () => {
         await media.startAudioStream()
         context.usersInRoom.value.forEach(userSlug => {
-            _requestOrConnectPeer(userSlug)
+            pool.requestOrConnectPeer(userSlug)
         })
     }
 
@@ -396,9 +218,8 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
             }
         }
 
-        const room = context.session.currentCallRoomId || context.currentRoom.value
         context.usersInRoom.value.forEach(userSlug => {
-            _requestOrConnectPeer(userSlug, 'screen')
+            pool.requestOrConnectPeer(userSlug, 'screen')
         })
     }
 
@@ -439,470 +260,23 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         }
     }
 
-    /*---------------------
-    | CALLS
-    ------------------------*/
-
-    const startCallWithPeer = (payload) => {
-        if (!payload || typeof payload !== 'object') return
-        if (!_isValidSlug(payload.toUserSlug)) return
-
-        const ready = transport.setLocalPeer()
-        if (!ready) return
-
-        const toUserSlug = payload.toUserSlug
-        const type = _isValidCallType(payload.type) ? payload.type : 'visio'
-
-        // Transition en premier : évite toute mutation d'état si un appel est déjà en cours.
-        if (!context.callMachine.transition(CALL_STATES.CALLING)) return
-
-        ensureCurrentCallRoomId()
-        addCurrentCallUser(toUserSlug, type)
-        context.session.currentType = type
-
-        core.requestAuthorizationRemotePeerId({ toUserSlug, type })
-        return
-    }
-
-    /**
-     * Démarre la session d'appel locale.
-     * Commun à `acceptCallFromPeer` (récepteur qui accepte) et `openCallBetweenPeer` (initiateur confirmé).
-     * Configure l'état, démarre le stream local et crée l'élément vidéo local.
-     *
-     * @param {string}      fromUserSlug - Slug de l'interlocuteur
-     * @param {string|null} room         - ID de room (null → conserve ou génère)
-     * @param {string}      type         - Type d'appel (visio, vocal, …)
-     */
-    const _enterCallSession = async ({ fromUserSlug, room, type }) => {
-        ensureCurrentCallRoomId(room)
-        addCurrentCallUser(fromUserSlug, type)
-        context.session.currentType = type
-
-        await media.startCurrentStream(true)
-        media.createVideoElement(
-            { videoId: 'local-webcam', type, source: 'local' },
-            context.media.currentStream
-        )
-    }
-
-    const acceptCallFromPeer = async (payload) => {
-        if (!payload || typeof payload !== 'object') return
-
-        const ready = transport.setLocalPeer()
-        if (!ready) return
-
-        if (payload?.status) {
-            const fromUserSlug = payload?.fromUserSlug
-            if (!_isValidSlug(fromUserSlug)) return
-
-            const room = payload?.options?.room || null
-            const type = _isValidCallType(payload?.options?.type) ? payload.options.type : 'visio'
-
-            // Mapping peerId vérifié de l'initiateur : DOIT être posé AVANT que sa peer.call
-            // n'arrive (autrement _isAuthorizedIncomingPeer ne pourra pas valider l'identité
-            // PeerJS réelle). `core.sendAuthorizationRemotePeerId` écrase ensuite
-            // `payload.options.peerId` avec le peerId LOCAL — d'où l'enregistrement ici.
-            if (payload?.options?.peerId) {
-                context.peerStore.addRemotePeerId(fromUserSlug, payload.options.peerId)
-            }
-
-            if (!context.callMachine.transition(CALL_STATES.RECEIVING)) return
-            await _enterCallSession({ fromUserSlug, room, type })
-        }
-
-        // ✅ Ajouter l'inviteId dans les options retournées
-        const options = payload?.options || {}
-        if (payload?.options?.inviteId) {
-            options.inviteId = payload.options.inviteId
-        }
-
-        core.sendAuthorizationRemotePeerId({ ...payload, 
-            options,  // ← assure que inviteId est inclus 
-        })
-        return
-    }
-
-    const openCallBetweenPeer = async (payload) => {
-        if (!payload || typeof payload !== 'object') return
-
-        // Arrête le retry pour ce userSlug (fiable peu importe le retour de inviteId)
-        if (payload?.fromUserSlug && _isValidSlug(payload.fromUserSlug)) {
-            core.stopCallInviteRetryForUser(payload.fromUserSlug)
-        }
-        
-        if(!payload?.status) {
-            removeCurrentCallUser(payload.fromUserSlug)
-            if(context.session.currentCallUsers.length === 0) {
-                await stopCallWithPeers([], false, {
-                    mode: 'full',
-                })
-            }
-            return
-        }
-
-        const fromUserSlug = payload?.fromUserSlug
-        if (!_isValidSlug(fromUserSlug)) return
-
-        const room = payload?.options?.room || null
-        const type = _isValidCallType(payload?.options?.type) ? payload.options.type : 'visio'
-
-        context.peerStore.removeWaitingRemotePeerId(fromUserSlug)
-        context.peerStore.addRemotePeerId(fromUserSlug, payload.options.peerId)
-
-        if (!context.callMachine.transition(CALL_STATES.CONNECTED)) return
-        await _enterCallSession({ fromUserSlug, room, type })
-
-        _requestOrConnectPeer(fromUserSlug)
-    }
-
-    const createVideoElement = media.createVideoElement // exposé pour être utilisé par useMediaBroadcast (diffusion) pour créer les éléments vidéo des flux distants (et local)    
+    const createVideoElement = media.createVideoElement // exposé pour être utilisé par useMediaBroadcast (diffusion) pour créer les éléments vidéo des flux distants (et local)
 
     const removeVideoElement = media.removeVideoElement // exposé pour être utilisé par useMediaBroadcast pour supprimer les éléments vidéo des flux distants (et local) quand un stream se termine ou qu’un appel est raccroché.
 
-    const stopCallWithPeers = async (users = [], notifyRemote = true, options = {}) => {
-        const mode = options?.mode || 'full'
-
-        // Garde full  : la transition vers CLOSING est le mutex du full stop.
-        // Garde partial : géré par closingUsers (par utilisateur) en amont dans remoteStopCall.
-        if (mode !== 'partial') {
-            if (!context.callMachine.transition(CALL_STATES.CLOSING)) return
-        }
-
-        try {
-            const roomId = options?.roomId || context.session.currentCallRoomId || context.currentRoom.value
-           
-            isShuttingDown.value = true  // 🛑 Bloquer les retries immédiatement
-
-            const callType = context.session.currentType || 'visio'
-
-            const normalizedUsers = (users || [])
-                .map((u) => ({ userSlug: u?.userSlug || u?.slug, type: u?.type || callType }))
-                .filter((u) => !!u.userSlug)
-
-            if (notifyRemote) {
-                normalizedUsers.forEach((u) => {
-                    core.notifyCloseConnectionToPeer({
-                        toUserSlug: u.userSlug,
-                        type: u.type || callType,
-                        room: roomId,
-                    })
-                })
-            }
-
-            if (mode === 'partial') {
-                normalizedUsers.forEach((u) => {
-                    retryManager.clearRetry(u.userSlug)
-                    context.peerStore.removeWaitingRemotePeerId(u.userSlug)
-                })
-
-                connections.closePeerConnection({
-                    room: roomId,
-                    type: callType,
-                    users: normalizedUsers.map((u) => u.userSlug),
-                    clearSignalQueue: false,
-                })
-
-                isShuttingDown.value = false  // ✅ Réactiver les retries après partial close
-                return
-            }
-
-            // === MODE FULL ===
-            retryManager.clearAll()
-
-            connections.closePeerConnection({
-                room: roomId,
-                type: callType,
-                clearSignalQueue: true,
-            })
-
-            media.stopCurrentStream()
-            media.removeVideoElement('local-webcam')
-            context.session.currentCallRoomId = null
-            
-            isShuttingDown.value = false  // ✅ Réactiver après cleanup complet
-
-            resetCallState()  // → callMachine.reset() : CLOSING → IDLE
-        } finally {
-            // Filet de sécurité : si resetCallState n'a pas été appelé (exception),
-            // garantir qu'on ne reste pas coincé en état CLOSING.
-            if (context.callMachine.isStopping.value) {
-                context.callMachine.reset()
-            }
-        }
-    }
-
-    const setCurrentCallRoomId = (roomId = null) => {
-        context.session.currentCallRoomId = roomId || null
-        return context.session.currentCallRoomId
-    }
-
-    /**
-     * Retourne un ID de room valide pour les appels, en utilisant l'ID préféré si fourni, 
-     * ou en générant un nouvel ID si nécessaire.
-     * @param {*} preferred 
-     * @returns 
-     */
-    const ensureCurrentCallRoomId = (preferred = null) => {
-        if (preferred) {
-            context.session.currentCallRoomId = preferred
-            return context.session.currentCallRoomId
-        }
-
-        if (!context.session.currentCallRoomId) {
-            context.session.currentCallRoomId = crypto.randomUUID()
-        }
-
-        return context.session.currentCallRoomId
-    }
-
-    const setCurrentCallUsers = (users = []) => {
-        return context.setCurrentCallUsers(users)
-    }
-
-    const addCurrentCallUser = (userSlug, type = 'visio') => {
-        return context.addCurrentCallUser(userSlug, type)
-    }
-
-    const removeCurrentCallUser = (userSlug) => {
-        if (!userSlug) return
-        return context.removeCurrentCallUser(userSlug)
-    }
-
-    const clearCurrentCallUsers = () => {
-        return context.clearCurrentCallUsers()
-    }
-
-    const setCallInProgress = (inProgress) => {
-        // Compatibilité rétrograde : l'état est désormais géré par callMachine.
-        // Les transitions internes utilisent context.callMachine.transition() directement.
-        if (!inProgress) {
-            context.callMachine.reset()
-        }
-        return context.callMachine.callInprogress.value
-    }
-
-    const isCallInProgress = () => {
-        return context.callMachine.callInprogress.value
-    }
-
-    const callStatus = () => {
-        return context.callStatus.value
-    }
-
-    const remoteStopCall = async (payload) => {
-        if (!payload || typeof payload !== 'object') return
-
-        const remoteSlug = payload?.fromUserSlug || null
-        const remoteType = _isValidCallType(payload?.type) ? payload.type : 'visio'
-        const roomId = payload?.room || context.session.currentCallRoomId || context.currentRoom.value
-
-        if (!remoteSlug || !_isValidSlug(remoteSlug)) return
-        if (context.callMachine.isUserClosing(remoteSlug)) return
-
-        context.callMachine.markUserClosing(remoteSlug)
-
-        await stopCallWithPeers([{ userSlug: remoteSlug, type: remoteType }], false, {
-            mode: 'partial',
-            roomId,
-        })
-
-        removeCurrentCallUser(remoteSlug)
-        media.removeVideoElement(`remote-${remoteSlug}-${remoteType}`)
-        context.media.remoteStreamsMap.forEach((value, key) => {
-            if (value?.metadata?.from === remoteSlug) {
-                context.media.remoteStreamsMap.delete(key)
-            }
-        })
-
-        if (context.session.currentCallUsers.length === 0) {
-            await stopCallWithPeers([], false, {
-                mode: 'full',
-                roomId,
-            })
-        }
-
-        context.callMachine.unmarkUserClosing(remoteSlug)
-
-        context.eventBus.$emit('close-call', [{
-            userSlug: remoteSlug,
-            type: remoteType,
-        }])
-    }
-
-    const resetCallState = () => {
-        media.cleanupCallPlayers()
-        context.callMachine.reset()  // CLOSING → IDLE + closingUsers.clear()
-        clearCurrentCallUsers()
-        setCurrentCallRoomId(null)
-        context.media.remoteStreamsMap.clear()
-    }
-
-    /*------------------------
-    | SIGNALISATION CALLS
-    --------------------------*/
-
-    /**
-     * Supprime les entrées stales (trop anciennes ou map trop grande) de remoteStreamsMap.
-     * Appelé avant chaque ajout pour garantir une taille bornée.
-     */
-    const _cleanupStaleRemoteStreams = () => {
-        const now = Date.now()
-
-        // 1. Supprimer les entrées expirées (TTL)
-        for (const [key, entry] of context.media.remoteStreamsMap.entries()) {
-            if (now - (entry.createdAt ?? 0) > STREAM_STALE_MS) {
-                media.removeVideoElement(`remote-${entry.remoteSlug}-${entry.remoteType}`)
-                context.media.remoteStreamsMap.delete(key)
-            }
-        }
-
-        // 2. Si encore trop grand, supprimer les plus anciens (FIFO)
-        if (context.media.remoteStreamsMap.size >= MAX_REMOTE_STREAMS) {
-            const overflow = context.media.remoteStreamsMap.size - MAX_REMOTE_STREAMS + 1
-            let count = 0
-            for (const [key, entry] of context.media.remoteStreamsMap.entries()) {
-                if (count >= overflow) break
-                media.removeVideoElement(`remote-${entry.remoteSlug}-${entry.remoteType}`)
-                context.media.remoteStreamsMap.delete(key)
-                count++
-            }
-        }
-    }
-
-    const handleStreamReceived = async (stream, conn, metadata) => {
-        const ready = await context.waitForMeReady()
-        if (!ready) return 
-        
-        const meta = metadata || conn?.metadata || {}
-        const remoteSlug = resolveRemoteSlug(meta)
-        const remoteType = meta?.type || conn?.metadata?.type || 'visio'
-
-        if (!remoteSlug) return
-
-        // Clé canonique basée sur l'identité sémantique (slug + type), indépendante de l'objet conn.
-        // Garantit que handleStreamReceived et handleStreamRemoved utilisent la même clé.
-        const streamKey = `${remoteSlug}-${remoteType}`
-    
-        if (context.media.remoteStreamsMap.has(streamKey)) {
-            return
-        }
-
-        // Nettoyage préventif avant ajout (taille bornée + TTL)
-        _cleanupStaleRemoteStreams()
-
-        context.media.remoteStreamsMap.set(streamKey, {
-            stream,
-            metadata: meta,
-            remoteSlug,
-            remoteType,
-            peerId: conn?.peer || null,
-            createdAt: Date.now(),
-        })
-
-        // Côté récepteur : le stream entrant confirme que la connexion est établie.
-        // Transition RECEIVING → CONNECTED maintenant que le flux est actif.
-        if (context.callMachine.callState.value === CALL_STATES.RECEIVING) {
-            context.callMachine.transition(CALL_STATES.CONNECTED)
-        }
-
-        // En mode 'stream', remoteStreamsMap est la source de vérité consommée par l'UI via remoteStreams.
-        // On ne crée pas de player DOM injecté : c'est au composant (ex: StreamSimpleUI) de rendre les streams.
-        // Pour les autres modes (visio, vocal…), on crée le player DOM comme d'habitude.
-        if (stream instanceof MediaStream && context.session.currentType !== 'stream') {
-            media.createVideoElement(
-                {
-                    videoId: `remote-${remoteSlug}-${remoteType}`,
-                    type: remoteType,
-                    source: 'remote',
-                },
-                stream
-            )
-        }
-    }
-
-    const handleStreamRemoved = async (conn, metadata) => {
-        const ready = await context.waitForMeReady()
-        if (!ready) return 
-        
-        const meta = conn?.metadata || {}
-        const remoteSlug = resolveRemoteSlug(meta)
-        const remoteType = meta?.type || 'visio'
-        const roomId = meta?.room || context.session.currentCallRoomId || null
-
-        if (!remoteSlug) return
-        if (context.callMachine.isUserClosing(remoteSlug)) return
-
-        context.callMachine.markUserClosing(remoteSlug)
-
-        try {
-            const videoId = `remote-${remoteSlug}-${remoteType}`
-            media.removeVideoElement(videoId)
-
-            // Clé canonique identique à handleStreamReceived → suppression en passe unique.
-            const streamKey = `${remoteSlug}-${remoteType}`
-            context.media.remoteStreamsMap.delete(streamKey)
-
-            removeCurrentCallUser(remoteSlug)
-
-            context.eventBus.$emit('close-call', [{ 
-                userSlug: remoteSlug, 
-                type: remoteType 
-            }])
-
-            /*
-                En mode stream (broadcast unidirectionnel), le cycle de vie du stream local est géré explicitement par l'utilisateur via stopStream(). 
-                Un pair distant qui se déconnecte ne doit pas déclencher l'arrêt du broadcast local. 
-                La logique stopCallWithPeers full ne concerne que les modes d'appel bidirectionnels (visio, vocal)
-                 où raccrocher côté distant justifie de tout fermer localement.
-            */
-            if (context.session.currentType !== 'stream' && context.session.currentCallUsers.length === 0) {
-                await stopCallWithPeers([], false, {
-                    mode: 'full',
-                    roomId,
-                })
-            }
-
-        } catch (error) {
-            console.error('Error removing video element:', error)
-        } finally {
-            context.callMachine.unmarkUserClosing(remoteSlug)
-        }
-    }
-
-    const resolveRemoteSlug = (metadata = {}) => {
-         if (!metadata) return null
-
-        const mySlug = context.meStore.getMe?.slug || null
-        if (!mySlug) return null   
-
-        if (metadata.from && metadata.from !== mySlug) {
-            return metadata.from
-        }
-
-        if (metadata.slug && metadata.slug !== mySlug) {
-            return metadata.slug
-        }
-
-        return null
-    }
-
-    const stopCallInviteRetry = (inviteId) => {
-        if (!inviteId) return
-        core.stopCallInviteRetry(inviteId)
-    }
-
-    const clearAllCallInviteRetries = () => {
-        core.clearAllCallInviteRetries()
-    }
-
     /*---------------------
     | API exposée aux features (useMediaBroadcast)
+    | Façade explicite : pas de ...spread des composables internes.
     ----------------------*/
     return {
         initializePeerConnection,
-        syncUsersConnections,
-        sendDataToPeer,
         cleanupPeerConnection,
+        sendDataToPeer,
+
+        // connexions (useConnectionPool)
+        syncUsersConnections: pool.syncUsersConnections,
+
+        // streams locaux
         startWebcamStream,
         stopWebcamStream,
         startAudioStream,
@@ -911,46 +285,41 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         stopScreenCapture,
         toggleAudioState,
         toggleVideoState,
-        startCallWithPeer,
-        acceptCallFromPeer,
-        openCallBetweenPeer,
-        stopCallWithPeers,
-        createVideoElement,  
-        removeVideoElement, 
-        setCurrentCallRoomId,
-        ensureCurrentCallRoomId, 
-        setCurrentCallUsers,
-        addCurrentCallUser,
-        removeCurrentCallUser,
-        clearCurrentCallUsers,
-        setCallInProgress,
+        createVideoElement,
+        removeVideoElement,
 
-        isCallInProgress, 
-        callStatus,
-        
-        remoteStopCall,
+        // appels (useCallManager)
+        startCallWithPeer: callManager.startCallWithPeer,
+        acceptCallFromPeer: callManager.acceptCallFromPeer,
+        openCallBetweenPeer: callManager.openCallBetweenPeer,
+        stopCallWithPeers: callManager.stopCallWithPeers,
+        remoteStopCall: callManager.remoteStopCall,
+        setCurrentCallRoomId: callManager.setCurrentCallRoomId,
+        ensureCurrentCallRoomId: callManager.ensureCurrentCallRoomId,
+        isCallInProgress: callManager.isCallInProgress,
+        callStatus: callManager.callStatus,
+        stopCallInviteRetry: callManager.stopCallInviteRetry,
+        clearAllCallInviteRetries: callManager.clearAllCallInviteRetries,
 
-        handleStreamReceived,
-        handleStreamRemoved,
-
-        stopCallInviteRetry,
-        clearAllCallInviteRetries,
-     
+        // streams distants (useStreamManager)
+        handleStreamReceived: streamManager.handleStreamReceived,
+        handleStreamRemoved: streamManager.handleStreamRemoved,
 
         /*---------------------------------
         | ÉTAT INTERNE (observable / debug)
         ----------------------------------*/
-        isShuttingDown,
-        syncUsersConnectionsLock,
+        isShuttingDown: context.isShuttingDown,
+        syncUsersConnectionsLock: pool.syncUsersConnectionsLock,
 
         /*---------------------------------
         | COMPUTED
         ----------------------------------*/
         contextId: context.contextId,
 
-        // machine d'état d'appel
-        callState: context.callMachine.callState,
-        callInprogress: context.callMachine.callInprogress,
+        // machine d'état d'appel (projections readonly du contexte — la FSM elle-même
+        // n'est manipulée que par useCallManager)
+        callState: context.callStatus,
+        callInprogress: context.callInprogress,
 
         // session
         localPeerId: context.localPeerId,

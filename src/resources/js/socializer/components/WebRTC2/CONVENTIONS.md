@@ -5,6 +5,42 @@
 > Ce fichier conserve uniquement les **conventions à respecter** qui ne sont
 > pas évidentes à la lecture du code et qu'une refacto pourrait casser sans le savoir.
 
+## Ordre des couches
+
+```
+createPeerContext                         source de vérité unique (état, stores, FSM d'appel)
+  └─ usePeerCore · usePeerMedia · usePeerConnections · usePeerTransport
+                                          sous-modules : dialoguent uniquement via ctx
+       └─ useConnectionPool               retry, établissement, sync room → connexions
+            └─ useCallManager             cycle d'appel (invite → accept → open → stop → reset)
+                 └─ useStreamManager      registre des flux distants + players + départs
+                      └─ usePeerOrchestrator   composition + façade, aucune logique métier
+```
+
+**Règle : une couche ne reçoit jamais de callback vers une couche supérieure.** Les
+dépendances descendent par injection explicite depuis l'orchestrateur
+(`useCallManager(ctx, { core, media, connections, transport, pool })`) — jamais par
+import croisé, jamais par callback remontant. C'est ce qui garde le graphe acyclique
+quand une couche de plus est extraite ; un callback inverse (« passe-moi
+`requestOrConnectPeer` ») est le signe qu'une couche est au mauvais étage.
+
+Corollaire : l'état partagé entre deux couches vit dans `createPeerContext`, derrière
+des accesseurs (`callMachine`, `beginShutdown`/`endShutdown`), pas dans un `ref` de
+l'orchestrateur passé de main en main.
+
+**Propriétaires uniques** — un invariant se tient à un seul endroit, vérifiable au grep :
+
+| État | Seul à le muter | Les autres couches passent par |
+|---|---|---|
+| `callMachine` (FSM d'appel) | `useCallManager` | `markCallConnected`, `isRemoteClosing` / `beginRemoteClosing` / `endRemoteClosing` |
+| `lifecycle.isShuttingDown` | `useCallManager`, orchestrateur (arrêts de stream), `useConnectionPool` (unmount) | `ctx.isShuttingDown` en lecture |
+| `media.remoteStreamsMap` | `useStreamManager` (ajout/TTL/éviction), `useCallManager` (purge au raccroché) | `ctx.remoteStreams` / `remoteScreens` en lecture |
+| timers de retry connexion | `useConnectionPool` | `clearRetry` / `clearAllRetries` |
+
+L'état *plat* partagé (`session.currentCallUsers`, via `ctx.addCurrentCallUser` &co.)
+n'a pas de propriétaire unique : il n'a pas d'invariant de transition à protéger,
+contrairement à la FSM. C'est la raison de la différence de traitement.
+
 ## Bornes & limites (toutes dans `webrtc2.config.js`)
 
 - `MAX_PEERS_PER_ROOM = 8` — mesh sature au-delà (CPU + bande passante navigateur)

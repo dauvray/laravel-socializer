@@ -8,6 +8,10 @@ Topologies supportées :
 
 Constantes et endpoints centralisés dans [`webrtc2.config.js`](webrtc2.config.js).
 
+## Architecture
+
+Les composables sont empilés en couches strictes — contexte, sous-modules (core / media / connections / transport), puis `useConnectionPool` → `useCallManager` → orchestrateur. Le schéma complet et la règle qui le tient (« une couche ne reçoit jamais de callback vers une couche supérieure ») sont dans [`CONVENTIONS.md`](CONVENTIONS.md#ordre-des-couches) : à lire avant toute extraction ou tout ajout de composable.
+
 ## Modèle de confiance
 
 WebRTC2 **n'implémente pas de chiffrement de bout en bout (E2E) applicatif**. Le transport WebRTC reste chiffré au niveau réseau (DTLS/SRTP entre pairs), mais en topologie star le hub déchiffre nécessairement les enveloppes pour les retransmettre.

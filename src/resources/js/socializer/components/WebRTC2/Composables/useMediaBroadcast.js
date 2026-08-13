@@ -91,14 +91,7 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
     
         setCurrentCallRoomId, // fonction pour définir le currentCallRoomId (roomId spécifique pour les appels audio/vidéo)
         ensureCurrentCallRoomId, // fonction pour s'assurer que le currentCallRoomId est défini avant d'initier ou d'accepter un appel audio/vidéo
-   
-        setCurrentCallUsers, // fonction pour définir la liste des utilisateurs actuellement en appel avec moi
-        addCurrentCallUser, // fonction pour ajouter un utilisateur à la liste des utilisateurs actuellement en appel avec moi
-        removeCurrentCallUser, // fonction pour supprimer un utilisateur de la liste des utilisateurs actuellement en appel avec moi
-        clearCurrentCallUsers, // fonction pour vider la liste des utilisateurs actuellement en appel avec moi
 
-        setCallInProgress, // fonction pour définir l'état d'un appel en cours
-        
         isCallInProgress, // fonction pour vérifier s'il y a un appel en cours avec au moins un utilisateur
         callStatus, // fonction pour obtenir l'état actuel de l'appel (idle, calling, receiving, connected, closing)
 
@@ -214,11 +207,6 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
         removeVideoElement,
         setCurrentCallRoomId,
         ensureCurrentCallRoomId,
-        setCurrentCallUsers,
-        addCurrentCallUser,
-        removeCurrentCallUser,
-        clearCurrentCallUsers,
-        setCallInProgress,
 
         callStatus,
         isCallInProgress,

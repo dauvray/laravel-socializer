@@ -69,6 +69,15 @@ export function createMockContext(overrides = {}) {
         ...(overrides.connection ?? {}),
     })
 
+    // ── Lifecycle state (garde de teardown partagé) ───────────────────────────
+    const lifecycle = reactive({
+        isShuttingDown: false,
+        ...(overrides.lifecycle ?? {}),
+    })
+
+    const beginShutdown = vi.fn(() => { lifecycle.isShuttingDown = true })
+    const endShutdown   = vi.fn(() => { lifecycle.isShuttingDown = false })
+
     // ── Connection events ─────────────────────────────────────────────────────
     const connectionEvents = reactive({
         onConnectionOpen:  { callback: vi.fn(), isActive: false },
@@ -268,6 +277,7 @@ export function createMockContext(overrides = {}) {
         media,
         ui,
         connection,
+        lifecycle,
         SIGNAL_TYPES,
         connectionEvents,
 
@@ -281,6 +291,8 @@ export function createMockContext(overrides = {}) {
         currentCallRoomId,
         currentCallUsers,
         callInprogress: callMachine.callInprogress,
+        callStatus: computed(() => callMachine.callState.value),
+        isShuttingDown: computed(() => lifecycle.isShuttingDown),
         usersInRoom,
         allUsersInRoom,
         topology,
@@ -295,6 +307,8 @@ export function createMockContext(overrides = {}) {
 
         // helpers
         waitForMeReady,
+        beginShutdown,
+        endShutdown,
         setUpConnectionListeners,
         storeConnectionEventCallbacks,
         setCurrentCallUsers,

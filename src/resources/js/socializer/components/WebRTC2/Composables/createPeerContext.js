@@ -90,6 +90,22 @@ export function createPeerContext({ type, room, options }) {
         usersInRoom: [],
     })
 
+    // LIFECYCLE STATE
+    // Garde de teardown partagé : écrit par la couche appels (useCallManager) et par
+    // les arrêts de stream, lu par la couche connexions (useConnectionPool) pour ne
+    // relancer aucun retry pendant un cleanup. Vit ici parce que les deux couches
+    // vivent dans des fichiers distincts.
+    // ⚠️ Booléen volontairement, pas un compteur : le comportement historique veut
+    // qu'un arrêt qui se termine relâche le garde (cf. TODOLIST — non ré-entrant).
+    const lifecycle = reactive({
+        isShuttingDown: false,
+    })
+
+    // Accesseurs plutôt qu'écriture directe, pour la même raison que closingUsers
+    // dans callMachine : éviter la corruption depuis l'extérieur.
+    const beginShutdown = () => { lifecycle.isShuttingDown = true }
+    const endShutdown   = () => { lifecycle.isShuttingDown = false }
+
     // SIGNAUX DISPOS
     const SIGNAL_TYPES = {
         core: [
@@ -144,6 +160,9 @@ export function createPeerContext({ type, room, options }) {
 
         callInprogress: callMachine.callInprogress,
         callStatus: computed(() => callMachine.callState.value),
+
+        // Garde de teardown : exposé en lecture seule (seuls beginShutdown/endShutdown écrivent)
+        isShuttingDown: computed(() => lifecycle.isShuttingDown),
 
         usersInRoom: computed(() => connection.usersInRoom),
         // Tous les utilisateurs dans la room, moi compris.
@@ -479,6 +498,9 @@ export function createPeerContext({ type, room, options }) {
 
         // Réinitialise la liste des utilisateurs en room
         connection.usersInRoom = []
+
+        // ⚠️ lifecycle.isShuttingDown n'est PAS réinitialisé : le garde doit rester
+        // actif après le teardown terminal pour bloquer tout retry résiduel.
     }
 
     onUnmounted(() => {
@@ -508,6 +530,7 @@ export function createPeerContext({ type, room, options }) {
         media,
         ui,
         connection,
+        lifecycle,
         SIGNAL_TYPES,
         connectionEvents,
 
@@ -519,6 +542,8 @@ export function createPeerContext({ type, room, options }) {
 
         // helpers
         waitForMeReady,
+        beginShutdown,
+        endShutdown,
         setUpConnectionListeners,
         storeConnectionEventCallbacks,
         setCurrentCallUsers,

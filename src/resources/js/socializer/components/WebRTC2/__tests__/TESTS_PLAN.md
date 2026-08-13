@@ -25,9 +25,17 @@ Tâche 2 → usePeerConnections   (connexions PeerJS factices)
 Tâche 3 → usePeerMedia         (DOM + MediaStream)
 Tâche 4 → usePeerTransport     (singleton Peer + DataChannel)
 Tâche 5 → createPeerContext    (context factory + lifecycle)
-Tâche 6 → usePeerOrchestrator  (intégration orchestration)
+Tâche 6 → usePeerOrchestrator  (intégration composition — réduite depuis l'extraction des couches)
 Tâche 7 → useMediaBroadcast    (intégration feature layer)
 ```
+
+Les couches extraites de l'orchestrateur (`useConnectionPool`, `useCallManager`,
+`useStreamManager`) se testent avec des mocks `vi.fn()` pour les dépendances injectées
+— c'est tout l'intérêt de l'injection descendante. `useCallManager` et
+`useStreamManager` n'enregistrent aucun hook de lifecycle : ils s'appellent
+directement, **sans** `withSetup`. Ce qui reste à couvrir en tâche 6 :
+`initializePeerConnection` (wrapping star + chaînage des handlers de flux) et les
+passthroughs média — soit ~245 lignes.
 
 ---
 
@@ -43,6 +51,9 @@ Tâche 7 → useMediaBroadcast    (intégration feature layer)
 - [ ] Tâche 5 — `createPeerContext.test.js`
 - [ ] Tâche 6 — `usePeerOrchestrator.test.js`
 - [ ] Tâche 7 — `useMediaBroadcast.test.js`
+- [x] `useConnectionPool.test.js` — 31 tests ✅ : `requestOrConnectPeer` (6), logique de tentative/retry (8 — dont garde `isShuttingDown`, signalisation stale, connexion screen, clearRetry/clearAllRetries), `syncUsersConnections` (9 — lock concurrent, `waitForMeReady` négatif, nettoyage des partants, fan-out mesh/star-hub/star-client/sfu), recovery `peerUnavailableSignal` (3), cleanup (2)
+- [x] `useStreamManager.test.js` — 25 tests ✅ : `handleStreamReceived` (13 — clé canonique, résolution du slug, idempotence, mode stream sans player, éviction TTL et FIFO), `handleStreamRemoved` (12 — départ complet, full stop conditionnel, garde par participant, dédoublonnage concurrent, libération de la garde sur exception)
+- [x] `useCallManager.test.js` — 50 tests ✅ : `startCallWithPeer` (9 — dont « aucune mutation si appel en cours » et room imposée), `acceptCallFromPeer` (8 — dont **ordre mapping peerId avant transition**), `openCallBetweenPeer` (5), `stopCallWithPeers` (8 — partial vs full, ordre du cleanup, mutex CLOSING, exception → pas de blocage), `remoteStopCall` (6 — dont dédoublonnage concurrent), `resetCallState` (1), room d'appel (4), état (1), verbes FSM pour la couche streams (5), retries d'invitation (3)
 
 ---
 
