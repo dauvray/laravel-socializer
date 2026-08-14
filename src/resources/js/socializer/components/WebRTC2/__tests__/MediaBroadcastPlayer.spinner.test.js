@@ -116,4 +116,47 @@ describe('MediaBroadcastPlayer — overlay d\'attente', () => {
 
         expect(spinner(wrapper).exists()).toBe(false)
     })
+
+    it('ne démonte pas le rendu du flux pendant l\'attente (c\'est un overlay)', () => {
+        // L'overlay est en position:absolute au-dessus du <video> : il recouvre le cadre
+        // noir, il ne le remplace pas.
+        const wrapper = mountPlayer()
+
+        expect(spinner(wrapper).exists()).toBe(true)
+        expect(wrapper.find('.video-stub').exists()).toBe(true)
+    })
+})
+
+describe('MediaBroadcastPlayer — rendus alternatifs vidéo / audio', () => {
+
+    it('ne monte pas l\'AudioPlayer en même temps que la vidéo', async () => {
+        // Même MediaStream dans les deux éléments : le son jouerait en double, et les deux
+        // `ref="player"` entreraient en collision — or les contrôles en dépendent.
+        const wrapper = mountPlayer()
+        await wrapper.findComponent(VideoPlayerStub).vm.$emit('can-play')
+
+        expect(wrapper.find('.video-stub').exists()).toBe(true)
+        expect(wrapper.find('.audio-stub').exists()).toBe(false)
+    })
+
+    it('rend l\'AudioPlayer quand la vidéo est désactivée', () => {
+        const wrapper = mountPlayer({ videoActive: false })
+
+        expect(wrapper.find('.video-stub').exists()).toBe(false)
+        expect(wrapper.find('.audio-stub').exists()).toBe(true)
+    })
+
+    it('n\'affiche pas les contrôles vidéo sur la branche audio', () => {
+        // useMediaControls pilote `nativeVideo` : sur un AudioPlayer, ces boutons seraient
+        // inertes. L'élément <audio> porte déjà ses contrôles natifs.
+        const wrapper = mountPlayer({ videoActive: false })
+
+        expect(wrapper.find('.video-controls').findAll('button')).toHaveLength(0)
+    })
+
+    it('affiche les contrôles vidéo sur la branche vidéo', () => {
+        const wrapper = mountPlayer()
+
+        expect(wrapper.find('.video-controls').findAll('button').length).toBeGreaterThan(0)
+    })
 })

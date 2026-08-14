@@ -4,33 +4,29 @@
         v-resize="resizeOptions"
         v-draggable="draggableOptions"
         @pointerdown="onBringToFront">
-        <slot v-if="props.videoActive" name="video" :streamData="props.streamData">
-            <VideoPlayer
-                ref="player"
-                :srcObject="props.streamData.stream"
-                :controls="false"
-                :autoplay="true"
-                :muted="isLocallyMuted"
-                :playsinline="true"
-                @can-play="isBuffering = false"
-                @playing="isBuffering = false"
-                @waiting="isBuffering = true"
-                @stalled="isBuffering = true"
-                @error="isBuffering = false"
-            />
-        </slot>
-
-        <!--
-            Un flux distant est présent mais aucune image n'est encore décodée : sans ce
-            retour visuel, l'attente (négociation ICE, premières frames) se lit comme un
-            cadre noir, donc comme une panne.
-        -->
-        <div v-if="showSpinner" class="video-loading" aria-live="polite">
-            <Spinner1 color="#ffffff" />
-            <span class="video-loading-label">Connexion au flux…</span>
-        </div>
+        <template v-if="props.videoActive">
+            <slot name="video" :streamData="props.streamData">
+                <VideoPlayer
+                    ref="player"
+                    :srcObject="props.streamData.stream"
+                    :controls="false"
+                    :autoplay="true"
+                    :muted="isLocallyMuted"
+                    :playsinline="true"
+                    @can-play="isBuffering = false"
+                    @playing="isBuffering = false"
+                    @waiting="isBuffering = true"
+                    @stalled="isBuffering = true"
+                    @error="isBuffering = false"
+                />
+            </slot>
+            <div v-if="showSpinner" class="video-loading" aria-live="polite">
+                <Spinner1 color="#ffffff" />
+                <span class="video-loading-label">Connexion au flux…</span>
+            </div>
+        </template>
         <slot v-else name="audio" :streamData="props.streamData">
-            <AudioPlayer 
+            <AudioPlayer
                 ref="player"
                 :srcObject="props.streamData.stream"
                 :controls="true"
@@ -55,15 +51,24 @@
 
         <div class="video-controls">
             <slot name="controls" :streamData="props.streamData" :controls="controls">
-                <button v-if="!props.streamData.metadata?.isMe" 
-                    type="button" 
-                    class="btn" 
-                    :class="{'btn-primary': !nativeMuted, 'btn-secondary': nativeMuted}" 
-                    @click="onToggleNativeMute">
-                    {{ nativeMuted ? 'Unmute' : 'Mute' }}
-                </button>
-                <button class="btn btn-primary" @click="controls.toggleFullscreen">Fullscreen</button>
-                <button class="btn btn-primary" @click="controls.togglePip">PIP</button>
+                <!--
+                    Contrôles de la branche vidéo uniquement : useMediaControls pilote
+                    l'élément exposé en `nativeVideo`, que l'AudioPlayer n'a pas — hors
+                    vidéo, ces boutons seraient inertes. Le plein écran et le PIP n'ont de
+                    toute façon pas de sens sur un <audio>, qui porte déjà ses propres
+                    contrôles natifs (dont le mute).
+                -->
+                <template v-if="props.videoActive">
+                    <button v-if="!props.streamData.metadata?.isMe"
+                        type="button"
+                        class="btn"
+                        :class="{'btn-primary': !nativeMuted, 'btn-secondary': nativeMuted}"
+                        @click="onToggleNativeMute">
+                        {{ nativeMuted ? 'Unmute' : 'Mute' }}
+                    </button>
+                    <button class="btn btn-primary" @click="controls.toggleFullscreen">Fullscreen</button>
+                    <button class="btn btn-primary" @click="controls.togglePip">PIP</button>
+                </template>
             </slot>
         </div>
         
