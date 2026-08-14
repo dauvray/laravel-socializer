@@ -38,7 +38,11 @@ describe('usePeerCore', () => {
                 {
                     toUserSlug: 'alice',
                     room: ctx.session.onAirRoom,
+                    // `type` = type du contexte : clé de routage du signal retour.
                     type: ctx.session.currentType,
+                    // `connectionType` = connexion réellement demandée ; par défaut le
+                    // type du contexte, mais c'est lui qui porte 'screen'.
+                    connectionType: ctx.session.currentType,
                 }
             )
             expect(result).toBe(true)
@@ -142,6 +146,9 @@ describe('usePeerCore', () => {
                     toUserSlug: 'bob',
                     room: 'room-42',
                     type: 'visio',
+                    // Renvoyé tel que reçu ; retombe sur `type` quand le demandeur ne
+                    // l'envoie pas (backend ou client non à jour).
+                    connectionType: 'visio',
                 }
             )
         })

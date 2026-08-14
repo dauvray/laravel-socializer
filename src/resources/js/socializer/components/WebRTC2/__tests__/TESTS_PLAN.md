@@ -1,16 +1,40 @@
 # WebRTC2 — Plan de tests unitaires
 
 > Infrastructure : vitest 2.1.9 · @vue/test-utils · happy-dom  
-> Helpers : `withSetup`, `createMockContext`, `mockEventBus`, `__mocks__/peerjs.js`  
-> Commande : `npm run test:run`
+> Helpers : `withSetup`, `createMockContext`, `mockEventBus`, `__mocks__/peerjs.js`,
+> `createVirtualPeer`, `fakeSignalingServer`, `fakeMedia`  
+> Commande : `npm run test:run` — **489 tests / 28 fichiers, ~3 s** (2026-08-14)
+
+⚠️ **Ne jamais recopier un décompte de mémoire** : ce document avait divergé du réel
+(377 annoncés pour 466 réels). Les chiffres se relisent dans la sortie du runner.
+
+---
+
+## Trois étages
+
+| Étage | Où | Rôle |
+|---|---|---|
+| **Unitaire** | `__tests__/*.test.js`, `utils/` | une couche, dépendances injectées mockées |
+| **Conformité** | `mockFidelity.test.js` | le mock n'est ni en retard ni en avance sur le store réel |
+| **Bout en bout** | `scenarios/` | deux pairs **réels** qui se parlent |
+
+Les scénarios sont l'étage qui manquait, et sans lequel aucun des incendies du package
+n'était détectable : ils ne sont vrais ou faux que **vus du pair d'en face**. Détail du
+harnais et de ses trois invariants (reset des modules par pair, une tâche par signal,
+livraisons asynchrones) dans [CONVENTIONS.md](../CONVENTIONS.md#tests--trois-étages-trois-rôles).
+
+- [x] `scenarios/harness.smoke.test.js` — 5 tests : le harnais lui-même (pairs isolés, va-et-vient de signalisation, data channel réel, **propagation des metadata**, `peer-unavailable`). Sans lui, un scénario rouge serait indistinguable d'un harnais cassé
+- [x] `scenarios/lateJoiner.test.js` — 5 tests : **le symptôme**. Webcam vers un arrivant, **écran seul** (rouge avant le fix `connectionType`), webcam + écran, troisième arrivant, annonce de diffusion
+- [x] `scenarios/broadcastLifecycle.test.js` — 3 tests : arrêter un flux n'en emporte pas un autre (webcam↛écran, écran↛webcam), relance d'une diffusion
+- [x] `scenarios/peerDeparture.test.js` — 4 tests : coupure brutale sans signal serveur, oubli du peerId d'un partant, retour avec un nouveau peerId, **B initiateur sortant d'un peerId mort**
+- [x] `mockFidelity.test.js` — 5 tests : tout `peerStore.X` consommé par la production existe sur le vrai store **et** sur le mock ; le mock n'invente rien ; `getConnections` jamais enveloppé dans un `computed`
 
 ---
 
 ## ✅ Déjà réalisé
 
-> Décomptes vérifiés par `npx vitest run --reporter=dot` le **2026-08-13** : **377 tests WebRTC2**
-> sur 16 fichiers, ~1,5 s. Les chiffres de ce document avaient divergé du réel — ne pas les
-> mettre à jour de mémoire, les relire dans la sortie du runner.
+> Décomptes relus dans la sortie du runner le **2026-08-14** : **489 tests** sur
+> 28 fichiers, ~3 s (dont 17 scénarios bout en bout et 5 de conformité des mocks).
 
 - [x] **Infrastructure** : `vitest.config.js`, `setup.js` (mocks globaux : mediaDevices, RTCPeerConnection, crypto, Pinia)
 - [x] **`utils/useCallStateMachine.test.js`** — 36 tests : transitions FSM, computed dérivés, reset(), closingUsers

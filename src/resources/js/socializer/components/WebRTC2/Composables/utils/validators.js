@@ -6,15 +6,21 @@
  * `usePeerOrchestrator` et `usePeerTransport`, et dont `useConnectionPool` /
  * `useCallManager` ont besoin tous les deux.
  *
- * ⚠️ `VALID_CALL_TYPES` n'est PAS `VALID_CONNECTION_TYPES` (webrtc2.config.js) :
- * les types d'appel acceptent `'audio'`, les types de connexion PeerJS non.
- * Asymétrie historique conservée telle quelle — la fusionner changerait le
- * comportement de `startCallWithPeer` / `acceptCallFromPeer` (cf. TODOLIST).
+ * `VALID_CALL_TYPES` est désormais **dérivé** de `VALID_CONNECTION_TYPES` : une seule
+ * source de vérité pour les deux couches.
+ *
+ * Historiquement les deux jeux divergeaient — la couche appels acceptait `'audio'`, pas
+ * la couche connexions. Un appel `'audio'` passait donc la validation d'entrée puis se
+ * faisait refuser à l'ouverture de connexion : jamais fonctionnel, et l'échec arrivait
+ * loin de sa cause. Vérification faite avant de trancher, `'audio'` n'était émis par
+ * **aucun** appelant (seule sa propre définition le mentionnait) et `normalizeType`
+ * (EventBus/webrtc2Events.js) ne reconnaît que `'visio' | 'vocal'` : le type était mort.
+ * D'où l'alignement sur `VALID_CONNECTION_TYPES`, qui fait autorité.
  */
-import { SLUG_PATTERN } from '../../webrtc2.config.js'
+import { SLUG_PATTERN, VALID_CONNECTION_TYPES } from '../../webrtc2.config.js'
 
 /** Types d'appel acceptés par la couche appels (payloads entrants inclus). */
-export const VALID_CALL_TYPES = ['data', 'visio', 'vocal', 'stream', 'screen', 'audio']
+export const VALID_CALL_TYPES = [...VALID_CONNECTION_TYPES]
 
 /**
  * Valide un slug utilisateur (provenance : payload réseau ou signalisation).

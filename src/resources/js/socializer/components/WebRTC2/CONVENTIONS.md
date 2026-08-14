@@ -80,6 +80,60 @@ L'état *plat* partagé (`session.currentCallUsers`, via `ctx.addCurrentCallUser
 n'a pas de propriétaire unique : il n'a pas d'invariant de transition à protéger,
 contrairement à la FSM. C'est la raison de la différence de traitement.
 
+## Deux types voyagent dans la signalisation — ne jamais les confondre
+
+| Champ | Ce que c'est | Qui le lit |
+|---|---|---|
+| `type` | Type du **contexte** (`ctx.session.currentType`) | **Clé de routage** : `Notifications.vue` en dérive `roomId = '<type>-<room>'`, qui doit être le `contextId` du destinataire |
+| `connectionType` | Type de connexion réellement demandé (`'screen'`…) | `connectToPeer`, qui ouvre ce type-là |
+
+Mettre `'screen'` dans `type` enverrait la réponse dans une file **que personne
+n'observe** : `'screen'` n'a pas de contexte à lui. C'est pourquoi le type demandé a son
+champ propre, relayé tel quel par `UserController::askForPeerId` /
+`responseToPeerId` (liste blanche : le backend ne transmet que les champs qu'il nomme).
+
+Avant ce champ, la signalisation n'ouvrait **jamais** la connexion d'écran vers un
+arrivant : seul le moteur de retry le faisait, ~1,5 s plus tard. Le partage d'écran
+reposait donc entièrement sur la chaîne de retry, ce qui l'a rendu totalement cassable
+deux fois par un simple `return` prématuré. `connectionType` absent ⇒ repli sur `type`
+(rétrocompatible avec un backend non déployé).
+
+## Tests : trois étages, trois rôles
+
+```
+__tests__/utils/ · __tests__/*.test.js     unitaire — une couche, dépendances mockées
+__tests__/mockFidelity.test.js             conformité — le mock ne ment pas au store réel
+__tests__/scenarios/                       bout en bout — deux pairs RÉELS qui se parlent
+```
+
+**Un bug vécu s'écrit d'abord dans `scenarios/`.** Tous les incendies du package ont le
+même symptôme utilisateur — « A diffuse, B arrive, B ne voit rien » — avec des causes
+racines chaque fois différentes. Un test de couche isolée ne peut pas l'observer : il ne
+devient vrai ou faux que **vu de B**. Assertez donc sur le fait métier
+(`bob.receivedStreamsFrom()`), jamais sur un appel de fonction interne — c'est ce qui
+rend ces tests insensibles aux refactos internes.
+
+⚠️ `remoteStreams` **exclut** les partages d'écran et `remoteScreens` ne contient qu'eux
+(`createPeerContext:201-202`) : asserter sur `remoteStreams` seul laisse passer toute
+régression d'écran.
+
+Le harnais (`helpers/createVirtualPeer.js`, `helpers/fakeSignalingServer.js`,
+`__mocks__/peerjs.js` en mode bus) impose trois invariants à ne pas défaire :
+
+- **`vi.resetModules()` par pair** — `usePeerTransport` porte 8 variables module-level ;
+  sans reset, deux pairs partagent le même Peer et ne sont qu'un seul participant.
+  Corollaire : monter les pairs **séquentiellement**.
+- **Une tâche de boucle d'événement par signal** (`setTimeout(…, 0)` dans le faux
+  serveur) — un event Reverb = une frame WebSocket = une tâche. Dispatcher deux signaux
+  dans le même tick fabriquerait une coalescence (`lastRoomSignal` = `at(-1)`)
+  **impossible en production**, et ferait échouer des scénarios sur un artefact de test.
+- **Livraisons asynchrones du bus PeerJS** — le code branche ses handlers *après*
+  l'appel (`call.answer(…)` puis `setUpConnectionListeners(call)`). Une livraison
+  synchrone les manquerait tous.
+
+`createPeerBus()` est **opt-in** : sans lui, le mock PeerJS garde son comportement isolé
+historique, et les tests unitaires existants ne voient aucune différence.
+
 ## Bornes & limites (toutes dans `webrtc2.config.js`)
 
 - `MAX_PEERS_PER_ROOM = 8` — mesh sature au-delà (CPU + bande passante navigateur)

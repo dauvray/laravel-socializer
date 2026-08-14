@@ -135,7 +135,10 @@ export function useConnectionPool(ctx, { core, connections }) {
         if (waiting) {
             const age = Date.now() - (waiting.createdAt ?? 0)
             if (age >= SIGNALING_STALE_MS) {
-                core.requestRemotePeerConnection(userSlug)
+                // On redemande pour ce qui manque réellement — y compris l'écran, dont
+                // c'était jusqu'ici le seul chemin d'ouverture possible.
+                if (!mainTypeOpen) core.requestRemotePeerConnection(userSlug, ctx.currentType.value)
+                if (ctx.media.isCapturing && !screenOpen) core.requestRemotePeerConnection(userSlug, 'screen')
             }
         }
 
@@ -165,8 +168,11 @@ export function useConnectionPool(ctx, { core, connections }) {
                 room: ctx.session.currentCallRoomId || ctx.currentRoom.value,
             })
         } else if (!waiting) {
-            // On ne demande que si on n'est pas déjà en train d'attendre
-            core.requestRemotePeerConnection(userSlug)
+            // On ne demande que si on n'est pas déjà en train d'attendre.
+            // ⚠️ Le type est transmis : sans lui, une demande pour 'screen' repartait
+            // avec le type du contexte et la connexion d'écran n'était jamais ouverte
+            // par la signalisation (seul le moteur de retry le faisait, ~1,5 s plus tard).
+            core.requestRemotePeerConnection(userSlug, effectiveType)
         }
 
         // On lance le moteur de retry (qui surveillera l'évolution vers 'open')

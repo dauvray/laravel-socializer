@@ -62,13 +62,30 @@ export function usePeerCore(ctx) {
 
     /**
      * Demande à un peer distant son peerId pour pouvoir ensuite ouvrir une connexion WebRTC.
-     * @param {*} userSlug 
-     * @returns 
+     *
+     * ⚠️ Deux types voyagent, et il ne faut surtout pas les confondre :
+     *
+     * - `type` = type du **contexte** (`ctx.session.currentType`). C'est la **clé de
+     *   routage** du signal : `Notifications.vue` en dérive `roomId = '<type>-<room>'`,
+     *   qui doit être le `contextId` du destinataire. Y mettre `'screen'` enverrait la
+     *   réponse dans une file que **personne n'observe** — le signal serait perdu.
+     * - `connectionType` = type de connexion réellement demandé (`'screen'`…).
+     *
+     * Historiquement seul `type` était envoyé, donc la signalisation n'ouvrait **jamais**
+     * la connexion d'écran vers un arrivant : seul `_handleConnectionAttempt` le faisait,
+     * via son moteur de retry. Le partage d'écran reposait donc entièrement sur le retry
+     * (≈1,5 s de latence au mieux), ce qui l'a rendu fragile deux fois — un `return`
+     * prématuré dans la chaîne de retry le coupait totalement.
+     *
+     * @param {string}      userSlug
+     * @param {string|null} connectionType  Type de connexion visé ; défaut = type du contexte
+     * @returns {Promise<boolean>}
      */
-    const requestRemotePeerConnection = async (userSlug) => {
+    const requestRemotePeerConnection = async (userSlug, connectionType = null) => {
 
         const room = ctx.session.onAirRoom
         const type = ctx.session.currentType
+        const requestedType = connectionType || type
         const localPeerId = ctx.peerStore.getLocalPeerId
 
         if (!localPeerId) {
@@ -76,8 +93,10 @@ export function usePeerCore(ctx) {
             return false
         }
 
+        // Le garde anti-spam discrimine par type demandé : sans ça, la demande 'screen'
+        // serait étranglée par celle du type principal émise juste avant (même slug).
         const waiting = ctx.peerStore.getWaitingRemotePeerId(userSlug)
-        if (waiting && waiting.room === room && waiting.type === type) {
+        if (waiting && waiting.room === room && waiting.type === requestedType) {
             const age = Date.now() - (waiting.createdAt ?? 0)
 
             // Si on a déjà demandé ce peerId récemment, on évite le spam réseau.
@@ -90,9 +109,10 @@ export function usePeerCore(ctx) {
             await ctx.AjaxService.load(ENDPOINTS.ASK_TO_PEER_ID, 'post', {
                 toUserSlug: userSlug,
                 room: room,
-                type: type
+                type: type,
+                connectionType: requestedType
             })
-            ctx.peerStore.addWaitingRemotePeerId(userSlug, { room, type })
+            ctx.peerStore.addWaitingRemotePeerId(userSlug, { room, type: requestedType })
             return true
         } catch (e) {
             console.error('[usePeerCore] requestRemotePeerConnection failed:', e)
@@ -125,7 +145,10 @@ export function usePeerCore(ctx) {
                 peerId: localPeerId,
                 toUserSlug: payload.fromUserSlug,
                 room: payload.room,
-                type: payload.type
+                // Renvoyés tels que reçus : `type` route la réponse vers le bon contexte
+                // du demandeur, `connectionType` lui dit quelle connexion ouvrir.
+                type: payload.type,
+                connectionType: payload.connectionType || payload.type
             })
             return true
         } catch (e) {

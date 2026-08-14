@@ -92,7 +92,14 @@ class UserController extends Controller
             ->as('AskToPeerID')
             ->with([
                 'room' => $request->get('room'),
+                // `type` = type du CONTEXTE côté client : c'est la clé de routage du
+                // signal (Notifications.vue en dérive `roomId`). Ne jamais y mettre
+                // 'screen', qui n'a pas de contexte à lui.
                 'type' => $request->get('type'),
+                // `connectionType` = type de connexion réellement demandé ('screen'…).
+                // Champ distinct pour que le partage d'écran passe par la signalisation
+                // au lieu de dépendre uniquement du moteur de retry côté client.
+                'connectionType' => $request->get('connectionType'),
                 'fromUserSlug' => $user->slug,
             ])
             ->sendNow();
@@ -116,7 +123,10 @@ class UserController extends Controller
             ->with([
                 'peerId' => $request->get('peerId'),
                 'fromUserSlug' => $user->slug,
+                // Cf. askForPeerId : `type` route le signal, `connectionType` porte le
+                // type de connexion à ouvrir. Renvoyés tels que reçus.
                 'type' => $request->get('type'),
+                'connectionType' => $request->get('connectionType'),
                 'room' => $request->get('room'),
             ])
             ->sendNow();

@@ -30,7 +30,13 @@ import { isPayloadWithinLimit } from '~socializer/components/WebRTC2/Composables
 import { sanitizeMetadataType } from '~socializer/components/WebRTC2/Composables/utils/sanitizeMetadata.js'
 import { ME_READY_TIMEOUT_MS } from '~socializer/components/WebRTC2/webrtc2.config.js'
 
-export function createPeerContext({ type, room, options }) {
+// `options = {}` par défaut : `options.topology` / `options.hubSlug` /
+// `options.videoContainer` étaient lus SANS optional chaining alors que
+// `options?.meReadyTimeoutMs` en avait un — `createPeerContext({ type, room })` jetait
+// donc un TypeError, contredisant une signature qui suggérait l'inverse. Aucun appelant
+// n'était concerné (l'orchestrateur passe toujours `options`), mais l'asymétrie était un
+// piège. Tranché en faveur de la valeur par défaut : un seul endroit à tenir.
+export function createPeerContext({ type, room, options = {} }) {
 
     const contextId = `${type}-${room}`
 

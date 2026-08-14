@@ -148,7 +148,17 @@ export function createMockContext(overrides = {}) {
         }),
         removeWaitingRemotePeerId: vi.fn((slug) => { _waitingRemotePeerIds.delete(slug) }),
 
+        // Peer local : `usePeerTransport` lit et écrit ces deux membres directement.
+        // Leur absence du mock était invisible (undefined se lit sans erreur) mais
+        // rendait tout test du transport muet sur ces chemins.
+        localPeer: overrides.peerStore?.localPeer ?? null,
+        localPeerReady: overrides.peerStore?.localPeerReady ?? false,
+
+        // File de signaux brute : lue par `useSignalingQueue` (détecteur de coalescence).
+        signalQueues: _signalQueueRooms,
+
         getQueueForRoom: vi.fn((room) => _signalQueueRooms[room] ?? []),
+        getLastRoomSignal: vi.fn((room) => _signalQueueRooms[room]?.at(-1) ?? null),
         createSignalQueueRoom: vi.fn((room) => { _signalQueueRooms[room] = [] }),
         clearSignalQueueRoom: vi.fn((room) => { delete _signalQueueRooms[room] }),
 
@@ -181,6 +191,10 @@ export function createMockContext(overrides = {}) {
             })
         }),
 
+        // ⚠️ HELPER DE TEST — n'existe PAS sur le store réel (cf. mockFidelity.test.js).
+        // Raccourci de `prepareRoomConnection` + `storePeerConnection`, pour injecter une
+        // connexion factice en une ligne. Produit exactement la même structure que ces
+        // deux actions ; toute divergence en ferait un mock qui ment.
         addPeerConnectionInstance: vi.fn((room, slug, type, conn) => {
             if (!_connections[room]) _connections[room] = {}
             if (!_connections[room][slug]) _connections[room][slug] = {}
@@ -205,7 +219,8 @@ export function createMockContext(overrides = {}) {
         }),
 
         setLocalPeer: vi.fn(),
-        setLocalPeerId: vi.fn(),
+        // `setLocalPeerId` retiré : n'existait ni sur le store réel (qui expose
+        // `setLastLocalPeerId`) ni dans aucun appelant — API purement imaginaire.
         addPlayer: vi.fn((player) => { _players.push(player) }),
         removePlayer: vi.fn((videoId) => {
             const idx = _players.findIndex((p) => p.videoId === videoId)

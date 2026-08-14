@@ -353,13 +353,22 @@ describe('usePeerConnections', () => {
                 expect(ctx.peerStore.getLocalPeer.call).not.toHaveBeenCalled()
             })
 
-            it('vocal : type valide mais aucune branche d\'ouverture — renvoie true sans connexion', () => {
+            it('vocal : ouvre l\'appel comme visio (mêmes préconditions de flux)', () => {
                 ctx.session.currentType = 'vocal'
                 ctx.media.currentStream = liveStream()
 
                 expect(connections.connectToPeer({ userSlug: 'alice', peerId: 'p-alice' })).toBe(true)
+                expect(ctx.peerStore.getLocalPeer.call).toHaveBeenCalledOnce()
+            })
+
+            it('vocal : sans flux local, échoue explicitement (et laisse le retry différer)', () => {
+                ctx.session.currentType = 'vocal'
+                ctx.media.currentStream = null
+
+                // `false` et non `true` : un `true` ANNULERAIT le retry, ce qui était
+                // exactement le défaut de l'absence de branche.
+                expect(connections.connectToPeer({ userSlug: 'alice', peerId: 'p-alice' })).toBe(false)
                 expect(ctx.peerStore.getLocalPeer.call).not.toHaveBeenCalled()
-                expect(ctx.peerStore.getLocalPeer.connect).not.toHaveBeenCalled()
             })
         })
 
@@ -368,8 +377,10 @@ describe('usePeerConnections', () => {
                 expect(connections.connectToPeer({ userSlug: 'alice', peerId: 'p-alice', type: 'inconnu' })).toBe(false)
             })
 
-            it('rejette `audio`, accepté par la couche appels mais pas par la couche connexions', () => {
-                // Asymétrie VALID_CALL_TYPES / VALID_CONNECTION_TYPES — item ouvert.
+            it('rejette `audio`, désormais invalide pour les DEUX couches', () => {
+                // VALID_CALL_TYPES est maintenant dérivé de VALID_CONNECTION_TYPES :
+                // l'asymétrie historique (accepté à l'entrée, refusé à l'ouverture) est
+                // levée — `audio` n'était émis par aucun appelant.
                 expect(connections.connectToPeer({ userSlug: 'alice', peerId: 'p-alice', type: 'audio' })).toBe(false)
             })
 

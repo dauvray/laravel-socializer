@@ -121,7 +121,12 @@ export function usePeerConnections(ctx) {
         }
 
         const room = payload?.room || ctx.session.currentCallRoomId || ctx.session.currentRoom
-        const type = payload?.type || ctx.currentType.value
+        // `connectionType` prioritaire sur `type` : sur un signal de signalisation, `type`
+        // est le type du CONTEXTE (clé de routage du signal) tandis que `connectionType`
+        // porte la connexion réellement demandée — c'est ce qui permet à la signalisation
+        // d'ouvrir une connexion 'screen', qu'elle n'ouvrait jamais auparavant.
+        // Absent (backend non à jour, appels internes) ⇒ on retombe sur `type`.
+        const type = payload?.connectionType || payload?.type || ctx.currentType.value
 
         const mySlug = ctx.meStore.getMe?.slug
         const myPeerId = String(
@@ -223,12 +228,20 @@ export function usePeerConnections(ctx) {
                 return true
             }
 
-            if (config.options.metadata.type === 'visio') {
+            // `visio` ET `vocal` : mêmes préconditions de flux, même ouverture.
+            // ⚠️ `vocal` n'avait AUCUNE branche et tombait sur le `return true` final :
+            // `peer.call()` n'était jamais appelé, donc aucun flux ne partait — et ce
+            // `true` **annulait** le retry, si bien que rien ne rattrapait. Le type était
+            // pourtant de première classe partout ailleurs (VALID_CONNECTION_TYPES,
+            // `_buildPeerConnectionConfig` qui lui affecte bien un stream,
+            // `closePeerConnection`, `normalizeType`) : seule l'ouverture manquait.
+            const metadataType = config.options.metadata.type
+            if (metadataType === 'visio' || metadataType === 'vocal') {
                 const stream = config.stream
                 const isValidStream = stream instanceof MediaStream
                     && stream.getTracks().some(t => t.readyState === 'live')
                 if (!isValidStream) {
-                    console.warn('[usePeerConnections] connectToPeer (visio): stream local absent ou invalide — peer.call() annulé', {
+                    console.warn(`[usePeerConnections] connectToPeer (${metadataType}): stream local absent ou invalide — peer.call() annulé`, {
                         userSlug,
                         stream: stream ?? null,
                     })

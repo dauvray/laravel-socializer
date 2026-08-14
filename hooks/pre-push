@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+#
+# pre-push — refuse de pousser une suite rouge.
+#
+# La suite WebRTC2 tourne en ~2 s : il n'y a aucune raison de pousser sans l'avoir
+# lancée. Historiquement, plusieurs régressions ont été introduites le jour même par le
+# correctif précédent, faute de filet automatique entre les deux.
+#
+# ⚠️ Les tests vivent dans ce paquet mais sont exécutés par le PROJET HÔTE : c'est lui
+# qui porte `vitest.config.js`, `package.json` et `node_modules` (le paquet est
+# développé directement dans `vendor/`). Le hook remonte donc jusqu'à la racine du
+# projet avant de lancer le runner.
+#
+# Installation (une fois, dans ce dépôt) :
+#     git config core.hooksPath hooks
+#
+set -uo pipefail
+
+find_project_root() {
+    local dir="${1:-$PWD}"
+    while [ "$dir" != "/" ]; do
+        if [ -f "$dir/vitest.config.js" ]; then
+            printf '%s' "$dir"
+            return 0
+        fi
+        dir="$(dirname "$dir")"
+    done
+    return 1
+}
+
+ROOT="$(find_project_root "$PWD")" || {
+    echo "[pre-push] vitest.config.js introuvable en remontant depuis $PWD."
+    echo "[pre-push] Tests non exécutés — push autorisé (checkout hors projet hôte)."
+    exit 0
+}
+
+if [ ! -d "$ROOT/node_modules" ]; then
+    echo "[pre-push] node_modules absent dans $ROOT — lancez 'npm ci'."
+    echo "[pre-push] Tests non exécutés — push autorisé."
+    exit 0
+fi
+
+echo "[pre-push] Suite WebRTC2 (depuis $ROOT)…"
+
+if ! (cd "$ROOT" && npm run --silent test:run); then
+    echo
+    echo "[pre-push] ❌ Suite rouge — push refusé."
+    echo "[pre-push] Pour passer outre en connaissance de cause : git push --no-verify"
+    exit 1
+fi
+
+echo "[pre-push] ✅ Suite verte."
+exit 0

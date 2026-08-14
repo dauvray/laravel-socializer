@@ -117,7 +117,7 @@ describe('useConnectionPool', () => {
         it('demande le peerId quand il est inconnu et qu\'aucune attente n\'est en cours', () => {
             pool.requestOrConnectPeer('alice')
 
-            expect(core.requestRemotePeerConnection).toHaveBeenCalledWith('alice')
+            expect(core.requestRemotePeerConnection).toHaveBeenCalledWith('alice', ctx.session.currentType)
             expect(connections.connectToPeer).not.toHaveBeenCalled()
         })
 
@@ -323,7 +323,7 @@ describe('useConnectionPool', () => {
 
             await vi.advanceTimersByTimeAsync(FIRST_RETRY_MS)
 
-            expect(core.requestRemotePeerConnection).toHaveBeenCalledWith('alice')
+            expect(core.requestRemotePeerConnection).toHaveBeenCalledWith('alice', ctx.session.currentType)
         })
 
         it('ne redemande pas le peerId quand l\'attente est encore fraîche', async () => {
@@ -463,8 +463,8 @@ describe('useConnectionPool', () => {
 
             await pool.syncUsersConnections([{ slug: 'alice' }, { slug: 'bob' }])
 
-            expect(core.requestRemotePeerConnection).toHaveBeenCalledWith('alice')
-            expect(core.requestRemotePeerConnection).toHaveBeenCalledWith('bob')
+            expect(core.requestRemotePeerConnection).toHaveBeenCalledWith('alice', ctx.session.currentType)
+            expect(core.requestRemotePeerConnection).toHaveBeenCalledWith('bob', ctx.session.currentType)
         })
 
         it('mesh : initie aussi les connexions screen pendant un partage d\'écran', async () => {
@@ -493,8 +493,8 @@ describe('useConnectionPool', () => {
 
             await pool.syncUsersConnections([{ slug: 'alice' }, { slug: 'bob' }])
 
-            expect(core.requestRemotePeerConnection).toHaveBeenCalledWith('alice')
-            expect(core.requestRemotePeerConnection).toHaveBeenCalledWith('bob')
+            expect(core.requestRemotePeerConnection).toHaveBeenCalledWith('alice', ctx.session.currentType)
+            expect(core.requestRemotePeerConnection).toHaveBeenCalledWith('bob', ctx.session.currentType)
         })
 
         it('star : un client ne se connecte qu\'au hub', async () => {
@@ -509,7 +509,7 @@ describe('useConnectionPool', () => {
             await pool.syncUsersConnections([{ slug: 'alice' }, { slug: 'bob' }])
 
             expect(core.requestRemotePeerConnection).toHaveBeenCalledTimes(1)
-            expect(core.requestRemotePeerConnection).toHaveBeenCalledWith('teacher')
+            expect(core.requestRemotePeerConnection).toHaveBeenCalledWith('teacher', ctx.session.currentType)
         })
 
         it('sfu : aucune connexion pair-à-pair côté client', async () => {
@@ -534,7 +534,7 @@ describe('useConnectionPool', () => {
             ctx.peerUnavailableSignal.value = 'alice'
             await nextTick()
 
-            expect(core.requestRemotePeerConnection).toHaveBeenCalledWith('alice')
+            expect(core.requestRemotePeerConnection).toHaveBeenCalledWith('alice', ctx.session.currentType)
             expect(ctx.peerUnavailableSignal.value).toBe(null)
         })
 
@@ -578,7 +578,7 @@ describe('useConnectionPool', () => {
             ctx.peerUnavailableSignal.value = 'alice'
             await nextTick()
 
-            expect(core.requestRemotePeerConnection).toHaveBeenCalledWith('alice')
+            expect(core.requestRemotePeerConnection).toHaveBeenCalledWith('alice', ctx.session.currentType)
             expect(connections.connectToPeer).not.toHaveBeenCalled()
         })
     })
