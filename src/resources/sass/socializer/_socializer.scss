@@ -185,8 +185,11 @@ $message_width: 60%;
     position: relative;
     cursor: grab;
     user-select: none;
+    // Vignette flottante (#videoContainer) OU flux inline dans une card : dans le
+    // second cas rien ne borne le cadre côté parent, d'où ce garde-fou.
+    max-width: 100%;
     @extend .bg-auto;
-    @extend .shadow; 
+    @extend .shadow;
     @extend .rounded;
 
     .video-tools-wrapper {
@@ -259,8 +262,15 @@ $message_width: 60%;
     }
 
     video {
+        // display:block supprime le gap de baseline sous un remplacé inline.
+        display: block;
         width: 100%;
+        max-width: 100%;
         height: auto;
+        // Sans ratio imposé, height:auto suit le ratio intrinsèque du flux : une
+        // webcam 4:3 fait exploser la hauteur de la card sur une colonne large.
+        aspect-ratio: 16 / 9;
+        object-fit: cover;
         @extend .rounded;
         cursor: pointer;
     }

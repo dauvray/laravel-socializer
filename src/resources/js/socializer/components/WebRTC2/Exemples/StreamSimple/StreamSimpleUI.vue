@@ -7,8 +7,17 @@
                 ></GroupLocalStreamBtn>
             </div> 
             
-            <div class="row">
-                <div class="col">
+            <!--
+                overflow-hidden n'est pas décoratif : une .col est un flex item en
+                min-width:auto, donc sa largeur minimale = la taille min-content de
+                son contenu. Pour un <video> (élément remplacé) en width:100%, le
+                navigateur retombe sur la résolution intrinsèque du flux (640, 1280…)
+                et la colonne refuse de descendre en dessous → débordement hors card.
+                Un overflow non-visible remet cette taille minimale à 0.
+                (Bootstrap 5.3 n'expose pas d'utilitaire min-w-0.)
+            -->
+            <div class="row g-3">
+                <div class="col overflow-hidden">
                     <h5>Local Stream</h5>
                     <LocalMediaPlayer v-if="api.currentStream.value" :streamData="localStreamData">
                         <template #audio="audioProps">
@@ -19,7 +28,7 @@
                     <LocalMediaPlayer v-if="api.screenStream.value" :streamData="screenStreamData" />
                 </div>
 
-                <div class="col">
+                <div class="col overflow-hidden">
                     <h5>Remote Streams</h5>
 
                     <!--

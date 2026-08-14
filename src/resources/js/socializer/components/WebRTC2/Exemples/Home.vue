@@ -25,7 +25,7 @@
     - les callbacks passées au MediaBroadcastProvider permettent de gérer les événements de réception de données, d'ouverture et de fermeture de connexions, etc. et d'y réagir ICI 
     -->
     <MediaBroadcastProvider
-        class="d-flex"
+        class="row g-3 mb-3"
         :users="users"
         :room="room"
         :callbacks="chatDataCallbacks"
@@ -33,10 +33,10 @@
             topology: 'star',
             hubSlug: 'admin',
             videoContainer: '#videoContainer'
-        }" 
+        }"
         v-slot="webrtc">
-        <Debug v-bind="webrtc" class="col-md-4 m-2" />
-        <ChatSimpleUI v-bind="webrtc" class="col-md-8 m-2" />
+        <div class="col-md-4"><Debug v-bind="webrtc" class="h-100" /></div>
+        <div class="col-md-8"><ChatSimpleUI v-bind="webrtc" class="h-100" /></div>
     </MediaBroadcastProvider>
 
     <!--
@@ -47,14 +47,26 @@
     - Le StreamSimpleUI affiche les flux vidéo locaux et distants reçus via le WebRTC
      - les callbacks ne sont pas nécessaires ici car le StreamSimpleUI gère déjà en interne les événements de réception de flux et de données pour mettre à jour l'interface.
     -->
+    <!--
+        La gouttière Bootstrap est un PADDING posé sur la colonne (compensé par la
+        marge négative de .row). Si col-* atterrit sur la racine .card du composant,
+        ce padding passe à l'intérieur de la card et les cards se touchent bord à
+        bord. D'où le wrapper : la colonne porte la gouttière, la card vit dedans.
+        g-3 et non gx-3 : --bs-gutter-y vaut 0 par défaut, donc sans le `g` les
+        cards se colleraient verticalement une fois wrappées sous md.
+        mb-3 : la gouttière verticale n'agit QU'ENTRE les lignes d'une même .row.
+        Entre deux .row sœurs, le -1rem de compensation de la row du bas et le
+        +1rem de ses colonnes s'annulent → écart nul. L'écart entre deux rows
+        sœurs vaut exactement le margin-bottom de celle du dessus.
+    -->
     <MediaBroadcastProvider
-        class="row g-2"
+        class="row g-3 mb-3"
         :users="users"
         :room="room"
         mode="stream"
         v-slot="webrtc">
-        <Debug v-bind="webrtc" class="col-md-4"/>
-        <StreamSimpleUI v-bind="webrtc" class="col-md-8"/>
+        <div class="col-md-4"><Debug v-bind="webrtc" class="h-100" /></div>
+        <div class="col-md-8"><StreamSimpleUI v-bind="webrtc" class="h-100" /></div>
     </MediaBroadcastProvider>
 </template>
 
