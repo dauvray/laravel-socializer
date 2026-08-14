@@ -15,6 +15,13 @@ export default () => {
     peerReconnectAttempts: 0, // tentatives de reconnexion PeerJS (backoff + garde anti-boucle)
     peerDestroyTimer: null, // handle de la destruction différée (PEER_DESTROY_DELAY_MS)
     peerReconnectTimer: null, // handle du backoff de reconnexion en cours
+    // Closure qui débranche les listeners du Peer courant, produite par `_doInit` (seul
+    // endroit qui sait ce qui a été branché, et sur quelle instance). Ici pour la même
+    // raison que le reste de cette section : le Peer est un singleton que N'IMPORTE QUEL
+    // contexte — voire une autre copie du module après un HMR — peut détruire, donc la
+    // référence qui permet de le débrancher ne peut vivre ni dans la closure de
+    // `usePeerTransport`, ni au niveau de son module.
+    peerListenersDetach: null,
     connections: {}, // connexions actives (peerId, userSlug, stream, type)
     remotePeersId: new Map(), // peers id distants
     waitingRemotePeerId: new Map(), // connexions en attente d’un peer id distant (key: userSlug, value: { room, type })

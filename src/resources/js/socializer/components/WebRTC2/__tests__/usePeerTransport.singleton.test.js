@@ -135,6 +135,49 @@ describe('usePeerTransport — Peer singleton (garde d\'init, ref-counting, dest
         expect(ctxA.peerStore.localPeer).toBe(created)
     })
 
+    it('ne crée pas un second Peer pendant que le premier attend son `open`', async () => {
+        // 🔥 Régression du 2026-08-14 (« A diffuse, B reste sur le spinner »).
+        //
+        // La garde `peerInitPromise` ne couvre que la fenêtre SYNCHRONE : le corps de
+        // `_doInit` n'a aucun `await`, donc la promesse est résolue ~3 microtâches après
+        // l'appel. Or `localPeerReady` n'est vrai qu'à la réception de `'open'`, un
+        // aller-retour réseau plus tard. Entre les deux, les deux gardes laissent passer.
+        //
+        // C'est la situation NOMINALE en production : `Notifications.vue` monte le contexte
+        // permanent `data-app` au tick 0, et le contexte `stream-<room>` monte après la
+        // résolution de route + un import dynamique — soit bien après les 3 microtâches, et
+        // bien avant l'arrivée de `'open'`.
+        const { usePeerTransport, lastPeer } = await loadTransportCopy()
+        const ctxA = makeCtx('data-app')
+        const [apiA] = mount(usePeerTransport, ctxA)
+
+        await apiA.setLocalPeer()
+        const peer1 = lastPeer()
+
+        // La fenêtre est bien ouverte : plus de garde de promesse, et pas encore de `open`.
+        expect(ctxA.peerStore.peerInitPromise).toBeNull()
+        expect(ctxA.peerStore.localPeerReady).toBe(false)
+
+        const ctxB = makeCtx('stream-live', ctxA.peerStore)
+        const [apiB] = mount(usePeerTransport, ctxB)
+        await apiB.setLocalPeer()
+
+        // Un second Peer ici, c'est le premier qui reste enregistré côté serveur PeerJS
+        // — débranché de surcroît, et hors d'atteinte de `_destroyPeerSingleton` qui n'agit
+        // que sur `peerStore.localPeer`.
+        expect(lastPeer()).toBe(peer1)
+        expect(peer1.off).not.toHaveBeenCalled()
+
+        // Le fait métier : le `open` du peer que le store publie renseigne bien l'identité
+        // locale. Débranché, il ne renseigne rien — `lastLocalPeerId` reste `null`,
+        // `waitForMeReady` expire au bout de 15 s et l'arrivant ne reçoit jamais le flux.
+        peer1._triggerEvent('open', 'peer-alice')
+
+        expect(ctxA.peerStore.localPeer).toBe(peer1)
+        expect(ctxA.peerStore.lastLocalPeerId).toBe('peer-alice')
+        expect(ctxA.peerStore.localPeerReady).toBe(true)
+    })
+
     it('ne recrée rien quand le Peer est déjà prêt', async () => {
         const { usePeerTransport, lastPeer } = await loadTransportCopy()
         const ctxA = makeCtx('stream-a')
@@ -149,6 +192,58 @@ describe('usePeerTransport — Peer singleton (garde d\'init, ref-counting, dest
 
         expect(lastPeer()).toBe(peer)
         expect(ctxA.peerStore.localPeer).toBe(peer)
+    })
+
+    // ── L'invariant, énoncé une fois ─────────────────────────────────────────────
+    //
+    // Les tests ci-dessus couvrent chacun UNE fenêtre de montage ; celui-ci énonce la règle
+    // dont ils sont des cas particuliers : **un onglet n'a jamais deux instances de `Peer`**,
+    // quel que soit le moment où un second contexte se monte. Trois gardes concourent à le
+    // tenir (`localPeerReady`, l'instance, `peerInitPromise`) — c'est ici, et non dans
+    // chacune de leurs implémentations, qu'il faut venir vérifier qu'ils tiennent encore
+    // après un remaniement.
+
+    describe('invariant : une seule instance de Peer par onglet', () => {
+        const FENÊTRES = [
+            {
+                label: 'même tick — aucun `await` entre les deux montages',
+                ouvrir: async () => {},
+            },
+            {
+                label: 'init résolue mais `open` pas encore reçu (le cas de production)',
+                ouvrir: async (initA) => { await initA },
+            },
+            {
+                label: '`open` déjà reçu',
+                ouvrir: async (initA, peer) => {
+                    await initA
+                    peer._triggerEvent('open', 'peer-alice')
+                },
+            },
+        ]
+
+        it.each(FENÊTRES)('un seul Peer — $label', async ({ ouvrir }) => {
+            const { usePeerTransport, lastPeer } = await loadTransportCopy()
+            const ctxA = makeCtx('data-app')
+            const [apiA] = mount(usePeerTransport, ctxA)
+
+            const initA = apiA.setLocalPeer()
+            const premierPeer = lastPeer()
+            expect(premierPeer).not.toBeNull()
+
+            await ouvrir(initA, premierPeer)
+
+            const ctxB = makeCtx('stream-live', ctxA.peerStore)
+            const [apiB] = mount(usePeerTransport, ctxB)
+            await apiB.setLocalPeer()
+            await initA
+
+            expect(lastPeer()).toBe(premierPeer)
+            expect(ctxA.peerStore.localPeer).toBe(premierPeer)
+            // Un peer supplanté serait débranché de ses listeners tout en restant
+            // enregistré côté serveur PeerJS, et hors d'atteinte de `_destroyPeerSingleton`.
+            expect(premierPeer.off).not.toHaveBeenCalled()
+        })
     })
 
     // ── Ref-counting & destruction différée ──────────────────────────────────────
@@ -234,6 +329,126 @@ describe('usePeerTransport — Peer singleton (garde d\'init, ref-counting, dest
 
         expect(() => vi.advanceTimersByTime(PEER_DESTROY_DELAY_MS)).not.toThrow()
         expect(peer.destroy).not.toHaveBeenCalled()
+    })
+
+    // ── Détachement des listeners du Peer ────────────────────────────────────────
+    //
+    // `peer.destroy()` ne débranche PAS nos handlers : vérifié dans peerjs 1.5.4
+    // (`dist/bundler.mjs`), son `_cleanup()` ne fait `removeAllListeners()` que sur le socket
+    // interne (l.1789). Le transport doit donc les retirer lui-même, sans quoi ils
+    // continuent d'écrire dans un store qui ne décrit plus aucun peer.
+
+    describe('détachement des listeners avant destruction', () => {
+
+        /** Monte un consommateur, ouvre le peer, puis le détruit par ref-counting. */
+        const openThenDestroy = async (usePeerTransport, lastPeer, ctx, peerId) => {
+            const [api, app] = mount(usePeerTransport, ctx)
+            await api.setLocalPeer()
+            const peer = lastPeer()
+            peer._triggerEvent('open', peerId)
+
+            vi.useFakeTimers()
+            app.unmount()
+            vi.advanceTimersByTime(PEER_DESTROY_DELAY_MS)
+
+            return peer
+        }
+
+        it('débranche chaque listener qu\'il a branché, et tous avant `destroy()`', async () => {
+            const { usePeerTransport, lastPeer } = await loadTransportCopy()
+            const ctx = makeCtx('stream-a')
+
+            const peer = await openThenDestroy(usePeerTransport, lastPeer, ctx, 'peer-alice')
+
+            expect(peer.destroy).toHaveBeenCalledOnce()
+            // Garde : sans listener branché, la boucle ci-dessous ne vérifierait rien.
+            expect(peer.on.mock.calls.length).toBeGreaterThan(0)
+
+            // Assertion structurelle assumée — « pas de fuite » n'a pas d'autre observable.
+            // C'est elle qui empêche un 6e listener ajouté plus tard d'échapper au
+            // détachement : il faudrait le brancher hors du helper `bind` pour la casser.
+            peer.on.mock.calls.forEach(([event, handler]) => {
+                expect(peer.off.mock.calls).toContainEqual([event, handler])
+            })
+
+            // Et l'ordre : détacher APRÈS `destroy()` reviendrait à dépendre de ce que
+            // PeerJS fait (ou ne fait pas) de ses listeners pendant sa destruction.
+            const lastOff = Math.max(...peer.off.mock.invocationCallOrder)
+            expect(lastOff).toBeLessThan(peer.destroy.mock.invocationCallOrder[0])
+        })
+
+        it('un `error` livré après la destruction ne remonte plus rien', async () => {
+            // Seul événement RÉELLEMENT livrable après un `destroy()` : `new Peer({host,…})`
+            // laisse `userId` undefined (bundler.mjs:1517), donc PeerJS résout l'id par HTTP
+            // et le `.catch(error => this._abort(ServerError, error))` de `retrieveId()`
+            // (l.1564 → `emitError` l.1761) n'a aucun garde `destroyed` : il peut tomber bien
+            // après. Sans détachement, la room fermée loggue encore des erreurs PeerJS.
+            const { usePeerTransport, lastPeer } = await loadTransportCopy()
+            const ctx = makeCtx('stream-a')
+
+            const peer = await openThenDestroy(usePeerTransport, lastPeer, ctx, 'peer-alice')
+            console.error.mockClear()
+
+            peer._triggerEvent('error', { type: 'server-error', message: 'boom' })
+
+            expect(console.error).not.toHaveBeenCalled()
+        })
+
+        it('[invariant] un `open` tardif ne ressuscite pas un peer fantôme', async () => {
+            // ⚠️ Ce n'est PAS une repro : aucun chemin PeerJS ne livre un `open` après un
+            // `destroy()` (`socket._cleanup()` met `onmessage = null`, bundler.mjs:731, avant
+            // tout throw possible). C'est l'invariant « un peer hors-jeu n'écrit plus dans le
+            // store », et le garde contre l'état impossible `localPeerReady === true` avec
+            // `localPeer === null` : `setLocalPeer` sortirait alors par sa garde de fraîcheur
+            // et plus aucun Peer ne serait jamais recréé — impasse permanente.
+            //
+            // ⚠️ Il tient désormais par DEUX mécanismes indépendants — le détachement des
+            // listeners, et le garde d'identité `peerStore.localPeer !== peer` en tête du
+            // handler `open` (ajouté le 2026-08-14 avec le correctif de la double init).
+            // Contrôle de harnais fait : neutraliser le seul détachement ne le fait plus
+            // rougir. C'est voulu (ceinture et bretelles sur le chemin qui a cassé la prod),
+            // mais ça veut dire que **le test qui épingle le détachement est le voisin**
+            // (« débranche chaque listener qu'il a branché »), pas celui-ci.
+            const { usePeerTransport, lastPeer } = await loadTransportCopy()
+            const ctxA = makeCtx('stream-a')
+
+            const peer = await openThenDestroy(usePeerTransport, lastPeer, ctxA, 'peer-alice')
+
+            peer._triggerEvent('open', 'peer-zombie')
+
+            expect(ctxA.peerStore.localPeerReady).toBe(false)
+            expect(ctxA.peerStore.lastLocalPeerId).toBeNull()
+
+            // Le fait métier : la room refonctionne, un nouveau contexte obtient un vrai Peer.
+            const ctxB = makeCtx('stream-b', ctxA.peerStore)
+            const [apiB] = mount(usePeerTransport, ctxB)
+            await apiB.setLocalPeer()
+
+            expect(lastPeer()).not.toBe(peer)
+            expect(ctxA.peerStore.localPeer).toBe(lastPeer())
+        })
+
+        it('ne détache jamais les listeners d\'un autre Peer que le sien', async () => {
+            const { usePeerTransport, lastPeer } = await loadTransportCopy()
+            const ctxA = makeCtx('stream-a')
+
+            const peer1 = await openThenDestroy(usePeerTransport, lastPeer, ctxA, 'peer-alice')
+            const offCallsAfterFirstDestroy = peer1.off.mock.calls.length
+            expect(offCallsAfterFirstDestroy).toBe(peer1.on.mock.calls.length)
+
+            // Second cycle complet : le store repart de zéro, un nouveau Peer est créé.
+            const ctxB = makeCtx('stream-b', ctxA.peerStore)
+            const peer2 = await openThenDestroy(usePeerTransport, lastPeer, ctxB, 'peer-bob')
+
+            expect(peer2).not.toBe(peer1)
+            // C'est ce test qui verrouille le choix « bindé sur la const `peer` » : une
+            // closure qui relirait `peerStore.localPeer` au moment du `off` aurait détaché le
+            // peer COURANT — donc le nº2 lors de la destruction du nº1, et plus personne
+            // ensuite.
+            expect(peer1.off.mock.calls.length).toBe(offCallsAfterFirstDestroy)
+            expect(peer2.off.mock.calls.length).toBe(peer2.on.mock.calls.length)
+            expect(peer2.destroy).toHaveBeenCalledOnce()
+        })
     })
 
     // ── Intégration avec le vrai store ───────────────────────────────────────────

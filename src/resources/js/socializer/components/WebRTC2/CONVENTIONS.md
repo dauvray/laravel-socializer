@@ -120,9 +120,15 @@ régression d'écran.
 Le harnais (`helpers/createVirtualPeer.js`, `helpers/fakeSignalingServer.js`,
 `__mocks__/peerjs.js` en mode bus) impose trois invariants à ne pas défaire :
 
-- **`vi.resetModules()` par pair** — `usePeerTransport` porte 8 variables module-level ;
-  sans reset, deux pairs partagent le même Peer et ne sont qu'un seul participant.
-  Corollaire : monter les pairs **séquentiellement**.
+- **`vi.resetModules()` par pair** — `usePeerTransport` porte encore 2 variables
+  module-level (`contextRegistry` et `_hubRateLimiter` ; les 5 du runtime du Peer sont
+  passées dans `peerStore` le 2026-08-14) ; sans reset, deux pairs partagent le même
+  registre de contextes et ne sont qu'un seul participant. Corollaire : monter les pairs
+  **séquentiellement**.
+- **`destroy()` du mock PeerJS émet `disconnected` et conserve `_handlers`** — par
+  fidélité au vrai (`bundler.mjs:1810` et `:1789`), et c'est ce qui rend observable le
+  détachement explicite des listeners du Peer. Les vider « pour faire propre » rendrait
+  vert un correctif inerte.
 - **Une tâche de boucle d'événement par signal** (`setTimeout(…, 0)` dans le faux
   serveur) — un event Reverb = une frame WebSocket = une tâche. Dispatcher deux signaux
   dans le même tick fabriquerait une coalescence (`lastRoomSignal` = `at(-1)`)
@@ -153,6 +159,10 @@ historique, et les tests unitaires existants ne voient aucune différence.
 - **Identité du pair d'une entrée de `remoteStreamsMap`** : `entry.remoteSlug` — jamais `entry.metadata.from`. Sur une connexion **sortante**, `metadata.from` porte **mon** slug (cf. `_buildPeerConnectionConfig`), et le flux distant arrive bien sur cette connexion : filtrer sur `metadata.from` ne matche donc rien côté initiateur. `remoteSlug` / `remoteType` sont normalisés à l'écriture par `handleStreamReceived` — c'est ce qu'il faut lire
 - **Garde de teardown** : `beginShutdown`/`endShutdown` sont un **compteur** ré-entrant. Un `beginShutdown` sans `endShutdown` (teardown terminal) laisse volontairement le garde actif pour de bon
 - **Flags sur objets PeerJS tiers** : interdit (pas de `conn.__ctxListenersBound` etc.) — utiliser un `WeakSet` interne
+- **Listeners d'objets PeerJS** : handlers nommés (ou branchés par un helper qui les mémorise) + unsub retourné ou stocké — jamais une arrow anonyme passée directement à `.on()`, elle serait irrécupérable
+- **Un seul `Peer` par onglet** : la garde d'unicité porte sur **l'instance** (`peerStore.localPeer && !peerStore.localPeer.destroyed`), jamais sur les seuls drapeaux. `localPeerReady` n'est vrai qu'après l'`'open'` (un aller-retour réseau) et `peerInitPromise` ne couvre que quelques microtâches (le corps de `_doInit` est synchrone) : entre les deux s'ouvrait une fenêtre où un second contexte créait un second Peer. Invariant figé par `usePeerTransport.singleton.test.js` › « une seule instance de Peer par onglet »
+- **Handlers d'un `Peer`** : un handler n'agit que pour **son** instance — `if (peerStore.localPeer !== peer) return` — et écrit sur `peer`, jamais sur `peerStore.localPeer`. Un peer supplanté ou détruit ne doit ni déclarer la session prête, ni publier son identité, ni armer un backoff pour le compte du peer courant
+- **Valeur de retour de `setLocalPeer`** : ne rien en déduire. La fonction est `async` (donc toujours truthy) et sort par `undefined` sur tous ses chemins « rien à faire », **y compris quand le peer est déjà prêt** — un `if (!ready) return` est au mieux mort, au pire inversé. L'attente de l'identité locale se fait en aval, par `waitForMeReady`
 - **API orchestrateur** : façade explicite minimale — pas de `...spread` des composables internes
 - **Stream local** : attente via `watch` réactif — pas de polling `while (!stream && attempts < N)`
 - **Signalisation prête** : `watch` sur `meStore.getMe?.slug` + `peerStore.localPeer?.id` — pas de `setTimeout` polling
@@ -162,6 +172,13 @@ historique, et les tests unitaires existants ne voient aucune différence.
 - Tout `watch()` ⇒ `unwatch()` dans `onUnmounted`
 - `setUpConnectionListeners` ⇒ retourne un unsub appelé au démontage du contexte
 - Timers `setTimeout` de backoff ⇒ référence stockée et annulée dans `_destroyPeerSingleton`
+- Listeners du **Peer** ⇒ branchés par le helper `bind` de `_doInit` (jamais `peer.on(...)` en
+  direct) et débranchés par `peerStore.detachPeerListeners()` **avant** `peer.destroy()`.
+  `destroy()` ne retire que les listeners de son socket interne (peerjs 1.5.4,
+  `dist/bundler.mjs:1789`) et **émet `disconnected`** (l.1810) avant de poser son drapeau
+  `destroyed` (l.1781) : sans détachement, une destruction volontaire est prise pour une
+  coupure réseau. La closure de détachement vit dans `peerStore`, jamais dans une closure de
+  composable ni au niveau du module — c'est un autre contexte qui détruit le singleton
 - `contextRegistry` ⇒ entrée supprimée dans `onUnmounted` **seulement si elle appartient toujours au contexte** (voir [SECURITY_AUDIT.md](SECURITY_AUDIT.md) — last-write-wins volontaire)
 
 ## Pour aller plus loin

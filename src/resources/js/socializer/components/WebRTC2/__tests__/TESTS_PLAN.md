@@ -3,7 +3,7 @@
 > Infrastructure : vitest 2.1.9 · @vue/test-utils · happy-dom  
 > Helpers : `withSetup`, `createMockContext`, `mockEventBus`, `__mocks__/peerjs.js`,
 > `createVirtualPeer`, `fakeSignalingServer`, `fakeMedia`  
-> Commande : `npm run test:run` — **489 tests / 28 fichiers, ~3 s** (2026-08-14)
+> Commande : `npm run test:run` — **547 tests / 32 fichiers, ~3 s** (2026-08-14)
 
 ⚠️ **Ne jamais recopier un décompte de mémoire** : ce document avait divergé du réel
 (377 annoncés pour 466 réels). Les chiffres se relisent dans la sortie du runner.
@@ -33,8 +33,8 @@ livraisons asynchrones) dans [CONVENTIONS.md](../CONVENTIONS.md#tests--trois-ét
 
 ## ✅ Déjà réalisé
 
-> Décomptes relus dans la sortie du runner le **2026-08-14** : **489 tests** sur
-> 28 fichiers, ~3 s (dont 17 scénarios bout en bout et 5 de conformité des mocks).
+> Décomptes relus dans la sortie du runner le **2026-08-14** : **547 tests** sur
+> 32 fichiers, ~3 s (dont 17 scénarios bout en bout et 5 de conformité des mocks).
 
 - [x] **Infrastructure** : `vitest.config.js`, `setup.js` (mocks globaux : mediaDevices, RTCPeerConnection, crypto, Pinia)
 - [x] **`utils/useCallStateMachine.test.js`** — 36 tests : transitions FSM, computed dérivés, reset(), closingUsers
@@ -84,21 +84,21 @@ passthroughs média — soit ~245 lignes.
 - [-] Tâche 1 — `usePeerCore.test.js` — 34 tests ✅ (5/10 items couverts, 5 restants)
 - [x] Tâche 2 — `usePeerConnections.test.js` — 47 tests ✅ (voir ci-dessous)
 - [-] Tâche 3 — `usePeerMedia` — 34 tests ✅ répartis en deux fichiers : `.players` 15 (pool d'instances) + `.streams` 19 (flux locaux). Périmètre couvert
-- [-] Tâche 4 — `usePeerTransport.*.test.js` — 56 tests ✅ (sécurité, recovery `peer-unavailable`, singleton/ref-counting/reconnexion couverts ; restent `sendData` star, câblage du rate limiting hub et `contextRegistry`)
+- [-] Tâche 4 — `usePeerTransport.*.test.js` — 66 tests ✅ (sécurité, recovery `peer-unavailable`, singleton/ref-counting/reconnexion et détachement des listeners du Peer couverts ; restent `sendData` star, câblage du rate limiting hub et `contextRegistry`)
 - [x] Tâche 5 — `createPeerContext.test.js` — 46 tests ✅ (voir ci-dessous)
 - [-] Tâche 6 — `usePeerOrchestrator.test.js` — **toujours à ne pas ouvrir en entier** : le wrapping du routage star doit d'abord déménager dans `usePeerTransport` (item `[L]` de la TODOLIST), sinon les tests sont à jeter. Exception ouverte : `usePeerOrchestrator.broadcastPresence.test.js` couvre le seul câblage de l'annonce de diffusion (aucune assertion sur le routage star, donc survit à ce déménagement)
 - [ ] Tâche 7 — `useMediaBroadcast.test.js`
 - [x] `useConnectionPool.test.js` — 31 tests ✅ : `requestOrConnectPeer` (6), logique de tentative/retry (8 — dont garde `isShuttingDown`, signalisation stale, connexion screen, clearRetry/clearAllRetries), `syncUsersConnections` (9 — lock concurrent, `waitForMeReady` négatif, nettoyage des partants, fan-out mesh/star-hub/star-client/sfu), recovery `peerUnavailableSignal` (3), cleanup (2)
 - [x] `useStreamManager.test.js` — 19 tests ✅ : `handleStreamReceived` (clé canonique, résolution du slug, idempotence, mode stream sans player, éviction TTL et FIFO), `handleStreamRemoved` (départ complet, full stop conditionnel, garde par participant, dédoublonnage concurrent, libération de la garde sur exception)
 - [x] `useSignalingQueue.test.js` — 19 tests ✅ : routage (table de routes, `payload` seul passé au handler, warn sur type inconnu, enveloppe `payload.type` des Widgets ignorée sans warn, warn sur signal sans aucun type), **absence de précondition asynchrone (non-régression : route sans attendre `waitForMeReady`, route même pendant un arrêt)**, détecteur de coalescence (`seq`), erreurs, cleanup (`stopSignaling` idempotent, démontage, plus rien routé après l'arrêt)
-- [x] `useCallManager.test.js` — 62 tests ✅ : `startCallWithPeer` (dont « aucune mutation si appel en cours » et room imposée), `acceptCallFromPeer` (dont **ordre mapping peerId avant transition**), `openCallBetweenPeer`, `stopCallWithPeers` (partial vs full, ordre du cleanup, mutex CLOSING, exception → pas de blocage), `remoteStopCall` (dont dédoublonnage concurrent), `handleRemoteDeparture` (séquence unifiée des deux chemins de départ), `resetCallState`, room d'appel, verbes FSM pour la couche streams, retries d'invitation
+- [x] `useCallManager.test.js` — 65 tests ✅ : `startCallWithPeer` (dont « aucune mutation si appel en cours », room imposée, et **le Peer réclamé sans attendre son `'open'`** — l'ancienne branche « peer pas prêt » était une invention du mock, cf. TODOLIST), `acceptCallFromPeer` (dont **ordre mapping peerId avant transition**), `openCallBetweenPeer`, `stopCallWithPeers` (partial vs full, ordre du cleanup, mutex CLOSING, exception → pas de blocage), `remoteStopCall` (dont dédoublonnage concurrent), `handleRemoteDeparture` (séquence unifiée des deux chemins de départ), `resetCallState`, room d'appel, verbes FSM pour la couche streams, retries d'invitation
 - [x] `usePeerConnections.test.js` — 47 tests ✅ : `getRoomUsersDiff` (7 — arrivants/partants, filtrage de mon slug, `waitForMeReady` négatif, sérialisation du mutex, verrou non bloqué par une exception), `hasOpenConnection` (12 — data/media, fallback `signalingState`, `peerConnection` illisible, room d'appel prioritaire), `connectToPeer` (22 — gardes anti-soi/verrou/`MAX_PEERS_PER_ROOM`, branche par type, validations de config, métadonnées produites), `closePeerConnection` (7 — sélectif vs global, oubli conditionnel du peerId, `clearSignalQueue`)
 - [x] `createPeerContext.test.js` — 46 tests ✅ : isolation/initialisation (6), `waitForMeReady` (5 — dont **non-régression du timer de secours** : aucun faux « a expiré » sur identité déjà prête), eventBus (3 — bus injecté, fallback no-op, bus incomplet rejeté), `setUpConnectionListeners` (17 — branchement, idempotence WeakSet, cleanup/rebranchement, garde de taille en réception, close métier unique, `handleClose` : retrait du store, oubli conditionnel du peerId, slug distant vs le mien, type forgé neutralisé), `storeConnectionEventCallbacks` (3), garde de teardown (2), helpers `currentCallUsers` (5), projections calculées (3), `destroy`/`onUnmounted` (4)
 - [x] `usePeerMedia.streams.test.js` — 19 tests ✅ : `startCurrentStream` (4 — contraintes issues de `streamStates`, markRaw), `stopCurrentStream` (3), `startAudioStream` (2 — alignement de l'UI), `startScreenCapture`/`stopScreenCapture` (5), nettoyage de fin de vie d'un flux (5 — `ended`/`inactive`, idempotence du binding, désinscription, garde `instanceof MediaStream`)
 - [x] `useBroadcastPresence.test.js` — 18 tests ✅ : émission (8 — annonce à l'ouverture d'une connexion, silence quand je ne diffuse pas, gardes de type sur la connexion, diffusion au changement d'état local, annonce d'arrêt, **aucun envoi si aucun pair joignable en data** — chemin normal au premier démarrage, routage laissé au transport en star, plus rien après `stopBroadcastPresence`), réception (6 — identité résolue depuis la connexion entrante *et* sortante, retrait sur `isBroadcasting: false`, **payload `from` ignoré (anti-usurpation)**, annonce consommée même sans pair résolu, messages métier non consommés), **star** (2 — côté client, une annonce relayée n'est pas attribuée au hub ; côté hub, l'annonce d'un client est bien enregistrée), purge au départ de la room (2)
 - [x] `usePeerOrchestrator.broadcastPresence.test.js` — 6 tests ✅ : **intégration réelle** (contexte, stores et `setUpConnectionListeners` non mockés ; seul PeerJS l'est) du câblage de l'annonce — wrap `onDataReceived` posé même sans callback applicatif, annonce jamais remontée au métier, arité `(data, conn, metadata)` préservée pour le métier, retrait sur annonce d'arrêt, annonce émise à l'`open` d'une connexion data avec `conn` transmis au callback applicatif. Périmètre volontairement limité à la présence de diffusion (cf. Tâche 6)
 - [x] `useAwaitedStreams.test.js` — 15 tests ✅ (UI) : **aucune attente pour un pair qui n'a rien annoncé** (le symptôme corrigé), attente sur annonce, arrêt d'attente à l'arrivée du flux (webcam ou écran), annonce d'un pair hors room ignorée, filet de délai (4 — abandon, non-abandon avant l'échéance, un timer par pair, flux de dernière seconde), pas de ré-attente après un arrêt, réarmement par une nouvelle annonce, tolérance aux `api` non réactives
-- [x] `peers2Store.peerRuntime.test.js` — 10 tests ✅ (store) : runtime du Peer singleton — ref-counting planchéré à 0, garde d'init (**la promesse traverse le state réactif sans être enveloppée** : identité préservée, `await` intact), compteur de reconnexion, annulation réelle des deux timers avec retour booléen, et surtout `resetPeerState({ keepConsumerCount: true })` qui **préserve** le compteur après un échec d'init pour qu'un retry reparte d'un compte juste
+- [x] `peers2Store.peerRuntime.test.js` — 15 tests ✅ (store) : runtime du Peer singleton — ref-counting planchéré à 0, garde d'init (**la promesse traverse le state réactif sans être enveloppée** : identité préservée, `await` intact), compteur de reconnexion, annulation réelle des deux timers avec retour booléen, `resetPeerState({ keepConsumerCount: true })` qui **préserve** le compteur après un échec d'init pour qu'un retry reparte d'un compte juste, et la **closure de détachement des listeners du Peer** : identité préservée elle aussi (une fonction n'est jamais proxifiée), exécutée-puis-oubliée, exécutée avant d'être remplacée, absorbée si elle jette sans interrompre le reset
 - [x] `MediaBroadcastPlayer.spinner.test.js` — 9 tests ✅ (UI) : overlay d'attente d'image sur un flux **déjà reçu** — piloté par les events réels du `<video>` (`can-play`, `playing`, `waiting`, `stalled`, `error`), neutralisé sans flux, sans vidéo active ou avec slot `video` fourni, réarmé sur instance recyclée par le pool
 
 ---
@@ -187,16 +187,20 @@ Découpée en deux fichiers : `usePeerMedia.players.test.js` (pool d'instances) 
   - ignore les autres types d'erreur PeerJS et les peerId inconnus
   - retire la connexion échouée, conserve celles pointant sur un autre peerId
   - invalide le mapping **même** si le pair reste connecté dans une autre room (le bug du 2026-08-13), et même si aucune instance n'a été stockée ; positionne `peerUnavailableSignal`
-- [✅] **`usePeerTransport.singleton.test.js`** (11) — cycle de vie du Peer singleton :
+- [✅] **`usePeerTransport.singleton.test.js`** (19) — cycle de vie du Peer singleton :
   - création, `localPeerReady` seulement sur `'open'`, garde d'init (2 contextes simultanés = 1 seul Peer), peer prêt réutilisé
+  - 🔥 **fenêtre asynchrone entre les deux gardes** : `peerInitPromise` est déjà retombée (corps de `_doInit` synchrone) et `'open'` n'est pas arrivé — un second contexte ne doit pas créer un second Peer. C'est la séquence NOMINALE de production (`data-app` au tick 0, `stream-<room>` après résolution de route), et le trou de couverture qui a laissé passer la régression du 2026-08-14
+  - **l'invariant « une seule instance de Peer par onglet »**, énoncé une fois pour les trois fenêtres de montage (même tick / init résolue sans `'open'` / `'open'` reçu). Les tests voisins en sont des cas particuliers : c'est **ici** qu'on vérifie que les trois gardes tiennent encore après un remaniement
   - ref-counting : destruction **différée** de `PEER_DESTROY_DELAY_MS`, **annulée** si un consommateur remonte, peer conservé tant qu'un autre consommateur est monté
   - `_destroyPeerSingleton` : cas nominal (reset complet du store) **et** cas `localPeer` déjà absent (échec d'init : ni crash ni destruction)
   - intégration sur le **vrai** store Pinia (le mock garantit la surface, pas la sémantique)
   - **HMR** : le peer partagé survit au démontage d'un consommateur enregistré par une autre copie du module ; une seule instance créée quand une init est en vol au moment du rechargement (+ un contrôle de harnais, sinon ces deux tests seraient verts pour rien)
-- [✅] **`usePeerTransport.reconnect.test.js`** (6) — garde de reconnexion :
+  - **détachement des listeners** : chaque `peer.on` a son `peer.off` par identité et **tous avant `destroy()`** (filet structurel : un 6e listener branché hors du helper `bind` casse ce test) ; un `error` livré après la destruction ne loggue plus rien (seul événement réellement livrable ensuite, cf. `retrieveId` `bundler.mjs:1564`) ; un `open` tardif ne ressuscite pas un peer fantôme (**invariant**, pas repro — `socket._cleanup()` met `onmessage = null` avant, l.731) ; aucun détachement croisé entre deux Peer successifs
+- [✅] **`usePeerTransport.reconnect.test.js`** (8) — garde de reconnexion :
   - backoff exponentiel (1s·2s·4s·8s·16s) plafonné à `RECONNECT_MAX_DELAY_MS`, abandon après `MAX_RECONNECT_ATTEMPTS` sans boucler
   - compteur remis à zéro sur `'open'` ; aucune tentative sur un peer détruit
   - un backoff armé pendant le délai de grâce ne survit pas à la destruction (aucun timer résiduel)
+  - une **destruction volontaire n'est pas une coupure réseau** : ni tentative consommée, ni `warn` de reconnexion, ni fausse alerte `abandon` au plafond. `destroy()` émet `disconnected` avant de poser son drapeau (`bundler.mjs:1810` / `:1781`) — sans détachement explicite, le garde `localPeer.destroyed` du handler ne voit rien
 
 #### 📋 Restant à couvrir
 

@@ -83,6 +83,50 @@ export default {
     },
 
     /**
+     * Enregistre la closure qui débranche les listeners du Peer courant.
+     *
+     * Une **fonction** traverse le state réactif sans `markRaw` : `isObject` de
+     * `@vue/shared` exige `typeof === 'object'`, donc Vue ne la proxifie ni au set ni au
+     * get et son identité est préservée — même arbitrage que `setPeerInitPromise`, à
+     * l'opposé du handle de timer ci-dessus qui est, lui, un objet côté Node/vitest.
+     *
+     * ⚠️ Remplacer une closure **exécute** celle en place. Sans ça, une init repartant
+     * derrière un Peer orphelin (un `destroy()` qui a jeté laisse `destroyed === false`)
+     * écraserait le seul moyen de débrancher ses listeners : ils resteraient branchés pour
+     * la vie de l'onglet, à écrire dans un store qui décrit désormais un AUTRE peer.
+     */
+    setPeerListenersDetach(detach = null) {
+        this.detachPeerListeners()
+        this.peerListenersDetach = detach
+    },
+
+    /**
+     * Exécute puis oublie la closure de détachement. Idempotent : double destruction, ou
+     * reset survenant après un détachement déjà explicite.
+     *
+     * Le champ est vidé AVANT l'appel (une closure qui jette ne doit pas pouvoir être
+     * rejouée) et l'exception est absorbée comme celle de `peer.destroy()` : un `off()` qui
+     * jette ne doit empêcher ni la destruction du peer, ni la suite de `resetPeerState`.
+     *
+     * @returns {boolean} true si des listeners étaient bien branchés
+     */
+    detachPeerListeners() {
+        const detach = this.peerListenersDetach
+        this.peerListenersDetach = null
+
+        if (typeof detach !== 'function') {
+            return false
+        }
+
+        try {
+            detach()
+        } catch (e) {
+            console.warn('[WebRTC2] Erreur lors du détachement des listeners du Peer :', e)
+        }
+        return true
+    },
+
+    /**
      * Remet à zéro tout l'état du peer singleton (appelé à sa destruction).
      *
      * ⚠️ `keepConsumerCount` : quand la destruction survient alors que `localPeer` est
@@ -96,6 +140,13 @@ export default {
      * @param {boolean} [options.keepConsumerCount=false]
      */
     resetPeerState({ keepConsumerCount = false } = {}) {
+        // En tête, et exécutée plutôt que nullée : la closure référence le Peer qu'elle a
+        // bindé. La nuller ici laisserait des listeners branchés sur une instance rendue
+        // inatteignable à la ligne suivante — plus aucune référence pour les `off`.
+        // Normalement déjà consommée par `_destroyPeerSingleton` ; c'est le filet du chemin
+        // early-return (peer déjà absent après un échec d'init), où rien ne l'exécutait.
+        this.detachPeerListeners()
+
         this.localPeer = null
         this.localPeerReady = false
         this.lastLocalPeerId = null

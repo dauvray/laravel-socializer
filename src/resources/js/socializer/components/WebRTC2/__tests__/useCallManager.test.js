@@ -42,7 +42,12 @@ describe('useCallManager', () => {
             closePeerConnection: vi.fn(),
         }
         transport = {
-            setLocalPeer: vi.fn(() => true),
+            // ⚠️ Fidèle à la vraie surface : `setLocalPeer` est `async` et sort par un
+            // `return` nu (donc `undefined`) sur tous ses chemins « rien à faire ». Le mock
+            // renvoyait `true`/`false`, ce que la production ne produit JAMAIS — il
+            // fabriquait une branche « peer pas prêt » inexistante, et deux tests la
+            // validaient. Garder la fidélité ici, c'est empêcher ce garde de revenir.
+            setLocalPeer: vi.fn(async () => undefined),
         }
         pool = {
             requestOrConnectPeer: vi.fn(),
@@ -72,14 +77,17 @@ describe('useCallManager', () => {
             expect(ctx.callMachine.callState.value).toBe(CALL_STATES.IDLE)
         })
 
-        it('n\'entreprend rien si le peer local n\'est pas prêt', () => {
-            transport.setLocalPeer.mockReturnValue(false)
-
+        it('réclame un Peer sans attendre qu\'il soit prêt pour émettre l\'invitation', () => {
+            // Remplace un test qui pilotait `setLocalPeer` par `mockReturnValue(false)` :
+            // cette branche n'existe pas en production (la fonction est `async` et sort par
+            // `undefined`), le garde `if (!ready) return` a donc été retiré du code. Le vrai
+            // contrat est celui-ci — l'invitation part tout de suite, et c'est
+            // `waitForMeReady`, en aval, qui porte l'attente de l'identité locale.
             cm.startCallWithPeer({ toUserSlug: 'alice' })
 
-            expect(ctx.callMachine.callState.value).toBe(CALL_STATES.IDLE)
-            expect(ctx.session.currentCallRoomId).toBe(null)
-            expect(core.requestAuthorizationRemotePeerId).not.toHaveBeenCalled()
+            expect(transport.setLocalPeer).toHaveBeenCalledOnce()
+            expect(ctx.callMachine.callState.value).toBe(CALL_STATES.CALLING)
+            expect(core.requestAuthorizationRemotePeerId).toHaveBeenCalled()
         })
 
         it('passe en CALLING, prépare la session et envoie l\'invitation', () => {
@@ -193,13 +201,13 @@ describe('useCallManager', () => {
             )
         })
 
-        it('n\'entreprend rien si le peer local n\'est pas prêt', async () => {
-            transport.setLocalPeer.mockReturnValue(false)
-
+        it('réclame un Peer sans attendre qu\'il soit prêt pour accepter', async () => {
+            // Même correction que côté `startCallWithPeer` : la branche « peer pas prêt »
+            // était une invention du mock. Accepter ne dépend pas de l'`open`.
             await cm.acceptCallFromPeer(invitePayload())
 
-            expect(core.sendAuthorizationRemotePeerId).not.toHaveBeenCalled()
-            expect(media.startCurrentStream).not.toHaveBeenCalled()
+            expect(transport.setLocalPeer).toHaveBeenCalledOnce()
+            expect(media.startCurrentStream).toHaveBeenCalled()
         })
 
         it('ignore un slug invalide dans une invitation acceptée', async () => {

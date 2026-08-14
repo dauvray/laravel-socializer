@@ -183,9 +183,20 @@ export class Peer {
         this._connections = new Set()
 
         this.destroy = vi.fn(() => {
-            this.destroyed = true
+            if (this.destroyed) return
+
+            // ⚠️ ORDRE FIDÈLE à peerjs 1.5.4 (`dist/bundler.mjs:1776-1783`), et c'est tout
+            // l'intérêt de ce bloc : `destroy()` appelle `disconnect()` — qui **émet
+            // `disconnected`** (l.1810) — puis `_cleanup()`, et ne pose son drapeau
+            // `_destroyed` qu'ENSUITE (l.1781), avant d'émettre `close`. Un handler encore
+            // branché voit donc `peer.destroyed === false` pendant sa propre destruction.
+            // Le mock posait auparavant `destroyed = true` en premier et n'émettait jamais
+            // `disconnected` : le fait qu'une destruction volontaire soit prise pour une
+            // coupure réseau était invisible en test.
             const bus = _getBus()
             if (bus && bus.peers.get(this.id) === this) bus.peers.delete(this.id)
+
+            this.disconnect()
 
             // PeerJS ferme TOUTES les connexions du peer à sa destruction, et le pair
             // d'en face reçoit bien un `close`. Sans ça, un onglet fermé laisserait chez
@@ -196,8 +207,31 @@ export class Peer {
                 try { conn.close() } catch { /* déjà fermée */ }
             })
             this._connections.clear()
+
+            this.destroyed = true
+            this._triggerEvent('close')
+
+            // ⚠️ `_handlers` n'est PAS vidé, et ce n'est pas un oubli : le vrai `_cleanup()`
+            // ne fait `removeAllListeners()` que sur son SOCKET interne (l.1789), jamais sur
+            // le `Peer`. Les handlers posés par `usePeerTransport` survivent donc bel et bien
+            // à `destroy()` — c'est précisément ce que la production ne doit pas déléguer à
+            // PeerJS. Les vider ici serait le mode de panne nº2 de `mockFidelity.test.js` :
+            // rendre vert un correctif inerte.
         })
-        this.disconnect = vi.fn(() => { this.disconnected = true })
+
+        // Fidèle à `bundler.mjs:1801-1811` : ferme le socket, mémorise l'id dans
+        // `_lastServerId`, puis **émet `disconnected`**.
+        //
+        // Écart assumé : le vrai met aussi `_id = null` (l.1809). On ne le reproduit pas —
+        // le registre du bus est keyé sur `id` et trois scénarios appellent `destroy()`
+        // directement. À traiter comme un item de fidélité distinct.
+        this.disconnect = vi.fn(() => {
+            if (this.disconnected) return
+            this.disconnected = true
+            this.open = false
+            this._lastServerId = this.id
+            this._triggerEvent('disconnected', this.id)
+        })
         this.reconnect = vi.fn()
 
         _lastInstance = this

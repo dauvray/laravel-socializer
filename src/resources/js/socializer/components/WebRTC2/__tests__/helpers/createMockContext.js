@@ -165,6 +165,7 @@ export function createMockContext(overrides = {}) {
         peerReconnectAttempts: overrides.peerStore?.peerReconnectAttempts ?? 0,
         peerDestroyTimer: overrides.peerStore?.peerDestroyTimer ?? null,
         peerReconnectTimer: overrides.peerStore?.peerReconnectTimer ?? null,
+        peerListenersDetach: overrides.peerStore?.peerListenersDetach ?? null,
 
         addPeerConsumer: vi.fn(() => {
             peerStore.peerConsumerCount += 1
@@ -196,10 +197,28 @@ export function createMockContext(overrides = {}) {
             peerStore.peerReconnectTimer = null
             return true
         }),
+        // Contrat du store réel reproduit à l'identique — sinon `mockFidelity` garantirait
+        // la surface et laisserait passer le mensonge : remplacer une closure **exécute** la
+        // précédente, et le détachement vide le champ AVANT d'appeler (jamais rejouer une
+        // closure qui a jeté). Des `vi.fn()` vides rendraient verts des tests de destruction
+        // qui ne prouveraient plus rien.
+        setPeerListenersDetach: vi.fn((detach = null) => {
+            peerStore.detachPeerListeners()
+            peerStore.peerListenersDetach = detach
+        }),
+        detachPeerListeners: vi.fn(() => {
+            const detach = peerStore.peerListenersDetach
+            peerStore.peerListenersDetach = null
+            if (typeof detach !== 'function') return false
+            try { detach() } catch (e) { /* absorbée comme dans le store réel */ }
+            return true
+        }),
+
         // ⚠️ `keepConsumerCount` reproduit l'asymétrie du store réel : après un échec
         // d'init (localPeer déjà null), les consommateurs encore montés doivent pouvoir
         // décrémenter jusqu'à 0 pour qu'un retry reparte d'un compte juste.
         resetPeerState: vi.fn(({ keepConsumerCount = false } = {}) => {
+            peerStore.detachPeerListeners()
             peerStore.localPeer = null
             peerStore.localPeerReady = false
             peerStore.lastLocalPeerId = null

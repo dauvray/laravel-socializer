@@ -102,8 +102,14 @@ export function useCallManager(ctx, { core, media, connections, transport, pool 
         if (!payload || typeof payload !== 'object') return
         if (!isValidSlug(payload.toUserSlug)) return
 
-        const ready = transport.setLocalPeer()
-        if (!ready) return
+        // S'assure qu'un Peer existe (idempotent, et ne recrée rien s'il est déjà là).
+        // ⚠️ Volontairement sans garde sur la valeur de retour, et sans `await` :
+        // `setLocalPeer` est `async` — elle renvoie donc TOUJOURS une promesse truthy — et
+        // sort par un `return` nu (donc `undefined`) sur ses chemins « rien à faire », dont
+        // celui où le peer est DÉJÀ PRÊT. Un `if (!ready) return`, une fois awaité, avorterait
+        // donc l'appel exactement dans le cas nominal. L'invitation part sans attendre
+        // l'`open` : c'est `waitForMeReady` qui porte cette attente, en aval.
+        transport.setLocalPeer()
 
         const toUserSlug = payload.toUserSlug
         const type = isValidCallType(payload.type) ? payload.type : 'visio'
@@ -149,8 +155,9 @@ export function useCallManager(ctx, { core, media, connections, transport, pool 
     const acceptCallFromPeer = async (payload) => {
         if (!payload || typeof payload !== 'object') return
 
-        const ready = transport.setLocalPeer()
-        if (!ready) return
+        // Idem `startCallWithPeer` : appel nu, jamais de garde sur le retour (cf. le
+        // commentaire là-bas — la valeur ne dit rien de l'état du peer).
+        transport.setLocalPeer()
 
         if (payload?.status) {
             const fromUserSlug = payload?.fromUserSlug

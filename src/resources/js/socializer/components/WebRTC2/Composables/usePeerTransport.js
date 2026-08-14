@@ -95,6 +95,17 @@ function _destroyPeerSingleton(peerStore) {
         return
     }
 
+    // ⚠️ AVANT `destroy()`, et ce n'est pas de la précaution : vérifié dans peerjs 1.5.4
+    // (`dist/bundler.mjs`), `destroy()` ne retire QUE les listeners de son socket interne
+    // (`socket.removeAllListeners()`, l.1789) — les nôtres, posés sur le `Peer`, survivent.
+    // Et il appelle `disconnect()`, qui **émet `disconnected`** (l.1810) alors que le drapeau
+    // `_destroyed` n'est posé qu'ensuite (l.1781) : le garde `localPeer.destroyed` du handler
+    // de reconnexion ne voyait donc rien, et une destruction volontaire était traitée comme
+    // une coupure réseau — tentative consommée, faux « tentative n/8 », faux « abandon » au
+    // plafond, et surtout `peerReconnectTimer` ÉCRASÉ : un backoff déjà en vol devenait un
+    // timer orphelin que le `resetPeerState` ci-dessous ne pouvait plus annuler.
+    peerStore.detachPeerListeners()
+
     try {
         if (!peerStore.localPeer.destroyed) {
             peerStore.localPeer.destroy()
@@ -289,13 +300,30 @@ export function usePeerTransport(ctx) {
         // Le peer local est déjà prêt: rien à recréer, mais le contexte est bien enregistré.
         if(peerStore.localPeerReady) return
 
+        // Init EN VOL : le Peer existe déjà, mais son `'open'` n'est pas encore arrivé.
+        //
+        // ⚠️ Ce garde porte sur l'INSTANCE, et il est indispensable : les deux gardes
+        // voisines laissent une fenêtre de plusieurs centaines de ms grande ouverte. Le
+        // corps de `_doInit` ne contient aucun `await`, donc `peerInitPromise` est résolue —
+        // et remise à `null` par son `finally` — ~3 microtâches après l'appel, alors que
+        // `localPeerReady` attend un aller-retour réseau (`retrieveId` HTTP + WebSocket).
+        // Or la production monte précisément deux consommateurs dans cet intervalle :
+        // `Notifications.vue` crée le contexte permanent `data-app` au tick 0, et le
+        // contexte `stream-<room>` arrive après la résolution de route et un import
+        // dynamique. Sans ce garde, le second créait un SECOND Peer : le premier restait
+        // enregistré côté serveur PeerJS (peerId fantôme), débranché de ses listeners par
+        // `setPeerListenersDetach`, et hors d'atteinte de `_destroyPeerSingleton` qui n'agit
+        // que sur `peerStore.localPeer`. Symptôme : « A diffuse, B reste sur le spinner »,
+        // avec un `Could not connect to peer <uuid>` sur le peerId fantôme.
+        if (peerStore.localPeer && !peerStore.localPeer.destroyed) return
+
         // Guard contre la race condition : 2 composants peuvent passer simultanément
         // (ex: DataRoom + StreamRoom au montage). Le premier crée la promesse d'init,
         // le second attend la même plutôt que de créer un second Peer.
         if (peerStore.peerInitPromise) return peerStore.peerInitPromise
 
         const _doInit = async () => {
-            peerStore.localPeer = markRaw(new Peer({
+            const peer = markRaw(new Peer({
                 host: import.meta.env.VITE_PEERS_SERVER_HOST,
                 port: import.meta.env.VITE_PEERS_SERVER_PORT,
                 path: import.meta.env.VITE_PEERS_SERVER_PATH,
@@ -312,9 +340,46 @@ export function usePeerTransport(ctx) {
                     ]
                 }
             }))
+            peerStore.localPeer = peer
+
+            // ── Branchement des listeners du Peer ─────────────────────────────────
+            // `bind` est la SEULE porte d'entrée : il enregistre la paire (event, handler)
+            // en même temps qu'il l'installe, donc un 6e listener ajouté ici est détaché
+            // d'office — on ne peut plus oublier son `off`. Le détachement est stocké dans
+            // `peerStore` (cf. state.js) : c'est un AUTRE contexte, voire une autre copie du
+            // module après un HMR, qui détruira ce peer.
+            //
+            // Bindés sur la const `peer`, jamais sur `peerStore.localPeer` : la closure doit
+            // viser l'instance qu'elle a réellement bindée. Relire le store au moment du
+            // `off` détacherait les listeners du peer COURANT — après un cycle
+            // destroy → init, ceux du nouveau. Les CORPS de handlers, eux, continuent
+            // volontairement de lire `peerStore.localPeer` : leurs gardes signifient « le
+            // store a-t-il encore un peer », pas « ce peer-ci ».
+            const bound = []
+            const bind = (event, handler) => {
+                bound.push([event, handler])
+                peer.on(event, handler)
+            }
+
+            // Enregistrée AVANT les `bind` : `bound` est capturé par référence, donc même une
+            // exception au milieu du branchement laisse de quoi détacher ce qui a été posé.
+            peerStore.setPeerListenersDetach(() => {
+                while (bound.length > 0) {
+                    const [event, handler] = bound.pop()
+                    peer.off(event, handler)
+                }
+            })
 
             // a la création du Peer
-            peerStore.localPeer.on('open', id => {
+            bind('open', id => {
+                // Garde d'identité : n'écrire l'état du singleton que si CE peer est bien
+                // celui que le store publie. Un peer supplanté (double init) ou détruit ne
+                // doit pas déclarer la session prête ni publier son identité — c'est
+                // exactement ce qui a produit la régression « A diffuse, B reste sur le
+                // spinner » : `lastLocalPeerId` désignait un peer que plus personne ne
+                // pouvait joindre. Ceinture du garde d'instance de `setLocalPeer`.
+                if (peerStore.localPeer !== peer) return
+
                 // Peer utilisable : connexion (re)établie avec le serveur PeerJS.
                 // localPeerReady passe à true ici (et non plus au début de _doInit)
                 // pour refléter l'état réel : le peer n'est utilisable qu'une fois
@@ -324,13 +389,13 @@ export function usePeerTransport(ctx) {
                 peerStore.resetReconnectAttempts()
                 // Workaround for peer.reconnect deleting previous id
                 if (id === null) {
-                    peerStore.localPeer.id = peerStore.lastLocalPeerId
+                    peer.id = peerStore.lastLocalPeerId
                 } else {
                     peerStore.lastLocalPeerId = id
                 }
             })
 
-            peerStore.localPeer.on('error', (err) => {
+            bind('error', (err) => {
                 console.error('Erreur PeerJS :', err);
 
                 // ── Recovery peer-unavailable ─────────────────────────────────────
@@ -399,9 +464,12 @@ export function usePeerTransport(ctx) {
                 })
             })
 
-            peerStore.localPeer.on('disconnected', () => {
-                // Guard : ne pas tenter de reconnecter un peer nul ou détruit
-                if (!peerStore.localPeer || peerStore.localPeer.destroyed) return
+            bind('disconnected', () => {
+                // Guard : ne reconnecter que si CE peer est encore celui du store, et qu'il
+                // n'est pas détruit. La comparaison d'identité (plutôt qu'un simple test de
+                // nullité) évite qu'un peer supplanté relance un backoff pour le compte du
+                // peer courant, en écrasant au passage son handle de timer.
+                if (peerStore.localPeer !== peer || peer.destroyed) return
 
                 // Guard auto-reconnect infinie : abandon après MAX_RECONNECT_ATTEMPTS
                 if (peerStore.peerReconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
@@ -425,18 +493,18 @@ export function usePeerTransport(ctx) {
                     // `clearReconnectTimer` ultérieur porte sur un timer déjà consommé et
                     // que le champ prétende qu'un backoff est en vol.
                     peerStore.peerReconnectTimer = null
-                    if (!peerStore.localPeer || peerStore.localPeer.destroyed) return
+                    if (peerStore.localPeer !== peer || peer.destroyed) return
                     // Workaround for peer.reconnect deleting previous id
-                    peerStore.localPeer.id = peerStore.lastLocalPeerId
-                    peerStore.localPeer._lastServerId = peerStore.lastLocalPeerId
-                    peerStore.localPeer.reconnect()
+                    peer.id = peerStore.lastLocalPeerId
+                    peer._lastServerId = peerStore.lastLocalPeerId
+                    peer.reconnect()
                 }, delayMs)
             })
 
             // ---------------------------------------------------------------------
             // Dispatcher global entrant: DataConnection
             // ---------------------------------------------------------------------
-            peerStore.localPeer.on('connection', async (conn) => { 
+            bind('connection', async (conn) => {
                 const metadata = conn?.metadata || conn?.options?.metadata || {}
                 const targetCtx = resolveContextByMetadata(metadata)
 
@@ -461,7 +529,7 @@ export function usePeerTransport(ctx) {
             // ---------------------------------------------------------------------
             // Dispatcher global entrant: MediaConnection (call stream/screen)
             // ---------------------------------------------------------------------
-            peerStore.localPeer.on('call', async (call) => {
+            bind('call', async (call) => {
                 const metadata = call?.metadata || {}
                 // `metadata.type` est fourni par le pair distant : on le passe par la
                 // sanitization centralisée (VALID_CONNECTION_TYPES) avant tout usage,

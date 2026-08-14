@@ -154,6 +154,56 @@ describe('usePeerTransport — reconnexion PeerJS (backoff, plafond, abandon)', 
         expect(vi.getTimerCount()).toBe(0)
     })
 
+    // ── Destruction volontaire ≠ coupure réseau ──────────────────────────────────
+    //
+    // `peer.destroy()` (peerjs 1.5.4, `dist/bundler.mjs:1776-1783`) appelle `disconnect()`,
+    // qui **émet `disconnected`** (l.1810), et ne pose `_destroyed` qu'ENSUITE (l.1781).
+    // Pendant une destruction volontaire, le garde du handler
+    // (`!peerStore.localPeer || peerStore.localPeer.destroyed`) ne voit donc rien : le store
+    // porte encore le peer (son reset vient après) et le drapeau est encore faux. Sans
+    // détachement explicite des listeners, chaque teardown est traité comme une coupure
+    // réseau — et `_cleanup()` ne retire que les listeners du socket interne (l.1789), jamais
+    // les nôtres.
+
+    it('la destruction volontaire du Peer n\'est pas traitée comme une coupure réseau', () => {
+        // Dernier consommateur parti : destruction planifiée, aucun incident réseau.
+        app.unmount()
+        vi.advanceTimersByTime(PEER_DESTROY_DELAY_MS)
+
+        expect(peer.destroy).toHaveBeenCalledOnce()
+
+        // Un teardown ne consomme pas de tentative de reconnexion et n'annonce pas une
+        // reconnexion qui n'aura jamais lieu : ce `warn` est le seul récit que le module
+        // laisse d'une coupure, il ne doit pas décrire un événement qui n'a pas eu lieu.
+        expect(ctx.peerStore.incrementReconnectAttempts).not.toHaveBeenCalled()
+        expect(console.warn).not.toHaveBeenCalledWith(
+            expect.stringContaining('déconnecté')
+        )
+
+        vi.advanceTimersByTime(RECONNECT_MAX_DELAY_MS * 2)
+
+        expect(peer.reconnect).not.toHaveBeenCalled()
+        expect(vi.getTimerCount()).toBe(0)
+    })
+
+    it('un teardown alors que le compteur est au plafond ne crie pas « abandon »', () => {
+        for (let attempt = 1; attempt <= MAX_RECONNECT_ATTEMPTS; attempt += 1) {
+            disconnectAndWait(attempt)
+        }
+        // Compteur au plafond, mais l'abandon n'a pas encore été annoncé : il l'est à la
+        // déconnexion SUIVANTE (cf. « abandonne après MAX_RECONNECT_ATTEMPTS »). C'est
+        // exactement la place que va prendre le faux `disconnected` du teardown.
+        expect(ctx.peerStore.peerReconnectAttempts).toBe(MAX_RECONNECT_ATTEMPTS)
+        console.error.mockClear()
+
+        app.unmount()
+        vi.advanceTimersByTime(PEER_DESTROY_DELAY_MS)
+
+        // `console.error` est le seul canal d'alerte du module : une fausse alarme
+        // « serveur injoignable » sur une destruction volontaire y est un fait observable.
+        expect(console.error).not.toHaveBeenCalled()
+    })
+
     it('un backoff armé pendant le délai de grâce ne survit pas à la destruction', () => {
         // Dernier consommateur parti : destruction planifiée dans PEER_DESTROY_DELAY_MS.
         app.unmount()

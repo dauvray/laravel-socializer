@@ -15,6 +15,9 @@
  * 2. **une `Promise` traverse le state réactif sans être enveloppée** — Vue ne proxifie que
  *    les objets nus et les collections. Si ce n'était pas le cas, la garde d'init comparerait
  *    des identités différentes et `await` casserait.
+ * 3. **une fonction non plus** — la closure de détachement des listeners du Peer doit garder
+ *    son identité, et surtout ne jamais être nullée sans avoir été exécutée : elle est la
+ *    seule référence vers les handlers d'un peer qu'on s'apprête à rendre inatteignable.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { usePeer2Store } from '~socializer/stores/peers2.js'
@@ -113,9 +116,71 @@ describe('peers2 — runtime du Peer singleton', () => {
         })
     })
 
+    describe('détachement des listeners du Peer', () => {
+        it('conserve la closure telle quelle (une fonction n\'est jamais proxifiée)', () => {
+            const detach = () => {}
+
+            store.setPeerListenersDetach(detach)
+
+            // 3e colonne du tableau maison : la `Promise` traverse le state sans `markRaw`
+            // (ci-dessus), un handle de timer est un objet côté Node donc annulé via `toRaw`,
+            // et une **fonction** n'est pas proxifiée non plus (`isObject` de `@vue/shared`
+            // exige `typeof === 'object'`). C'est ce qui permet à `peer.off(event, handler)`
+            // de retrouver ses handlers par identité — sinon le détachement serait inerte.
+            expect(store.peerListenersDetach).toBe(detach)
+        })
+
+        it('exécute puis oublie la closure', () => {
+            const detach = vi.fn()
+            store.setPeerListenersDetach(detach)
+
+            expect(store.detachPeerListeners()).toBe(true)
+            // Idempotent : une destruction différée suivie d'un reset ne doit pas rejouer les
+            // `off` sur une instance déjà détruite.
+            expect(store.detachPeerListeners()).toBe(false)
+
+            expect(detach).toHaveBeenCalledOnce()
+            expect(store.peerListenersDetach).toBeNull()
+        })
+
+        it('exécute la closure en place avant de la remplacer', () => {
+            const first = vi.fn()
+            const second = vi.fn()
+
+            store.setPeerListenersDetach(first)
+            store.setPeerListenersDetach(second)
+
+            // Sans ça, une init repartant derrière un Peer orphelin (un `destroy()` qui a
+            // jeté laisse `destroyed === false`) jetterait le seul moyen de débrancher ses
+            // listeners : ils écriraient à vie dans un store décrivant un AUTRE peer.
+            expect(first).toHaveBeenCalledOnce()
+            expect(second).not.toHaveBeenCalled()
+            expect(store.peerListenersDetach).toBe(second)
+        })
+
+        it('une closure qui jette n\'interrompt pas le reset', () => {
+            const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+            store.setPeerListenersDetach(() => { throw new Error('off a jeté') })
+            store.localPeer = { id: 'peer-alice' }
+            store.localPeerReady = true
+
+            expect(() => store.resetPeerState()).not.toThrow()
+
+            // Le try/catch vit dans l'action précisément pour ça : un `off()` qui jette ne
+            // doit pas laisser le reset à mi-course — peer nullé mais drapeaux encore vrais
+            // serait l'état impossible qui gèle `setLocalPeer` à vie.
+            expect(store.localPeer).toBeNull()
+            expect(store.localPeerReady).toBe(false)
+            expect(store.peerListenersDetach).toBeNull()
+            expect(warn).toHaveBeenCalled()
+            warn.mockRestore()
+        })
+    })
+
     describe('resetPeerState', () => {
-        /** État d'un peer vivant, avec deux timers armés. */
-        const armLiveState = (onDestroyFire, onReconnectFire) => {
+        /** État d'un peer vivant, avec deux timers armés et ses listeners branchés. */
+        const armLiveState = (onDestroyFire, onReconnectFire, onDetach = vi.fn()) => {
+            store.setPeerListenersDetach(onDetach)
             store.localPeer = { id: 'peer-alice' }
             store.localPeerReady = true
             store.lastLocalPeerId = 'peer-alice'
@@ -164,6 +229,21 @@ describe('peers2 — runtime du Peer singleton', () => {
 
             expect(store.removePeerConsumer()).toBe(1)
             expect(store.removePeerConsumer()).toBe(0)
+        })
+
+        it('détache les listeners du Peer, y compris avec keepConsumerCount', () => {
+            vi.useFakeTimers()
+            const onDetach = vi.fn()
+            armLiveState(vi.fn(), vi.fn(), onDetach)
+
+            store.resetPeerState({ keepConsumerCount: true })
+
+            // Ce chemin est celui de l'early-return de `_destroyPeerSingleton` (peer déjà
+            // absent après un échec d'init) : rien d'autre n'exécute la closure là-bas, et
+            // sans elle les listeners resteraient branchés sur un Peer orphelin devenu
+            // inatteignable — plus aucune référence pour les `off`.
+            expect(onDetach).toHaveBeenCalledOnce()
+            expect(store.peerListenersDetach).toBeNull()
         })
     })
 })
