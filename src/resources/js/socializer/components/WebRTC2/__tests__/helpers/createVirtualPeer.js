@@ -11,13 +11,17 @@
  *
  * ── Pourquoi vi.resetModules() par pair ───────────────────────────────────────
  *
- * `usePeerTransport` porte 8 variables **module-level** (`contextRegistry`,
- * `_peerInitPromise`, `_peerConsumerCount`, `_reconnectAttempts`, `_peerDestroyTimer`,
- * `_hubRateLimiter`…) : c'est un singleton par module ES. Sans reset, deux pairs du même
- * process partageraient le même Peer et le même registre de contextes — ils seraient un
- * seul participant. Chaque pair charge donc sa propre copie du graphe de modules ; le
- * bus PeerJS et le serveur de signalisation vivent sur `globalThis` précisément pour
- * survivre à ces resets et rester partagés.
+ * `usePeerTransport` garde deux structures **module-level** : `contextRegistry` (le
+ * registre des contextes WebRTC actifs, sur lequel repose le routage des connexions
+ * entrantes) et `_hubRateLimiter`. Sans reset, deux pairs du même process partageraient
+ * le même registre de contextes — ils seraient un seul participant. Chaque pair charge
+ * donc sa propre copie du graphe de modules ; le bus PeerJS et le serveur de
+ * signalisation vivent sur `globalThis` précisément pour survivre à ces resets et rester
+ * partagés.
+ *
+ * L'état du **Peer singleton** (ref-counting, garde d'init, reconnexion), lui, vit
+ * désormais dans `peerStore` : la Pinia neuve créée ci-dessous par pair suffit à l'isoler,
+ * et c'est ce qui rend le paquet insensible au HMR (module rechargé, store conservé).
  *
  * ⚠️ Corollaire : monter les pairs **séquentiellement** (`await` l'un après l'autre).
  * Deux `createVirtualPeer()` concurrents se voleraient le registre de modules.

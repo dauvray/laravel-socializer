@@ -32,8 +32,9 @@
  *
  * ⚠️ Le bus vit sur `globalThis` (et non dans une variable de module) parce que le
  * harnais multi-pairs appelle `vi.resetModules()` entre deux pairs : chaque pair charge
- * sa propre copie des composables WebRTC2 (usePeerTransport porte 8 variables
- * module-level, donc un singleton par module), mais tous doivent partager LE MÊME bus.
+ * sa propre copie des composables WebRTC2 (usePeerTransport porte son registre de
+ * contextes au niveau du module, donc un singleton par module), mais tous doivent
+ * partager LE MÊME bus.
  *
  * ⚠️ Toute livraison est asynchrone (`queueMicrotask`), jamais synchrone : le code de
  * production branche ses handlers APRÈS l'appel (`call.answer(...)` puis

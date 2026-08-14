@@ -4,6 +4,17 @@ export default () => {
     lastLocalPeerId: null, // last peer id local
     localPeer: null, // peer local
     localPeerReady : false, // indique si le peer local est prêt (id attribué)
+
+    // ─── Runtime du Peer singleton (usePeerTransport) ────────────────────────
+    // Cet état décrit le cycle de vie du `localPeer` ci-dessus : il vit donc ici, et
+    // non au niveau du module ES du transport, sinon un HMR (module rechargé, store
+    // conservé) ou une Pinia neuve désynchronise les compteurs de l'état du peer —
+    // le dernier consommateur devient invisible et un peer encore utilisé est détruit.
+    peerConsumerCount: 0, // contextes consommateurs du peer singleton (ref-counting)
+    peerInitPromise: null, // init en vol — garde anti-race (2 contextes = 1 seul Peer)
+    peerReconnectAttempts: 0, // tentatives de reconnexion PeerJS (backoff + garde anti-boucle)
+    peerDestroyTimer: null, // handle de la destruction différée (PEER_DESTROY_DELAY_MS)
+    peerReconnectTimer: null, // handle du backoff de reconnexion en cours
     connections: {}, // connexions actives (peerId, userSlug, stream, type)
     remotePeersId: new Map(), // peers id distants
     waitingRemotePeerId: new Map(), // connexions en attente d’un peer id distant (key: userSlug, value: { room, type })

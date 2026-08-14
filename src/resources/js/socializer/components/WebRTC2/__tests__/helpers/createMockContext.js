@@ -154,6 +154,62 @@ export function createMockContext(overrides = {}) {
         localPeer: overrides.peerStore?.localPeer ?? null,
         localPeerReady: overrides.peerStore?.localPeerReady ?? false,
 
+        // ─── Runtime du Peer singleton ────────────────────────────────────────
+        // Ref-counting, garde d'init et reconnexion : cet état vit dans le store réel
+        // (cf. stores/peers2/state.js) précisément pour ne PAS dépendre de la durée de
+        // vie du module `usePeerTransport`. Le mock doit donc compter pour de vrai —
+        // des `vi.fn()` vides rendraient verts des tests de destruction différée qui
+        // ne prouveraient plus rien.
+        peerConsumerCount: overrides.peerStore?.peerConsumerCount ?? 0,
+        peerInitPromise: overrides.peerStore?.peerInitPromise ?? null,
+        peerReconnectAttempts: overrides.peerStore?.peerReconnectAttempts ?? 0,
+        peerDestroyTimer: overrides.peerStore?.peerDestroyTimer ?? null,
+        peerReconnectTimer: overrides.peerStore?.peerReconnectTimer ?? null,
+
+        addPeerConsumer: vi.fn(() => {
+            peerStore.peerConsumerCount += 1
+            return peerStore.peerConsumerCount
+        }),
+        // Plancher à 0 comme le store réel : un décrément orphelin ne doit pas rendre
+        // le compteur négatif.
+        removePeerConsumer: vi.fn(() => {
+            peerStore.peerConsumerCount = Math.max(0, peerStore.peerConsumerCount - 1)
+            return peerStore.peerConsumerCount
+        }),
+        setPeerInitPromise: vi.fn((promise = null) => { peerStore.peerInitPromise = promise }),
+        resetReconnectAttempts: vi.fn(() => { peerStore.peerReconnectAttempts = 0 }),
+        incrementReconnectAttempts: vi.fn(() => {
+            peerStore.peerReconnectAttempts += 1
+            return peerStore.peerReconnectAttempts
+        }),
+        // Retournent un booléen « un timer était bien armé » : le transport ne loggue
+        // l'annulation de la destruction que dans ce cas.
+        clearPeerDestroyTimer: vi.fn(() => {
+            if (!peerStore.peerDestroyTimer) return false
+            clearTimeout(peerStore.peerDestroyTimer)
+            peerStore.peerDestroyTimer = null
+            return true
+        }),
+        clearReconnectTimer: vi.fn(() => {
+            if (!peerStore.peerReconnectTimer) return false
+            clearTimeout(peerStore.peerReconnectTimer)
+            peerStore.peerReconnectTimer = null
+            return true
+        }),
+        // ⚠️ `keepConsumerCount` reproduit l'asymétrie du store réel : après un échec
+        // d'init (localPeer déjà null), les consommateurs encore montés doivent pouvoir
+        // décrémenter jusqu'à 0 pour qu'un retry reparte d'un compte juste.
+        resetPeerState: vi.fn(({ keepConsumerCount = false } = {}) => {
+            peerStore.localPeer = null
+            peerStore.localPeerReady = false
+            peerStore.lastLocalPeerId = null
+            peerStore.peerInitPromise = null
+            peerStore.peerReconnectAttempts = 0
+            peerStore.clearPeerDestroyTimer()
+            peerStore.clearReconnectTimer()
+            if (!keepConsumerCount) peerStore.peerConsumerCount = 0
+        }),
+
         // File de signaux brute : lue par `useSignalingQueue` (détecteur de coalescence).
         signalQueues: _signalQueueRooms,
 

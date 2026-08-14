@@ -41,36 +41,30 @@ import { createRateLimiter } from './utils/createRateLimiter.js'
 // -----------------------------------------------------------------------------
 const contextRegistry = new Map()
 
-// Promesse d'initialisation du Peer singleton.
-// Stockée au niveau module (partagé car peerStore est un singleton Pinia) pour
-// éviter la race condition : 2 composants qui appellent setLocalPeer() en même
-// temps créeraient chacun une instance Peer distincte.
-let _peerInitPromise = null
-
-// Guard auto-reconnect infinie : compteur de tentatives de reconnexion au
-// serveur PeerJS. Réinitialisé à chaque connexion réussie (événement 'open').
-// Backoff exponentiel : 1s, 2s, 4s, 8s, 16s, 30s (max), puis abandon.
-let _reconnectAttempts = 0
-
-// Référence du timer de reconnexion en cours (backoff exponentiel sur 'disconnected').
-// Stockée pour pouvoir l'annuler dans _destroyPeerSingleton si la destruction
-// survient pendant le délai d'attente.
-let _reconnectTimer = null
-
-// ─── Référence counting du Peer singleton ────────────────────────────────────
-// Chaque contexte qui appelle setLocalPeer() incrémente ce compteur.
-// Chaque onUnmounted() le décrémente. Quand il atteint 0, la destruction est
-// planifiée avec un délai (PEER_DESTROY_DELAY_MS). Si un nouveau composant
-// remonte entre-temps, la destruction est annulée et le peer est réutilisé.
-let _peerConsumerCount = 0
-let _peerDestroyTimer = null
+// -----------------------------------------------------------------------------
+// ⚠️ L'état du Peer singleton (compteur de consommateurs, promesse d'init,
+// tentatives de reconnexion, handles des deux timers) N'EST PAS ici : il vit dans
+// `peerStore` (cf. stores/peers2/state.js, section « Runtime du Peer singleton »).
+//
+// Raison : le module ES et le store n'ont pas la même durée de vie. Un HMR recharge
+// ce module — compteurs remis à zéro — mais pas le store, où le Peer est toujours
+// vivant : la copie neuve ne voyait plus les consommateurs montés, le premier
+// démontage faisait tomber le compte à 0 et détruisait un peer encore utilisé
+// (`lastLocalPeerId` à null ⇒ `waitForMeReady` abandonne au bout de 15 s ⇒ un
+// arrivant ne reçoit jamais le flux). Symétriquement, une init en vol n'était plus
+// visible et une seconde instance Peer était créée, la première fuyant avec un
+// peerId fantôme encore enregistré côté serveur PeerJS.
+//
+// Ce qui RESTE volontairement au niveau du module :
+//   - `contextRegistry` ci-dessus : registre d'objets de contexte, pas de l'état
+//     du peer ; les tests l'isolent par `vi.resetModules()`.
+//   - `_hubRateLimiter` plus bas : fenêtre glissante du hub, dont l'arbitrage
+//     (verbe `.reset()` plutôt qu'une migration Pinia) est acté dans la TODOLIST.
+// -----------------------------------------------------------------------------
 
 function _schedulePeerDestroy(peerStore) {
     // Annule tout timer en cours (ne pas empiler des destructions)
-    if (_peerDestroyTimer) {
-        clearTimeout(_peerDestroyTimer)
-        _peerDestroyTimer = null
-    }
+    peerStore.clearPeerDestroyTimer()
 
     if (PEER_DESTROY_DELAY_MS <= 0) {
         _destroyPeerSingleton(peerStore)
@@ -81,25 +75,22 @@ function _schedulePeerDestroy(peerStore) {
         `[WebRTC2] Dernier consommateur parti — destruction du Peer dans ${PEER_DESTROY_DELAY_MS}ms` +
         ` (annulable si un composant remonte avant)`
     )
-    _peerDestroyTimer = setTimeout(() => {
-        _peerDestroyTimer = null
+    peerStore.peerDestroyTimer = setTimeout(() => {
+        peerStore.peerDestroyTimer = null
         _destroyPeerSingleton(peerStore)
     }, PEER_DESTROY_DELAY_MS)
 }
 
 function _destroyPeerSingleton(peerStore) {
     // Cas résiduel : _destroyPeerSingleton peut être appelé après un échec
-    // d'initialisation (catch de _peerInitPromise) où localPeer a déjà été remis
-    // à null. Dans ce cas, _peerConsumerCount reflète encore les consommateurs
-    // actifs (leurs onUnmounted décrémentent normalement jusqu'à 0) — ne pas le
-    // réinitialiser ici, cela fausserait le comptage pour un éventuel retry.
+    // d'initialisation (catch de peerInitPromise) où localPeer a déjà été remis
+    // à null. Dans ce cas, le compteur de consommateurs reflète encore les
+    // consommateurs actifs (leurs onUnmounted décrémentent normalement jusqu'à 0)
+    // — d'où `keepConsumerCount`, sans quoi le comptage serait faussé pour un
+    // éventuel retry.
     if (!peerStore.localPeer) {
-        // Rien à détruire ; annuler le timer de reconnexion par précaution.
-        if (_reconnectTimer) {
-            clearTimeout(_reconnectTimer)
-            _reconnectTimer = null
-        }
-        _peerInitPromise = null
+        // Rien à détruire ; le reset annule aussi le timer de reconnexion par précaution.
+        peerStore.resetPeerState({ keepConsumerCount: true })
         console.info('[WebRTC2] _destroyPeerSingleton: peer déjà absent (échec init ou double-appel), skip')
         return
     }
@@ -111,16 +102,7 @@ function _destroyPeerSingleton(peerStore) {
     } catch (e) {
         console.warn('[WebRTC2] Erreur lors de la destruction du Peer singleton :', e)
     }
-    if (_reconnectTimer) {
-        clearTimeout(_reconnectTimer)
-        _reconnectTimer = null
-    }
-    peerStore.localPeer = null
-    peerStore.localPeerReady = false
-    peerStore.lastLocalPeerId = null
-    _reconnectAttempts = 0
-    _peerInitPromise = null
-    _peerConsumerCount = 0
+    peerStore.resetPeerState()
     console.info('[WebRTC2] Peer singleton détruit')
 }
 
@@ -278,14 +260,15 @@ export function usePeerTransport(ctx) {
     onUnmounted(() => {
         unregisterContext(ctx)
         if (_isRegisteredAsConsumer) {
-            _peerConsumerCount--
-            if (_peerConsumerCount <= 0) {
+            if (ctx.peerStore.removePeerConsumer() <= 0) {
                 _schedulePeerDestroy(ctx.peerStore)
             }
         }
     })
 
     const setLocalPeer = async () => {
+
+        const peerStore = ctx.peerStore
 
         // Chaque contexte s'enregistre, même si le peer singleton existe déjà.
         registerContext(ctx)
@@ -297,15 +280,11 @@ export function usePeerTransport(ctx) {
         // l'annuler : le peer existant est réutilisé sans recréation.
         if (!_isRegisteredAsConsumer) {
             _isRegisteredAsConsumer = true
-            _peerConsumerCount++
-            if (_peerDestroyTimer) {
-                clearTimeout(_peerDestroyTimer)
-                _peerDestroyTimer = null
+            peerStore.addPeerConsumer()
+            if (peerStore.clearPeerDestroyTimer()) {
                 console.info('[WebRTC2] Destruction du Peer annulée — nouveau consommateur enregistré')
             }
         }
-
-        const peerStore = ctx.peerStore
 
         // Le peer local est déjà prêt: rien à recréer, mais le contexte est bien enregistré.
         if(peerStore.localPeerReady) return
@@ -313,7 +292,7 @@ export function usePeerTransport(ctx) {
         // Guard contre la race condition : 2 composants peuvent passer simultanément
         // (ex: DataRoom + StreamRoom au montage). Le premier crée la promesse d'init,
         // le second attend la même plutôt que de créer un second Peer.
-        if (_peerInitPromise) return _peerInitPromise
+        if (peerStore.peerInitPromise) return peerStore.peerInitPromise
 
         const _doInit = async () => {
             peerStore.localPeer = markRaw(new Peer({
@@ -342,7 +321,7 @@ export function usePeerTransport(ctx) {
                 // l'événement 'open' reçu. Idempotent sur les reconnexions.
                 peerStore.localPeerReady = true
                 // Connexion (re)établie : réinitialise le compteur de reconnexion
-                _reconnectAttempts = 0
+                peerStore.resetReconnectAttempts()
                 // Workaround for peer.reconnect deleting previous id
                 if (id === null) {
                     peerStore.localPeer.id = peerStore.lastLocalPeerId
@@ -425,23 +404,27 @@ export function usePeerTransport(ctx) {
                 if (!peerStore.localPeer || peerStore.localPeer.destroyed) return
 
                 // Guard auto-reconnect infinie : abandon après MAX_RECONNECT_ATTEMPTS
-                if (_reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+                if (peerStore.peerReconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
                     console.error(
                         `[WebRTC2] PeerJS: serveur injoignable après ${MAX_RECONNECT_ATTEMPTS} tentatives — abandon.`
                     )
                     return
                 }
 
-                _reconnectAttempts++
+                const attempt = peerStore.incrementReconnectAttempts()
 
                 // Backoff exponentiel : BASE · BASE*2 · BASE*4 … plafonné à MAX_DELAY
-                const delayMs = Math.min(RECONNECT_BASE_DELAY_MS * Math.pow(2, _reconnectAttempts - 1), RECONNECT_MAX_DELAY_MS)
+                const delayMs = Math.min(RECONNECT_BASE_DELAY_MS * Math.pow(2, attempt - 1), RECONNECT_MAX_DELAY_MS)
 
                 console.warn(
-                    `[WebRTC2] PeerJS déconnecté — tentative ${_reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} dans ${delayMs}ms`
+                    `[WebRTC2] PeerJS déconnecté — tentative ${attempt}/${MAX_RECONNECT_ATTEMPTS} dans ${delayMs}ms`
                 )
 
-                _reconnectTimer = setTimeout(() => {
+                peerStore.peerReconnectTimer = setTimeout(() => {
+                    // Le handle ne mène plus nulle part : le remettre à null évite qu'un
+                    // `clearReconnectTimer` ultérieur porte sur un timer déjà consommé et
+                    // que le champ prétende qu'un backoff est en vol.
+                    peerStore.peerReconnectTimer = null
                     if (!peerStore.localPeer || peerStore.localPeer.destroyed) return
                     // Workaround for peer.reconnect deleting previous id
                     peerStore.localPeer.id = peerStore.lastLocalPeerId
@@ -571,22 +554,35 @@ export function usePeerTransport(ctx) {
 
         } // end _doInit
 
-        _peerInitPromise = _doInit()
+        const initPromise = _doInit()
             .catch(err => {
                 // En cas d'échec : localPeerReady est encore false (on('open') n'a
                 // pas été reçu), localPeer est remis à null pour permettre un retry.
-                // _peerConsumerCount N'est PAS remis à 0 ici : les consommateurs
-                // actifs (composants montés) doivent continuer à décrémenter
-                // normalement via onUnmounted — les remettre à 0 ici créerait un
-                // décalage si un nouveau composant s'enregistre avant que les anciens
-                // unmontent, pouvant déclencher la destruction d'un peer valide.
-                // _destroyPeerSingleton gère explicitement le cas localPeer=null.
+                // Le compteur de consommateurs N'EST PAS remis à 0 ici : les
+                // consommateurs actifs (composants montés) doivent continuer à
+                // décrémenter normalement via onUnmounted — les remettre à 0 ici
+                // créerait un décalage si un nouveau composant s'enregistre avant que
+                // les anciens démontent, pouvant déclencher la destruction d'un peer
+                // valide. _destroyPeerSingleton gère explicitement le cas localPeer=null
+                // (resetPeerState avec keepConsumerCount).
+                // ⚠️ Pas de resetPeerState ici : il nullerait aussi lastLocalPeerId,
+                // dont dépend waitForMeReady.
                 console.error('[WebRTC2] Échec d\'initialisation du Peer :', err)
                 peerStore.localPeerReady = false
                 peerStore.localPeer = null
             })
-            .finally(() => { _peerInitPromise = null })
-        return _peerInitPromise
+            .finally(() => {
+                // Ne nettoyer que SA propre promesse : maintenant qu'elle est partagée par
+                // le store, une init tardive (cycle destroy → nouvelle init pendant que
+                // l'ancienne est encore en vol) effacerait la garde de la plus récente et
+                // laisserait un troisième consommateur créer un second Peer.
+                if (peerStore.peerInitPromise === initPromise) {
+                    peerStore.setPeerInitPromise(null)
+                }
+            })
+
+        peerStore.setPeerInitPromise(initPromise)
+        return initPromise
     }
 
     const unregisterLocalContext = () => {

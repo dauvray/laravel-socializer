@@ -84,7 +84,7 @@ passthroughs média — soit ~245 lignes.
 - [-] Tâche 1 — `usePeerCore.test.js` — 34 tests ✅ (5/10 items couverts, 5 restants)
 - [x] Tâche 2 — `usePeerConnections.test.js` — 47 tests ✅ (voir ci-dessous)
 - [-] Tâche 3 — `usePeerMedia` — 34 tests ✅ répartis en deux fichiers : `.players` 15 (pool d'instances) + `.streams` 19 (flux locaux). Périmètre couvert
-- [-] Tâche 4 — `usePeerTransport.*.test.js` — 24 tests ✅ (sécurité couverte ; singleton/lifecycle/reconnect restants)
+- [-] Tâche 4 — `usePeerTransport.*.test.js` — 56 tests ✅ (sécurité, recovery `peer-unavailable`, singleton/ref-counting/reconnexion couverts ; restent `sendData` star, câblage du rate limiting hub et `contextRegistry`)
 - [x] Tâche 5 — `createPeerContext.test.js` — 46 tests ✅ (voir ci-dessous)
 - [-] Tâche 6 — `usePeerOrchestrator.test.js` — **toujours à ne pas ouvrir en entier** : le wrapping du routage star doit d'abord déménager dans `usePeerTransport` (item `[L]` de la TODOLIST), sinon les tests sont à jeter. Exception ouverte : `usePeerOrchestrator.broadcastPresence.test.js` couvre le seul câblage de l'annonce de diffusion (aucune assertion sur le routage star, donc survit à ce déménagement)
 - [ ] Tâche 7 — `useMediaBroadcast.test.js`
@@ -98,6 +98,7 @@ passthroughs média — soit ~245 lignes.
 - [x] `useBroadcastPresence.test.js` — 18 tests ✅ : émission (8 — annonce à l'ouverture d'une connexion, silence quand je ne diffuse pas, gardes de type sur la connexion, diffusion au changement d'état local, annonce d'arrêt, **aucun envoi si aucun pair joignable en data** — chemin normal au premier démarrage, routage laissé au transport en star, plus rien après `stopBroadcastPresence`), réception (6 — identité résolue depuis la connexion entrante *et* sortante, retrait sur `isBroadcasting: false`, **payload `from` ignoré (anti-usurpation)**, annonce consommée même sans pair résolu, messages métier non consommés), **star** (2 — côté client, une annonce relayée n'est pas attribuée au hub ; côté hub, l'annonce d'un client est bien enregistrée), purge au départ de la room (2)
 - [x] `usePeerOrchestrator.broadcastPresence.test.js` — 6 tests ✅ : **intégration réelle** (contexte, stores et `setUpConnectionListeners` non mockés ; seul PeerJS l'est) du câblage de l'annonce — wrap `onDataReceived` posé même sans callback applicatif, annonce jamais remontée au métier, arité `(data, conn, metadata)` préservée pour le métier, retrait sur annonce d'arrêt, annonce émise à l'`open` d'une connexion data avec `conn` transmis au callback applicatif. Périmètre volontairement limité à la présence de diffusion (cf. Tâche 6)
 - [x] `useAwaitedStreams.test.js` — 15 tests ✅ (UI) : **aucune attente pour un pair qui n'a rien annoncé** (le symptôme corrigé), attente sur annonce, arrêt d'attente à l'arrivée du flux (webcam ou écran), annonce d'un pair hors room ignorée, filet de délai (4 — abandon, non-abandon avant l'échéance, un timer par pair, flux de dernière seconde), pas de ré-attente après un arrêt, réarmement par une nouvelle annonce, tolérance aux `api` non réactives
+- [x] `peers2Store.peerRuntime.test.js` — 10 tests ✅ (store) : runtime du Peer singleton — ref-counting planchéré à 0, garde d'init (**la promesse traverse le state réactif sans être enveloppée** : identité préservée, `await` intact), compteur de reconnexion, annulation réelle des deux timers avec retour booléen, et surtout `resetPeerState({ keepConsumerCount: true })` qui **préserve** le compteur après un échec d'init pour qu'un retry reparte d'un compte juste
 - [x] `MediaBroadcastPlayer.spinner.test.js` — 9 tests ✅ (UI) : overlay d'attente d'image sur un flux **déjà reçu** — piloté par les events réels du `<video>` (`can-play`, `playing`, `waiting`, `stalled`, `error`), neutralisé sans flux, sans vidéo active ou avec slot `video` fourni, réarmé sur instance recyclée par le pool
 
 ---
@@ -167,9 +168,9 @@ Découpée en deux fichiers : `usePeerMedia.players.test.js` (pool d'instances) 
 
 > ⚠️ **Mise à jour 2026-05-27** : le composant a reçu 5 commits sécurité. Note importante sur l'item « sendData star » : **le hub envoie en direct** (`conn.send(data)`, sans enveloppe) ; c'est le **client** qui construit l'enveloppe `__starRoute`. L'ancienne formulation « hub construit l'enveloppe » était fausse.
 
-#### ✅ Déjà couvert (3 fichiers, 22 tests)
+#### ✅ Déjà couvert (6 fichiers, 56 tests)
 
-- [✅] **`usePeerTransport.incomingAuth.test.js`** (11) — `_isAuthorizedIncomingPeer` :
+- [✅] **`usePeerTransport.incomingAuth.test.js`** (15) — `_isAuthorizedIncomingPeer` :
   - accepte/rejette une connexion data selon l'appartenance à `usersInRoom`
   - rejette `from` absent / format de slug invalide
   - anti-usurpation : rejet si peerId réel mappé ≠ `from` déclaré ; accepte si concordance
@@ -178,27 +179,35 @@ Découpée en deux fichiers : `usePeerMedia.players.test.js` (pool d'instances) 
 - [✅] **`usePeerTransport.forwardStar.test.js`** (5) — `forwardStarMessage`, validation `envelope.to` :
   - retransmet uniquement aux membres ciblés présents dans la room
   - ignore slugs hors room / format invalide ; exclut toujours l'expéditeur ; diffuse à tous si `to` absent
-- [✅] **`usePeerTransport.mesh.test.js`** (6) — `sendData` mesh + limite de taille payload :
+- [✅] **`usePeerTransport.mesh.test.js`** (10) — `sendData` mesh + limite de taille payload :
   - diffuse un payload dans la limite à tous les membres
   - rejette payload JSON / binaire (ArrayBuffer) > `MAX_PAYLOAD_BYTES`, accepte pile à la limite
   - rejette payload non sérialisable ; applique la limite aussi avec `destUserSlugs` explicite
+- [✅] **`usePeerTransport.peerUnavailable.test.js`** (9) — recovery du peerId mort :
+  - ignore les autres types d'erreur PeerJS et les peerId inconnus
+  - retire la connexion échouée, conserve celles pointant sur un autre peerId
+  - invalide le mapping **même** si le pair reste connecté dans une autre room (le bug du 2026-08-13), et même si aucune instance n'a été stockée ; positionne `peerUnavailableSignal`
+- [✅] **`usePeerTransport.singleton.test.js`** (11) — cycle de vie du Peer singleton :
+  - création, `localPeerReady` seulement sur `'open'`, garde d'init (2 contextes simultanés = 1 seul Peer), peer prêt réutilisé
+  - ref-counting : destruction **différée** de `PEER_DESTROY_DELAY_MS`, **annulée** si un consommateur remonte, peer conservé tant qu'un autre consommateur est monté
+  - `_destroyPeerSingleton` : cas nominal (reset complet du store) **et** cas `localPeer` déjà absent (échec d'init : ni crash ni destruction)
+  - intégration sur le **vrai** store Pinia (le mock garantit la surface, pas la sémantique)
+  - **HMR** : le peer partagé survit au démontage d'un consommateur enregistré par une autre copie du module ; une seule instance créée quand une init est en vol au moment du rechargement (+ un contrôle de harnais, sinon ces deux tests seraient verts pour rien)
+- [✅] **`usePeerTransport.reconnect.test.js`** (6) — garde de reconnexion :
+  - backoff exponentiel (1s·2s·4s·8s·16s) plafonné à `RECONNECT_MAX_DELAY_MS`, abandon après `MAX_RECONNECT_ATTEMPTS` sans boucler
+  - compteur remis à zéro sur `'open'` ; aucune tentative sur un peer détruit
+  - un backoff armé pendant le délai de grâce ne survit pas à la destruction (aucun timer résiduel)
 
 #### 📋 Restant à couvrir
 
-- [ ] `setLocalPeer` : crée un `Peer`, incrémente `_peerConsumerCount`, résout la promise quand l'event `open` est déclenché
-- [ ] `setLocalPeer` singleton : deuxième appel réutilise le même Peer (`_peerInitPromise` partagée, pas de nouvelle instance)
-- [ ] Ref-counting / `unregisterLocalContext` : `_peerConsumerCount` décrémenté à l'`onUnmounted`, destruction **différée** `PEER_DESTROY_DELAY_MS` planifiée à count == 0, **annulée** si un consommateur remonte avant la fin du délai
-- [ ] `_destroyPeerSingleton` : cas `localPeer` déjà null (échec init) → ne réinitialise pas le compteur ; cas nominal → `peer.destroy()`, reset des refs module-level
 - [ ] `sendData` star (client) : enveloppe `__starRoute` (`to`, `from`, `payload`) construite et envoyée au **hub uniquement**
 - [ ] `sendData` star (hub) : envoi **direct** aux destinataires (pas d'enveloppe)
 - [ ] `forwardStarMessage` rate limiting : excédent ignoré au **point d'appel** du hub, clé = peerId entrant réel (non `envelope.from`). ⚠️ Partiellement couvert depuis 2026-08-14 : la **mécanique** (plafond `HUB_MAX_MESSAGES_PER_WINDOW` / `HUB_RATE_WINDOW_MS`) vit désormais dans `utils/createRateLimiter.js` et y est testée ; reste à couvrir le **câblage** — que le hub passe bien `senderIdentity` et abandonne le message
 - [ ] `forwardStarMessage` limite de taille payload : rejet > `MAX_PAYLOAD_BYTES` (JSON + binaire) et payload invalide
 - [✅] Purge throttlée des expéditeurs inactifs (pas de fuite mémoire sur rotation de room) — logique déplacée de `_sweepHubRateWindows` vers `utils/createRateLimiter.js`, couverte par `utils/createRateLimiter.test.js`
-- [ ] `peerUnavailableSignal` : handler `'error'` type `peer-unavailable` → retire la connexion échouée, invalide le peerId stale, positionne le signal réactif sur le slug cible
-- [ ] Reconnect guard : `_reconnectAttempts` avec backoff exponentiel plafonné à `MAX_RECONNECT_ATTEMPTS` (`RECONNECT_MAX_DELAY_MS`), pas de boucle infinie, reset sur `'open'`
 - [ ] `contextRegistry` : `unregisterContext` last-write-wins (ne supprime que si l'entrée appartient toujours au ctx — cf. note), retiré à l'`onUnmounted`, pas de fuite
 
-**Prérequis** : `getLastPeerInstance()` + `resetPeerMock()` + `instance._triggerEvent('open', 'peer-id')` de `__mocks__/peerjs.js` ; `vi.resetModules()` entre les tests pour réinitialiser les singletons module-level (`_peerInitPromise`, `_peerConsumerCount`, `_reconnectAttempts`, `contextRegistry`, `_hubRateLimiter`) ; `vi.useFakeTimers()` pour le délai de destruction et le backoff de reconnexion.
+**Prérequis** : `getLastPeerInstance()` + `resetPeerMock()` + `instance._triggerEvent('open', 'peer-id')` de `__mocks__/peerjs.js` ; `vi.useFakeTimers()` pour le délai de destruction et le backoff de reconnexion ; `vi.resetModules()` entre les tests pour réinitialiser ce qui reste au niveau du module (`contextRegistry`, `_hubRateLimiter`) — **le mock PeerJS doit être ré-importé après le même reset**, sinon `getLastPeerInstance()` ne voit pas les instances créées par la copie sous test. L'état du Peer singleton (ref-counting, garde d'init, reconnexion) vit désormais dans `peerStore` : une Pinia fraîche (posée par `setup.js`) ou un `ctx` neuf suffit à l'isoler.
 
 ---
 

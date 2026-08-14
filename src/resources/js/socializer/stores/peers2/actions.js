@@ -1,3 +1,4 @@
+import { toRaw } from 'vue'
 import { isEmpty } from '~estarter/services/helpers.js'
 
 export default {
@@ -10,6 +11,102 @@ export default {
     },
     setLastLocalPeerId(peerId = null) {
         this.lastLocalPeerId = peerId
+    },
+
+    /*--------------------------
+    | Runtime du Peer singleton
+    |
+    | Ref-counting, garde d'init et reconnexion du `localPeer`. Ces verbes sont appelés
+    | exclusivement par usePeerTransport ; ils vivent ici pour que l'état suive celui du
+    | peer (cf. commentaire de state.js).
+    --------------------------*/
+
+    /** Un contexte de plus consomme le peer singleton. @returns {number} nouveau compte */
+    addPeerConsumer() {
+        this.peerConsumerCount += 1
+        return this.peerConsumerCount
+    },
+    /**
+     * Un consommateur se démonte. Plancher à 0 comme `endShutdown` de createPeerContext :
+     * un décrément orphelin ne doit pas rendre le compteur négatif, sinon la destruction
+     * du peer ne serait plus jamais planifiée au bon moment.
+     *
+     * @returns {number} nouveau compte — l'appelant planifie la destruction à 0
+     */
+    removePeerConsumer() {
+        this.peerConsumerCount = Math.max(0, this.peerConsumerCount - 1)
+        return this.peerConsumerCount
+    },
+
+    /**
+     * Promesse d'initialisation en vol, partagée par tous les contextes.
+     *
+     * Une `Promise` traverse le state réactif sans dommage : Vue ne proxifie que les
+     * objets nus et les collections, jamais une Promise — son identité et son `await`
+     * sont donc préservés (pas de `markRaw` nécessaire).
+     */
+    setPeerInitPromise(promise = null) {
+        this.peerInitPromise = promise
+    },
+
+    resetReconnectAttempts() {
+        this.peerReconnectAttempts = 0
+    },
+    /** @returns {number} numéro de la tentative qui vient d'être engagée */
+    incrementReconnectAttempts() {
+        this.peerReconnectAttempts += 1
+        return this.peerReconnectAttempts
+    },
+
+    // ⚠️ `toRaw` sur les handles de timer : un id de timer est un nombre côté navigateur
+    // mais un objet côté Node/vitest, donc enveloppé dans un proxy réactif en s'inscrivant
+    // dans le state. Le forwarding du proxy suffit en pratique à `clearTimeout`, mais on ne
+    // veut pas qu'une annulation de timer en dépende.
+
+    /** @returns {boolean} true si un timer était bien armé (l'appelant loggue l'annulation) */
+    clearPeerDestroyTimer() {
+        if (!this.peerDestroyTimer) {
+            return false
+        }
+        clearTimeout(toRaw(this.peerDestroyTimer))
+        this.peerDestroyTimer = null
+        return true
+    },
+    /** @returns {boolean} true si un backoff de reconnexion était bien armé */
+    clearReconnectTimer() {
+        if (!this.peerReconnectTimer) {
+            return false
+        }
+        clearTimeout(toRaw(this.peerReconnectTimer))
+        this.peerReconnectTimer = null
+        return true
+    },
+
+    /**
+     * Remet à zéro tout l'état du peer singleton (appelé à sa destruction).
+     *
+     * ⚠️ `keepConsumerCount` : quand la destruction survient alors que `localPeer` est
+     * déjà absent (échec d'initialisation), les consommateurs encore montés doivent
+     * pouvoir décrémenter normalement jusqu'à 0 pour qu'un retry reparte d'un compte
+     * juste. Remettre le compteur à 0 dans ce cas fausserait le comptage : un nouveau
+     * consommateur enregistré avant le démontage des anciens verrait leurs décréments
+     * passer sous zéro et déclencherait la destruction d'un peer valide.
+     *
+     * @param {Object}  [options]
+     * @param {boolean} [options.keepConsumerCount=false]
+     */
+    resetPeerState({ keepConsumerCount = false } = {}) {
+        this.localPeer = null
+        this.localPeerReady = false
+        this.lastLocalPeerId = null
+        this.peerInitPromise = null
+        this.peerReconnectAttempts = 0
+        this.clearPeerDestroyTimer()
+        this.clearReconnectTimer()
+
+        if (!keepConsumerCount) {
+            this.peerConsumerCount = 0
+        }
     },
 
     prepareRoomConnection(payload) {
