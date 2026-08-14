@@ -40,7 +40,8 @@ livraisons asynchrones) dans [CONVENTIONS.md](../CONVENTIONS.md#tests--trois-ét
 - [x] **`utils/useCallStateMachine.test.js`** — 36 tests : transitions FSM, computed dérivés, reset(), closingUsers
 - [x] **`utils/usePeerRetry.test.js`** — 15 tests : scheduleRetry, clearRetry, clearAll, fake timers, erreurs fatales, cleanup onUnmounted
 - [x] **`utils/payloadSize.test.js`** — 12 tests · **`utils/sanitizeMetadata.test.js`** — 5 tests
-- [-] **`usePeerCore.test.js`** — 27 tests (partiel) : requestRemotePeerConnection, responseRemotePeerConnection, requestAuthorizationRemotePeerId (inclut MAX_INVITE_RETRIES), sendAuthorizationRemotePeerId
+- [x] **`utils/createRateLimiter.test.js`** — 9 tests : fenêtre glissante (pas fixe), clés indépendantes, appel bloqué qui ne consomme pas de jeton, purge throttlée, `reset()`, isolation entre instances
+- [-] **`usePeerCore.test.js`** — 34 tests (partiel) : requestRemotePeerConnection (+ rate limiting `/ask-to-peer-id`), responseRemotePeerConnection, requestAuthorizationRemotePeerId (inclut MAX_INVITE_RETRIES), sendAuthorizationRemotePeerId
 
 ---
 
@@ -49,7 +50,7 @@ livraisons asynchrones) dans [CONVENTIONS.md](../CONVENTIONS.md#tests--trois-ét
 ### Ordre recommandé
 
 ```
-Tâche 1 → usePeerCore          (Ajax + signaling pur)               ◐ 4/9 items
+Tâche 1 → usePeerCore          (Ajax + signaling pur)               ◐ 5/10 items
 Tâche 2 → usePeerConnections   (connexions PeerJS factices)         ✅
 Tâche 3 → usePeerMedia         (DOM + MediaStream)                  ✅ (.players + .streams)
 Tâche 4 → usePeerTransport     (singleton Peer + DataChannel)       ◐ sécurité seule
@@ -79,7 +80,8 @@ passthroughs média — soit ~245 lignes.
 - [x] Infrastructure (vitest.config.js, setup.js, helpers, mocks)
 - [x] `utils/useCallStateMachine.test.js` — 36 tests ✅
 - [x] `utils/usePeerRetry.test.js` — 15 tests ✅
-- [-] Tâche 1 — `usePeerCore.test.js` — 27 tests ✅ (4/9 items couverts, 5 restants)
+- [x] `utils/createRateLimiter.test.js` — 9 tests ✅ (mécanique partagée hub star + `/ask-to-peer-id`)
+- [-] Tâche 1 — `usePeerCore.test.js` — 34 tests ✅ (5/10 items couverts, 5 restants)
 - [x] Tâche 2 — `usePeerConnections.test.js` — 47 tests ✅ (voir ci-dessous)
 - [-] Tâche 3 — `usePeerMedia` — 34 tests ✅ répartis en deux fichiers : `.players` 15 (pool d'instances) + `.streams` 19 (flux locaux). Périmètre couvert
 - [-] Tâche 4 — `usePeerTransport.*.test.js` — 24 tests ✅ (sécurité couverte ; singleton/lifecycle/reconnect restants)
@@ -105,6 +107,7 @@ passthroughs média — soit ~245 lignes.
 **Périmètre** : couche HTTP/Ajax pure, sans WebRTC.
 
 - [✅] `requestRemotePeerConnection` : POST Ajax déclenché, `addWaitingRemotePeerId` appelé, throttling SIGNALING_STALE_MS (pas de 2e requête si `waiting` récent)
+- [✅] `requestRemotePeerConnection` rate limiting `ASK_PEER_MAX_REQUESTS_PER_WINDOW` / `ASK_PEER_RATE_WINDOW_MS` : plafond par cible, discrimination slug **et** `connectionType`, reprise après la fenêtre, un POST en échec consomme un jeton, le garde `waiting` sorti en amont n'en consomme aucun. ⚠️ Les tests passent par `invalidateRemotePeerId` (chemin réel du `peer-unavailable`) : sans cette purge c'est le garde `waiting` qui sort en premier et ils verdissent pour la mauvaise raison. ⚠️ `askPeerRateLimiter.reset()` obligatoire en `beforeEach` — état module-level + `Date.now()` gelé par les fake timers
 - [✅] `responseRemotePeerConnection` : POST avec `peerId` local correct, garde `!getLocalPeerId` (aucun POST, `false`), booléen de retour
 - [✅] `requestAuthorizationRemotePeerId` : envoi immédiat + retry via `inviteRetryManager`, retourne un `inviteId`
 - [✅] `sendAuthorizationRemotePeerId` : envoi avec `status: true` (inclut peerId) vs `status: false` (type seulement)
@@ -188,14 +191,14 @@ Découpée en deux fichiers : `usePeerMedia.players.test.js` (pool d'instances) 
 - [ ] `_destroyPeerSingleton` : cas `localPeer` déjà null (échec init) → ne réinitialise pas le compteur ; cas nominal → `peer.destroy()`, reset des refs module-level
 - [ ] `sendData` star (client) : enveloppe `__starRoute` (`to`, `from`, `payload`) construite et envoyée au **hub uniquement**
 - [ ] `sendData` star (hub) : envoi **direct** aux destinataires (pas d'enveloppe)
-- [ ] `forwardStarMessage` rate limiting : `HUB_MAX_MESSAGES_PER_WINDOW` / `HUB_RATE_WINDOW_MS` (excédent ignoré), clé = peerId entrant réel (non `envelope.from`)
+- [ ] `forwardStarMessage` rate limiting : excédent ignoré au **point d'appel** du hub, clé = peerId entrant réel (non `envelope.from`). ⚠️ Partiellement couvert depuis 2026-08-14 : la **mécanique** (plafond `HUB_MAX_MESSAGES_PER_WINDOW` / `HUB_RATE_WINDOW_MS`) vit désormais dans `utils/createRateLimiter.js` et y est testée ; reste à couvrir le **câblage** — que le hub passe bien `senderIdentity` et abandonne le message
 - [ ] `forwardStarMessage` limite de taille payload : rejet > `MAX_PAYLOAD_BYTES` (JSON + binaire) et payload invalide
-- [ ] `_sweepHubRateWindows` : purge throttlée des expéditeurs déconnectés (pas de fuite mémoire sur rotation de room)
+- [✅] Purge throttlée des expéditeurs inactifs (pas de fuite mémoire sur rotation de room) — logique déplacée de `_sweepHubRateWindows` vers `utils/createRateLimiter.js`, couverte par `utils/createRateLimiter.test.js`
 - [ ] `peerUnavailableSignal` : handler `'error'` type `peer-unavailable` → retire la connexion échouée, invalide le peerId stale, positionne le signal réactif sur le slug cible
 - [ ] Reconnect guard : `_reconnectAttempts` avec backoff exponentiel plafonné à `MAX_RECONNECT_ATTEMPTS` (`RECONNECT_MAX_DELAY_MS`), pas de boucle infinie, reset sur `'open'`
 - [ ] `contextRegistry` : `unregisterContext` last-write-wins (ne supprime que si l'entrée appartient toujours au ctx — cf. note), retiré à l'`onUnmounted`, pas de fuite
 
-**Prérequis** : `getLastPeerInstance()` + `resetPeerMock()` + `instance._triggerEvent('open', 'peer-id')` de `__mocks__/peerjs.js` ; `vi.resetModules()` entre les tests pour réinitialiser les singletons module-level (`_peerInitPromise`, `_peerConsumerCount`, `_reconnectAttempts`, `contextRegistry`, `_hubRateWindows`) ; `vi.useFakeTimers()` pour le délai de destruction et le backoff de reconnexion.
+**Prérequis** : `getLastPeerInstance()` + `resetPeerMock()` + `instance._triggerEvent('open', 'peer-id')` de `__mocks__/peerjs.js` ; `vi.resetModules()` entre les tests pour réinitialiser les singletons module-level (`_peerInitPromise`, `_peerConsumerCount`, `_reconnectAttempts`, `contextRegistry`, `_hubRateLimiter`) ; `vi.useFakeTimers()` pour le délai de destruction et le backoff de reconnexion.
 
 ---
 

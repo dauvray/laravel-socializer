@@ -6,7 +6,13 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createMockContext } from './helpers/createMockContext.js'
 import { withSetup } from './helpers/withSetup.js'
 import { usePeerCore } from '~socializer/components/WebRTC2/Composables/usePeerCore.js'
-import { ENDPOINTS, SIGNALING_STALE_MS, MAX_INVITE_RETRIES } from '~socializer/components/WebRTC2/webrtc2.config.js'
+import {
+    ENDPOINTS,
+    SIGNALING_STALE_MS,
+    MAX_INVITE_RETRIES,
+    ASK_PEER_RATE_WINDOW_MS,
+    ASK_PEER_MAX_REQUESTS_PER_WINDOW,
+} from '~socializer/components/WebRTC2/webrtc2.config.js'
 
 describe('usePeerCore', () => {
     let ctx
@@ -17,6 +23,11 @@ describe('usePeerCore', () => {
         vi.useFakeTimers()
         ctx = createMockContext()
         ;[core, app] = withSetup(() => usePeerCore(ctx))
+        // ⚠️ Le limiteur de /ask-to-peer-id est au niveau MODULE (il doit survivre à un
+        // mount/unmount en prod) et `vi.useFakeTimers()` gèle `Date.now()` : sans ce
+        // reset, sa fenêtre ne s'écoulerait jamais d'un `it` à l'autre et les tests
+        // qui POSTent réellement pour la même cible s'étrangleraient mutuellement.
+        core.askPeerRateLimiter.reset()
     })
 
     afterEach(() => {
@@ -118,6 +129,131 @@ describe('usePeerCore', () => {
 
             expect(ctx.peerStore.addWaitingRemotePeerId).not.toHaveBeenCalled()
             expect(result).toBe(false)
+        })
+    })
+
+    // ── requestRemotePeerConnection : rate limiting ─────────────────────────
+    //
+    // Second garde, indépendant du store et du cycle de vie du composant. Il ne se
+    // déclenche que quand le garde `waiting` / SIGNALING_STALE_MS ci-dessus a été
+    // contourné — ce que le mock reproduit en laissant `getWaitingRemotePeerId`
+    // retourner `undefined`, exactement comme après `invalidateRemotePeerId`.
+
+    describe('requestRemotePeerConnection — rate limiting', () => {
+
+        let warnSpy
+
+        beforeEach(() => {
+            warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        })
+
+        afterEach(() => {
+            warnSpy.mockRestore()
+        })
+
+        /**
+         * Rejoue le chemin de production qui rouvre la fenêtre d'envoi :
+         * `peer-unavailable` → `invalidateRemotePeerId`, qui purge le flag waiting
+         * **volontairement** pour ne pas étrangler la re-demande. C'est ce qui rend la
+         * boucle possible, et donc ce que le plafond doit borner. Sans cette purge, le
+         * garde `waiting` / SIGNALING_STALE_MS sortirait le premier et ces tests
+         * passeraient au vert pour la mauvaise raison.
+         */
+        const askAfterInvalidate = (slug, type = null) => {
+            ctx.peerStore.invalidateRemotePeerId(slug)
+            return core.requestRemotePeerConnection(slug, type)
+        }
+
+        it('laisse passer ASK_PEER_MAX_REQUESTS_PER_WINDOW demandes puis abandonne la suivante', async () => {
+            for (let i = 0; i < ASK_PEER_MAX_REQUESTS_PER_WINDOW; i++) {
+                await expect(askAfterInvalidate('alice')).resolves.toBe(true)
+            }
+            expect(ctx.AjaxService.load).toHaveBeenCalledTimes(ASK_PEER_MAX_REQUESTS_PER_WINDOW)
+
+            ctx.AjaxService.load.mockClear()
+            ctx.peerStore.addWaitingRemotePeerId.mockClear()
+
+            const result = await askAfterInvalidate('alice')
+
+            expect(result).toBe(false)
+            expect(ctx.AjaxService.load).not.toHaveBeenCalled()
+            // Pas de POST ⇒ pas d'entrée waiting : le store ne doit pas croire qu'une
+            // demande est en vol alors qu'aucune n'est partie.
+            expect(ctx.peerStore.addWaitingRemotePeerId).not.toHaveBeenCalled()
+            expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Rate limit dépassé'))
+        })
+
+        it('plafonne une boucle serrée de recovery peer-unavailable', async () => {
+            // Sans plafond, les 20 tours partiraient tous sur le réseau.
+            for (let i = 0; i < 20; i++) {
+                await askAfterInvalidate('alice')
+            }
+
+            expect(ctx.AjaxService.load).toHaveBeenCalledTimes(ASK_PEER_MAX_REQUESTS_PER_WINDOW)
+        })
+
+        it('discrimine par cible : un autre slug n\'est pas affecté', async () => {
+            for (let i = 0; i < ASK_PEER_MAX_REQUESTS_PER_WINDOW; i++) {
+                await askAfterInvalidate('alice')
+            }
+            expect(await askAfterInvalidate('alice')).toBe(false)
+
+            await expect(askAfterInvalidate('bob')).resolves.toBe(true)
+        })
+
+        it('discrimine par connectionType : \'screen\' garde son propre quota', async () => {
+            // Même piège que le garde `waiting` : sans le type dans la clé, la demande
+            // de partage d'écran serait étranglée par celle du type principal.
+            for (let i = 0; i < ASK_PEER_MAX_REQUESTS_PER_WINDOW; i++) {
+                await askAfterInvalidate('alice')
+            }
+            expect(await askAfterInvalidate('alice')).toBe(false)
+
+            await expect(askAfterInvalidate('alice', 'screen')).resolves.toBe(true)
+        })
+
+        it('repart une fois la fenêtre écoulée', async () => {
+            for (let i = 0; i < ASK_PEER_MAX_REQUESTS_PER_WINDOW; i++) {
+                await askAfterInvalidate('alice')
+            }
+            expect(await askAfterInvalidate('alice')).toBe(false)
+
+            vi.advanceTimersByTime(ASK_PEER_RATE_WINDOW_MS + 1)
+
+            await expect(askAfterInvalidate('alice')).resolves.toBe(true)
+        })
+
+        it('un POST en échec consomme quand même un jeton (il a touché le réseau)', async () => {
+            ctx.AjaxService.load.mockRejectedValue(new Error('Network error'))
+
+            for (let i = 0; i < ASK_PEER_MAX_REQUESTS_PER_WINDOW; i++) {
+                await expect(askAfterInvalidate('alice')).resolves.toBe(false)
+            }
+            expect(ctx.AjaxService.load).toHaveBeenCalledTimes(ASK_PEER_MAX_REQUESTS_PER_WINDOW)
+
+            await askAfterInvalidate('alice')
+
+            // Toujours 3 : le 4ᵉ tour a été arrêté avant le réseau.
+            expect(ctx.AjaxService.load).toHaveBeenCalledTimes(ASK_PEER_MAX_REQUESTS_PER_WINDOW)
+        })
+
+        it('ne consomme aucun jeton quand le garde waiting a déjà bloqué la demande', async () => {
+            // Les deux gardes sont en série : celui du store sort en premier, donc une
+            // demande étranglée par SIGNALING_STALE_MS ne doit pas grignoter le quota.
+            ctx.peerStore.addWaitingRemotePeerId('alice', {
+                room: ctx.session.onAirRoom,
+                type: ctx.session.currentType,
+            })
+
+            for (let i = 0; i < 10; i++) {
+                expect(await core.requestRemotePeerConnection('alice')).toBe(false)
+            }
+            expect(ctx.AjaxService.load).not.toHaveBeenCalled()
+
+            // Quota intact : dès que l'entrée waiting saute, les 3 demandes repartent.
+            for (let i = 0; i < ASK_PEER_MAX_REQUESTS_PER_WINDOW; i++) {
+                expect(await askAfterInvalidate('alice')).toBe(true)
+            }
         })
     })
 

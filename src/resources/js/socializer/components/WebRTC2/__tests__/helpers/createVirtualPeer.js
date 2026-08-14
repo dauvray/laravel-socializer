@@ -13,7 +13,7 @@
  *
  * `usePeerTransport` porte 8 variables **module-level** (`contextRegistry`,
  * `_peerInitPromise`, `_peerConsumerCount`, `_reconnectAttempts`, `_peerDestroyTimer`,
- * `_hubRateWindows`…) : c'est un singleton par module ES. Sans reset, deux pairs du même
+ * `_hubRateLimiter`…) : c'est un singleton par module ES. Sans reset, deux pairs du même
  * process partageraient le même Peer et le même registre de contextes — ils seraient un
  * seul participant. Chaque pair charge donc sa propre copie du graphe de modules ; le
  * bus PeerJS et le serveur de signalisation vivent sur `globalThis` précisément pour

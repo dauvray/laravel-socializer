@@ -132,6 +132,29 @@ export const ME_READY_TIMEOUT_MS = 15_000
  */
 export const MAX_INVITE_RETRIES = 20
 
+// ─── Rate limiting client sur /ask-to-peer-id (usePeerCore) ───────────────
+/**
+ * Plafond d'émission de `requestRemotePeerConnection`, par cible
+ * (`slug|room|connectionType`) et par fenêtre glissante.
+ *
+ * ⚠️ Distinct du garde `waiting` / SIGNALING_STALE_MS, qui vit dans le store et
+ * saute dès qu'une entrée est purgée — notamment par `invalidateRemotePeerId`, qui
+ * supprime le flag *volontairement* pour ne pas étrangler la re-demande après un
+ * `peer-unavailable`. Ce chemin est une boucle (`peerUnavailableSignal` → watch de
+ * `useConnectionPool` → POST immédiat) : sans plafond indépendant du store et du
+ * cycle de vie du composant, rien n'en borne la cadence.
+ *
+ * Dimensionnement : la cadence légitime sur une même cible est d'~1 demande par
+ * SIGNALING_STALE_MS (12 s) ; 3 par 10 s laisse la marge des rafales de recovery
+ * tout en transformant une boucle en 3 requêtes/10 s au lieu d'un flot continu.
+ *
+ * Volontairement **par cible et non global** : un join de room mesh émet
+ * légitimement jusqu'à 14 demandes dans le même tick (7 pairs × type principal +
+ * écran, cf. MAX_PEERS_PER_ROOM), qu'un cap global mal dimensionné casserait.
+ */
+export const ASK_PEER_RATE_WINDOW_MS = 10_000
+export const ASK_PEER_MAX_REQUESTS_PER_WINDOW = 3
+
 // ─── Types de connexion valides ────────────────────────────────────────────
 /**
  * Ensemble des types de connexion PeerJS reconnus par le système WebRTC2.

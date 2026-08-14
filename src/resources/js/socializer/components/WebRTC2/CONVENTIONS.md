@@ -140,6 +140,7 @@ historique, et les tests unitaires existants ne voient aucune différence.
 - `MAX_REMOTE_STREAMS = 12` + `STREAM_STALE_MS = 300_000` — éviction LRU dans `remoteStreamsMap` (anti-leak)
 - `MAX_PAYLOAD_BYTES = 64 * 1024` — garde anti-DoS hub star (émission + réception)
 - `HUB_MAX_MESSAGES_PER_WINDOW = 20` / `HUB_RATE_WINDOW_MS = 1000` — rate-limit `forwardStarMessage`
+- `ASK_PEER_MAX_REQUESTS_PER_WINDOW = 3` / `ASK_PEER_RATE_WINDOW_MS = 10_000` — rate-limit `/ask-to-peer-id`, **par cible** (`slug|room|connectionType`) et non global : un join mesh émet légitimement ~14 demandes dans le même tick
 - `MAX_RETRY_ATTEMPTS = 8` / `MAX_RECONNECT_ATTEMPTS = 8` — bornes anti-boucle infinie
 
 ## Conventions de code
@@ -147,6 +148,7 @@ historique, et les tests unitaires existants ne voient aucune différence.
 - **IDs de session** : `crypto.randomUUID()` — jamais `Math.random()` (cf. `ensureCurrentCallRoomId`)
 - **PeerId local** : `ctx.peerStore.getLocalPeerId` — jamais le triple fallback historique `localPeer?.id || localPeer?._id || lastLocalPeerId`
 - **Retry peer** : un seul système, `usePeerRetry` — pas de Map `inviteRetries` parallèle
+- **Rate limiting** : un seul système, `utils/createRateLimiter` — pas de `Map` de timestamps ad hoc. Deux instances module-level, avec des clés délibérément différentes : le hub star porte sur l'**identité PeerJS entrante réelle** (jamais `envelope.from`, cf. [SECURITY_AUDIT.md](SECURITY_AUDIT.md)), `/ask-to-peer-id` sur `slug|room|connectionType`. Portée **module** et non closure de composable : c'est ce qui les fait survivre à un mount/unmount, sans quoi ils ne plafonnent rien
 - **Clé `remoteStreamsMap`** : `slug+type` canonique, passe unique (la double-passe historique venait d'une clé non fiable)
 - **Identité du pair d'une entrée de `remoteStreamsMap`** : `entry.remoteSlug` — jamais `entry.metadata.from`. Sur une connexion **sortante**, `metadata.from` porte **mon** slug (cf. `_buildPeerConnectionConfig`), et le flux distant arrive bien sur cette connexion : filtrer sur `metadata.from` ne matche donc rien côté initiateur. `remoteSlug` / `remoteType` sont normalisés à l'écriture par `handleStreamReceived` — c'est ce qu'il faut lire
 - **Garde de teardown** : `beginShutdown`/`endShutdown` sont un **compteur** ré-entrant. Un `beginShutdown` sans `endShutdown` (teardown terminal) laisse volontairement le garde actif pour de bon

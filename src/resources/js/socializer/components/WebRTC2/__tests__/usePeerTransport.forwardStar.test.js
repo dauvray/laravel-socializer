@@ -22,7 +22,7 @@ describe('usePeerTransport — forwardStarMessage (validation envelope.to)', () 
     const TYPE = 'data'
     const SENDER = 'alice'
     // peerId unique par test : le rate-limiting hub est un état module-level
-    // (_hubRateWindows) partagé entre contextes et clé sur l'identité PeerJS réelle.
+    // (_hubRateLimiter) partagé entre contextes et clé sur l'identité PeerJS réelle.
     let SENDER_PEER_ID
     let _peerSeq = 0
 

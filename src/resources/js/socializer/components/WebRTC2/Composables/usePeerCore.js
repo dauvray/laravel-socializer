@@ -18,7 +18,24 @@
  */
 import { onUnmounted } from 'vue'
 import { usePeerRetry } from '~socializer/components/WebRTC2/Composables/utils/usePeerRetry.js'
-import { ENDPOINTS, MAX_INVITE_RETRIES, SIGNALING_STALE_MS } from '~socializer/components/WebRTC2/webrtc2.config.js'
+import { createRateLimiter } from '~socializer/components/WebRTC2/Composables/utils/createRateLimiter.js'
+import {
+    ASK_PEER_MAX_REQUESTS_PER_WINDOW,
+    ASK_PEER_RATE_WINDOW_MS,
+    ENDPOINTS,
+    MAX_INVITE_RETRIES,
+    SIGNALING_STALE_MS,
+} from '~socializer/components/WebRTC2/webrtc2.config.js'
+
+// ─── Rate limiting client sur /ask-to-peer-id ────────────────────────────────
+// Au niveau **module**, et non dans la closure de usePeerCore(ctx) : c'est ce qui
+// le fait survivre à un mount/unmount rapide, l'un des deux scénarios de spam visés
+// (l'autre étant la boucle de recovery peer-unavailable). Une instance par contexte
+// serait recréée à chaque montage et ne plafonnerait donc rien.
+const _askPeerRateLimiter = createRateLimiter({
+    windowMs: ASK_PEER_RATE_WINDOW_MS,
+    max: ASK_PEER_MAX_REQUESTS_PER_WINDOW,
+})
 
 export function usePeerCore(ctx) {
 
@@ -103,6 +120,21 @@ export function usePeerCore(ctx) {
             if (age < SIGNALING_STALE_MS) {
                 return false
             }
+        }
+
+        // Plafond d'émission, dernier garde avant le réseau. Il ne se déclenche que
+        // lorsque le garde `waiting` ci-dessus a été contourné — soit parce que
+        // l'entrée du store a été purgée (invalidateRemotePeerId, départ de room,
+        // réponse reçue), soit parce qu'un remontage a rejoué syncUsersConnections.
+        // Même granularité de clé que ce garde : le type demandé discrimine, sinon
+        // la demande 'screen' serait étranglée par celle du type principal.
+        const rateKey = `${userSlug}|${room}|${requestedType}`
+        if (_askPeerRateLimiter.isLimited(rateKey)) {
+            console.warn(
+                `[usePeerCore] Rate limit dépassé (${ASK_PEER_MAX_REQUESTS_PER_WINDOW} demandes/${ASK_PEER_RATE_WINDOW_MS}ms)` +
+                ` — demande de peerId pour '${userSlug}' (${requestedType}) abandonnée`
+            )
+            return false
         }
 
         try {
@@ -268,5 +300,12 @@ export function usePeerCore(ctx) {
         stopCallInviteRetry,
         stopCallInviteRetryForUser,
         clearAllCallInviteRetries,
+
+        /*---------------------------------
+        | ÉTAT INTERNE (observable / debug)
+        ----------------------------------*/
+        // Instance module-level : `reset()` est le seul moyen de repartir d'une
+        // fenêtre vierge en test, où `vi.useFakeTimers()` gèle `Date.now()`.
+        askPeerRateLimiter: _askPeerRateLimiter,
     }
 }
