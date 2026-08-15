@@ -98,9 +98,9 @@ testable directement, et ça se voit.
 
 ## Ce qui est couvert aujourd'hui
 
-- **WebRTC2** — les trois étages, ~30 fichiers. Harnais, invariants et pièges de mock :
-  [modules/webrtc2/tests.md](../modules/webrtc2/tests.md). Ce qui reste :
-  [`work/webrtc2-tests-plan.md`](../../work/webrtc2-tests-plan.md).
+- **WebRTC2** — les trois étages, de loin le module le mieux couvert. Harnais, invariants et
+  pièges de mock : [modules/webrtc2/tests.md](../modules/webrtc2/tests.md). Avancement chiffré et
+  ce qui reste : [`work/webrtc2-tests-plan.md`](../../work/webrtc2-tests-plan.md).
 - **Chat** — un seul fichier (`dateSeparatorRender.test.js`). Plan en 5 couches, non démarré :
   [`work/chat-tests-plan.md`](../../work/chat-tests-plan.md), avec une décision en attente (helpers
   dédiés vs partagés — `mockEcho`, `mockRoute`, `seedChatStore`).

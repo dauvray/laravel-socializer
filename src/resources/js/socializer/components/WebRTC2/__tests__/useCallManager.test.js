@@ -234,6 +234,38 @@ describe('useCallManager', () => {
 
             expect(ctx.session.currentType).toBe('visio')
         })
+
+        it('autorise l\'initiateur pour les connexions sortantes', async () => {
+            await cm.acceptCallFromPeer(invitePayload())
+
+            expect(ctx.isAuthorizedCallPeer('alice')).toBe(true)
+        })
+
+        it('autorise même sans peerId dans l\'invitation', async () => {
+            // L'autorisation porte sur le pair, le mapping sur son identité PeerJS :
+            // deux faits distincts, l'absence du second n'annule pas le premier.
+            await cm.acceptCallFromPeer(invitePayload({
+                options: { room: 'call-room-1', type: 'visio' },
+            }))
+
+            expect(ctx.peerStore.addRemotePeerId).not.toHaveBeenCalled()
+            expect(ctx.isAuthorizedCallPeer('alice')).toBe(true)
+        })
+
+        it('refus : n\'autorise personne', async () => {
+            // Le cas qui compte : un refus ne doit jamais ouvrir le garde sortant, sinon
+            // décliner un appel reviendrait à donner le droit de me joindre.
+            await cm.acceptCallFromPeer(invitePayload({ status: false }))
+
+            expect(ctx.isAuthorizedCallPeer('alice')).toBe(false)
+            expect(ctx.session.authorizedCallPeers.size).toBe(0)
+        })
+
+        it('n\'autorise pas un slug invalide', async () => {
+            await cm.acceptCallFromPeer(invitePayload({ fromUserSlug: 'not a slug!' }))
+
+            expect(ctx.session.authorizedCallPeers.size).toBe(0)
+        })
     })
 
     // ── openCallBetweenPeer ─────────────────────────────────────────────────
@@ -297,6 +329,24 @@ describe('useCallManager', () => {
 
             expect(media.startCurrentStream).not.toHaveBeenCalled()
             expect(pool.requestOrConnectPeer).not.toHaveBeenCalled()
+        })
+
+        it('autorise le pair AVANT de lui ouvrir la connexion', async () => {
+            // C'est moi qui appelle `requestOrConnectPeer` : sans marquage préalable, le
+            // garde sortant refuserait l'appel direct que je viens de demander (le pair
+            // n'est dans aucune room commune).
+            await cm.openCallBetweenPeer(answerPayload())
+
+            expect(ctx.isAuthorizedCallPeer('alice')).toBe(true)
+            const markOrder = ctx.markAuthorizedCallPeer.mock.invocationCallOrder[0]
+            const connectOrder = pool.requestOrConnectPeer.mock.invocationCallOrder[0]
+            expect(markOrder).toBeLessThan(connectOrder)
+        })
+
+        it('refus du distant : n\'autorise personne', async () => {
+            await cm.openCallBetweenPeer(answerPayload({ status: false }))
+
+            expect(ctx.session.authorizedCallPeers.size).toBe(0)
         })
     })
 
@@ -636,6 +686,20 @@ describe('useCallManager', () => {
             expect(ctx.announcedStreamPeers.value).toEqual([])
         })
 
+        it('retire l\'autorisation d\'appel du pair parti', async () => {
+            // Le contexte `data-app` ne se démonte jamais : sans cette purge, une
+            // autorisation survivrait à l'appel qui l'a justifiée, pour toute la session.
+            enterConnectedCall()
+            ctx.addCurrentCallUser('bob', 'visio')
+            ctx.markAuthorizedCallPeer('alice')
+            ctx.markAuthorizedCallPeer('bob')
+
+            await cm.handleRemoteDeparture(departure())
+
+            expect(ctx.isAuthorizedCallPeer('alice')).toBe(false)
+            expect(ctx.isAuthorizedCallPeer('bob')).toBe(true)
+        })
+
         it('retire le player du type annoncé même sans entrée de registre', async () => {
             enterConnectedCall()
             ctx.addCurrentCallUser('bob', 'visio')
@@ -743,6 +807,15 @@ describe('useCallManager', () => {
             expect(ctx.session.currentCallUsers).toEqual([])
             expect(ctx.session.currentCallRoomId).toBe(null)
             expect(ctx.media.remoteStreamsMap.size).toBe(0)
+        })
+
+        it('vide le registre des pairs d\'appel autorisés', () => {
+            cm.startCallWithPeer({ toUserSlug: 'alice', type: 'visio' })
+            ctx.markAuthorizedCallPeer('alice')
+
+            cm.resetCallState()
+
+            expect(ctx.session.authorizedCallPeers.size).toBe(0)
         })
     })
 

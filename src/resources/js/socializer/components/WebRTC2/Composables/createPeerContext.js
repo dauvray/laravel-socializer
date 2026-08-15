@@ -67,7 +67,11 @@ export function createPeerContext({ type, room, options = {} }) {
         currentRoom: room || 'app',
         onAirRoom: room || 'app',
         currentCallRoomId: null, // roomId spécifique pour les appels audio/vidéo (différent de currentRoom qui est la room "logique")
-        currentCallUsers: [], // liste des slugs des utilisateurs actuellement en appel avec moi (utile pour gérer les connexions et l'UI d'appel)      
+        currentCallUsers: [], // liste des slugs des utilisateurs actuellement en appel avec moi (utile pour gérer les connexions et l'UI d'appel)
+        // Pairs avec qui un appel direct a été AUTORISÉ (clé: slug, valeur: { at }).
+        // Registre de sécurité, à propriétaire unique (useCallManager) — voir les
+        // accesseurs plus bas pour la raison d'être distincte de `currentCallUsers`.
+        authorizedCallPeers: new Map(),
         topology: options.topology || 'mesh', // topologie de diffusion : 'mesh' (pair à pair), 'star' (étoile) ou 'sfu' (serveur de diffusion)
         hubSlug: options.hubSlug || null, // slug du hub de diffusion (si utilisé)
         isHub: null, // le peer est-il le hub de diffusion ? (si hubSlug fourni)
@@ -525,6 +529,48 @@ export function createPeerContext({ type, room, options = {} }) {
     }
 
     /**
+     * Accesseurs de `session.authorizedCallPeers` — « un appel direct avec ce pair a été
+     * autorisé ». Allowlist du garde d'autorisation SORTANTE (utils/isAuthorizedPeer.js),
+     * qui admet un pair hors room à cette seule condition.
+     *
+     * ⚠️ Registre dédié, et surtout PAS `session.currentCallUsers` : ce dernier est un
+     * état d'affichage (qui voir, qui raccrocher), muté par l'UI et sans invariant à
+     * protéger. `_isAuthorizedIncomingPeer` a déjà rejeté cet usage pour la même raison —
+     * réutiliser un état applicatif comme allowlist couple politique de sécurité et
+     * affichage, et une évolution d'UI devient alors une faille.
+     *
+     * Propriétaire unique : `useCallManager`, seul écrivain (marque à l'acceptation et à
+     * l'ouverture, purge au départ du pair et au reset). Jamais d'écriture directe —
+     * même contrat que markAnnouncedStream, pour que la validation tienne à un endroit.
+     *
+     * @param {string} userSlug
+     */
+    const markAuthorizedCallPeer = (userSlug) => {
+        if (!isValidSlug(userSlug)) return false
+        if (userSlug === meStore.getMe?.slug) return false
+
+        session.authorizedCallPeers.set(userSlug, { at: Date.now() })
+        return true
+    }
+
+    const isAuthorizedCallPeer = (userSlug) => {
+        if (!userSlug) return false
+        return session.authorizedCallPeers.has(userSlug)
+    }
+
+    const clearAuthorizedCallPeer = (userSlug) => {
+        if (!userSlug) return false
+        return session.authorizedCallPeers.delete(userSlug)
+    }
+
+    // Purge totale — le pendant de clearCurrentCallUsers pour la fin d'appel
+    // (`useCallManager.resetCallState`) : plus aucun appel en cours, donc plus aucune
+    // autorisation à conserver.
+    const clearAllAuthorizedCallPeers = () => {
+        session.authorizedCallPeers.clear()
+    }
+
+    /**
      * Lifecycle hooks
      */
     onBeforeMount(() => {
@@ -545,6 +591,9 @@ export function createPeerContext({ type, room, options = {} }) {
 
         // Réinitialise les états de session
         session.currentCallUsers = []
+        // Le registre d'autorisation d'appel meurt avec le contexte : une autorisation
+        // survivante rouvrirait le garde sortant sur un pair d'une session précédente.
+        session.authorizedCallPeers.clear()
         media.isStreaming = false
         media.isCapturing = false
 
@@ -605,6 +654,10 @@ export function createPeerContext({ type, room, options = {} }) {
         clearCurrentCallUsers,
         markAnnouncedStream,
         clearAnnouncedStream,
+        markAuthorizedCallPeer,
+        isAuthorizedCallPeer,
+        clearAuthorizedCallPeer,
+        clearAllAuthorizedCallPeers,
 
         // signal réactif (usePeerTransport → usePeerOrchestrator)
         peerUnavailableSignal,

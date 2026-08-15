@@ -60,7 +60,13 @@ F1                            (dernier)
 
 ### A1 — Registre des pairs d'appel autorisés `[S]`
 
-- [ ] **Dépend de :** rien. **Prérequis de A2 et B2.**
+- [x] **Dépend de :** rien. **Prérequis de A2 et B2.** — ✅ fait le 15/08/2026.
+
+> **Delta assumé :** un quatrième accesseur, `clearAllAuthorizedCallPeers()`, a été ajouté
+> pour `resetCallState` — les trois accesseurs prévus ne purgent qu'un slug, et itérer
+> `currentCallUsers` pour vider le registre l'aurait recouplé à l'état d'affichage qu'on
+> vient précisément d'écarter. Le marquage n'est pas conditionné à la présence de
+> `options.peerId` : l'autorisation porte sur le pair, le mapping sur son identité PeerJS.
 
 `ctx.session.currentCallUsers` **ne peut pas** servir d'allowlist : c'est un état UI (qui
 voir / raccrocher), et `_isAuthorizedIncomingPeer` a déjà rejeté cet usage pour cette
@@ -441,8 +447,8 @@ surdimensionné rejeté.
 
 ## Vérification globale
 
-- `npx vitest run` après **chaque** tâche. Référence au 14/08/2026 : **505 tests /
-  29 fichiers, ~2,7 s**. Rejouée par `hooks/pre-push` et
+- `npx vitest run` après **chaque** tâche. Référence relue le 15/08/2026, après A1 :
+  **566 tests / 32 fichiers, ~2,9 s**. Rejouée par `hooks/pre-push` et
   `.github/workflows/webrtc2-tests.yml`.
 - Les scénarios sont le filet qui compte : `lateJoiner`, `peerDeparture`,
   `broadcastLifecycle` doivent rester verts sur A2, B1 et D2 — ce sont eux qui observent le

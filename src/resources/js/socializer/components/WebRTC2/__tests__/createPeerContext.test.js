@@ -495,6 +495,68 @@ describe('createPeerContext', () => {
         })
     })
 
+    // ── authorizedCallPeers ───────────────────────────────────────────────────
+    describe('registre des pairs d\'appel autorisés', () => {
+        it('marque puis reconnaît un pair', () => {
+            const ctx = mountContext()
+
+            expect(ctx.isAuthorizedCallPeer('alice')).toBe(false)
+            expect(ctx.markAuthorizedCallPeer('alice')).toBe(true)
+            expect(ctx.isAuthorizedCallPeer('alice')).toBe(true)
+        })
+
+        it('refuse un slug au format invalide', () => {
+            const ctx = mountContext()
+
+            expect(ctx.markAuthorizedCallPeer('pas un slug !')).toBe(false)
+            expect(ctx.markAuthorizedCallPeer(null)).toBe(false)
+            expect(ctx.markAuthorizedCallPeer({ slug: 'alice' })).toBe(false)
+            expect(ctx.session.authorizedCallPeers.size).toBe(0)
+        })
+
+        it('refuse de m\'autoriser moi-même', () => {
+            // Une auto-autorisation n'a aucun sens (la garde anti-self de connectToPeer
+            // couvre déjà ce cas) et ferait du registre une porte ouverte si un payload
+            // réseau réussissait à renvoyer mon propre slug.
+            const ctx = mountContext()
+
+            expect(ctx.markAuthorizedCallPeer('test-user')).toBe(false)
+            expect(ctx.isAuthorizedCallPeer('test-user')).toBe(false)
+        })
+
+        it('purge un pair sans toucher aux autres', () => {
+            const ctx = mountContext()
+            ctx.markAuthorizedCallPeer('alice')
+            ctx.markAuthorizedCallPeer('bob')
+
+            expect(ctx.clearAuthorizedCallPeer('alice')).toBe(true)
+
+            expect(ctx.isAuthorizedCallPeer('alice')).toBe(false)
+            expect(ctx.isAuthorizedCallPeer('bob')).toBe(true)
+        })
+
+        it('purge tout le registre d\'un coup', () => {
+            const ctx = mountContext()
+            ctx.markAuthorizedCallPeer('alice')
+            ctx.markAuthorizedCallPeer('bob')
+
+            ctx.clearAllAuthorizedCallPeers()
+
+            expect(ctx.session.authorizedCallPeers.size).toBe(0)
+        })
+
+        it('est vidé par destroy()', () => {
+            // Le `data-app` mis à part, un contexte détruit ne doit laisser derrière lui
+            // aucune autorisation exploitable par le garde sortant.
+            const ctx = mountContext()
+            ctx.markAuthorizedCallPeer('alice')
+
+            ctx.destroy()
+
+            expect(ctx.isAuthorizedCallPeer('alice')).toBe(false)
+        })
+    })
+
     // ── Projections calculées ─────────────────────────────────────────────────
     describe('projections calculées', () => {
         it('allUsersInRoom ajoute mon slug sans le dupliquer', () => {

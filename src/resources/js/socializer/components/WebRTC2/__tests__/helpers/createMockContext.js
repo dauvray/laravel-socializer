@@ -39,6 +39,9 @@ export function createMockContext(overrides = {}) {
         onAirRoom: 'app',
         currentCallRoomId: null,
         currentCallUsers: [],
+        // Allowlist du garde sortant — registre dédié, jamais currentCallUsers
+        // (cf. createPeerContext)
+        authorizedCallPeers: new Map(),
         topology: 'mesh',
         hubSlug: null,
         isHub: null,
@@ -413,6 +416,28 @@ export function createMockContext(overrides = {}) {
         return media.announcedStreamsMap.delete(userSlug)
     })
 
+    // ── authorizedCallPeers helpers ───────────────────────────────────────────
+    // Allowlist du garde sortant. Fidèles aux accesseurs de createPeerContext :
+    // slug valide, jamais soi-même, jamais d'écriture directe. Un mock permissif ici
+    // rendrait vert un garde qui ne garde rien.
+    const markAuthorizedCallPeer = vi.fn((userSlug) => {
+        if (!isValidSlug(userSlug)) return false
+        if (userSlug === meStore.getMe?.slug) return false
+        session.authorizedCallPeers.set(userSlug, { at: Date.now() })
+        return true
+    })
+    const isAuthorizedCallPeer = vi.fn((userSlug) => {
+        if (!userSlug) return false
+        return session.authorizedCallPeers.has(userSlug)
+    })
+    const clearAuthorizedCallPeer = vi.fn((userSlug) => {
+        if (!userSlug) return false
+        return session.authorizedCallPeers.delete(userSlug)
+    })
+    const clearAllAuthorizedCallPeers = vi.fn(() => {
+        session.authorizedCallPeers.clear()
+    })
+
     // ── destroy ───────────────────────────────────────────────────────────────
     const destroy = vi.fn(() => {
         media.remoteStreamsMap.clear()
@@ -423,6 +448,7 @@ export function createMockContext(overrides = {}) {
         media.isCapturing = false
         callMachine.reset()
         connection.usersInRoom = []
+        session.authorizedCallPeers.clear()
     })
 
     return {
@@ -481,6 +507,10 @@ export function createMockContext(overrides = {}) {
         clearCurrentCallUsers,
         markAnnouncedStream,
         clearAnnouncedStream,
+        markAuthorizedCallPeer,
+        isAuthorizedCallPeer,
+        clearAuthorizedCallPeer,
+        clearAllAuthorizedCallPeers,
 
         // signal réactif
         peerUnavailableSignal,

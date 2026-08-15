@@ -23,6 +23,10 @@
  * 🔒 Seul propriétaire de `ctx.callMachine` en dehors de `createPeerContext` : la
  * couche streams passe par les verbes `markCallConnected` / `isRemoteClosing` /
  * `beginRemoteClosing` / `endRemoteClosing` plutôt que de transitionner elle-même.
+ *
+ * 🔒 Seul ÉCRIVAIN de `session.authorizedCallPeers` (allowlist du garde sortant) : un
+ * appel direct autorisé est un fait de cette couche et d'aucune autre. Les autres
+ * couches ne font que lire, via `ctx.isAuthorizedCallPeer`.
  */
 
 import { CALL_STATES } from '~socializer/components/WebRTC2/Composables/utils/useCallStateMachine.js'
@@ -174,6 +178,15 @@ export function useCallManager(ctx, { core, media, connections, transport, pool 
                 ctx.peerStore.addRemotePeerId(fromUserSlug, payload.options.peerId)
             }
 
+            // J'accepte : ce pair a le droit que je lui ouvre une connexion, même s'il
+            // n'est dans aucune room commune (visio 1-à-1). Marqué ici et pas dans
+            // `_enterCallSession` : la réponse `status: true` part quoi qu'il arrive
+            // ensuite (transition refusée comprise), le distant se connectera donc —
+            // l'autorisation doit couvrir exactement ce que j'ai promis.
+            // Pas conditionné à `options.peerId` : l'autorisation porte sur le pair, le
+            // mapping sur son identité PeerJS. Deux faits distincts.
+            ctx.markAuthorizedCallPeer(fromUserSlug)
+
             if (!ctx.callMachine.transition(CALL_STATES.RECEIVING)) return
             await _enterCallSession({ fromUserSlug, room, type })
         }
@@ -216,6 +229,12 @@ export function useCallManager(ctx, { core, media, connections, transport, pool 
 
         ctx.peerStore.removeWaitingRemotePeerId(fromUserSlug)
         ctx.peerStore.addRemotePeerId(fromUserSlug, payload.options.peerId)
+
+        // Mon invitation a été acceptée : c'est moi qui vais ouvrir la connexion
+        // (`pool.requestOrConnectPeer` juste en dessous), et ce pair n'est pas
+        // nécessairement dans une room commune. Sans ce marquage, le garde sortant de
+        // `connectToPeer` refuserait l'appel direct que je viens moi-même de demander.
+        ctx.markAuthorizedCallPeer(fromUserSlug)
 
         if (!ctx.callMachine.transition(CALL_STATES.CONNECTED)) return
         await _enterCallSession({ fromUserSlug, room, type })
@@ -401,6 +420,12 @@ export function useCallManager(ctx, { core, media, connections, transport, pool 
             // sa diffusion, la nouvelle annonce fait réapparaître la vignette.
             ctx.clearAnnouncedStream?.(userSlug)
 
+            // Ce pair est parti : son autorisation d'appel tombe avec lui. La laisser
+            // vivre rendrait le garde sortant permissif pour la durée du contexte au
+            // profit de quelqu'un qui n'est plus là — et le `data-app`, monté en
+            // permanence, ne se démonte jamais pour la remettre à zéro.
+            ctx.clearAuthorizedCallPeer(userSlug)
+
             ctx.eventBus.$emit('close-call', [{ userSlug, type }])
 
             // Plus personne en ligne → on ferme tout. `canTransition` évite le warn
@@ -443,6 +468,7 @@ export function useCallManager(ctx, { core, media, connections, transport, pool 
         media.cleanupCallPlayers()
         ctx.callMachine.reset()  // CLOSING → IDLE + closingUsers.clear()
         ctx.clearCurrentCallUsers()
+        ctx.clearAllAuthorizedCallPeers()  // plus d'appel ⇒ plus d'autorisation d'appel
         setCurrentCallRoomId(null)
         ctx.media.remoteStreamsMap.clear()
     }
