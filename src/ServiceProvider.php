@@ -1,7 +1,9 @@
 <?php namespace Dauvray\Socializer;
 
+use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Support\Facades\View;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Blade;
 use Dauvray\Socializer\app\Helpers\NebulaGraphConnection;
 use Dauvray\Socializer\app\Services\RedisService;
@@ -97,6 +99,10 @@ class ServiceProvider extends \Illuminate\Support\ServiceProvider
         | Routes
         |--------------------------------------------------------------------------
         */
+
+        // Avant le chargement des routes : elles y font référence par leur nom.
+        $this->registerSignalingRateLimiters();
+
         // LOAD THE ROUTES
 
         $this->app->booted(function () use ($router) {
@@ -172,5 +178,54 @@ class ServiceProvider extends \Illuminate\Support\ServiceProvider
             \Dauvray\Socializer\app\console\Commands\NebulaGraphPopulate::class,
             \Dauvray\Socializer\app\console\Commands\NebulaGraphClearSessions::class,
         ]);
+    }
+
+    /**
+     * Plafonds serveur des routes de signalisation WebRTC (C1).
+     *
+     * DEUX buckets, parce que les 5 routes n'ont pas la même cadence légitime :
+     *
+     *  - le mesh doit encaisser une rafale de 14 demandes dans le MÊME tick au join d'une room
+     *    (7 pairs × type principal + écran) ;
+     *  - l'invitation d'appel naît d'un clic humain et coûte ~9 requêtes en 55 s vers UNE cible.
+     *
+     * Un bucket unique dimensionné pour le join laisserait donc passer ~120 invitations d'appel
+     * par minute vers une victime — c'est-à-dire qu'il ne fermerait PAS le spam d'invitations,
+     * qui est l'abus principal de ces routes.
+     *
+     * ⚠️ La clé est l'identifiant de l'ÉMETTEUR, jamais l'IP : derrière le NAT d'une entreprise,
+     * une clé IP ferait que le join d'un collègue casse celui du voisin. `auth` s'exécute avant
+     * `throttle` (ordre garanti par `$middlewarePriority`), donc `user()` est toujours résolu.
+     *
+     * ⚠️ Les plafonds sont lus À CHAQUE REQUÊTE, jamais capturés ici : c'est ce qui les rend
+     * ajustables en production sans déploiement. Les valeurs par défaut sont répétées en second
+     * argument parce que `mergeConfigFrom` est un `array_merge` PEU PROFOND — un hôte dont le
+     * `config/socializer.php` publié porterait un `signaling` partiel écraserait toute la
+     * section du paquet.
+     */
+    protected function registerSignalingRateLimiters(): void
+    {
+        RateLimiter::for('socializer-signaling', function ($request) {
+            return [
+                Limit::perMinute(config('socializer.signaling.throttle.mesh_per_minute', 120))
+                    ->by('socializer-signaling:'.$request->user()?->getAuthIdentifier()),
+            ];
+        });
+
+        RateLimiter::for('socializer-call-invite', function ($request) {
+            $from = $request->user()?->getAuthIdentifier();
+
+            return [
+                // Par cible : c'est cette limite-là qui ferme le harcèlement d'un utilisateur
+                // précis. Le slug vient du réseau et n'est pas encore validé (c'est C4), mais
+                // `ThrottleRequests` md5-hashe la clé : sa longueur ne peut pas dégrader le cache.
+                Limit::perMinute(config('socializer.signaling.throttle.invite_per_target_per_minute', 20))
+                    ->by('socializer-call-invite:'.$from.':'.$request->input('toUserSlug')),
+
+                // Globale : sans elle, la précédente se contourne en arrosant N victimes.
+                Limit::perMinute(config('socializer.signaling.throttle.invite_per_minute', 40))
+                    ->by('socializer-call-invite:'.$from),
+            ];
+        });
     }
 }

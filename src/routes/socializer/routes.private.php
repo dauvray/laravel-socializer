@@ -279,9 +279,9 @@ Route::post('/get-user-list',
     config('socializer.controllers_front.user').'@getUsersList')
     ->name('users.load');
 
-Route::post('/send-alert-to-user', 
-    config('socializer.controllers_front.user').'@sendAlertToUser')
-    ->name('user.alert');
+// `/send-alert-to-user` était ici : c'est une route d'invitation d'appel WebRTC (ses seuls
+// appelants sont usePeerCore et le module v1 mort), elle vit désormais dans la section WEBRTC
+// avec les autres routes de signalisation et leur plafond.
 
 /*----------------------------------------------------------------------
 | Followers
@@ -355,18 +355,37 @@ Route::post('/get-store-applications',
 
 /*...................... WEBRTC .....................*/
 
-Route::post('/ask-to-peer-id', 
-    config('socializer.controllers_front.user').'@askForPeerId')
-    ->name('users.peer.ask');
+/*
+| Les 5 routes de signalisation portent un plafond serveur — le limiteur de `usePeerCore` vit
+| dans le bundle et se retire en une ligne. Deux buckets, parce que les cadences légitimes ne
+| sont pas les mêmes : le mesh encaisse 14 demandes dans le même tick au join d'une room, quand
+| l'invitation d'appel naît d'un clic humain. Valeurs et arithmétique dans
+| `config/socializer.php` → `signaling.throttle` ; limiteurs dans
+| `ServiceProvider::registerSignalingRateLimiters()`.
+*/
 
-Route::post('/response-to-peer-id', 
-    config('socializer.controllers_front.user').'@responseToPeerId')
-    ->name('users.peer.response');
+Route::middleware('throttle:socializer-signaling')->group(function () {
 
-Route::post('/response-to-authorization-peer', 
-    config('socializer.controllers_front.user').'@responseToPeerAuthorization')
-    ->name('users.peer.response.authorization');
+    Route::post('/ask-to-peer-id',
+        config('socializer.controllers_front.user').'@askForPeerId')
+        ->name('users.peer.ask');
 
-Route::post('/close-connection-to-peer-id', 
-    config('socializer.controllers_front.user').'@closeConnectionToPeerId')
-    ->name('users.peer.close');
+    Route::post('/response-to-peer-id',
+        config('socializer.controllers_front.user').'@responseToPeerId')
+        ->name('users.peer.response');
+
+    Route::post('/close-connection-to-peer-id',
+        config('socializer.controllers_front.user').'@closeConnectionToPeerId')
+        ->name('users.peer.close');
+});
+
+Route::middleware('throttle:socializer-call-invite')->group(function () {
+
+    Route::post('/send-alert-to-user',
+        config('socializer.controllers_front.user').'@sendAlertToUser')
+        ->name('user.alert');
+
+    Route::post('/response-to-authorization-peer',
+        config('socializer.controllers_front.user').'@responseToPeerAuthorization')
+        ->name('users.peer.response.authorization');
+});

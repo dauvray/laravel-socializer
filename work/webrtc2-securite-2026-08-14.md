@@ -585,7 +585,7 @@ referme donc aussi hors mock.
 
 ### C1 — `throttle` sur les 5 routes de signalisation `[S]`
 
-- [ ] **Dépend de :** rien. Peut partir en premier.
+- [x] **Dépend de :** rien. — ✅ fait le 15/08/2026.
 
 Aucun middleware `throttle` sur `routes.private.php` (vérifié, ainsi que le
 `ServiceProvider`). Le limiteur client de `usePeerCore` est correctement décrit comme
@@ -593,16 +593,70 @@ anti-spam involontaire — mais un attaquant le contourne en une ligne, et rien 
 remplace côté serveur. `sendAlertToUser` sans plafond = spam d'invitations d'appel vers
 n'importe quel utilisateur.
 
-- Groupe `throttle` sur `/ask-to-peer-id`, `/response-to-peer-id`, `/send-alert-to-user`,
-  `/response-to-authorization-peer`, `/close-connection-to-peer-id`.
+> ## ⚠️ Delta assumé — DEUX buckets, pas un. Un seul ne pouvait pas tenir les deux bouts.
+>
+> Cette tâche disait « groupe `throttle` sur les 5 routes ». Mesuré dans le code, les 5 routes
+> n'ont pas la même cadence légitime, et l'écart est d'un ordre de grandeur :
+>
+> | | cadence légitime | source |
+> |---|---|---|
+> | `ask` / `response` / `close` | **14 requêtes dans le même tick** au join | `MAX_PEERS_PER_ROOM`, note de `ASK_PEER_MAX_REQUESTS_PER_WINDOW` |
+> | `send-alert` / `response-authorization` | **~9 requêtes / 55 s vers UNE cible**, sur clic humain | `usePeerCore.js` + backoff 1-2-4-8-10-10-10 s de `utils/usePeerRetry.js` |
+>
+> Un plafond unique dimensionné pour le join (≥ 14/tick) laisse donc passer ~120 invitations
+> d'appel par minute vers une victime : il **ne ferme pas l'abus que cette tâche nomme**.
+> Contre-vérifié — en refusionnant les deux buckets, `l_invitation_est_plafonnee_par_cible`
+> repasse à **200**.
+>
+> - **`socializer-signaling`** — `ask` / `response` / `close` — **120/min par utilisateur**.
+>   8,5× la rafale de join ; couvre le hopping de rooms (3 rooms/min ≈ 84 requêtes). Écrête
+>   volontairement la boucle de recovery dégénérée (`peer-unavailable` sur 14 clés × 3/10 s
+>   ≈ 250/min) : c'est déjà la raison d'être du limiteur client, et un 429 sur
+>   `/ask-to-peer-id` est rattrapé par la re-demande de `SIGNALING_STALE_MS`.
+> - **`socializer-call-invite`** — `send-alert` / `response-authorization` — **deux limites
+>   composées** : 20/min par (émetteur, cible) et 40/min par émetteur. La seconde n'est pas
+>   décorative : sans elle, la limite par cible se contourne en arrosant N victimes.
+>
+> **Delta assumé — la clé est l'utilisateur, jamais l'IP.** Derrière le NAT d'une entreprise,
+> une clé IP ferait que le join d'un collègue casse celui du voisin. `auth` s'exécute avant
+> `throttle` (ordre garanti par `$middlewarePriority`), donc `user()` est toujours résolu.
+>
+> **Delta assumé — `/send-alert-to-user` a changé de section.** Il vivait sous « Users » ; ses
+> seuls appelants sont `usePeerCore` et le module v1 mort. Déplacé dans la section WEBRTC pour
+> que les deux buckets soient contigus et relisibles.
+>
+> **✅ La réserve laissée par C3 est levée — par construction.** C3 notait qu'un garde vivant
+> dans la pile `web` échapperait au harnais (réduit à `['auth']`). Le throttle est posé sur les
+> **routes elles-mêmes** : il est bien exercé, la réserve ne s'applique pas. Elle reste ouverte
+> pour C2/C4, qui vivront dans le contrôleur.
+
+- Groupe `throttle` sur les 5 routes, valeurs dans `config/socializer.php` →
+  `signaling.throttle`, limiteurs dans `ServiceProvider::registerSignalingRateLimiters()`.
 
 > ⚠️ Dimensionner **au-dessus** de la cadence légitime déjà documentée côté client : un
 > join de room mesh émet jusqu'à **14 demandes dans le même tick** (7 pairs × type
 > principal + écran, cf. `MAX_PEERS_PER_ROOM` et la note de `ASK_PEER_MAX_REQUESTS_PER_WINDOW`
 > dans [`webrtc2.config.js`](../src/resources/js/socializer/components/WebRTC2/webrtc2.config.js)). Un plafond trop bas casse le join —
 > c'est le piège pour lequel le plafond client est **par cible** et non global.
+>
+> ⚠️ **Les plafonds se lisent dans `config()` à chaque requête, jamais capturés au boot.** C'est
+> ce qui les rend ajustables en prod *et* ce qui permet aux tests de rétrécir la limite au lieu
+> d'émettre 121 requêtes HTTP. Les défauts sont répétés en second argument de `config()` :
+> `mergeConfigFrom` est un `array_merge` **peu profond**, un hôte au `signaling` partiel
+> écraserait toute la section du paquet.
 
-**Tests :** rafale au-delà du plafond ⇒ 429 · join mesh nominal (14 requêtes) ⇒ aucun 429.
+**Tests :** ✅ `tests/Feature/Signaling/ThrottleTest.php` — 8 tests. Rafale de join (14 requêtes,
+plafonds **réels**) ⇒ aucun 429 · au-delà du plafond ⇒ 429 **et aucun broadcast émis** · compteur
+par utilisateur, pas par IP · invitation plafonnée **par cible** (saturer bob ne retire rien à
+charlie) · plafond global contre le spam multi-cibles · les deux buckets sont indépendants · les
+3 routes mesh partagent le même budget.
+
+Trois contre-épreuves passées, chacune rouge sur le seul test qu'elle vise : plafond ramené sous
+la rafale de join (14) ⇒ le garde-fou de dimensionnement rougit ; clé basculée sur l'IP ⇒ bob se
+fait 429 sur le compteur d'alice ; buckets refusionnés ⇒ 4 tests rouges, dont le plafond par cible.
+
+**Done :** ✅ **15 tests PHP / 67 assertions** verts (15/08/2026) ; suite JS inchangée
+(645 tests / 36 fichiers).
 **Commit :** `secu(socializer): rate limiting serveur sur les routes de signalisation`
 
 ---
@@ -868,7 +922,7 @@ surdimensionné rejeté.
   **645 tests / 36 fichiers, ~3,7 s**.
 - **Backend** : `vendor/bin/phpunit` **depuis le paquet** (Orchestra Testbench, aucun serveur
   requis) — cf. [docs/architecture/tests.md](../docs/architecture/tests.md). Socle posé avec C3
-  le 15/08/2026.
+  le 15/08/2026, référence après C1 : **15 tests / 67 assertions, ~1 s**.
 - `hooks/pre-push` rejoue **les deux** suites. ⚠️ Il n'y a **pas** de CI : la mention d'un
   `.github/workflows/webrtc2-tests.yml` qui figurait ici était fausse — ce dépôt n'a pas de
   `.github/`, et l'activation du hook est une config locale, jamais versionnée.

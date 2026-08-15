@@ -60,6 +60,12 @@ abstract class TestCase extends BaseTestCase
             'prefix' => '',
         ]);
 
+        // Les compteurs de `throttle` vivent dans le cache. Déclaré explicitement pour la même
+        // raison que la base ci-dessus : ne pas dépendre du défaut du squelette Testbench. Le
+        // store `array` naît vide à chaque test, donc un plafond atteint ne déborde jamais sur
+        // le test suivant.
+        $config->set('cache.default', 'array');
+
         // ── Config de l'application hôte que le paquet lit ────────────────────────────
         // Le paquet ne connaît le modèle utilisateur que par cette clé : c'est exactement
         // ce qui permet de lui substituer un stub.

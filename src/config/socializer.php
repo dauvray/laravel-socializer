@@ -537,4 +537,57 @@ return [
             'user_id' => env('SOCIALIZER_COPYWRITER_USER_ID', null),
         ]
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Signalisation WebRTC
+    |--------------------------------------------------------------------------
+    |
+    | Plafonds serveur des routes de signalisation. Le limiteur de `usePeerCore` est un
+    | anti-spam *involontaire* : il vit dans le bundle, un attaquant le retire en une ligne.
+    | Ces valeurs sont la seule borne réelle — chaque requête relayée déclenche un
+    | `Broadcast::private(...)->sendNow()` vers la victime.
+    |
+    | Les limiteurs eux-mêmes sont déclarés dans `ServiceProvider::registerSignalingRateLimiters()`
+    | et posés sur les routes dans `routes/socializer/routes.private.php`.
+    |
+    */
+
+    'signaling' => [
+
+        'throttle' => [
+
+            /*
+             * Bucket `socializer-signaling` — /ask-to-peer-id, /response-to-peer-id,
+             * /close-connection-to-peer-id. Par utilisateur émetteur.
+             *
+             * ⚠️ Dimensionner AU-DESSUS de la rafale de join : une room mesh émet
+             * légitimement 14 demandes dans le MÊME tick (7 pairs × type principal + écran,
+             * cf. MAX_PEERS_PER_ROOM dans webrtc2.config.js). 120/min laisse 8,5× cette
+             * rafale et couvre le hopping de rooms (3 rooms/min ≈ 84 requêtes).
+             *
+             * Ce qu'il écrête volontairement : la boucle de recovery dégénérée
+             * (`peer-unavailable` sur 14 clés × 3 par 10 s ≈ 250/min). C'est l'effet
+             * recherché — c'est déjà la raison d'être du limiteur client. Un 429 sur
+             * /ask-to-peer-id est rattrapé par la re-demande de SIGNALING_STALE_MS.
+             */
+            'mesh_per_minute' => (int) env('SOCIALIZER_SIGNALING_THROTTLE_PER_MINUTE', 120),
+
+            /*
+             * Bucket `socializer-call-invite` — /send-alert-to-user,
+             * /response-to-authorization-peer. DEUX limites composées.
+             *
+             * Par couple (émetteur, cible) : une invitation complète coûte ~9 requêtes en
+             * 55 s (1 envoi immédiat + le backoff 1-2-4-8-10-10-10 s de usePeerRetry). 20
+             * laisse la marge d'une annulation suivie d'un rappel.
+             */
+            'invite_per_target_per_minute' => (int) env('SOCIALIZER_CALL_INVITE_THROTTLE_PER_TARGET', 20),
+
+            /*
+             * Par émetteur, toutes cibles confondues : sans elle, la limite par cible se
+             * contourne en arrosant N victimes d'une invitation chacune.
+             */
+            'invite_per_minute' => (int) env('SOCIALIZER_CALL_INVITE_THROTTLE_PER_MINUTE', 40),
+        ],
+    ],
 ];
