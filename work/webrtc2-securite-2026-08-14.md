@@ -1,30 +1,12 @@
-# 🔐 Sécurité WebRTC2 — audit du 14 août 2026
+# 🔐 Sécurité WebRTC2 — plan issu de l'audit du 14 août 2026
 
-> Audit du composant WebRTC2 (composables, orchestrateur, contexte, store `peers2`,
-> `System/Notifications.vue`, `UserController` de signalisation, routes).
+> **Chantier ouvert.** Périmètre de l'audit : composables WebRTC2, orchestrateur, contexte,
+> store `peers2`, `System/Notifications.vue`, `UserController` de signalisation, routes.
 > Sévérité : 🔴 Critique · 🟠 Haute/Moyenne · 🟡 Faible · Effort : `[S]` `[M]` `[L]`
 >
-> **Ce document remplace [`SECURITY_AUDIT.md`](SECURITY_AUDIT.md) comme suivi actif.**
-> Ce dernier reste le rapport de l'audit du 20/05/2026 ; il sera annoté en fin de
-> chantier (tâche F1) pour consigner son périmètre réel.
-
----
-
-## Pourquoi un second audit
-
-[`SECURITY_AUDIT.md`](SECURITY_AUDIT.md) est marqué « ✅ Audit clôturé — toutes les failles
-corrigées ». Les correctifs qu'il décrit sont réels et bien faits. Mais **son périmètre
-était le sens entrant des connexions** — `peer.on('connection')` et `peer.on('call')`,
-durcis par `_isAuthorizedIncomingPeer`.
-
-Le sens **sortant** n'a jamais été examiné. Il ne porte **aucun contrôle d'autorisation** :
-`connectToPeer` ouvre une connexion vers le peerId qu'on lui donne, sans jamais vérifier
-que le pair concerné a le droit de recevoir quoi que ce soit. Un utilisateur authentifié
-quelconque peut donc se faire pousser la webcam d'un diffuseur — c'est l'image miroir
-exacte de la faille [HAUTE] corrigée en mai.
-
-**La leçon réutilisable, et la seule qui compte pour la suite : un garde d'admission ne
-sécurise qu'une direction.** Tout chemin qui *ouvre* une connexion doit porter le sien.
+> **Le constat, la chaîne d'attaque et les décisions durables sont dans
+> [`docs/modules/webrtc2/securite.md`](../docs/modules/webrtc2/securite.md).** Ce fichier ne
+> porte que le plan d'exécution : tâches, dépendances, tests attendus, critères de complétion.
 
 ---
 
@@ -92,7 +74,7 @@ sécurité couple politique et affichage ». Il faut un registre dédié, à pro
 - `useCallManager.js` — **seul écrivain** : `acceptCallFromPeer` et `openCallBetweenPeer`
   marquent (au même endroit qu'ils appellent déjà `addRemotePeerId`) ;
   `handleRemoteDeparture` et `resetCallState` purgent.
-- Inscrire la ligne dans la table des propriétaires uniques de [`CONVENTIONS.md`](CONVENTIONS.md).
+- Inscrire la ligne dans la table des propriétaires uniques de [`docs/modules/webrtc2/architecture.md`](../docs/modules/webrtc2/architecture.md).
 
 **Tests**
 - `createPeerContext.test.js` : slug invalide refusé · auto-marquage refusé · purge par `destroy()`.
@@ -126,7 +108,7 @@ sécurité couple politique et affichage ». Il faut un registre dédié, à pro
 >
 > ⚠️ `return false` et **non** `true`. `true` signifie « pas d'erreur » et **annule** le
 > retry ; `false` le diffère. C'est exactement le piège de l'item « Retry annulé alors
-> qu'aucune connexion n'a été ouverte » de [`TODOLIST.md`](TODOLIST.md).
+> qu'aucune connexion n'a été ouverte » de [`webrtc2-todo.md`](webrtc2-todo.md).
 
 **Tests** — `usePeerConnections.test.js`, **cas négatifs d'abord** :
 - pair ni membre de room ni appel autorisé ⇒ `false`, **et** `peer.call` / `peer.connect`
@@ -165,7 +147,7 @@ appel de fonction interne :
    `peerStore.remotePeersId` ne contient pas `mallory` ;
 4. non-régression : `bob`, membre de la room, reçoit bien le flux d'`alice`.
 
-Respecter les trois invariants du harnais (cf. [`CONVENTIONS.md`](CONVENTIONS.md#tests--trois-étages-trois-rôles)) :
+Respecter les trois invariants du harnais (cf. [`docs/modules/webrtc2/tests.md`](../docs/modules/webrtc2/tests.md)) :
 `vi.resetModules()` par pair, montage séquentiel, une tâche de boucle d'événement par signal.
 
 **Done :** les 3 premiers cas échouent si l'on retire le garde de A2.
@@ -270,7 +252,7 @@ n'importe quel utilisateur.
 > ⚠️ Dimensionner **au-dessus** de la cadence légitime déjà documentée côté client : un
 > join de room mesh émet jusqu'à **14 demandes dans le même tick** (7 pairs × type
 > principal + écran, cf. `MAX_PEERS_PER_ROOM` et la note de `ASK_PEER_MAX_REQUESTS_PER_WINDOW`
-> dans [`webrtc2.config.js`](webrtc2.config.js)). Un plafond trop bas casse le join —
+> dans [`webrtc2.config.js`](../src/resources/js/socializer/components/WebRTC2/webrtc2.config.js)). Un plafond trop bas casse le join —
 > c'est le piège pour lequel le plafond client est **par cible** et non global.
 
 **Tests :** rafale au-delà du plafond ⇒ 429 · join mesh nominal (14 requêtes) ⇒ aucun 429.
@@ -323,7 +305,7 @@ son slug. `fromUserSlug` est bien authentifié (correctif de mai), mais aucun li
 exigé entre les deux parties.
 
 - Réutiliser `canJoinRoom` / `canJoinServer` — déjà utilisés par
-  [`channels.php`](../../../../../routes/socializer/channels.php) — pour exiger un contexte
+  [`channels.php`](../src/routes/socializer/channels.php) — pour exiger un contexte
   partagé sur `askForPeerId` / `responseToPeerId`.
 - Pour l'appel direct (`sendAlertToUser`, `responseToPeerAuthorization`) : allowlist de
   contacts. ⚠️ **Arbitrage produit nécessaire** — qui a le droit d'appeler qui ? À trancher
@@ -390,7 +372,7 @@ Les gardes du hub sont par émetteur (`HUB_MAX_MESSAGES_PER_WINDOW` = 20/s) et p
 100 membres, un client d'apparence honnête fait sortir ~128 Mo/s du hub.
 
 - Budget agrégé d'octets retransmis par fenêtre dans `forwardStarMessage`, constante
-  `HUB_MAX_BYTES_PER_WINDOW` dans [`webrtc2.config.js`](webrtc2.config.js), documentée
+  `HUB_MAX_BYTES_PER_WINDOW` dans [`webrtc2.config.js`](../src/resources/js/socializer/components/WebRTC2/webrtc2.config.js), documentée
   comme les autres.
 - Réutiliser `utils/createRateLimiter.js` si la mécanique s'y prête, sinon l'étendre —
   **pas de Map de timestamps ad hoc** (convention « un seul système »).
@@ -440,14 +422,18 @@ surdimensionné rejeté.
 
 - [ ] **Dépend de :** tout le reste (clôture).
 
-- [`SECURITY_AUDIT.md`](SECURITY_AUDIT.md) : ajouter en tête que le périmètre du 20/05/2026
-  était le sens **entrant**, et que le sens sortant en était absent. C'est la raison pour
-  laquelle « audit clôturé » était faux, et la leçon réutilisable.
-- Ce fichier : cocher les tâches, consigner les deltas assumés.
-- [`CONVENTIONS.md`](CONVENTIONS.md) : nouvelle règle — **tout chemin qui ouvre une
-  connexion porte un garde d'autorisation, dans les deux sens**, et le prédicat est unique
-  (`utils/isAuthorizedPeer.js`). Plus la ligne `authorizedCallPeers` dans la table des
-  propriétaires uniques (posée en A1).
+> ✅ **La moitié « constat » de F1 est déjà faite** :
+> [`docs/modules/webrtc2/securite.md`](../docs/modules/webrtc2/securite.md) énonce le périmètre
+> réel des deux audits et la leçon des deux sens. Reste ce qui dépend de l'exécution :
+
+- [`docs/modules/webrtc2/securite.md`](../docs/modules/webrtc2/securite.md) : basculer le sens
+  sortant de « 🔴 aucun contrôle » à durci ; documenter le prédicat unique
+  `utils/isAuthorizedPeer.js` ; retirer de « Bornes non fermées » ce qui a été fermé.
+- [`docs/modules/webrtc2/architecture.md`](../docs/modules/webrtc2/architecture.md) : ajouter la
+  ligne `authorizedCallPeers` dans la table des propriétaires uniques (posée en A1), et la règle
+  **tout chemin qui ouvre une connexion porte un garde d'autorisation, dans les deux sens**.
+- Ce fichier : consigner les deltas assumés, puis le **supprimer** s'il ne reste rien
+  (cf. [`docs/ecrire-la-doc.md`](../docs/ecrire-la-doc.md)).
 
 **Commit :** `docs(webrtc2): périmètre réel de l'audit de mai + règle des deux sens`
 

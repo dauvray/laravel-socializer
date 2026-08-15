@@ -1,5 +1,9 @@
 # laravel-socializer
 
+> **Ce fichier couvre l'installation et la configuration.**
+> Architecture, conventions et documentation des modules : [`docs/INDEX.md`](docs/INDEX.md).
+> Chantiers en cours : [`work/README.md`](work/README.md).
+
 ## Requirements
 
 This package needs Redis
@@ -135,33 +139,33 @@ Build the component
     php artisan socializer:build
     npm run dev
 
-Add to /resources/app.js
+Register the components — /resources/js/vue.js (Vue 3 + Pinia)
+
+Le package expose des composants Vue 3 via l'alias `~socializer`. Les stores sont des
+stores **Pinia** auto-enregistrés par `defineStore` : il n'y a rien à brancher côté store,
+il suffit que `createPinia()` soit installé sur l'app.
+
+    import { createApp } from 'vue/dist/vue.esm-bundler'
+    import { createPinia } from 'pinia'
+
+    window.estarterApp = createApp()
+    window.estarterApp.use(createPinia()).use(router)
 
     // socializer
-    Vue.component('network-widget', require('vuejs-socializer/components/widgets/Network.vue').default);
-    Vue.component('wall-widget', require('vuejs-socializer/components/widgets/Wall.vue').default);
-    Vue.component('feed-widget', require('vuejs-socializer/components/widgets/Feed.vue').default);
-    Vue.component('user-list-widget', require('vuejs-socializer/components/widgets/users/UsersList.vue').default);
-    Vue.component('socializer-notifications', require('vuejs-socializer/components/widgets/Notifications.vue').default);
+    import SeverWidget from '~socializer/components/System/Server.vue'
+    import CommentWidget from '~socializer/components/Comment/Comments.vue'
 
-    import modulesSocializer from 'vuejs-socializer/state/modules'
+    window.estarterApp
+        .component('server-widget', SeverWidget)
+        .component('socializer-comments', CommentWidget)
 
-    const store = new Vuex.Store({
-        modules: {
-            // ...
-            ...modulesSocializer,
-           // ...
-        },
-        // ...
-    });
+Add somewhere in the template
 
-Add somewhere in the template 
+`System/Notifications.vue` doit être **monté en permanence** : c'est lui qui traduit les
+événements Reverb en signaux WebRTC2 et qui porte le contexte `data-app`. Sans lui, aucune
+signalisation n'arrive.
 
     <socializer-notifications style="position:absolute;top:-2000px;"></socializer-notifications>
-
-
-
-Add routes/api.php    
 
 ## Configuration
 

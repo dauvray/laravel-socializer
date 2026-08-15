@@ -1,0 +1,175 @@
+# WebRTC2 — Surface publique
+
+> **À quoi ça sert :** ce qu'un consommateur monte, importe et configure.
+> **Quand le lire :** pour brancher la visio, le chat data ou la diffusion dans un composant.
+
+---
+
+## Trois niveaux d'entrée
+
+### Niveau 1 — `MediaBroadcastProvider.vue` (recommandé)
+
+```vue
+<script setup>
+import MediaBroadcastProvider from '~socializer/components/WebRTC2/Widgets/Mediaplayer/MediaBroadcastProvider.vue'
+import { useReverbPresence } from '~socializer/components/System/composables/useReverbChannel.js'
+
+const { users } = useReverbPresence(`server.${serverId}`)
+</script>
+
+<template>
+  <MediaBroadcastProvider :users="users" :room="room" mode="stream" v-slot="webrtc">
+    <StreamSimpleUI v-bind="webrtc" />
+  </MediaBroadcastProvider>
+</template>
+```
+
+| Prop | Type | Défaut | Rôle |
+|---|---|---|---|
+| `users` | `Array` | **requis** | liste de présence de la room — le provider la `watch` et pilote `api.watchUsers` |
+| `room` | `String` | `null` → `'app'` | identifiant de room ; avec `mode`, forme le `contextId` `<type>-<room>` |
+| `mode` | `String` | `'data'` | `data` · `stream` · `visio` · `vocal` · `screen` |
+| `callbacks` | `Object` | `null` | `{ onDataReceived, onConnectionOpen, onConnectionClose, onStreamReceived }` |
+| `options` | `Object` | `{ topology: 'mesh', hubSlug: null, videoContainer: '#videoContainer' }` | topologie et cible DOM |
+
+L'API est exposée de **trois** façons : slot scopé (`v-slot="webrtc"`),
+`provide(WEBRTC_API_KEY, api)` pour tous les descendants, et `defineExpose({ api })` pour un
+`ref` parent. Le provider appelle `api.cleanup()` en `onBeforeUnmount`.
+
+⚠️ **`callbacks` est optionnel et son absence est significative** : sans lui, `api.initialize()`
+n'est **pas** appelé par le provider — c'est alors au composant enfant de le faire (modèle de
+`StreamSimpleUI`, qui gère lui-même la réception). Passer `callbacks` **et** initialiser dans
+l'enfant initialiserait deux fois.
+
+Trois usages complets et commentés dans
+[`Exemples/Home.vue`](../../../src/resources/js/socializer/components/WebRTC2/Exemples/Home.vue) :
+data nu, chat en star avec hub, stream en mesh.
+
+### Niveau 2 — `useMediaBroadcast` (couche métier)
+
+```js
+import { useMediaBroadcast } from '~socializer/components/WebRTC2/Composables/useMediaBroadcast.js'
+
+const api = useMediaBroadcast(type, room, options)
+api.initialize({ onDataReceived, onConnectionOpen, onConnectionClose, onStreamReceived })
+```
+
+Verbes : `initialize` · `cleanup` · `watchUsers` · `sendData` · `getWebcamStream` / `stopStream` ·
+`getAudioStream` / `stopAudio` · `startCapture` / `stopCapture` · `toggleAudioMute` /
+`toggleVideoVisibility` · `startCallWithPeer` / `acceptCallFromPeer` / `openCallBetweenPeer` /
+`stopCallWithPeers` / `remoteStopCall` · `handleStreamReceived` / `handleStreamRemoved` ·
+`createVideoElement` / `removeVideoElement` · `setCurrentCallRoomId` / `ensureCurrentCallRoomId` ·
+`announceBroadcastState` · `stopCallInviteRetry` / `clearAllCallInviteRetries` ·
+`clearSeenInvites` / `isInviteDuplicate`.
+
+État exposé : `currentStream` · `screenStream` · `remoteStreams` · `remoteScreens` ·
+`announcedStreamPeers` · `usersInRoom` · `isStreaming` · `isCapturing` · `isAudioStream` ·
+`callState` · `callStatus` · `isCallInProgress` · `currentCallUsers` · `isMuted` ·
+`isVideoEnabled` · `streamStates` · `topology` / `hubSlug` / `isHub` / `isHubConnected` ·
+`localPeerId` · `mySlug` / `myName`.
+
+⚠️ **`remoteStreams` exclut les partages d'écran** ; `remoteScreens` ne contient qu'eux
+(`createPeerContext:201-202`). Consommer `remoteStreams` seul rend tout partage d'écran invisible.
+
+### Niveau 3 — `usePeerOrchestrator(type, room, options)`
+
+Façade technique. Rarement nécessaire hors tests.
+
+---
+
+## Prérequis d'environnement
+
+Ils sont implicites et cassent **silencieusement**.
+
+- **`System/Notifications.vue` monté en permanence.** C'est lui qui traduit Reverb →
+  `peerStore.dispatchSignal` et qui porte le contexte permanent `data-app`. Sans lui, aucune
+  signalisation n'arrive.
+- **`provide('eventBus', bus)`** valide dans l'arbre — sinon `createPeerContext` warn et pose un
+  no-op (pas de crash, mais plus aucun `call-user` / `close-call`).
+- **Pinia actif**, avec `useMeStore().getMe.slug` renseigné, et **Echo/Reverb** global.
+- **Un conteneur vidéo** : `<div id="videoContainer">` (téléporté sur `body` par
+  `System/Notifications.vue`), ou un `options.videoContainer` custom.
+- **Variables Vite** : `VITE_PEERS_SERVER_HOST` / `_PORT` / `_PATH` / `_KEY`,
+  `VITE_COTURN_USERNAME` / `_CREDENTIAL`.
+- **Une source de présence** pour `users` — `useReverbPresence(channel)`, voir
+  [use-reverb-channel.md](../../reference/use-reverb-channel.md).
+- `window.AWN` pour certains widgets.
+
+---
+
+## Widgets réutilisables
+
+`Widgets/Mediaplayer/` — `MediaBroadcastPlayer.vue` (player générique : video/audio, drag/resize,
+PIP, fullscreen, overlay d'attente d'image), `LocalMediaPlayer.vue` / `RemoteMediaPlayer.vue`,
+`PlayerHost.vue` (hôte du pool d'instances). ⚠️ `LocalMediaPlayer` **jette** sans
+`MediaBroadcastProvider` parent.
+
+`Widgets/UI/Buttons/` — `CallManagerBtn.vue`, `CallRemotePeerBtn.vue` (props `user`, `type`),
+`GroupLocalStreamBtn.vue` (prop `api`), `LocalStreamBtn.vue`, `LocalCaptureBtn.vue`.
+
+`Widgets/UI/` — `Audio/SpectrumAnalyzer.vue`, `Report/Debug.vue`.
+
+`Widgets/Mediaplayer/Composables/` — `useAwaitedStreams(api)` (vignettes « en attente du flux »),
+`useRemotePeerState.js` (mute / vidéo distants), `useMediaControls.js`.
+
+---
+
+## Événements applicatifs
+
+Deux événements transitent par l'eventBus injecté : **`call-user`** `(slug, type)` et
+**`close-call`**.
+
+⚠️ **`EventBus/webrtc2Events.js` n'est consommé par personne.** Le module exporte
+`WEBRTC2_EVENTS`, `emitCallUser`, `emitCloseCall`, `onCallUser`, `onCloseCall` et
+`normalizeType` (qui n'accepte que `'visio' | 'vocal'`), mais les deux appelants réels —
+`System/Notifications.vue` et `Widgets/UI/Buttons/CallRemotePeerBtn.vue` — font toujours
+`eventBus.$emit('call-user', slug, type)` en direct. Le traiter comme la normalisation
+**visée**, pas comme le chemin en vigueur.
+
+`close-call` est **idempotent par contrat** : un même départ peut l'émettre deux fois
+(voir [flux.md](flux.md#départ-dun-pair)).
+
+---
+
+## Configuration
+
+Source de vérité unique :
+[`webrtc2.config.js`](../../../src/resources/js/socializer/components/WebRTC2/webrtc2.config.js) —
+chaque constante y porte son rationale de dimensionnement. **Ne pas recopier les valeurs ici :**
+elles bougent, le fichier fait foi.
+
+| Constante | Ce qu'elle borne |
+|---|---|
+| `MAX_PEERS_PER_ROOM` | saturation mesh (CPU + bande passante navigateur) |
+| `MAX_RETRY_ATTEMPTS` · `MAX_RECONNECT_ATTEMPTS` | anti-boucle infinie (backoff exponentiel + jitter) |
+| `RECONNECT_BASE_DELAY_MS` · `RECONNECT_MAX_DELAY_MS` | backoff de reconnexion PeerJS |
+| `PEER_DESTROY_DELAY_MS` | délai de grâce avant destruction du Peer singleton |
+| `MAX_REMOTE_STREAMS` · `STREAM_STALE_MS` | éviction LRU de `remoteStreamsMap` (anti-leak) |
+| `MAX_PAYLOAD_BYTES` | anti-DoS : émission mesh, retransmission hub **et** réception |
+| `HUB_MAX_MESSAGES_PER_WINDOW` · `HUB_RATE_WINDOW_MS` | rate-limit `forwardStarMessage` |
+| `ASK_PEER_MAX_REQUESTS_PER_WINDOW` · `ASK_PEER_RATE_WINDOW_MS` | rate-limit `/ask-to-peer-id`, **par cible** (`slug\|room\|connectionType`) |
+| `SIGNALING_STALE_MS` | âge d'une entrée `waiting` — anti-spam **et** déclencheur de re-demande |
+| `STREAM_WAIT_TIMEOUT_MS` · `ME_READY_TIMEOUT_MS` | attentes réactives (flux local, identité locale) |
+| `AWAITED_STREAM_TIMEOUT_MS` | filet « annonce reçue, flux jamais arrivé » |
+| `MAX_INVITE_RETRIES` | taille max de la Map d'invitations en attente |
+
+Y vivent aussi `VALID_CONNECTION_TYPES` (`data` · `stream` · `screen` · `visio` · `vocal` — dont
+`VALID_CALL_TYPES` est **dérivé**, une seule source de vérité), `SLUG_PATTERN`, la table `ENDPOINTS`
+(5 routes) et le symbole `WEBRTC_API_KEY`.
+
+⚠️ **Le plafond `/ask-to-peer-id` est par cible et non global** : un join mesh émet légitimement
+jusqu'à 14 demandes dans le même tick (7 pairs × type principal + écran). Un cap global mal
+dimensionné casserait le join — c'est le même piège côté serveur, voir
+[`work/webrtc2-securite-2026-08-14.md`](../../../work/webrtc2-securite-2026-08-14.md) tâche C1.
+
+---
+
+## Topologies
+
+- **mesh** — connexions directes entre tous les membres, jusqu'à `MAX_PEERS_PER_ROOM`. Visio/vocal
+  et petits salons. Aucun tiers applicatif ne voit les payloads.
+- **star** — un hub relaie les messages data via `forwardStarMessage`. Grandes rooms. Le hub lit les
+  payloads en clair : c'est ce qui rend la modération possible, et c'est un choix assumé — voir
+  [securite.md](securite.md).
+- `sfu` est accepté dans `options.topology` et branché dans le fan-out de `syncUsersConnections`,
+  sans implémentation serveur.

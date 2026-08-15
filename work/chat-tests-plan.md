@@ -1,4 +1,9 @@
-# ChatComponent — Plan de tests unitaires
+# Chat — Plan de tests unitaires
+
+> **Chantier ouvert, non démarré.** Un seul fichier de test existe
+> (`dateSeparatorRender.test.js`). L'infra de tests du package est décrite dans
+> [`docs/architecture/tests.md`](../docs/architecture/tests.md) ; les invariants à épingler dans
+> [`docs/modules/chat.md`](../docs/modules/chat.md).
 
 > Infrastructure : vitest 2.1.9 · @vue/test-utils 2.4 · happy-dom
 > Config partagée : `/vitest.config.js` (alias `~`, `~estarter`, `~socializer`)
@@ -10,13 +15,13 @@
 
 ## Stratégie
 
-ChatComponent a été **refactoré en composables** (cf. `../ARCHITECTURE.md`). On teste donc
+ChatComponent a été **refactoré en composables** (cf. [`docs/modules/chat.md`](../docs/modules/chat.md)). On teste donc
 de bas en haut, du plus pur au plus intégré — chaque couche isolée est rentable et stable,
 le composant n'est testé en montage complet qu'à la fin.
 
 ```
 Couche 0 → utils/dateSeparator        (fonction pure, zéro Vue)
-Couche 1 → useChatAttachments         (ref only, DOM minimal)
+Couche 1 → useFileAttachments         (ref only, DOM minimal — composable partagé)
 Couche 2 → useTypingIndicator         (logique pure, deps injectées)
 Couche 3 → useChatScroll              (onMounted/watch/onUnmounted + DOM + timers)
 Couche 4 → ChatComponent.vue          (montage + câblage : stores, Echo, router, eventBus)
@@ -222,7 +227,7 @@ et des propriétés de dimension.
 
 ## Notes
 
-- Les invariants d'ARCHITECTURE.md (noms de refs de template, `setTimeout` du scroll,
+- Les invariants de [`docs/modules/chat.md`](../docs/modules/chat.md) (noms de refs de template, `setTimeout` du scroll,
   `onRemoveFile` dans le composant) sont des **points de test**, pas à contourner.
 - Couches 0-2 ne nécessitent aucun ajout d'infra → démarrables immédiatement.
 - Couche 3 nécessite fake timers + DOM factice. Couche 4 nécessite les helpers `Echo`/router.

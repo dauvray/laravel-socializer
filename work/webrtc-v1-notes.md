@@ -1,3 +1,12 @@
+# WebRTC v1 — notes de lecture (module MORT)
+
+> ⚠️ **Archive.** Ces notes décrivent `components/WebRTC/` — l'implémentation **v1**, remplacée
+> par [`WebRTC2`](../docs/modules/webrtc2/INDEX.md). Rien ne doit y être ajouté ; le code n'est
+> conservé que le temps de vérifier qu'aucun appelant ne subsiste.
+> Conservé ici uniquement parce qu'il retrace la séquence d'appel d'origine.
+
+Trace pas-à-pas de la séquence d'appel v1 (les `TODO verif` sont ceux de l'auteur, non résolus) :
+
     ## Front A & B
     [Notifications::mounted()]
         - setLocalVideoPeer with visioPlayerCallback (default callback)

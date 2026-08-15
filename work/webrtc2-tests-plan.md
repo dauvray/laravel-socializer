@@ -1,5 +1,10 @@
 # WebRTC2 — Plan de tests unitaires
 
+> **Chantier ouvert.** Le harnais, ses invariants et les pièges de mock sont dans
+> [`docs/modules/webrtc2/tests.md`](../docs/modules/webrtc2/tests.md) ; l'infra générale dans
+> [`docs/architecture/tests.md`](../docs/architecture/tests.md). Ce fichier ne porte que
+> l'avancement et les tâches restantes.
+
 > Infrastructure : vitest 2.1.9 · @vue/test-utils · happy-dom  
 > Helpers : `withSetup`, `createMockContext`, `mockEventBus`, `__mocks__/peerjs.js`,
 > `createVirtualPeer`, `fakeSignalingServer`, `fakeMedia`  
@@ -21,7 +26,7 @@
 Les scénarios sont l'étage qui manquait, et sans lequel aucun des incendies du package
 n'était détectable : ils ne sont vrais ou faux que **vus du pair d'en face**. Détail du
 harnais et de ses trois invariants (reset des modules par pair, une tâche par signal,
-livraisons asynchrones) dans [CONVENTIONS.md](../CONVENTIONS.md#tests--trois-étages-trois-rôles).
+livraisons asynchrones) dans [docs/modules/webrtc2/tests.md](../docs/modules/webrtc2/tests.md).
 
 - [x] `scenarios/harness.smoke.test.js` — 5 tests : le harnais lui-même (pairs isolés, va-et-vient de signalisation, data channel réel, **propagation des metadata**, `peer-unavailable`). Sans lui, un scénario rouge serait indistinguable d'un harnais cassé
 - [x] `scenarios/lateJoiner.test.js` — 5 tests : **le symptôme**. Webcam vers un arrivant, **écran seul** (rouge avant le fix `connectionType`), webcam + écran, troisième arrivant, annonce de diffusion

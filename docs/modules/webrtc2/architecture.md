@@ -1,0 +1,322 @@
+# WebRTC2 — Architecture
+
+> **À quoi ça sert :** la structure en couches du module et les invariants qu'une refacto
+> casserait sans le savoir.
+> **Quand le lire :** avant d'ajouter un composable, de déplacer une responsabilité, ou de
+> « simplifier » une garde qui a l'air redondante.
+
+Code : `src/resources/js/socializer/components/WebRTC2/`
+
+**Sommaire** — [Ordre des couches](#ordre-des-couches) ·
+[Propriétaires uniques](#propriétaires-uniques) ·
+[Départ d'un pair](#départ-dun-pair--un-fait-métier-deux-transports) ·
+[Signaux datachannel](#signaux-datachannel--trois-enveloppes-trois-consommateurs) ·
+[Le Peer PeerJS](#le-peer-peerjs--un-seul-par-onglet) ·
+[Conventions de code](#conventions-de-code) ·
+[Le routage ne pose aucune précondition](#le-routage-ne-pose-aucune-précondition) ·
+[Cleanup obligatoire](#cleanup-obligatoire) ·
+[Timers](#timers-armés-avant-leffet-quils-surveillent)
+
+---
+
+## Ordre des couches
+
+```
+createPeerContext                         source de vérité unique (état, stores, FSM d'appel)
+  └─ usePeerCore · usePeerMedia · usePeerConnections · usePeerTransport
+                                          sous-modules : dialoguent uniquement via ctx
+       └─ useConnectionPool               retry, établissement, sync room → connexions
+            └─ useCallManager             cycle d'appel (invite → accept → open → stop → reset)
+                 └─ useStreamManager      registre des flux distants + players + départs
+                      └─ useBroadcastPresence  annonce « je diffuse » sur le data channel
+                           └─ useSignalingQueue   routage des signaux serveur entrants
+                                └─ usePeerOrchestrator   composition + façade, aucune logique métier
+                                     └─ useMediaBroadcast   couche feature consommée par l'UI
+```
+
+`useSignalingQueue` est instanciée **en dernier** précisément parce qu'elle ne fait que
+consommer des verbes : personne ne consomme les siens, donc sa table `routes` peut pointer
+vers n'importe quelle couche sans jamais créer de callback ascendant.
+
+**Règle : une couche ne reçoit jamais de callback vers une couche supérieure.** Les
+dépendances descendent par injection explicite depuis l'orchestrateur
+(`useCallManager(ctx, { core, media, connections, transport, pool })`) — jamais par import
+croisé, jamais par callback remontant. C'est ce qui garde le graphe acyclique quand une
+couche de plus est extraite ; un callback inverse (« passe-moi `requestOrConnectPeer` ») est
+le signe qu'une couche est au mauvais étage.
+
+Corollaire : l'état partagé entre deux couches vit dans `createPeerContext`, derrière des
+accesseurs (`callMachine`, `beginShutdown`/`endShutdown`), pas dans un `ref` de
+l'orchestrateur passé de main en main.
+
+**Ordre d'extraction imposé** : chaque couche s'extrait *sous* celles qui en dépendent,
+jamais au-dessus. `useConnectionPool` avant `useCallManager` (qui appelle
+`requestOrConnectPeer`), `useCallManager` avant `useStreamManager` (qui appelle
+`stopCallWithPeers`). L'inverse produit mécaniquement un cycle.
+
+Règles de couplage complémentaires :
+
+- `useMediaBroadcast` n'importe **que** `usePeerOrchestrator` — jamais les sous-modules ni le
+  `peerStore`.
+- `usePeerOrchestrator` est le **seul** à instancier `createPeerContext` et à composer les couches.
+- Les sous-modules (`usePeerCore`, `usePeerMedia`, `usePeerConnections`, `usePeerTransport`)
+  communiquent **uniquement** via `ctx` — pas d'imports croisés entre eux.
+- `Composables/utils/` est l'infra transverse : sans état partagé, importable de partout,
+  jamais l'inverse.
+
+---
+
+## Propriétaires uniques
+
+Un invariant se tient à un seul endroit, vérifiable au grep.
+
+| État | Seul à le muter | Les autres couches passent par |
+|---|---|---|
+| `callMachine` (FSM d'appel) | `useCallManager` | `markCallConnected`, `isRemoteClosing` / `beginRemoteClosing` / `endRemoteClosing` |
+| `lifecycle.shutdownCount` | `useCallManager`, orchestrateur (arrêts de stream), `useConnectionPool` (unmount) | `ctx.isShuttingDown` en lecture (`count > 0`) |
+| `media.remoteStreamsMap` | `useStreamManager` (ajout/TTL/éviction), `useCallManager` (purge au départ d'un pair) | `ctx.remoteStreams` / `remoteScreens` en lecture |
+| séquence de départ d'un pair | `useCallManager.handleRemoteDeparture` | point d'entrée unique quel que soit le transport qui l'annonce |
+| timers de retry connexion | `useConnectionPool` | `clearRetry` / `clearAllRetries` |
+| routage des signaux serveur | `useSignalingQueue` (table `routes` construite par l'orchestrateur) | exposer un verbe et l'inscrire dans la table — pas de `watch` sur `ctx.lastRoomSignal` ailleurs |
+| `media.announcedStreamsMap` | deux écrivains assumés, chacun sur la seule information qu'il voit : `useBroadcastPresence` (annonce `BROADCAST_STATE`) et `usePeerTransport` (appel one-way entrant) ; purge par `useCallManager.handleRemoteDeparture` | `ctx.markAnnouncedStream` / `ctx.clearAnnouncedStream` (jamais d'écriture directe), lecture via `ctx.announcedStreamPeers` |
+
+L'état *plat* partagé (`session.currentCallUsers`, via `ctx.addCurrentCallUser` &co.) n'a
+**pas** de propriétaire unique : il n'a pas d'invariant de transition à protéger,
+contrairement à la FSM. C'est la raison de la différence de traitement — et la raison pour
+laquelle il ne doit **jamais** servir d'allowlist de sécurité (voir [securite.md](securite.md)).
+
+---
+
+## Départ d'un pair : un fait métier, deux transports
+
+« Tel pair quitte l'appel » arrive soit par le signal serveur `CloseConnectionToPeerID`
+(→ `remoteStopCall`), soit par la fermeture de la connexion PeerJS
+(→ `useStreamManager.handleStreamRemoved`). Les deux peuvent se déclencher pour un même
+départ, dans un ordre non déterministe (aller-retour serveur vs P2P direct) — d'où le garde
+par participant `closingUsers`.
+
+Les deux **doivent** converger vers `handleRemoteDeparture` : c'est le déclencheur qui
+varie, jamais la séquence. Historiquement les deux chemins avaient chacun leur version de la
+séquence, et **aucune n'était complète** (l'une oubliait la fermeture du transport et des
+retries, l'autre purgeait le registre sur une clé qui ne matchait pas côté initiateur) : la
+correction dépendait de quel transport arrivait en premier.
+
+Corollaire : `close-call` est **idempotent par contrat** — un même départ peut l'émettre deux
+fois si les deux transports se réveillent hors de la fenêtre du garde.
+
+Ce qui différencie encore les deux appelants est uniquement ce qui leur appartient :
+`remoteStopCall` valide et adapte un payload de signalisation, `handleStreamRemoved` résout le
+pair distant depuis `conn.metadata` (d'où son `waitForMeReady`, précondition de
+`_resolveRemoteSlug` et non de la séquence de départ).
+
+**La politique est décidée par le mode courant, pas par le déclencheur** : un seul
+`isCallMode = currentType !== 'stream'` gouverne à la fois la fermeture de transport et le
+full stop. C'est ce qui a permis de fusionner les deux chemins — plus besoin de brancher par
+transport.
+
+⚠️ **Une fermeture retire un seul type, sans condition.** Ne pas rétablir la purge élargie
+(« tous les types du pair ») : A qui diffuse webcam **+** écran et coupe sa webcam voyait son
+écran disparaître chez B. La purge élargie compensait en réalité une identification de pair
+défectueuse, maintenant corrigée (voir la règle `entry.remoteSlug` plus bas), et un filet
+indépendant existe désormais (nettoyage sur fin de pistes, ci-dessous).
+
+---
+
+## Signaux datachannel : trois enveloppes, trois consommateurs
+
+| Enveloppe | Forme | Consommée par |
+|---|---|---|
+| Signal **serveur** | `{ roomId: '<type>-<room>', type, payload }` | `useSignalingQueue`, via sa table `routes` |
+| Projection d'état **Widget** | `{ roomId: '<peerId>', payload: { type } }` (`AUDIO_MUTE_TOGGLE`, `VIDEO_ACTIVE_TOGGLE`) | `useRemotePeerState` — hors du routage serveur |
+| Annonce de diffusion | `BROADCAST_STATE` | **l'infra**, dans le wrap `onDataReceived` de l'orchestrateur — n'atteint jamais l'app |
+
+Traiter `BROADCAST_STATE` à l'étage infra évite d'imposer un câblage à chaque consommateur
+**et** interdit à un pair d'injecter ce type dans un flux de chat. C'est un écart assumé avec
+le plan initial (qui prévoyait de l'ajouter à la table `routes`) : cette table ne route que
+les enveloppes **serveur** scopées sur `contextId`.
+
+**Corollaire de sécurité :** l'identité de l'émetteur d'un message datachannel se lit
+**toujours** depuis la connexion (`utils/resolveRemoteSlug.js`, authentifiée à l'admission),
+jamais depuis un champ du payload.
+
+---
+
+## Le Peer PeerJS : un seul par onglet
+
+C'est la classe de bug la plus coûteuse du module. Trois gardes empilées, chacune fermant une
+fenêtre que les autres laissent ouverte :
+
+1. **Garde d'instance** — `if (peerStore.localPeer && !peerStore.localPeer.destroyed) return`,
+   **en premier**. C'est la seule qui ferme la fenêtre complète, parce que `peerStore.localPeer`
+   est affecté **synchroniquement** dans `_doInit`.
+2. Garde `peerInitPromise` — ne couvre que quelques microtâches : le corps de `_doInit` est
+   synchrone, le seul `await` est *dans* le handler `bind('call')`.
+3. Garde `localPeerReady` — n'est vrai qu'après l'événement `'open'`, soit un aller-retour réseau.
+
+Entre 2 et 3 s'ouvrait une fenêtre de plusieurs centaines de ms — et la production monte
+précisément deux consommateurs dans cet intervalle : `System/Notifications.vue` crée le contexte
+permanent `data-app` au tick 0, le contexte `stream-<room>` arrive après résolution de route et
+import dynamique, **sans un seul `await` avant `transport.setLocalPeer()`** sur les deux chemins.
+Le second `Peer` créé restait enregistré côté serveur PeerJS (peerId fantôme) et hors d'atteinte
+de `_destroyPeerSingleton`, qui n'agit que sur `peerStore.localPeer`.
+
+**Garde d'identité dans les handlers** : `if (peerStore.localPeer !== peer) return` en tête de
+`'open'`, et `peerStore.localPeer !== peer || peer.destroyed` dans `'disconnected'` (handler
+**et** callback du backoff). Les handlers écrivent sur la const locale `peer`, jamais sur
+`peerStore.localPeer` : un peer supplanté ou détruit ne doit ni déclarer la session prête, ni
+publier son identité, ni armer un backoff pour le compte du peer courant.
+
+### `destroy()` de PeerJS n'est pas une coupure réseau
+
+Vérifié dans `node_modules/peerjs@1.5.4/dist/bundler.mjs` : `destroy()` (l.1776-1783) ne retire
+**que** les listeners de son socket interne (l.1789), jamais ceux du `Peer` ; et il appelle
+`disconnect()`, qui **émet `disconnected`** (l.1810) *avant* que le drapeau `_destroyed` soit
+posé (l.1781).
+
+Conséquence : un garde `if (!localPeer || localPeer.destroyed) return` ne voit rien —
+chaque destruction volontaire était traitée comme une coupure réseau (tentative de reconnexion
+consommée, faux `warn`, et surtout `peerReconnectTimer` écrasé, laissant un timer orphelin que
+`resetPeerState` ne pouvait plus annuler).
+
+D'où le **détachement explicite** : une closure unique
+(`peerStore.peerListenersDetach`, verbes `setPeerListenersDetach` / `detachPeerListeners`),
+appelée **avant** `peer.destroy()`. Elle vit dans le store, pas dans une closure de composable
+ni au niveau du module : c'est un autre contexte — voire une autre copie du module après un HMR —
+qui détruit le singleton. Dans `_doInit`, un helper `bind(event, handler)` est la **seule** porte
+d'entrée : un 6e listener branché hors du helper fuirait.
+
+Trois arbitrages à ne pas défaire :
+- `resetPeerState` **exécute** la closure au lieu de la nuller, et `setPeerListenersDetach`
+  exécute la précédente avant de la remplacer — sans quoi le chemin early-return de
+  `_destroyPeerSingleton` jetterait le seul moyen de débrancher des listeners encore vivants ;
+- l'erreur d'un `off()` est absorbée **dans l'action du store**, jamais dans le transport : elle
+  ne doit empêcher ni `peer.destroy()`, ni la suite du reset (peer nullé mais drapeaux encore
+  vrais serait l'état impossible qui gèle `setLocalPeer` à vie) ;
+- la closure est enregistrée **avant** les `bind` et `bound` est capturé par référence : même une
+  exception au milieu du branchement laisse de quoi détacher ce qui a été posé.
+
+### Ce qui traverse le state réactif Pinia
+
+Le runtime du Peer singleton (`peerConsumerCount`, `peerInitPromise`, `peerReconnectAttempts`,
+`peerDestroyTimer`, `peerReconnectTimer`) vit dans `peerStore`
+(`stores/peers2/state.js`, section « Runtime du Peer singleton »). Trois cas, tranchés et figés
+par des tests d'identité :
+
+| Type stocké | `markRaw` ? | Pourquoi |
+|---|---|---|
+| `Promise` | **non** | Vue ne proxifie que les objets nus et les collections — identité et `await` préservés |
+| **Fonction** | **non** | `isObject` de `@vue/shared` exige `typeof === 'object'` — identité préservée au set comme au get (sinon `peer.off(event, handler)` ne retrouverait pas ses handlers) |
+| **Handle de timer** | lire avec `toRaw()` | c'est un objet côté Node/vitest, donc enveloppé — `clearTimeout(toRaw(...))` pour ne pas faire dépendre une annulation du forwarding du proxy |
+
+**Restent volontairement au niveau du module** : `contextRegistry` (registre d'objets de contexte,
+pas d'état du peer — c'est lui qui justifie encore le `vi.resetModules()` par pair du harnais de
+scénarios) et `_hubRateLimiter` (arbitrage « verbe `.reset()` plutôt que Pinia »).
+
+---
+
+## Conventions de code
+
+- **IDs de session** : `crypto.randomUUID()` — jamais `Math.random()` (cf. `ensureCurrentCallRoomId`)
+- **PeerId local** : `ctx.peerStore.getLocalPeerId` — jamais le triple fallback historique
+  `localPeer?.id || localPeer?._id || lastLocalPeerId`
+- **Retry peer** : un seul système, `utils/usePeerRetry` — pas de Map `inviteRetries` parallèle
+- **Rate limiting** : un seul système, `utils/createRateLimiter`. Deux instances module-level, avec
+  des clés délibérément différentes — le hub star porte sur l'**identité PeerJS entrante réelle**
+  (jamais `envelope.from`), `/ask-to-peer-id` sur `slug|room|connectionType`. Portée **module** et
+  non closure de composable : c'est ce qui les fait survivre à un mount/unmount, sans quoi ils ne
+  plafonnent rien
+- **Clé `remoteStreamsMap`** : `slug+type` canonique, passe unique (la double-passe historique
+  venait d'une clé non fiable)
+- **Identité du pair d'une entrée de `remoteStreamsMap`** : `entry.remoteSlug` — **jamais**
+  `entry.metadata.from`. Sur une connexion **sortante**, `metadata.from` porte **mon** slug (cf.
+  `_buildPeerConnectionConfig`), et le flux distant arrive bien sur cette connexion : filtrer sur
+  `metadata.from` ne matche donc rien côté initiateur. `remoteSlug` / `remoteType` sont normalisés
+  à l'écriture par `handleStreamReceived`
+- **Garde de teardown** : `beginShutdown`/`endShutdown` est un **compteur** ré-entrant, jamais un
+  booléen (deux arrêts concurrents se volaient le garde). Toujours dans un `try/finally` : une
+  exception laissant `shutdownCount ≥ 1` fait sortir `_handleConnectionAttempt` par `return true`,
+  ce qui **annule** les retries au lieu de les différer — plus aucune connexion ne se rétablit,
+  silencieusement. Un `beginShutdown` sans `endShutdown` (teardown terminal) laisse volontairement
+  le garde actif pour de bon
+- **Valeur de retour de `setLocalPeer`** : ne rien en déduire. La fonction est `async` (donc
+  toujours truthy) et sort par `undefined` sur tous ses chemins « rien à faire », **y compris quand
+  le peer est déjà prêt** — un `if (!ready) return` est au mieux mort, au pire inversé. L'attente de
+  l'identité locale se fait en aval, par `waitForMeReady`
+- **`connectToPeer` : `return false` pour différer, `return true` pour abandonner.** `true` signifie
+  « pas d'erreur » et **annule** le retry. Le prédicat `_canEmitStreamFor(type)` distingue « rien à
+  envoyer, abandonner » de « pas encore prêt, réessayer »
+- **Tentatives indépendantes dans `_handleConnectionAttempt`** : accumuler dans `settled` et ne
+  décider qu'à la fin. Un `return` prématuré en fin de branche « type principal » condamne la
+  tentative `screen` qui suit — les deux partagent la même chaîne de retry (`_retryKey` ne
+  discrimine pas le type)
+- **Flags sur objets PeerJS tiers** : interdit (pas de `conn.__ctxListenersBound`) — utiliser un
+  `WeakSet` interne
+- **Listeners d'objets PeerJS** : handlers nommés (ou branchés par un helper qui les mémorise) +
+  unsub retourné ou stocké — jamais une arrow anonyme passée directement à `.on()`, elle serait
+  irrécupérable
+- **API orchestrateur** : façade explicite minimale — pas de `...spread` des composables internes
+- **Stream local** : attente via `watch` réactif — pas de polling `while (!stream && attempts < N)`
+- **Signalisation prête** : `watch` sur `meStore.getMe?.slug` + `peerStore.localPeer?.id` — pas de
+  `setTimeout` polling
+- **Un seul catalogue de types de signaux** : la table `routes` de `useSignalingQueue` remplace
+  `SIGNAL_TYPES` + les deux `switch`. Avec deux sources de vérité, un type listé sans `case` était
+  ignoré en silence et un `case` sans entrée était injoignable
+
+---
+
+## Le routage ne pose aucune précondition
+
+`useSignalingQueue._route` n'attend rien et ne garde rien — **c'est un invariant, pas un oubli.**
+Les préconditions appartiennent aux handlers et au moteur de retry, qui savent réessayer ; un
+signal abandonné dans le routage l'est **définitivement** (l'émetteur ne re-livre jamais
+`PEER_CONNECT_TO_REMOTE_PEER`).
+
+Cassé une fois : un `await ctx.waitForMeReady()` et un `if (ctx.isShuttingDown.value) return`
+ajoutés au routage ont fait disparaître les flux chez les arrivants, de façon **intermittente**.
+`waitForMeReady` résout instantanément quand l'identité est là, mais attend 15 s puis abandonne
+sinon — or `lastLocalPeerId` est remis à `null` par `_destroyPeerSingleton` dès que le compteur de
+consommateurs passe à 0 (délai 10 s), fenêtre atteignable quand plusieurs providers montent/démontent
+et systématiquement polluée par le HMR.
+
+⚠️ **Ne jamais poser de garde d'autorisation ici non plus** — il va dans `connectToPeer` (voir
+[securite.md](securite.md)).
+
+---
+
+## Cleanup obligatoire
+
+- Tout `watch()` ⇒ `unwatch()` dans `onUnmounted`
+- `setUpConnectionListeners` ⇒ retourne un unsub appelé au démontage du contexte
+- Timers `setTimeout` de backoff ⇒ référence stockée et annulée dans `_destroyPeerSingleton`
+- Listeners du **Peer** ⇒ branchés par le helper `bind` de `_doInit`, débranchés par
+  `peerStore.detachPeerListeners()` **avant** `peer.destroy()` (voir ci-dessus)
+- `contextRegistry` ⇒ entrée supprimée dans `onUnmounted` **seulement si elle appartient toujours
+  au contexte** — un contexte fraîchement monté doit pouvoir reprendre l'id d'un contexte en cours
+  de démontage (`last-write-wins` volontaire, cf. [securite.md](securite.md))
+- **Flux distants** ⇒ `handleStreamReceived` écoute `ended` / `inactive` sur les pistes du flux reçu.
+  En mode `stream` aucun player n'est créé, donc `usePeerMedia._bindStreamCleanup` ne tourne pas et
+  le registre ne dépendrait que des événements de fermeture PeerJS : un flux mort sans `close`
+  laissait une vignette figée. Écouteurs `{ once: true }` et handler idempotent (l'entrée n'est
+  supprimée que si elle porte toujours **ce** flux) — aucune désinscription à tenir.
+  ⚠️ Garde `typeof stream.getTracks === 'function'` **en plus** de `instanceof MediaStream` :
+  happy-dom expose la classe sans implémenter `getTracks`
+
+---
+
+## Timers armés avant l'effet qu'ils surveillent
+
+`waitForMeReady` assignait son `timeoutId` **après** `scope.run()`, alors que le `watchEffect`
+s'exécute immédiatement : sur une identité déjà prête, `_resolve(true)` faisait
+`clearTimeout(null)`, le timer survivait et crachait un faux `waitForMeReady a expiré après
+15000 ms` 15 s plus tard sur un contexte sain — plus une fuite de timer par appel. Le `setTimeout`
+est armé **avant** `scope.run()`.
+
+---
+
+## Pour aller plus loin
+
+- Les séquences complètes (appel, join, départ) : [flux.md](flux.md)
+- Surface publique et bornes de configuration : [api.md](api.md)
+- Modèle de confiance et décisions sécurité : [securite.md](securite.md)
+- Harnais de tests et pièges de mock : [tests.md](tests.md)
+- Ce qui reste ouvert : [`work/webrtc2-todo.md`](../../../work/webrtc2-todo.md)

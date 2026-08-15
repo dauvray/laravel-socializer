@@ -1,7 +1,14 @@
-# ChatComponent — Décisions d'archi & invariants
+# Chat — Décisions d'archi & invariants
 
-Note vivante : rationale qui n'est **pas** déductible du code. À compléter au fil des
-évolutions. (Issu de la refacto en composables, todolist retirée une fois terminée.)
+> **À quoi ça sert :** le rationale du `ChatComponent` qui n'est **pas** déductible du code.
+> **Quand le lire :** avant de refactorer le chat, d'extraire un composable, ou de « simplifier »
+> un `setTimeout`.
+
+Code : `src/resources/js/socializer/components/Chat/`
+Tests : un seul fichier aujourd'hui — plan dans [`work/chat-tests-plan.md`](../../work/chat-tests-plan.md).
+
+Note vivante, à compléter au fil des évolutions. (Issue de la refacto en composables ; la todolist
+a été retirée une fois terminée — c'est le modèle à suivre, cf. [ecrire-la-doc.md](../ecrire-la-doc.md).)
 
 ---
 
@@ -17,8 +24,8 @@ Note vivante : rationale qui n'est **pas** déductible du code. À compléter au
 
 ## Pièges à ne PAS « optimiser »
 
-- **Scroll / pagination** (`composables/useChatScroll.js`) : conserver tels quels les
-  `setTimeout(1000)` et le calcul de `scrollTop` à la pagination. Ils compensent le
+- **Scroll / pagination** (`~socializer/composables/useStickyScroll.js`) : conserver tels quels
+  les `setTimeout(1000)` et le calcul de `scrollTop` à la pagination. Ils compensent le
   chargement asynchrone des images ; les « simplifier » réintroduit des sauts de scroll.
 
 ## Extractions écartées (ne pas refaire sans nouveau besoin)
@@ -33,13 +40,17 @@ Note vivante : rationale qui n'est **pas** déductible du code. À compléter au
 
 ## Composables en place (carte rapide)
 
+Trois des quatre extractions ont atterri dans les composables **partagés** du package
+(`~socializer/composables/`), pas dans `Chat/composables/` : elles ne sont pas spécifiques au chat.
+Seul `useTypingIndicator` est local.
+
 | Fichier | Responsabilité |
 |---------|----------------|
-| `composables/useChatAttachments.js` | `attachedFiles`, `onFileAdded`, `removeFromList`, `clear` |
+| `~socializer/composables/useFileAttachments.js` | `attachedFiles`, `onFileAdded`, `removeFromList`, `clear` |
+| `~socializer/composables/useStickyScroll.js` | auto-scroll + pagination infinie |
 | `~socializer/composables/useResizableElement.js` | resize générique via variable CSS ; `resizeOptions` à brancher sur `v-resizable`. ⚠️ directive `resizable_horizontal` = poignée horizontale ⇒ resize **hauteur** (pas un bug) |
-| `composables/useTypingIndicator.js` | indicateur « écrit… » ; transport **unifié Reverb** (whisper `typing` entre users + signal serveur pour Agent Bot) |
-| `composables/useChatScroll.js` | auto-scroll + pagination infinie |
-| `utils/dateSeparator.js` | fonction pure `shouldShowDateSeparator(messages, index, displaySeparator)` |
+| `Chat/composables/useTypingIndicator.js` | indicateur « écrit… » ; transport **unifié Reverb** (whisper `typing` entre users + signal serveur pour Agent Bot) |
+| `Chat/utils/dateSeparator.js` | fonction pure `shouldShowDateSeparator(messages, index, displaySeparator)` |
 
 ## Slots de customisation (API publique du `<template>`)
 
