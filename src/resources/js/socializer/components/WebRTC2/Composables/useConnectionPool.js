@@ -57,6 +57,28 @@ export function useConnectionPool(ctx, { core, connections }) {
     }
 
     /**
+     * La demande de peerId émise par CE contexte pour ce type, si elle est encore en vol.
+     *
+     * ⚠️ `room` doit être celle qu'utilise `usePeerCore.requestRemotePeerConnection` à
+     * l'écriture (`session.onAirRoom`), pas la room de connexion (`currentCallRoomId ||
+     * currentRoom`) : la clé du store est un contrat entre l'émetteur et le lecteur, et
+     * une lecture sur une autre room ne trouverait jamais rien — le contexte se croirait
+     * libre de redemander en boucle.
+     *
+     * L'exactitude de cette lecture est ce qui isole les contextes entre eux : lire sur
+     * le slug seul faisait qu'un provider voyait la demande d'un autre et n'émettait
+     * jamais la sienne (symptôme : le contexte `stream` reste muet, l'arrivant ne voit
+     * aucun flux tant que le moteur de retry n'a pas rattrapé, 12 s plus tard).
+     *
+     * @param {string} userSlug
+     * @param {string} type
+     * @returns {Object|null}
+     */
+    const _myPendingRequest = (userSlug, type) => {
+        return ctx.peerStore.getWaitingRemotePeerId(userSlug, ctx.session.onAirRoom, type)
+    }
+
+    /**
      * LOGIQUE DE TENTATIVE (Callback pour le RetryManager)
      * Détermine si on doit continuer à essayer de se connecter à un user.
      */
@@ -73,7 +95,7 @@ export function useConnectionPool(ctx, { core, connections }) {
         if (mainTypeOpen && screenOpen) return true
 
         const remotePeerId = ctx.peerStore.getRemotePeerId(userSlug)
-        const waiting = ctx.peerStore.getWaitingRemotePeerId(userSlug)
+        const waiting = _myPendingRequest(userSlug, ctx.currentType.value)
 
         // 2. Sécurité : Si on n'a plus d'ID ET plus d'intention (waiting), l'user est vraiment parti.
         if (!remotePeerId && !waiting) return true
@@ -158,7 +180,7 @@ export function useConnectionPool(ctx, { core, connections }) {
         if (connections.hasOpenConnection(userSlug, null, effectiveType)) return
 
         const remotePeerId = ctx.peerStore.getRemotePeerId(userSlug)
-        const waiting = ctx.peerStore.getWaitingRemotePeerId(userSlug)
+        const waiting = _myPendingRequest(userSlug, effectiveType)
 
         if (remotePeerId) {
             connections.connectToPeer({
@@ -221,14 +243,25 @@ export function useConnectionPool(ctx, { core, connections }) {
             removedUsers.forEach(userSlug => {
                 const activeRoom = ctx.session.currentCallRoomId || ctx.currentRoom.value
                 retryManager.clearRetry(userSlug)
-                ctx.peerStore.removeWaitingRemotePeerId(userSlug)
-                ctx.peerStore.removeRemotePeerId(userSlug)
+
+                // Mes demandes en vol pour ce pair (type principal ET 'screen') tombent
+                // avec son départ. Scopées sur ma room : celles des autres contextes,
+                // qui le voient peut-être encore, ne me regardent pas.
+                ctx.peerStore.clearWaitingRemotePeerIds(userSlug, ctx.session.onAirRoom)
+
                 ctx.peerStore.clearConnectionsRoom(activeRoom, userSlug, ctx.currentType.value)
 
                 // Fermer aussi la connexion 'screen' si elle existe
                 if (ctx.media.isCapturing) {
                     ctx.peerStore.clearConnectionsRoom(activeRoom, userSlug, 'screen')
                 }
+
+                // En DERNIER : le prédicat de présence a déjà été mis à jour par
+                // getRoomUsersDiff ci-dessus, donc ce verbe oubliera le peerId dès que
+                // le pair aura disparu de la dernière room qui le déclarait. L'ordre
+                // n'est plus déterminant (le prédicat ne dépend plus de `connections`),
+                // mais l'intention se lit mieux ainsi : on purge, puis on oublie.
+                ctx.peerStore.removeRemotePeerId(userSlug)
             })
 
             // Mesh: tout le monde se connecte à tout le monde.

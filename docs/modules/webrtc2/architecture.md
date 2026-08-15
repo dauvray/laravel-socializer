@@ -9,6 +9,7 @@ Code : `src/resources/js/socializer/components/WebRTC2/`
 
 **Sommaire** — [Ordre des couches](#ordre-des-couches) ·
 [Propriétaires uniques](#propriétaires-uniques) ·
+[Un onglet, plusieurs contextes](#un-onglet-plusieurs-contextes--la-granularité-des-clés-du-store) ·
 [Départ d'un pair](#départ-dun-pair--un-fait-métier-deux-transports) ·
 [Signaux datachannel](#signaux-datachannel--trois-enveloppes-trois-consommateurs) ·
 [Le Peer PeerJS](#le-peer-peerjs--un-seul-par-onglet) ·
@@ -79,12 +80,65 @@ Un invariant se tient à un seul endroit, vérifiable au grep.
 | timers de retry connexion | `useConnectionPool` | `clearRetry` / `clearAllRetries` |
 | routage des signaux serveur | `useSignalingQueue` (table `routes` construite par l'orchestrateur) | exposer un verbe et l'inscrire dans la table — pas de `watch` sur `ctx.lastRoomSignal` ailleurs |
 | `media.announcedStreamsMap` | deux écrivains assumés, chacun sur la seule information qu'il voit : `useBroadcastPresence` (annonce `BROADCAST_STATE`) et `usePeerTransport` (appel one-way entrant) ; purge par `useCallManager.handleRemoteDeparture` | `ctx.markAnnouncedStream` / `ctx.clearAnnouncedStream` (jamais d'écriture directe), lecture via `ctx.announcedStreamPeers` |
+| `peerStore.roomMembers[contextId]` (index de présence) | `usePeerConnections._doGetRoomUsersDiff`, unique producteur de `usersInRoom` ; purgé par `createPeerContext.destroy` | `peerStore.isUserInAnyRoom(slug)` en lecture — c'est le prédicat de `removeRemotePeerId` |
 | `session.authorizedCallPeers` (allowlist du garde sortant) | `useCallManager`, **seul écrivain** : marque à l'acceptation (`acceptCallFromPeer`) et à l'ouverture (`openCallBetweenPeer`), purge au départ du pair et au `resetCallState` | `ctx.markAuthorizedCallPeer` / `isAuthorizedCallPeer` / `clearAuthorizedCallPeer` / `clearAllAuthorizedCallPeers` — jamais d'écriture directe, et **jamais** `session.currentCallUsers` à sa place (état d'affichage, cf. [securite.md](securite.md)) |
 
 L'état *plat* partagé (`session.currentCallUsers`, via `ctx.addCurrentCallUser` &co.) n'a
 **pas** de propriétaire unique : il n'a pas d'invariant de transition à protéger,
 contrairement à la FSM. C'est la raison de la différence de traitement — et la raison pour
 laquelle il ne doit **jamais** servir d'allowlist de sécurité (voir [securite.md](securite.md)).
+
+---
+
+## Un onglet, plusieurs contextes : la granularité des clés du store
+
+`createPeerContext` isole les contextes… jusqu'à la porte du `peerStore`, qui est **unique
+par onglet** et que tous partagent. Une page en monte couramment trois ou quatre :
+`System/Notifications.vue` crée `data-app` en permanence, et chaque `MediaBroadcastProvider`
+le sien (`Exemples/Home.vue` en aligne trois). Le `Peer` PeerJS aussi est unique.
+
+**Règle : chaque entrée du store est indexée à la granularité du FAIT qu'elle décrit.**
+S'en écarter ne produit pas une erreur, mais une confiscation silencieuse — un contexte
+lit ou détruit l'état d'un autre.
+
+| Fait | Granularité | Clé |
+|---|---|---|
+| « le peerId de X est *id* » | l'**onglet distant** (un seul `Peer` par onglet) | `remotePeersId[slug]` |
+| « X est présent dans ma room » | le **contexte** | `roomMembers[contextId]` |
+| « j'ai demandé le peerId de X » | le **contexte** *et* le type de connexion | `waitingRemotePeerId[slug\|room\|type]` |
+
+Le peerId est le seul fait par slug — et c'est pour ça que sa **durée de vie**, elle, est
+gouvernée par les autres : on ne l'oublie (`removeRemotePeerId`) qu'une fois le pair absent
+de **toutes** les rooms déclarées. Ce prédicat porte sur `roomMembers`, jamais sur
+`connections` : cette map décrit des connexions PeerJS, pas une présence, et chaque contexte
+appelle le verbe avant ou après avoir purgé sa propre entrée — le prédicat était donc vrai
+pour tout le monde et le verbe un no-op permanent dès la deuxième room. Le peerId d'un
+onglet fermé survivait alors indéfiniment : au retour du pair on rappelait un peer mort
+(`Could not connect to peer <uuid>`) sans jamais redemander le frais, puisqu'on croyait déjà
+en avoir un.
+
+Trois corollaires à ne pas défaire :
+
+- **`connectToPeer` enregistre le peerId AVANT ses gardes.** Un peerId de signalisation
+  décrit l'état courant du pair, que la connexion s'ouvre ou non derrière. Placé après,
+  il est perdu à chaque sortie par « déjà connecté » — or `hasOpenConnection` considère
+  ouverte une `MediaConnection` dont le `RTCPeerConnection` n'est plus lisible, c'est-à-dire
+  exactement le cas du pair qui vient de recharger sa page.
+- **Une demande en vol appartient à son émetteur** (`contextId` stocké dans l'entrée), et
+  meurt avec lui : `cleanupPeerConnection` la purge explicitement, hors de
+  `closePeerConnection` qui sort par un early-return quand la room n'a aucune connexion.
+  Sans ça, un provider démonté avant l'aboutissement de sa signalisation laissait une
+  demande orpheline que le contexte remonté à sa place lisait comme la sienne — il restait
+  muet jusqu'à `SIGNALING_STALE_MS`. Un simple mount/unmount (navigation SPA, HMR) suffisait.
+- **Les purges élargies sont scopées.** `clearWaitingRemotePeerIds(slug, room)` et
+  `clearWaitingRemotePeerIdsForContext(contextId)` existent précisément pour ne pas retomber
+  sur « tout ce qui concerne ce pair ». Seule `invalidateRemotePeerId` purge sans scope :
+  le peerId est mort, donc aucune demande le concernant n'a plus d'objet, quel que soit le
+  contexte émetteur.
+
+⚠️ **Un test à un seul contexte par onglet ne peut pas voir ces pannes.** Le harnais monte
+donc plusieurs contextes par pair virtuel (`peer.mountContext()`), et les scénarios leur
+livrent la présence **séquentiellement** — cf. [tests.md](tests.md#un-onglet-plusieurs-contextes).
 
 ---
 

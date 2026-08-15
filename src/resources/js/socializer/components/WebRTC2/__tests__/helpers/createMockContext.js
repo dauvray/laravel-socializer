@@ -21,6 +21,9 @@ import { reactive, computed, ref } from 'vue'
 import { vi } from 'vitest'
 import { createCallStateMachine } from '~socializer/components/WebRTC2/Composables/utils/useCallStateMachine.js'
 import { isValidSlug } from '~socializer/components/WebRTC2/Composables/utils/validators.js'
+// ⚠️ Importée du store, jamais réécrite ici : la clé est un contrat partagé, une
+// seconde implémentation dans le mock divergerait en silence.
+import { waitingPeerIdKey } from '~socializer/stores/peers2/keys.js'
 import { mockEventBus } from './mockEventBus.js'
 
 export function createMockContext(overrides = {}) {
@@ -111,6 +114,7 @@ export function createMockContext(overrides = {}) {
     // `peerStore.remotePeersId.entries()` — un objet nu la rendrait inerte.
     const _remotePeerIds = new Map()
     const _waitingRemotePeerIds = new Map()
+    const _roomMembers = {}
     const _signalQueueRooms = {}
 
     const peerStore = {
@@ -131,25 +135,73 @@ export function createMockContext(overrides = {}) {
         getRemotePeerId: vi.fn((slug) => _remotePeerIds.get(slug) ?? null),
         hasRemotePeerId: vi.fn((slug) => _remotePeerIds.has(slug)),
         addRemotePeerId: vi.fn((slug, peerId) => { _remotePeerIds.set(slug, peerId) }),
-        // Fidèle au store réel : le mapping n'est supprimé que si le pair n'apparaît
-        // plus dans AUCUNE room de `connections` (cf. peers2/actions.js:217).
+        // Fidèle au store réel : le mapping n'est oublié que si le pair n'est déclaré
+        // présent dans AUCUNE room de l'onglet. Le prédicat porte sur `roomMembers`
+        // (présence), jamais sur `connections` (connexions PeerJS) — s'en écarter ici
+        // rendrait verts des tests de purge qui ne prouveraient rien.
         removeRemotePeerId: vi.fn((slug) => {
-            const stillConnected = Object.values(_connections).some((room) => slug in room)
-            if (!stillConnected) _remotePeerIds.delete(slug)
+            if (peerStore.isUserInAnyRoom(slug)) return
+            _remotePeerIds.delete(slug)
         }),
         // Invalidation inconditionnelle : le peerId est mort, pas « peut-être encore
-        // utile ailleurs ». Purge aussi le waiting pour ne pas étrangler la re-demande.
+        // utile ailleurs ». Purge aussi TOUTES les demandes en vol pour ce pair (tous
+        // contextes), sans quoi la re-demande serait étranglée par SIGNALING_STALE_MS.
         invalidateRemotePeerId: vi.fn((slug) => {
             _remotePeerIds.delete(slug)
-            _waitingRemotePeerIds.delete(slug)
+            peerStore.clearWaitingRemotePeerIds(slug)
         }),
 
-        getWaitingRemotePeerId: vi.fn((slug) => _waitingRemotePeerIds.get(slug) ?? null),
-        hasWaitingRemotePeerId: vi.fn((slug) => _waitingRemotePeerIds.has(slug)),
-        addWaitingRemotePeerId: vi.fn((slug, data) => {
-            _waitingRemotePeerIds.set(slug, { ...data, createdAt: Date.now() })
+        // ── Index de présence (roomMembers) ───────────────────────────────────
+        roomMembers: _roomMembers,
+        setRoomMembers: vi.fn((contextId, slugs = []) => {
+            if (!contextId) return
+            _roomMembers[contextId] = Array.isArray(slugs) ? [...slugs] : []
         }),
-        removeWaitingRemotePeerId: vi.fn((slug) => { _waitingRemotePeerIds.delete(slug) }),
+        clearRoomMembers: vi.fn((contextId) => {
+            if (!contextId) return
+            delete _roomMembers[contextId]
+        }),
+        isUserInAnyRoom: vi.fn((slug) => {
+            if (!slug) return false
+            return Object.values(_roomMembers).some(
+                (slugs) => Array.isArray(slugs) && slugs.includes(slug)
+            )
+        }),
+
+        // ── Demandes de peerId en vol — clé (slug, room, type) ────────────────
+        // ⚠️ La clé composite EST le correctif : un mock indexé sur le slug seul
+        // reproduirait la confiscation inter-contextes qu'on vient de supprimer.
+        getWaitingRemotePeerId: vi.fn((slug, room = null, type = null) => (
+            _waitingRemotePeerIds.get(waitingPeerIdKey(slug, room, type)) ?? null
+        )),
+        hasWaitingRemotePeerId: vi.fn((slug, room = null, type = null) => (
+            _waitingRemotePeerIds.has(waitingPeerIdKey(slug, room, type))
+        )),
+        getWaitingRemotePeerIds: vi.fn((slug) => (
+            [..._waitingRemotePeerIds.values()].filter((entry) => entry?.userSlug === slug)
+        )),
+        addWaitingRemotePeerId: vi.fn((slug, data = {}) => {
+            _waitingRemotePeerIds.set(
+                waitingPeerIdKey(slug, data?.room, data?.type),
+                { ...data, userSlug: slug, createdAt: Date.now() },
+            )
+        }),
+        removeWaitingRemotePeerId: vi.fn((slug, room = null, type = null) => {
+            _waitingRemotePeerIds.delete(waitingPeerIdKey(slug, room, type))
+        }),
+        clearWaitingRemotePeerIds: vi.fn((slug, room = null) => {
+            for (const [key, entry] of [..._waitingRemotePeerIds.entries()]) {
+                if (entry?.userSlug !== slug) continue
+                if (room !== null && entry?.room !== room) continue
+                _waitingRemotePeerIds.delete(key)
+            }
+        }),
+        clearWaitingRemotePeerIdsForContext: vi.fn((ctxId) => {
+            if (!ctxId) return
+            for (const [key, entry] of [..._waitingRemotePeerIds.entries()]) {
+                if (entry?.contextId === ctxId) _waitingRemotePeerIds.delete(key)
+            }
+        }),
 
         // Peer local : `usePeerTransport` lit et écrit ces deux membres directement.
         // Leur absence du mock était invisible (undefined se lit sans erreur) mais

@@ -256,12 +256,29 @@ describe('usePeerConnections', () => {
         })
 
         it('purge le drapeau d\'attente et mémorise le peerId distant', () => {
-            ctx.peerStore.addWaitingRemotePeerId('alice', { room: ROOM, type: 'data' })
+            ctx.peerStore.addWaitingRemotePeerId('alice', { room: ctx.session.onAirRoom, type: 'data' })
 
             connections.connectToPeer({ userSlug: 'alice', peerId: 'p-alice' })
 
-            expect(ctx.peerStore.removeWaitingRemotePeerId).toHaveBeenCalledWith('alice')
+            // Clé EXACTE : la demande purgée est celle de ce contexte, jamais celle
+            // qu'un autre provider de la page aurait émise pour le même pair.
+            expect(ctx.peerStore.removeWaitingRemotePeerId)
+                .toHaveBeenCalledWith('alice', ctx.session.onAirRoom, 'data')
             expect(ctx.peerStore.getRemotePeerId('alice')).toBe('p-alice')
+        })
+
+        it('ne touche pas à la demande en vol d\'un autre contexte du même onglet', () => {
+            // Configuration de production : Exemples/Home.vue monte trois providers, donc
+            // trois contextes qui partagent CE store. Le contexte `stream-room-test`
+            // conclut sa connexion ; celle du chat (`data-room-chat`) est encore en vol.
+            ctx.peerStore.addWaitingRemotePeerId('alice', { room: 'room-chat', type: 'data' })
+            ctx.peerStore.addWaitingRemotePeerId('alice', { room: ctx.session.onAirRoom, type: 'data' })
+
+            connections.connectToPeer({ userSlug: 'alice', peerId: 'p-alice' })
+
+            const stillPending = ctx.peerStore.getWaitingRemotePeerIds('alice')
+            expect(stillPending).toHaveLength(1)
+            expect(stillPending[0].room).toBe('room-chat')
         })
 
         it('rafraîchit un mapping périmé avec le peerId de la signalisation', () => {
@@ -277,6 +294,23 @@ describe('usePeerConnections', () => {
                 'p-frais',
                 expect.anything()
             )
+        })
+
+        it('rafraîchit le peerId même quand une connexion périmée passe encore pour ouverte', () => {
+            // Le cas de production, et celui que le test précédent ne couvre PAS : le pair
+            // a rechargé sa page, mais sa connexion figure encore comme ouverte
+            // (`open === true` pour une DataConnection, fallback `return true` pour une
+            // MediaConnection dont le RTCPeerConnection n'est plus lisible). On sort donc
+            // par la garde « déjà connecté » — et si l'enregistrement du peerId vit après
+            // cette garde, le frais est perdu. Plus personne ne redemande, puisqu'on croit
+            // déjà en avoir un : le pair devient définitivement injoignable.
+            ctx.peerStore.addRemotePeerId('alice', 'p-perime')
+            ctx.peerStore.addPeerConnectionInstance(ROOM, 'alice', 'data', { peer: 'p-perime', open: true })
+
+            expect(connections.connectToPeer({ userSlug: 'alice', peerId: 'p-frais' })).toBe(true)
+
+            expect(ctx.peerStore.getLocalPeer.connect).not.toHaveBeenCalled()
+            expect(ctx.peerStore.getRemotePeerId('alice')).toBe('p-frais')
         })
 
         describe('par type de connexion', () => {
@@ -458,12 +492,18 @@ describe('usePeerConnections', () => {
             expect(ctx.peerStore.getRemotePeerId('bob')).toBe('p-bob')
         })
 
-        it('purge aussi le drapeau d\'attente', () => {
+        it('purge les demandes en vol de SA room, pas celles des autres contextes', () => {
             ctx.peerStore.addWaitingRemotePeerId('alice', { room: ROOM, type: 'data' })
+            ctx.peerStore.addWaitingRemotePeerId('alice', { room: ROOM, type: 'screen' })
+            ctx.peerStore.addWaitingRemotePeerId('alice', { room: 'autre-room', type: 'data' })
 
             connections.closePeerConnection({ users: ['alice'] })
 
-            expect(ctx.peerStore.removeWaitingRemotePeerId).toHaveBeenCalledWith('alice')
+            expect(ctx.peerStore.clearWaitingRemotePeerIds).toHaveBeenCalledWith('alice', ROOM)
+
+            // Les deux types de MA room sont partis, celle du contexte voisin survit.
+            const stillPending = ctx.peerStore.getWaitingRemotePeerIds('alice')
+            expect(stillPending.map((entry) => entry.room)).toEqual(['autre-room'])
         })
 
         it('vide la file de signaux du contexte par défaut', () => {

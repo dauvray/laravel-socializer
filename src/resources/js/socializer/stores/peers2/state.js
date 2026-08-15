@@ -23,8 +23,33 @@ export default () => {
     // `usePeerTransport`, ni au niveau de son module.
     peerListenersDetach: null,
     connections: {}, // connexions actives (peerId, userSlug, stream, type)
-    remotePeersId: new Map(), // peers id distants
-    waitingRemotePeerId: new Map(), // connexions en attente d’un peer id distant (key: userSlug, value: { room, type })
+
+    // ─── Signalisation : deux granularités, à ne pas confondre ───────────────
+    // Ce store est PARTAGÉ par tous les contextes de l'onglet (`data-app` des
+    // notifications + un contexte par MediaBroadcastProvider monté). Chaque entrée
+    // doit donc être indexée à la granularité du FAIT qu'elle décrit, sinon un
+    // contexte confisque ou détruit l'état d'un autre.
+    //
+    //   - un peerId est un fait par ONGLET distant : un seul `Peer` PeerJS par onglet,
+    //     donc une entrée par slug. Ce qui est propre au contexte, ce n'est pas la
+    //     valeur, c'est sa DURÉE DE VIE — d'où `roomMembers` plus bas.
+    //   - une demande de peerId est un fait par CONTEXTE : « j'ai demandé le peerId de
+    //     X pour la room R en type T ». D'où la clé composite `slug|room|type`.
+    //
+    // Historique : les deux étaient indexées sur le slug seul. Sur une page montant
+    // plusieurs providers (cf. Exemples/Home.vue), le premier contexte à demander un
+    // peerId posait un drapeau que les autres lisaient comme « demande déjà en vol »,
+    // et n'émettaient donc jamais la leur — le contexte `stream` restait muet et
+    // l'arrivant ne voyait aucun flux.
+    remotePeersId: new Map(), // peerId distants (clé: userSlug)
+    waitingRemotePeerId: new Map(), // demandes de peerId en vol (clé: `slug|room|type`, valeur: { room, type, createdAt, … })
+
+    // Composition des rooms, par contexte (clé: contextId, valeur: string[] de slugs).
+    // Écrit par l'unique producteur de `ctx.connection.usersInRoom`
+    // (usePeerConnections._doGetRoomUsersDiff), purgé à la destruction du contexte.
+    // C'est la source de vérité de « ce pair est-il encore présent quelque part ? »,
+    // seul prédicat qui autorise à oublier son peerId (cf. removeRemotePeerId).
+    roomMembers: {},
     signalQueues: {}, // files d’attente de signaux pour les callbacks de connexions { type-roomId, payload }
     signalSeq: {}, // seq monotone par clé de file (type-room) — jamais réinitialisé, cf. dispatchSignal
     lastSignal: null, // dernier signal reçu (pour debug)

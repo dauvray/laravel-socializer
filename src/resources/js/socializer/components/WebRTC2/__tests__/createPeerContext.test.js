@@ -338,7 +338,24 @@ describe('createPeerContext', () => {
             it('conserve le peerId d\'un pair toujours en room', () => {
                 const ctx = mountContext()
                 peerStore.addRemotePeerId('alice', 'p-alice')
+                // La présence est déclarée dans le STORE, pas seulement dans le contexte
+                // local : c'est l'index partagé qui fait foi (`setRoomMembers` est écrit
+                // par getRoomUsersDiff, unique producteur de `usersInRoom`).
                 ctx.connection.usersInRoom = ['alice']
+                peerStore.setRoomMembers(ctx.contextId, ['alice'])
+
+                closeWith(ctx, { type: 'data', room: 'app', slug: 'alice', from: 'alice' })
+
+                expect(peerStore.hasRemotePeerId('alice')).toBe(true)
+            })
+
+            it('conserve le peerId d\'un pair encore présent dans UN AUTRE contexte', () => {
+                // Le cas de production : Notifications.vue monte `data-app` en permanence
+                // et Home.vue trois providers. Ma connexion se ferme, mais le pair est
+                // toujours dans la room du voisin — son peerId lui reste nécessaire.
+                const ctx = mountContext()
+                peerStore.addRemotePeerId('alice', 'p-alice')
+                peerStore.setRoomMembers('stream-room-test', ['alice'])
 
                 closeWith(ctx, { type: 'data', room: 'app', slug: 'alice', from: 'alice' })
 

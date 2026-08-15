@@ -1,3 +1,4 @@
+import { waitingPeerIdKey } from '~socializer/stores/peers2/keys.js'
 
 export default {
 
@@ -43,13 +44,34 @@ export default {
     },
 
     /*--------------------------
+    | Composition des rooms (index de présence)
+    --------------------------*/
+    /**
+     * Ce pair est-il présent dans au moins une room connue de cet onglet ?
+     * Seul prédicat qui autorise à oublier son peerId (cf. removeRemotePeerId).
+     */
+    isUserInAnyRoom: (state) => (userSlug) => {
+        if (!userSlug) return false
+        return Object.values(state.roomMembers).some(
+            (slugs) => Array.isArray(slugs) && slugs.includes(userSlug)
+        )
+    },
+
+    /*--------------------------
     | Remote peers ID
     --------------------------*/
-    getWaitingRemotePeerId: (state) => (userSlug) => {
-        return state.waitingRemotePeerId.get(userSlug) ?? null
+    // ⚠️ Lectures EXACTES : une demande appartient à un contexte (slug + room + type).
+    // Interroger sur le slug seul ferait lire à un contexte la demande d'un autre —
+    // c'est exactement ce qui empêchait le contexte `stream` d'émettre la sienne.
+    getWaitingRemotePeerId: (state) => (userSlug, room = null, type = null) => {
+        return state.waitingRemotePeerId.get(waitingPeerIdKey(userSlug, room, type)) ?? null
     },
-    hasWaitingRemotePeerId: (state) => (userSlug) => {
-        return state.waitingRemotePeerId.has(userSlug)
+    hasWaitingRemotePeerId: (state) => (userSlug, room = null, type = null) => {
+        return state.waitingRemotePeerId.has(waitingPeerIdKey(userSlug, room, type))
+    },
+    /** Toutes les demandes en vol concernant un pair, tous contextes confondus (debug/tests). */
+    getWaitingRemotePeerIds: (state) => (userSlug) => {
+        return [...state.waitingRemotePeerId.values()].filter((entry) => entry?.userSlug === userSlug)
     },
     hasRemotePeerId: (state) => (userSlug) => {
         return state.remotePeersId.has(userSlug)

@@ -46,6 +46,12 @@ export function usePeerConnections(ctx) {
 
         ctx.connection.usersInRoom = nextSlugs
 
+        // Projection dans le store : ce contexte témoigne de la présence de ces pairs.
+        // Unique écrivain de `usersInRoom`, donc unique écrivain de l'index — c'est ce
+        // qui permet à `removeRemotePeerId` de répondre « absent de TOUTES les rooms »
+        // sans dépendre de l'ordre des purges de `connections`.
+        ctx.peerStore.setRoomMembers(ctx.contextId, nextSlugs)
+
         return { newUsers, removedUsers }
     }
 
@@ -139,6 +145,22 @@ export function usePeerConnections(ctx) {
             return true
         }
 
+        // ⚠️ AVANT les gardes, et ce n'est pas cosmétique : ce peerId vient de la
+        // signalisation backend (PEER_CONNECT_TO_REMOTE_PEER ou peer-access-permission),
+        // il décrit donc l'état COURANT du pair — strictement plus frais que le store,
+        // que la connexion s'ouvre ou non derrière. Placé après les gardes, il était
+        // perdu à chaque fois qu'on sortait par « déjà connecté » : or `hasOpenConnection`
+        // considère ouverte une MediaConnection dont le RTCPeerConnection n'est plus
+        // lisible (fallback `return true`), c'est-à-dire précisément le cas d'un pair qui
+        // a rechargé sa page. Le store conservait alors l'ancien peerId, plus personne ne
+        // redemandait le nouveau — puisqu'on croyait en avoir un — et le pair devenait
+        // définitivement injoignable.
+        //
+        // Symétriquement, la demande en vol de CE contexte est satisfaite : on la retire
+        // (clé exacte slug|room|type — jamais celle d'un autre contexte).
+        ctx.peerStore.addRemotePeerId(userSlug, peerId)
+        ctx.peerStore.removeWaitingRemotePeerId(userSlug, ctx.session.onAirRoom, type)
+
         // Garde 2: évite les doubles tentatives concurrentes pour la même cible
         const lockKey = room + ':' + type + ':' + userSlug
         if (inFlightConnections.has(lockKey)) {
@@ -170,20 +192,6 @@ export function usePeerConnections(ctx) {
                 )
                 return false
             }
-
-            // On supprime le waiting flag seulement quand on a une cible exploitable
-            if (ctx.peerStore.hasWaitingRemotePeerId(userSlug)) {
-                ctx.peerStore.removeWaitingRemotePeerId(userSlug)
-            }
-
-            // Écriture systématique : ce peerId vient de la signalisation backend
-            // (PEER_CONNECT_TO_REMOTE_PEER ou peer-access-permission), donc de l'état
-            // courant du pair — strictement plus frais que ce que porte le store.
-            // ⚠️ Ne PAS remettre de garde `if (!hasRemotePeerId)` : la connexion
-            // s'ouvrait bien avec le peerId frais, mais le store gardait l'ancien, que
-            // requestOrConnectPeer réutilisait ensuite en boucle. Un peerId mort devenait
-            // ainsi « collant » et le pair définitivement injoignable.
-            ctx.peerStore.addRemotePeerId(userSlug, peerId)
 
             const config = _buildPeerConnectionConfig({
                 ...payload,
@@ -294,9 +302,10 @@ export function usePeerConnections(ctx) {
             ctx.peerStore.clearConnectionsRoom(currentRoom, userSlug, currentType)
             ctx.peerStore.removeRemotePeerId(userSlug)
 
-            if (ctx.peerStore.hasWaitingRemotePeerId(userSlug)) {
-                ctx.peerStore.removeWaitingRemotePeerId(userSlug)
-            }
+            // Ce contexte ferme cette room : ses demandes en vol pour ce pair n'ont plus
+            // d'objet. Portée limitée à `currentRoom` — les demandes des AUTRES contextes
+            // (autre room, même pair) leur appartiennent et doivent survivre.
+            ctx.peerStore.clearWaitingRemotePeerIds(userSlug, currentRoom)
         })
 
         if (clearSignalQueue) {

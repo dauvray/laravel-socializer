@@ -350,8 +350,13 @@ export function createPeerContext({ type, room, options = {} }) {
                 conn
             )
 
-            // Supprime le remotePeerId seulement si l'utilisateur n'est plus en room
-            if (remoteSlug && !connection.usersInRoom.includes(remoteSlug)) {
+            // Supprime le remotePeerId seulement si l'utilisateur n'est plus en room.
+            // La condition n'est PAS relue ici : `removeRemotePeerId` porte le prédicat
+            // de présence, et il le porte sur TOUTES les rooms de l'onglet — pas
+            // seulement la mienne. Le dupliquer localement le rendrait à la fois
+            // redondant et plus faible (un pair encore présent dans un autre contexte
+            // serait oublié par celui-ci).
+            if (remoteSlug) {
                 peerStore.removeRemotePeerId(remoteSlug)
             }
 
@@ -583,6 +588,11 @@ export function createPeerContext({ type, room, options = {} }) {
     const destroy = () => {
         // Supprime la signal queue room créée dans onBeforeMount
         peerStore.clearSignalQueueRoom(contextId)
+
+        // Ce contexte ne témoigne plus de la présence de personne. Sans ce retrait, un
+        // provider démonté continuerait de « voir » ses pairs dans l'index partagé et
+        // empêcherait à jamais l'oubli de leur peerId (cf. peerStore.removeRemotePeerId).
+        peerStore.clearRoomMembers(contextId)
 
         // Libère les références aux streams distants
         media.remoteStreamsMap.clear()

@@ -434,11 +434,28 @@ describe('useConnectionPool', () => {
 
             await pool.syncUsersConnections([{ slug: 'alice' }])
 
-            expect(ctx.peerStore.removeWaitingRemotePeerId).toHaveBeenCalledWith('bob')
+            expect(ctx.peerStore.clearWaitingRemotePeerIds)
+                .toHaveBeenCalledWith('bob', ctx.session.onAirRoom)
             expect(ctx.peerStore.removeRemotePeerId).toHaveBeenCalledWith('bob')
             expect(ctx.peerStore.clearConnectionsRoom).toHaveBeenCalledWith(
                 ctx.session.currentRoom, 'bob', ctx.session.currentType
             )
+        })
+
+        it('laisse les demandes en vol des autres contextes du même onglet', async () => {
+            // Bob quitte MA room. Le provider voisin (autre room, même onglet, même
+            // store) attend toujours son peerId : sa demande ne m'appartient pas.
+            ctx.peerStore.addWaitingRemotePeerId('bob', { room: 'room-voisine', type: 'data' })
+            ctx.peerStore.addWaitingRemotePeerId('bob', {
+                room: ctx.session.onAirRoom,
+                type: ctx.session.currentType,
+            })
+            connections.getRoomUsersDiff.mockResolvedValue({ newUsers: [], removedUsers: ['bob'] })
+
+            await pool.syncUsersConnections([{ slug: 'alice' }])
+
+            const stillPending = ctx.peerStore.getWaitingRemotePeerIds('bob')
+            expect(stillPending.map((entry) => entry.room)).toEqual(['room-voisine'])
         })
 
         it('ferme aussi la connexion screen d\'un peer parti quand on partage l\'écran', async () => {

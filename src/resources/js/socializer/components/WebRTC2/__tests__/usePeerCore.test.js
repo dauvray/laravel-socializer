@@ -65,7 +65,13 @@ describe('usePeerCore', () => {
             expect(ctx.peerStore.addWaitingRemotePeerId).toHaveBeenCalledOnce()
             expect(ctx.peerStore.addWaitingRemotePeerId).toHaveBeenCalledWith(
                 'alice',
-                { room: ctx.session.onAirRoom, type: ctx.session.currentType }
+                {
+                    room: ctx.session.onAirRoom,
+                    type: ctx.session.currentType,
+                    // Propriétaire de la demande : ce qui permet de la purger au
+                    // démontage de ce contexte sans toucher à celles de ses voisins.
+                    contextId: ctx.contextId,
+                }
             )
         })
 
@@ -99,17 +105,40 @@ describe('usePeerCore', () => {
         })
 
         it('ignore le throttling si la room ou le type diffère de l\'entrée waiting', async () => {
-            // Entrée récente mais pour une room différente → ne bloque pas
-            ctx.peerStore.getWaitingRemotePeerId.mockReturnValue({
+            // ⚠️ On passe par le VRAI verbe du store, pas par un `mockReturnValue` :
+            // la discrimination vit désormais dans la clé (slug|room|type), donc un
+            // stub qui renvoie la même entrée quels que soient les arguments ne
+            // testerait plus rien — il rendrait même le test vert par accident.
+            //
+            // Deux entrées récentes qui ne me concernent pas : une autre room (autre
+            // provider de la page) et un autre type dans la mienne (demande 'screen').
+            ctx.peerStore.addWaitingRemotePeerId('alice', {
                 room: 'other-room',
                 type: ctx.session.currentType,
-                createdAt: Date.now() - Math.floor(SIGNALING_STALE_MS / 2),
+            })
+            ctx.peerStore.addWaitingRemotePeerId('alice', {
+                room: ctx.session.onAirRoom,
+                type: 'screen',
             })
 
             const result = await core.requestRemotePeerConnection('alice')
 
             expect(ctx.AjaxService.load).toHaveBeenCalledOnce()
             expect(result).toBe(true)
+        })
+
+        it('throttle bien sur MA clé exacte (contre-épreuve du test précédent)', async () => {
+            // Même scénario, mais l'entrée fraîche porte cette fois ma room ET mon type :
+            // sans ce cas, le test ci-dessus passerait aussi avec un garde inerte.
+            ctx.peerStore.addWaitingRemotePeerId('alice', {
+                room: ctx.session.onAirRoom,
+                type: ctx.session.currentType,
+            })
+
+            const result = await core.requestRemotePeerConnection('alice')
+
+            expect(ctx.AjaxService.load).not.toHaveBeenCalled()
+            expect(result).toBe(false)
         })
 
         it('retourne false sans requête si localPeerId est absent', async () => {
@@ -407,8 +436,16 @@ describe('usePeerCore', () => {
                     room: 'call-room-42',
                     peerId: ctx.peerStore.getLocalPeerId,
                     inviteId,
+                    contextId: ctx.contextId,
                 }
             )
+
+            // ⚠️ `contextId` est un identifiant INTERNE : il est ajouté sur une copie et
+            // ne doit jamais partir au backend, qui relaie `options` tel quel au pair
+            // distant. Le test précédent passerait aussi si on avait muté `data`.
+            const sentOptions = ctx.AjaxService.load.mock.calls
+                .find(([url]) => url === ENDPOINTS.SEND_ALERT_TO_USER)[2].options
+            expect(sentOptions).not.toHaveProperty('contextId')
         })
 
         it('planifie un retry : un second POST est envoyé après le premier délai', async () => {

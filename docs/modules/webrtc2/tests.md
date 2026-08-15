@@ -23,8 +23,9 @@ détectable : ils ne sont vrais ou faux que **vus du pair d'en face**.
 
 `scenarios/` couvre aujourd'hui `harness.smoke` (le harnais lui-même — sans lui, un scénario rouge
 serait indistinguable d'un harnais cassé), `lateJoiner` (le symptôme), `broadcastLifecycle` (arrêter
-un flux n'en emporte pas un autre) et `peerDeparture` (coupure brutale, peerId oublié, retour avec
-un nouveau peerId).
+un flux n'en emporte pas un autre), `peerDeparture` (coupure brutale, peerId oublié, retour avec
+un nouveau peerId) et `multiContext` (plusieurs contextes dans le même onglet — la forme réelle
+d'une page, cf. [ci-dessous](#un-onglet-plusieurs-contextes)).
 
 ---
 
@@ -48,7 +49,7 @@ documents à la fois. Il se relit dans la sortie du runner, et n'a rien à faire
 
 ---
 
-## Le harnais de scénarios — quatre invariants
+## Le harnais de scénarios — cinq invariants
 
 `__tests__/helpers/createVirtualPeer.js`, `helpers/fakeSignalingServer.js`,
 `__mocks__/peerjs.js` (mode bus).
@@ -72,9 +73,31 @@ documents à la fois. Il se relit dans la sortie du runner, et n'a rien à faire
 - **Livraisons asynchrones du bus PeerJS.** Le code branche ses handlers *après* l'appel
   (`call.answer(…)` puis `setUpConnectionListeners(call)`) — une livraison synchrone les manquerait
   tous.
+- **Un pair virtuel est un onglet, pas un contexte** — et la présence se livre séquentiellement
+  aux contextes d'un même onglet, sans quoi le scénario reste vert malgré le bug
+  ([détail](#un-onglet-plusieurs-contextes)).
 
 `createPeerBus()` est **opt-in** : sans lui, le mock garde son comportement isolé historique et les
 tests unitaires existants ne voient aucune différence.
+
+### Un onglet, plusieurs contextes
+
+Un pair virtuel est un **onglet**, pas un contexte. `peer.mountContext({ type, room })` en ajoute
+un dans le même registre de modules et la même Pinia — donc même `contextRegistry`, même `Peer`
+PeerJS, même store. C'est la seule configuration où les collisions d'état entre contextes
+existent (cf.
+[architecture.md](architecture.md#un-onglet-plusieurs-contextes--la-granularité-des-clés-du-store)),
+et la production n'en connaît pas d'autre.
+
+⚠️ **La présence doit être livrée aux contextes d'un onglet SÉQUENTIELLEMENT** pour que le
+scénario ait une valeur. `connectRoom` les synchronise tous dans le même tick : chacun lit alors
+le store *avant* que le voisin n'ait enregistré sa demande — `addWaitingRemotePeerId` n'a lieu
+qu'après le POST — et la collision n'a jamais lieu. Un scénario concurrent reste **vert même
+avec l'indexation fautive**, ce qui a été vérifié en réintroduisant le bug. La production, elle,
+est séquentielle : les providers montent dans l'ordre du template, s'initialisent à des ticks
+différents (le parent en `onMounted`, le provider `stream` depuis `StreamSimpleUI`), et le canal
+de présence re-déclenche le watcher à chaque changement. Voir `syncSequentially` dans
+`scenarios/multiContext.test.js`.
 
 Le faux serveur reproduit la **liste blanche exacte** du `UserController` : y ajouter un champ que le
 PHP ne relaie pas fabriquerait un chemin impossible en production. Réciproquement, desserrer la liste

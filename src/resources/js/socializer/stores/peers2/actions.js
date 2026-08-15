@@ -1,5 +1,6 @@
 import { toRaw } from 'vue'
 import { isEmpty } from '~estarter/services/helpers.js'
+import { waitingPeerIdKey } from '~socializer/stores/peers2/keys.js'
 
 export default {
 
@@ -361,12 +362,50 @@ export default {
         }
     },
 
-    // Supprimer l’id d’un peer distant lorsqu’il n'est plus dans auncune room
+    /*--------------------------
+    | Composition des rooms (index de présence)
+    |
+    | Projection, par contexte, de `ctx.connection.usersInRoom`. Son unique raison d'être
+    | est de donner un prédicat FIABLE à removeRemotePeerId ci-dessous : « ce pair est-il
+    | encore présent dans une room de cet onglet ? ». La map `connections` servait
+    | auparavant de proxy pour cette question et y répondait mal — elle décrit des
+    | connexions PeerJS, dont l'existence dépend de l'ordre des purges et pas de la
+    | présence réelle.
+    --------------------------*/
+
+    /** Déclare la composition d'une room pour un contexte. @param {string} contextId */
+    setRoomMembers(contextId, slugs = []) {
+        if (!contextId) return
+        this.roomMembers[contextId] = Array.isArray(slugs) ? [...slugs] : []
+    },
+    /** Le contexte est détruit : il ne témoigne plus de la présence de personne. */
+    clearRoomMembers(contextId) {
+        if (!contextId) return
+        delete this.roomMembers[contextId]
+    },
+
+    /**
+     * Oublie le peerId d'un pair qui a quitté la room.
+     *
+     * **Conditionnel**, et c'est le point : plusieurs contextes partagent ce store (le
+     * `data-app` de System/Notifications.vue est monté en permanence, plus un contexte
+     * par MediaBroadcastProvider). Un pair encore présent ailleurs a toujours besoin de
+     * son peerId, donc on ne l'oublie qu'une fois absent de TOUTES les rooms connues.
+     *
+     * ⚠️ Le prédicat porte sur `roomMembers` (présence déclarée par la signalisation de
+     * présence), **jamais** sur `connections` : cette map décrit des connexions PeerJS,
+     * pas une présence. Avec elle, le verbe était un no-op permanent dès qu'une seconde
+     * room existait — chaque contexte appelant `removeRemotePeerId` AVANT de purger sa
+     * propre entrée de `connections`, même le dernier trouvait le pair « encore
+     * connecté ». Le peerId d'un onglet fermé survivait donc à jamais : au retour du
+     * pair, on rappelait un peer mort (`Could not connect to peer <uuid>`) sans jamais
+     * redemander le frais, puisqu'on croyait déjà en avoir un.
+     *
+     * @param {string} userSlug
+     */
     removeRemotePeerId(userSlug) {
-        const isUserConnected = Object.values(this.connections).some(room => userSlug in room)
-        if (!isUserConnected) {
-            this.remotePeersId.delete(userSlug)
-        }
+        if (this.isUserInAnyRoom(userSlug)) return
+        this.remotePeersId.delete(userSlug)
     },
     // Enregistrer l’id d’un peer distant lorsqu’il est reçu
     addRemotePeerId(userSlug, peerId) {
@@ -376,35 +415,74 @@ export default {
     /**
      * Invalide un peerId distant devenu injoignable (PeerJS `peer-unavailable`).
      *
-     * ⚠️ À NE PAS confondre avec removeRemotePeerId, qui est **conditionnel** : celui-ci
-     * exprime « ce pair a quitté cette room » et conserve donc volontairement le mapping
-     * tant que le pair apparaît dans une autre room. Or plusieurs contextes partagent ce
-     * store (le `data-app` de System/Notifications.vue est monté en permanence), si bien
-     * qu'un pair y figure presque toujours : utiliser removeRemotePeerId pour invalider
-     * un peerId mort en faisait un no-op, et le peerId périmé restait « collant » — plus
-     * aucune connexion ne pouvait être rétablie sans rechargement.
-     *
-     * Ici l'information est différente et certaine : ce peerId n'existe plus côté serveur
-     * de signalisation. On supprime donc sans condition, et on purge aussi le drapeau
-     * d'attente — sinon la re-demande déclenchée juste après serait étranglée par le
-     * garde d'âge SIGNALING_STALE_MS de requestRemotePeerConnection.
+     * ⚠️ À NE PAS confondre avec removeRemotePeerId, qui exprime « ce pair a quitté la
+     * room » et reste donc soumis au prédicat de présence. Ici l'information est
+     * différente et certaine : ce peerId n'existe plus côté serveur de signalisation.
+     * On supprime donc sans condition, et on purge TOUTES les demandes en vol pour ce
+     * pair — quel que soit le contexte qui les a émises, puisqu'elles portent toutes sur
+     * la même identité morte. Sans cette purge, la re-demande déclenchée juste après
+     * serait étranglée par le garde d'âge SIGNALING_STALE_MS de
+     * requestRemotePeerConnection.
      *
      * @param {string} userSlug
      */
     invalidateRemotePeerId(userSlug) {
         this.remotePeersId.delete(userSlug)
-        this.waitingRemotePeerId.delete(userSlug)
+        this.clearWaitingRemotePeerIds(userSlug)
     },
 
-    // Gérer les connexions en attente d’un peer id distant
-    addWaitingRemotePeerId(userSlug, data) {
-        this.waitingRemotePeerId.set(userSlug, {
-           ...data,
+    /*--------------------------
+    | Demandes de peerId en vol — clé (slug, room, type), cf. keys.js
+    --------------------------*/
+
+    /**
+     * Enregistre une demande émise. `data` doit porter `room` et `type` : ils forment la
+     * clé, une demande sans eux ne serait retrouvable par aucun lecteur. `data.contextId`
+     * enregistre le PROPRIÉTAIRE — c'est lui qui permet de tout purger au démontage sans
+     * avoir à recomposer l'appartenance à partir de (room, type), qui ne la donne pas
+     * exactement (une demande 'screen' appartient au contexte de son type principal).
+     */
+    addWaitingRemotePeerId(userSlug, data = {}) {
+        const key = waitingPeerIdKey(userSlug, data?.room, data?.type)
+        this.waitingRemotePeerId.set(key, {
+            ...data,
+            userSlug,
             createdAt: Date.now(),
         })
     },
-    removeWaitingRemotePeerId(userSlug) {
-        this.waitingRemotePeerId.delete(userSlug)
+    /** Retire UNE demande précise — celle du contexte qui vient d'obtenir sa cible. */
+    removeWaitingRemotePeerId(userSlug, room = null, type = null) {
+        this.waitingRemotePeerId.delete(waitingPeerIdKey(userSlug, room, type))
+    },
+    /**
+     * Retire les demandes concernant un pair : toutes, ou seulement celles d'une room
+     * donnée (`room` non nulle) quand c'est un seul contexte qui se ferme.
+     */
+    clearWaitingRemotePeerIds(userSlug, room = null) {
+        for (const [key, entry] of [...this.waitingRemotePeerId.entries()]) {
+            if (entry?.userSlug !== userSlug) continue
+            if (room !== null && entry?.room !== room) continue
+            this.waitingRemotePeerId.delete(key)
+        }
+    },
+    /**
+     * Un contexte se démonte : ses demandes en vol n'ont plus de destinataire.
+     *
+     * ⚠️ Indispensable et distinct des purges ci-dessus : le teardown passe par
+     * `closePeerConnection`, qui sort par un early-return quand le contexte n'a AUCUNE
+     * connexion dans sa room — cas parfaitement normal d'un provider démonté avant que
+     * la signalisation ait abouti. Les demandes orphelines survivaient alors dans le
+     * store partagé, et le contexte remonté à leur place les lisait comme les siennes :
+     * il restait muet jusqu'à leur péremption (SIGNALING_STALE_MS). Un simple
+     * mount/unmount — navigation SPA, HMR — suffisait à le déclencher.
+     *
+     * @param {string} contextId
+     */
+    clearWaitingRemotePeerIdsForContext(contextId) {
+        if (!contextId) return
+        for (const [key, entry] of [...this.waitingRemotePeerId.entries()]) {
+            if (entry?.contextId === contextId) this.waitingRemotePeerId.delete(key)
+        }
     },
 
     // gestion des players actifs (pour les appels en cours)

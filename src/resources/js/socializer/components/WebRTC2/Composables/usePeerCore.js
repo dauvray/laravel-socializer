@@ -110,10 +110,13 @@ export function usePeerCore(ctx) {
             return false
         }
 
-        // Le garde anti-spam discrimine par type demandé : sans ça, la demande 'screen'
-        // serait étranglée par celle du type principal émise juste avant (même slug).
-        const waiting = ctx.peerStore.getWaitingRemotePeerId(userSlug)
-        if (waiting && waiting.room === room && waiting.type === requestedType) {
+        // Le garde anti-spam porte sur MA demande — celle de ce contexte pour ce type.
+        // La discrimination est désormais dans la clé du store (slug|room|type) et non
+        // dans une comparaison de champs ici : une demande émise par un autre contexte
+        // n'est plus visible, donc ne peut plus étrangler celle-ci (ni la 'screen' par
+        // celle du type principal, ni celle du contexte `stream` par celle du chat).
+        const waiting = ctx.peerStore.getWaitingRemotePeerId(userSlug, room, requestedType)
+        if (waiting) {
             const age = Date.now() - (waiting.createdAt ?? 0)
 
             // Si on a déjà demandé ce peerId récemment, on évite le spam réseau.
@@ -144,7 +147,13 @@ export function usePeerCore(ctx) {
                 type: type,
                 connectionType: requestedType
             })
-            ctx.peerStore.addWaitingRemotePeerId(userSlug, { room, type: requestedType })
+            // `contextId` = propriétaire de la demande : c'est ce qui permet de la purger
+            // au démontage de CE contexte, sans toucher à celles de ses voisins.
+            ctx.peerStore.addWaitingRemotePeerId(userSlug, {
+                room,
+                type: requestedType,
+                contextId: ctx.contextId,
+            })
             return true
         } catch (e) {
             console.error('[usePeerCore] requestRemotePeerConnection failed:', e)
@@ -206,7 +215,9 @@ export function usePeerCore(ctx) {
             inviteId,
         }
 
-        ctx.peerStore.addWaitingRemotePeerId(toUserSlug, data)
+        // ⚠️ Copie, jamais `data` lui-même : cet objet part tel quel au backend
+        // (`options: data` ci-dessous) et n'a pas à porter un identifiant interne.
+        ctx.peerStore.addWaitingRemotePeerId(toUserSlug, { ...data, contextId: ctx.contextId })
 
         // Éviction de la plus ancienne entrée si la Map atteint la limite
         if (userSlugToInviteId.size >= MAX_INVITE_RETRIES) {

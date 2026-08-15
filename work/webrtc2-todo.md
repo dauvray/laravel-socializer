@@ -66,6 +66,12 @@ avant le déménagement revient à les jeter.
   `peerStore` avec une action `computeRoomDiff(newSlugs)` synchrone (lecture + écriture atomique)
   supprimerait le mutex `_diffLock` devenu inutile et rendrait la liste réactive dans les composants.
   Dépend du renommage ci-dessus.
+  ℹ️ Une **projection** existe déjà : `peerStore.roomMembers[contextId]`, écrite par
+  `_doGetRoomUsersDiff` et lue par le prédicat de `removeRemotePeerId` (cf.
+  [architecture.md](../docs/modules/webrtc2/architecture.md#un-onglet-plusieurs-contextes--la-granularité-des-clés-du-store)).
+  Ce n'est PAS la migration : la source de vérité reste `ctx.connection`, et la duplication est
+  assumée tant que les deux écritures restent dans la même fonction. La migration consisterait à
+  faire de `roomMembers` la source et à supprimer le miroir — pas à ajouter un troisième état.
 
 ---
 

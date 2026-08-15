@@ -227,7 +227,16 @@ export function useCallManager(ctx, { core, media, connections, transport, pool 
         const room = payload?.options?.room || null
         const type = isValidCallType(payload?.options?.type) ? payload.options.type : 'visio'
 
-        ctx.peerStore.removeWaitingRemotePeerId(fromUserSlug)
+        // L'invitation est acceptée : MA demande d'autorisation n'est plus en vol. Clé
+        // exacte — `requestAuthorizationRemotePeerId` l'a enregistrée sur
+        // (slug, currentCallRoomId, type), et `room` est cette room, renvoyée telle
+        // quelle par le distant. Purger sur le slug seul emporterait les demandes des
+        // autres contextes de l'onglet, qui n'ont rien à voir avec cet appel.
+        ctx.peerStore.removeWaitingRemotePeerId(
+            fromUserSlug,
+            room || ctx.session.currentCallRoomId,
+            type,
+        )
         ctx.peerStore.addRemotePeerId(fromUserSlug, payload.options.peerId)
 
         // Mon invitation a été acceptée : c'est moi qui vais ouvrir la connexion
@@ -279,7 +288,9 @@ export function useCallManager(ctx, { core, media, connections, transport, pool 
             if (mode === 'partial') {
                 normalizedUsers.forEach((u) => {
                     pool.clearRetry(u.userSlug)
-                    ctx.peerStore.removeWaitingRemotePeerId(u.userSlug)
+                    // Scopé sur la room de l'appel : les demandes des autres contextes
+                    // (chat, diffusion) survivent à la fin de CET appel.
+                    ctx.peerStore.clearWaitingRemotePeerIds(u.userSlug, roomId)
                 })
 
                 connections.closePeerConnection({

@@ -298,7 +298,9 @@ describe('useCallManager', () => {
             await cm.openCallBetweenPeer(answerPayload())
 
             expect(ctx.callMachine.callState.value).toBe(CALL_STATES.CONNECTED)
-            expect(ctx.peerStore.removeWaitingRemotePeerId).toHaveBeenCalledWith('alice')
+            // Clé exacte de MON invitation : (slug, room d'appel, type d'appel).
+            expect(ctx.peerStore.removeWaitingRemotePeerId)
+                .toHaveBeenCalledWith('alice', 'call-room-1', 'visio')
             expect(ctx.peerStore.addRemotePeerId).toHaveBeenCalledWith('alice', 'peer-alice')
             expect(media.startCurrentStream).toHaveBeenCalledWith(true)
             expect(pool.requestOrConnectPeer).toHaveBeenCalledWith('alice')
@@ -366,7 +368,10 @@ describe('useCallManager', () => {
 
             expect(ctx.callMachine.callState.value).toBe(CALL_STATES.CONNECTED)
             expect(pool.clearRetry).toHaveBeenCalledWith('alice')
-            expect(ctx.peerStore.removeWaitingRemotePeerId).toHaveBeenCalledWith('alice')
+            // Scopé sur la room d'appel : un contexte voisin qui attend le peerId du
+            // même pair pour une autre room ne doit pas perdre sa demande.
+            expect(ctx.peerStore.clearWaitingRemotePeerIds)
+                .toHaveBeenCalledWith('alice', ctx.session.currentCallRoomId)
             expect(connections.closePeerConnection).toHaveBeenCalledWith({
                 room: ctx.session.currentCallRoomId,
                 type: 'visio',
@@ -578,7 +583,8 @@ describe('useCallManager', () => {
             await cm.handleRemoteDeparture(departure())
 
             expect(pool.clearRetry).toHaveBeenCalledWith('alice')
-            expect(ctx.peerStore.removeWaitingRemotePeerId).toHaveBeenCalledWith('alice')
+            expect(ctx.peerStore.clearWaitingRemotePeerIds)
+                .toHaveBeenCalledWith('alice', 'call-room-1')
             expect(connections.closePeerConnection).toHaveBeenCalledWith({
                 room: 'call-room-1',
                 type: 'visio',

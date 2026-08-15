@@ -26,6 +26,18 @@
  * ⚠️ Corollaire : monter les pairs **séquentiellement** (`await` l'un après l'autre).
  * Deux `createVirtualPeer()` concurrents se voleraient le registre de modules.
  *
+ * ── Un onglet, plusieurs contextes ───────────────────────────────────────────
+ *
+ * Un pair virtuel est un ONGLET, pas un contexte. La production en monte plusieurs par
+ * page (`System/Notifications.vue` crée `data-app` en permanence, et chaque
+ * `MediaBroadcastProvider` le sien — cf. `Exemples/Home.vue`, qui en monte trois), tous
+ * partageant **un** `Peer` PeerJS et **un** store Pinia. C'est cette configuration, et
+ * elle seule, qui révèle les collisions d'état entre contextes : un test à un contexte
+ * par onglet ne peut structurellement pas les voir.
+ *
+ * `peer.mountContext({ type, room })` ajoute donc un contexte à un onglet existant, dans
+ * le même registre de modules et la même Pinia.
+ *
  * ── Usage ────────────────────────────────────────────────────────────────────
  *
  *     const bus = createPeerBus()
@@ -33,6 +45,8 @@
  *     const alice = await createVirtualPeer({ slug: 'alice', room, type: 'stream', server })
  *     const bob   = await createVirtualPeer({ slug: 'bob',   room, type: 'stream', server })
  *     await connectRoom([alice, bob])   // les deux se voient dans la room
+ *
+ *     const chat = alice.mountContext({ type: 'data', room: 'room-chat' })
  */
 import { vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
@@ -132,6 +146,63 @@ export async function createVirtualPeer({
     peerInstance._triggerEvent('open', peerId)
     await settle(1)
 
+    // Contextes secondaires montés dans cet onglet (cf. mountContext) : démontés avec
+    // lui, dans l'ordre inverse du montage.
+    const extraContexts = []
+
+    /**
+     * Ajoute un contexte à CET onglet — même registre de modules, même Pinia, donc même
+     * `contextRegistry`, même Peer PeerJS et même store partagé qu'en production.
+     *
+     * @param {Object} config
+     * @param {string} [config.type]      Mode du contexte ('data', 'stream'…)
+     * @param {string} [config.room]      Room WebRTC
+     * @param {Object} [config.options]   Options de l'orchestrateur (topology, hubSlug…)
+     * @param {Object} [config.callbacks] Callbacks applicatifs
+     * @returns {Object} handle du contexte
+     */
+    const mountContext = ({
+        type: ctxType = 'data',
+        room: ctxRoom = 'app',
+        options: ctxOptions = {},
+        callbacks: ctxCallbacks = {},
+    } = {}) => {
+        // La Pinia de cet onglet doit être l'active : un autre pair a pu être monté
+        // entre-temps et l'aurait supplantée.
+        setActivePinia(pinia)
+
+        const [ctxApi, ctxApp] = withSetup(
+            () => usePeerOrchestrator(ctxType, ctxRoom, ctxOptions),
+            { provides: { eventBus }, plugins: [pinia] }
+        )
+
+        // Chaque contexte crée son propre client Ajax dans createPeerContext : il faut le
+        // rattacher à ce slug, sinon ses POST partiraient d'un émetteur inconnu.
+        server.bindLastClientTo(slug)
+
+        // Le Peer singleton existe déjà : setLocalPeer se contente d'enregistrer ce
+        // contexte dans le contextRegistry et d'incrémenter le ref-counting.
+        ctxApi.initializePeerConnection(ctxCallbacks)
+
+        const handle = {
+            slug,
+            type: ctxType,
+            room: ctxRoom,
+            api: ctxApi,
+            app: ctxApp,
+            contextId: ctxApi.contextId,
+            receivedStreamsFrom() {
+                return ctxApi.remoteStreams.value.map((entry) => entry.remoteSlug)
+            },
+            receivedScreensFrom() {
+                return ctxApi.remoteScreens.value.map((entry) => entry.remoteSlug)
+            },
+        }
+
+        extraContexts.push(handle)
+        return handle
+    }
+
     return {
         slug,
         peerId,
@@ -143,6 +214,8 @@ export async function createVirtualPeer({
         meStore,
         eventBus,
         peerInstance,
+        mountContext,
+        extraContexts,
 
         // ⚠️ `remoteStreams` EXCLUT les partages d'écran et `remoteScreens` ne contient
         // qu'eux (cf. createPeerContext:201-202) : asserter sur `remoteStreams` seul
@@ -162,8 +235,14 @@ export async function createVirtualPeer({
             return [...api.remoteStreams.value, ...api.remoteScreens.value]
         },
 
-        /** Démonte proprement le pair (teardown terminal + unmount Vue). */
+        /** Démonte proprement l'onglet : contextes secondaires d'abord, puis le principal. */
         destroy() {
+            for (const extra of [...extraContexts].reverse()) {
+                try { extra.api.cleanupPeerConnection() } catch { /* teardown best-effort */ }
+                extra.app.unmount()
+            }
+            extraContexts.length = 0
+
             try { api.cleanupPeerConnection() } catch { /* teardown best-effort */ }
             app.unmount()
         },
@@ -180,13 +259,21 @@ export async function createVirtualPeer({
 export async function connectRoom(peers, { rounds = 4 } = {}) {
     const users = peers.map((peer) => ({ slug: peer.slug }))
 
+    // Tous les contextes de chaque onglet reçoivent la composition : en production, un
+    // seul canal de présence Reverb alimente le `users` de TOUS les providers de la page
+    // (cf. Exemples/Home.vue, un `useReverbPresence` pour trois MediaBroadcastProvider).
+    const contexts = peers.flatMap((peer) => [
+        peer.api,
+        ...(peer.extraContexts ?? []).map((extra) => extra.api),
+    ])
+
     // ⚠️ Concurrent, jamais séquentiel. En production, la présence Reverb livre la
     // composition de la room à tous les clients quasi simultanément, AVANT que le P2P
     // démarre. Enchaîner les `syncUsersConnections` un par un laisse le premier pair
     // ouvrir sa connexion alors que le second n'a pas encore peuplé son `usersInRoom` :
     // `_isAuthorizedIncomingPeer` la refuse (« émetteur ni membre de la room ni
     // interlocuteur autorisé »), et le test échoue pour une raison de harnais.
-    await Promise.all(peers.map((peer) => peer.api.syncUsersConnections(users)))
+    await Promise.all(contexts.map((api) => api.syncUsersConnections(users)))
 
     await settle(rounds)
 }

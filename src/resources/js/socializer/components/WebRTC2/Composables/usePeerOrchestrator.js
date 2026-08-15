@@ -195,6 +195,13 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         pool.stopPool()  // Arrête l'observation du signal peer-unavailable + les retries en vol
         presence.stopBroadcastPresence()  // Plus d'annonce pendant/après le teardown
 
+        // Mes demandes de peerId en vol meurent avec moi. Hors de closePeerConnection
+        // ci-dessous, et ce n'est pas un doublon : celui-ci sort par un early-return
+        // quand la room n'a aucune connexion — cas d'un provider démonté avant que la
+        // signalisation ait abouti. Une demande orpheline serait relue comme la sienne
+        // par le contexte remonté à ma place, qui resterait alors muet.
+        context.peerStore.clearWaitingRemotePeerIdsForContext(context.contextId)
+
         connections.closePeerConnection({
             room: context.session.currentCallRoomId || context.session.currentRoom,
             type: context.session.currentType,
