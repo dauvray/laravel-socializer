@@ -40,6 +40,16 @@
  * production branche ses handlers APRÈS l'appel (`call.answer(...)` puis
  * `setUpConnectionListeners(call)`). Une livraison synchrone les manquerait tous et
  * donnerait des tests faussement rouges.
+ *
+ * ⚠️ **Une connexion refusée ne revient JAMAIS à son émetteur.** C'est l'asymétrie la
+ * plus coûteuse de PeerJS, et le mock la reproduit désormais :
+ *   - une MediaConnection naît en `connecting` et ne passe à `connected` qu'au `answer()`
+ *     du récepteur — un appel non répondu reste `connecting` pour toujours ;
+ *   - `close()` ne se propage à l'autre extrémité que si la paire a été ouverte
+ *     (`__everOpened`) : refuser à l'admission laisse l'émetteur dans le noir.
+ * Le mock affirmait l'inverse sur les deux points (naissance `connected`, propagation
+ * inconditionnelle), ce qui rendait structurellement invisible la panne « A diffuse, B ne
+ * voit rien » dans sa forme définitive.
  */
 import { vi } from 'vitest'
 
@@ -143,7 +153,11 @@ export class Peer {
             if (!target || target.destroyed) {
                 _emitPeerUnavailable(this, peerId)
                 // PeerJS retourne bien un objet : il ne s'ouvrira simplement jamais.
-                return createMockDataConnection(options?.metadata)
+                // ⚠️ Et il porte le peerId VISÉ. C'est par ce champ que la recovery
+                // `peer-unavailable` retrouve la connexion morte pour la purger du store ;
+                // sans lui, elle restait indéfiniment « en vol » et `hasOpenConnection`
+                // empêchait toute re-demande — un blocage que seul le mock fabriquait.
+                return _orphanTo(createMockDataConnection(options?.metadata), peerId)
             }
 
             const { local, remote } = _createLinkedPair('data', this, target, options?.metadata)
@@ -165,7 +179,7 @@ export class Peer {
             const target = bus.peers.get(peerId)
             if (!target || target.destroyed) {
                 _emitPeerUnavailable(this, peerId)
-                return createMockMediaConnection(options?.metadata)
+                return _orphanTo(createMockMediaConnection(options?.metadata), peerId)
             }
 
             const { local, remote } = _createLinkedPair('media', this, target, options?.metadata)
@@ -306,21 +320,57 @@ function _createBaseConnection(defaultMetadata, metadata) {
 
 function createMockDataConnection(metadata = {}) {
     const conn = _createBaseConnection({ type: 'data', room: 'test' }, metadata)
+    // `connection.type` est l'API PeerJS ('data' | 'media'). C'est ce qui permet de
+    // distinguer les deux quand elles sont stockées sous la même clé — le cas du
+    // contexte `stream`, qui ouvre un appel ET un canal data avec la même metadata.
+    conn.type = 'data'
     // Une vraie `DataConnection` PeerJS porte un `chunker`, et le code de production
     // s'en sert comme preuve que le datachannel est réellement utilisable
     // (`_getOpenDataConnection` : `conn?.open && conn?.chunker`). Sans lui, toute
     // connexion du bus est jugée indisponible et `sendData` n'envoie jamais rien.
     conn.chunker = {}
+    // Une DataConnection a SON PROPRE RTCPeerConnection (un négociateur par connexion),
+    // au même titre qu'un appel média. L'omettre laissait croire qu'un canal data ne
+    // pouvait jamais être pris pour un appel établi — ce qui est faux en production.
+    conn.peerConnection = {
+        connectionState: 'connecting',
+        signalingState: 'stable',
+    }
     return conn
 }
 
 function createMockMediaConnection(metadata = {}) {
     const conn = _createBaseConnection({ type: 'visio', room: 'test' }, metadata)
+    conn.type = 'media'   // API PeerJS, cf. createMockDataConnection
+    // ⚠️ `connecting`, PAS `connected` — et c'est un correctif, pas un détail.
+    //
+    // Une MediaConnection naissait ici déjà établie. Aucun test ne pouvait donc
+    // observer un `peer.call()` que personne ne répond, qui est pourtant l'état le plus
+    // fréquent d'un appel en vol : tant que le récepteur n'a pas appelé `answer()`, le
+    // `RTCPeerConnection` de l'appelant reste en `connecting` — et n'en sortira JAMAIS
+    // tout seul, WebRTC ne le fait pas passer à `failed` faute de réponse.
+    //
+    // Ce mensonge a coûté une panne définitive en production : le moteur de retry lit
+    // `hasOpenConnection`, qui admet `connecting`, et concluait « connexion établie » une
+    // seconde après l'appel. Voir `isConnectionEstablished` dans usePeerConnections.
     conn.peerConnection = {
-        connectionState: 'connected',
+        connectionState: 'connecting',
         signalingState: 'stable',
     }
     conn.answer = vi.fn()
+    return conn
+}
+
+/**
+ * Marque une connexion orpheline comme visant un peerId précis.
+ *
+ * PeerJS renvoie toujours un objet, même vers un pair injoignable, et cet objet porte
+ * `conn.peer = <peerId visé>`. C'est le seul lien entre la connexion morte et le pair
+ * qu'elle visait — donc le seul moyen, pour la recovery `peer-unavailable`, de la
+ * retrouver dans le store et de l'y retirer.
+ */
+function _orphanTo(conn, peerId) {
+    conn.peer = String(peerId)
     return conn
 }
 
@@ -397,6 +447,19 @@ function _wireClose(conn) {
         if (conn.peerConnection) conn.peerConnection.connectionState = 'closed'
         _deliver(() => conn._triggerEvent('close'))
 
+        // ⚠️ La fermeture ne se propage QUE sur une paire réellement établie.
+        //
+        // Refuser une connexion jamais ouverte — le récepteur ferme dans son
+        // `on('connection')` / `on('call')` avant tout `answer()` — ne notifie
+        // strictement RIEN à l'émetteur : il n'existe aucun canal pour porter
+        // l'information (PeerJS ne signale pas le `close()` d'un appel non répondu).
+        // L'émetteur reste donc sur une connexion en `connecting`, indéfiniment.
+        //
+        // Le mock propageait inconditionnellement : un refus rendait la connexion
+        // `closed` chez l'émetteur, son retry repartait, et le harnais montrait une
+        // récupération que la production n'a jamais eue.
+        if (!conn.__everOpened) return
+
         const peer = conn.__link
         if (!peer || peer.__closed) return
         peer.__closed = true
@@ -408,8 +471,22 @@ function _wireClose(conn) {
 
 function _openLinkedPair(local, remote) {
     if (local.open && remote.open) return
+    // Une extrémité déjà fermée (refus à l'admission) ne s'ouvre pas rétroactivement :
+    // le mock rouvrait ce que le récepteur venait de refuser.
+    if (local.__closed || remote.__closed) return
+
     remote.open = true
     local.open = true
+    // `__everOpened` ne redescend jamais : il dit « cette paire a existé », ce dont
+    // dépend la propagation de la fermeture ci-dessus.
+    remote.__everOpened = true
+    local.__everOpened = true
+
+    // L'établissement du transport est ce qui fait passer le RTCPeerConnection à
+    // `connected` — côté média, c'est le `answer()` du récepteur qui l'appelle.
+    if (local.peerConnection) local.peerConnection.connectionState = 'connected'
+    if (remote.peerConnection) remote.peerConnection.connectionState = 'connected'
+
     remote._triggerEvent('open')
     local._triggerEvent('open')
 }

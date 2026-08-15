@@ -194,9 +194,21 @@ export function usePeerCore(ctx) {
         // slug → peerId qui sert d'allowlist à l'admission.
         //
         // ⚠️ `false`, jamais `true`. Ici comme dans `connectToPeer`, `true` signifie
-        // « rien à conclure » côté appelant : un demandeur légitime dont la présence
-        // Reverb n'a pas encore peuplé `usersInRoom` sera rattrapé par sa propre
-        // re-demande (garde `waiting` / SIGNALING_STALE_MS de son côté), pas par nous.
+        // « rien à conclure » côté appelant.
+        //
+        // ⚠️ Et surtout : le prédicat n'est évalué qu'une fois la présence CONNUE.
+        // `usersInRoom` vide ne dit pas « ce pair n'est pas membre », il dit « je ne sais
+        // pas encore qui est membre » — et l'ordre de production met systématiquement
+        // l'arrivant du mauvais côté : son `usersInRoom` n'est écrit qu'après
+        // `waitForMeReady` (donc après le peerId local), alors que la demande du
+        // diffuseur ne coûte qu'un aller-retour HTTP + Reverb. Refuser sur cette
+        // ignorance-là, c'est refuser le seul contact qui pouvait amener le flux : la
+        // re-demande du diffuseur n'arrive que 12 s plus tard (SIGNALING_STALE_MS), et
+        // son `peer.call` d'après resterait de toute façon bloqué par le garde entrant.
+        if (!isAuthorizedPeer(payload?.fromUserSlug, ctx) && !ctx.connection.presenceSynced) {
+            await ctx.waitForPresenceSync()
+        }
+
         if (!isAuthorizedPeer(payload?.fromUserSlug, ctx)) {
             console.warn(
                 '[usePeerCore] responseRemotePeerConnection: demandeur non autorisé — peerId non communiqué',

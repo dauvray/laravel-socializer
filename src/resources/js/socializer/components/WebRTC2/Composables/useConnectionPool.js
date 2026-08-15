@@ -87,12 +87,31 @@ export function useConnectionPool(ctx, { core, connections }) {
         if (ctx.isShuttingDown.value) return true
 
         const room = ctx.session.currentCallRoomId || ctx.currentRoom.value
+
+        // ⚠️ DEUX prédicats, et surtout pas un seul — ils répondent à deux questions
+        // opposées, que ce moteur a longtemps confondues :
+        //
+        //   `hasOpenConnection`      « dois-je m'abstenir d'en ouvrir une seconde ? »
+        //                            → optimiste : une connexion en vol compte.
+        //   `isConnectionEstablished` « ai-je fini ? »
+        //                            → strict : seul un transport établi compte.
+        //
+        // Conclure au succès sur le prédicat optimiste annulait le retry une seconde
+        // après `peer.call()`, alors que l'appel pouvait n'avoir jamais été répondu (le
+        // RTCPeerConnection reste alors `connecting` à vie). Toute défaillance
+        // d'admission devenait ainsi définitive, sans erreur console.
         const mainTypeOpen = connections.hasOpenConnection(userSlug, null, ctx.currentType.value)
         const screenOpen = !ctx.media.isCapturing
             || connections.hasOpenConnection(userSlug, null, 'screen')
 
-        // 1. Succès ultime : connexion établie
-        if (mainTypeOpen && screenOpen) return true
+        const isEstablished = () => (
+            connections.isConnectionEstablished(userSlug, null, ctx.currentType.value)
+            && (!ctx.media.isCapturing
+                || connections.isConnectionEstablished(userSlug, null, 'screen'))
+        )
+
+        // 1. Succès ultime : la connexion attendue est réellement ÉTABLIE.
+        if (isEstablished()) return true
 
         const remotePeerId = ctx.peerStore.getRemotePeerId(userSlug)
         const waiting = _myPendingRequest(userSlug, ctx.currentType.value)
@@ -150,7 +169,14 @@ export function useConnectionPool(ctx, { core, connections }) {
             // fonctionnelle. Distinguer « n'aura jamais de flux » de « pas encore de flux »
             // n'est pas décidable ici — cf. l'item TODOLIST sur le type envoyé par
             // requestRemotePeerConnection.
-            return settled
+            //
+            // ⚠️ `settled` ne suffit PAS : il ne dit que « je n'ai rien laissé en erreur »,
+            // pas « c'est établi ». Une connexion simplement OUVERTE — offre partie,
+            // réponse jamais arrivée — passait ici et arrêtait la surveillance pour de
+            // bon. On relit l'établissement APRÈS les tentatives : sur un canal data,
+            // l'ouverture peut être immédiate et conclure dès ce tour ; sur un appel
+            // média, elle demande un aller-retour, et le retry reste en vie d'ici là.
+            return settled && isEstablished()
         }
 
         // 4. Signalisation stale : On ne demande l'ID que si on est toujours en attente (waiting)

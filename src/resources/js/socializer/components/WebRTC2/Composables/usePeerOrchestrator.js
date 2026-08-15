@@ -406,6 +406,7 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         // connection
         usersInRoom: context.usersInRoom,
         allUsersInRoom: context.allUsersInRoom,
+        presenceSynced: context.presenceSynced,
 
         // media
         currentStream: context.currentStream,

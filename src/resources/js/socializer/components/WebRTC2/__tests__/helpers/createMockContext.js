@@ -17,7 +17,7 @@
  * @param {Object} overrides  Overrides partiels appliqués après la création
  * @returns {Object}          Contexte complet compatible avec les composables WebRTC2
  */
-import { reactive, computed, ref } from 'vue'
+import { reactive, computed, ref, watch } from 'vue'
 import { vi } from 'vitest'
 import { createCallStateMachine } from '~socializer/components/WebRTC2/Composables/utils/useCallStateMachine.js'
 import { isValidSlug } from '~socializer/components/WebRTC2/Composables/utils/validators.js'
@@ -75,8 +75,14 @@ export function createMockContext(overrides = {}) {
     })
 
     // ── Connection state ──────────────────────────────────────────────────────
+    // `presenceSynced: true` par défaut — un contexte de test qui se voit attribuer un
+    // `usersInRoom` (fût-il vide) décrit une room qu'il CONNAÎT. Le laisser à false
+    // ferait basculer chaque garde d'admission sur le chemin « je ne sais pas encore »
+    // et rendrait les tests de refus dépendants d'un timeout. Les tests qui visent
+    // précisément le démarrage d'un contexte le passent explicitement à false.
     const connection = reactive({
         usersInRoom: [],
+        presenceSynced: true,
         ...(overrides.connection ?? {}),
     })
 
@@ -415,6 +421,23 @@ export function createMockContext(overrides = {}) {
     const waitForMeReady = overrides.waitForMeReady
         ?? vi.fn().mockResolvedValue(true)
 
+    // ── waitForPresenceSync ───────────────────────────────────────────────────
+    // Fidèle au contexte réel : résout `true` sans attendre quand la présence est déjà
+    // connue, sinon dès qu'elle le devient. Pas de timeout ici — c'est le test qui
+    // décide quand la présence arrive ; un test qui veut le refus sans jamais
+    // synchroniser garde le défaut `presenceSynced: true` (chemin rapide) ou passe son
+    // propre override.
+    const waitForPresenceSync = overrides.waitForPresenceSync ?? vi.fn(() => {
+        if (connection.presenceSynced) return Promise.resolve(true)
+        return new Promise((resolve) => {
+            const stop = watch(() => connection.presenceSynced, (synced) => {
+                if (!synced) return
+                stop()
+                resolve(true)
+            })
+        })
+    })
+
     // ── setUpConnectionListeners (passthrough minimal) ────────────────────────
     const setUpConnectionListeners = vi.fn(() => () => {})
 
@@ -500,6 +523,7 @@ export function createMockContext(overrides = {}) {
         media.isCapturing = false
         callMachine.reset()
         connection.usersInRoom = []
+        connection.presenceSynced = false
         session.authorizedCallPeers.clear()
     })
 
@@ -549,6 +573,7 @@ export function createMockContext(overrides = {}) {
 
         // helpers
         waitForMeReady,
+        waitForPresenceSync,
         beginShutdown,
         endShutdown,
         setUpConnectionListeners,

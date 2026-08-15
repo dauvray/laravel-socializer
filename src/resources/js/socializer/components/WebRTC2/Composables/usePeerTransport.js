@@ -33,6 +33,7 @@ import {
 import { getPayloadSizeBytes, isPayloadWithinLimit } from './utils/payloadSize.js'
 import { sanitizeMetadataType } from './utils/sanitizeMetadata.js'
 import { createRateLimiter } from './utils/createRateLimiter.js'
+import { isAuthorizedPeer } from './utils/isAuthorizedPeer.js'
 
 // -----------------------------------------------------------------------------
 // Registre global des contextes WebRTC actifs
@@ -184,11 +185,16 @@ function _resolveSenderSlugFromIncomingConn(conn, ctx) {
 // (qui voir/raccrocher) alimenté à partir de la même signalisation, mais réutiliser un
 // état applicatif comme allowlist de sécurité couple politique et affichage et laisse
 // passer une connexion entrante avant que le mapping peerId ne soit prêt.
-function _isAuthorizedIncomingPeer(metadata, conn, ctx) {
+//
+// `options.quiet` — évalue sans rien journaliser. Réservé à `_admitIncoming`, qui
+// interroge ce prédicat une première fois avant de savoir s'il peut conclure : un refus
+// provisoire n'est pas un refus, et le journaliser doublerait la décision finale.
+function _isAuthorizedIncomingPeer(metadata, conn, ctx, { quiet = false } = {}) {
     const declaredFrom = metadata?.from
+    const warn = quiet ? () => {} : console.warn
 
     if (!_isValidSlug(declaredFrom)) {
-        console.warn(
+        warn(
             '[WebRTC2] Connexion entrante refusée: `metadata.from` absent ou format de slug invalide',
             { declaredFrom, senderPeerId: conn?.peer }
         )
@@ -210,7 +216,7 @@ function _isAuthorizedIncomingPeer(metadata, conn, ctx) {
         !!mappedPeerId && !!senderPeerId && String(mappedPeerId) === senderPeerId
 
     if (!isRoomMember && !isVerifiedDirectCallPeer) {
-        console.warn(
+        warn(
             "[WebRTC2] Connexion entrante refusée: émetteur ni membre de la room ni interlocuteur autorisé (mapping peerId absent/non concordant)",
             { declaredFrom, senderPeerId, usersInRoom, hasMappedPeerId: !!mappedPeerId }
         )
@@ -223,7 +229,7 @@ function _isAuthorizedIncomingPeer(metadata, conn, ctx) {
     if (isRoomMember) {
         const resolvedSlug = _resolveSenderSlugFromIncomingConn(conn, ctx)
         if (resolvedSlug && resolvedSlug !== declaredFrom) {
-            console.warn(
+            warn(
                 '[WebRTC2] Connexion entrante refusée: usurpation détectée (peerId réel ≠ `from` déclaré)',
                 { declaredFrom, resolvedSlug, senderPeerId }
             )
@@ -232,6 +238,45 @@ function _isAuthorizedIncomingPeer(metadata, conn, ctx) {
     }
 
     return true
+}
+
+/**
+ * `_isAuthorizedIncomingPeer`, mais qui ne conclut jamais sur une ignorance.
+ *
+ * Le chemin (a) du garde lit `usersInRoom` : tant que le contexte n'a pas synchronisé sa
+ * présence, cette liste est vide et le garde refuse TOUT — y compris le `peer.call` qui
+ * apporte son flux à un arrivant. Or ce refus-là est définitif dans les deux sens : la
+ * MediaConnection refusée n'est notifiée à personne (PeerJS ne signale pas le `close()`
+ * d'un appel jamais répondu) et l'émetteur, lui, voit un `peerConnection` en
+ * `connecting` — donc `hasOpenConnection` vrai, donc son moteur de retry s'arrête. Le
+ * récepteur reste sur un écran noir, sans une seule erreur console.
+ *
+ * On attend donc la première synchronisation de présence AVANT de refuser, jamais avant
+ * d'admettre : le chemin (b) (appel direct au mapping concordant) n'a pas besoin de la
+ * présence et n'est pas ralenti d'une microtâche — ce qui laisse la visio intacte, et
+ * `data-app` (aucun canal de présence, que des appels directs) avec elle.
+ *
+ * ⚠️ Renvoie un **booléen** quand la décision est immédiate, une **promesse** seulement
+ * dans le cas différé. C'est délibéré : un `async` inconditionnel repousserait
+ * `setUpConnectionListeners` d'une microtâche sur TOUS les chemins, alors que le
+ * dispatcher entrant est le point où l'ordre d'exécution est le plus observable.
+ * L'appelant écrit donc `if (typeof v !== 'boolean') v = await v`.
+ *
+ * @returns {boolean|Promise<boolean>}
+ */
+function _admitIncoming(metadata, conn, ctx) {
+    // Présence connue : le garde a toute l'information, il tranche — et il journalise.
+    if (ctx?.connection?.presenceSynced) {
+        return _isAuthorizedIncomingPeer(metadata, conn, ctx)
+    }
+
+    // Présence inconnue. Une admission reste possible sans elle (chemin (b)) ; un refus,
+    // non — il ne serait qu'une ignorance déguisée. Silencieux : la décision n'est pas
+    // encore prise, la journaliser ici doublerait celle d'après l'attente.
+    if (_isAuthorizedIncomingPeer(metadata, conn, ctx, { quiet: true })) return true
+
+    return (ctx?.waitForPresenceSync?.() ?? Promise.resolve(false))
+        .then(() => _isAuthorizedIncomingPeer(metadata, conn, ctx))
 }
 
 function registerContext(ctx) {
@@ -415,19 +460,31 @@ export function usePeerTransport(ctx) {
                 const failedPeerId = msgWords.length > 0 ? msgWords[msgWords.length - 1] : null
                 if (!failedPeerId) return
 
-                contextRegistry.forEach((registeredCtx) => {
-                    // Recherche inverse peerId → userSlug dans ce contexte.
-                    // C'est la SEULE précondition : dès qu'on sait à quel pair appartenait
-                    // ce peerId mort, on a tout ce qu'il faut pour l'invalider.
-                    let targetSlug = null
+                // Recherche inverse peerId → userSlug, UNE FOIS, avant toute mutation.
+                //
+                // ⚠️ Elle vivait à l'intérieur de la boucle, et c'était une impasse : le
+                // mapping slug → peerId est partagé par tout l'onglet, si bien que le
+                // PREMIER contexte itéré l'invalidait et que tous les suivants sortaient
+                // aussitôt sur `if (!targetSlug) return`. La recovery ne profitait donc
+                // jamais qu'à un seul contexte — et en production c'est le mauvais :
+                // `Notifications.vue` crée `data-app` au tick 0, il est donc premier dans
+                // le registre (Map, ordre d'insertion), il absorbait la relance, et le
+                // contexte de diffusion — le seul concerné — n'était jamais relancé.
+                // Symptôme exact : « Could not connect to peer <uuid> » une seule fois,
+                // puis plus rien, et un flux qui n'arrive jamais.
+                let targetSlug = null
+                for (const registeredCtx of contextRegistry.values()) {
                     for (const [slug, peerId] of (registeredCtx.peerStore.remotePeersId?.entries?.() ?? [])) {
                         if (String(peerId) === String(failedPeerId)) {
                             targetSlug = slug
                             break
                         }
                     }
-                    if (!targetSlug) return
+                    if (targetSlug) break
+                }
+                if (!targetSlug) return
 
+                contextRegistry.forEach((registeredCtx) => {
                     const room = registeredCtx.session.currentCallRoomId || registeredCtx.session.currentRoom
 
                     // 1. Retirer les connexions échouées du store (libère le guard
@@ -456,7 +513,28 @@ export function usePeerTransport(ctx) {
                     //    qui explique pourquoi removeRemotePeerId ne convient pas ici).
                     registeredCtx.peerStore.invalidateRemotePeerId(targetSlug)
 
-                    // 3. Notifier l'orchestrateur via signal réactif pour relancer le cycle complet.
+                    // 3. Relancer le cycle — mais SEULEMENT dans les contextes qui ont
+                    //    quelque chose à faire de ce pair.
+                    //
+                    // ⚠️ L'invalidation ci-dessus est globale, la relance ne l'est pas, et
+                    // la dissymétrie est voulue : un peerId mort est un fait sur l'ONGLET
+                    // distant (le store est partagé), tandis que « redemander son peerId »
+                    // est une intention qui appartient à un contexte.
+                    //
+                    // Sans ce filtre, chaque contexte de l'onglet redemandait — y compris
+                    // le `data-app` de Notifications.vue, qui n'a AUCUN canal de présence
+                    // (il ne sert qu'aux appels directs) et ne peut donc être autorisé par
+                    // personne en face. Résultat : des POST /ask-to-peer-id inutiles et un
+                    // « demandeur non autorisé » parfaitement légitime chez le
+                    // destinataire, qui noyait les refus qui, eux, veulent dire quelque
+                    // chose.
+                    //
+                    // Le prédicat est celui des deux autres sorties du contexte
+                    // (utils/isAuthorizedPeer.js) : membre de la room OU interlocuteur
+                    // d'appel autorisé. C'est ce second chemin qui préserve la recovery
+                    // d'une visio 1-à-1, laquelle n'a précisément aucune room commune.
+                    if (!isAuthorizedPeer(targetSlug, registeredCtx)) return
+
                     // usePeerOrchestrator observe ce signal via watch() → pas de couplage par mutation.
                     if (registeredCtx.peerUnavailableSignal) {
                         registeredCtx.peerUnavailableSignal.value = targetSlug
@@ -518,7 +596,10 @@ export function usePeerTransport(ctx) {
                 }
 
                 // Authentification: l'émetteur doit être un membre autorisé de la room.
-                if (!_isAuthorizedIncomingPeer(metadata, conn, targetCtx)) {
+                let admitted = _admitIncoming(metadata, conn, targetCtx)
+                if (typeof admitted !== 'boolean') admitted = await admitted
+
+                if (!admitted) {
                     try { conn.close() } catch (e) { /* ignore */ }
                     return
                 }
@@ -553,7 +634,10 @@ export function usePeerTransport(ctx) {
 
                 // Authentification: l'appelant doit être un membre autorisé de la room
                 // (sinon il recevrait le stream local sans aucune vérification).
-                if (!_isAuthorizedIncomingPeer(metadata, call, targetCtx)) {
+                let admitted = _admitIncoming(metadata, call, targetCtx)
+                if (typeof admitted !== 'boolean') admitted = await admitted
+
+                if (!admitted) {
                     try { call.close() } catch (e) { /* ignore */ }
                     return
                 }

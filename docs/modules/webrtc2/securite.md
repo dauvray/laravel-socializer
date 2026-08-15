@@ -140,6 +140,27 @@ Historique utile : la règle (a) seule fermait les appels **directs** 1-à-1 ent
 commune — remote bloqué en « pending ». C'est la non-régression à ne jamais casser en durcissant
 l'admission.
 
+### Une liste vide n'est pas une réponse
+
+`usersInRoom` vide ne dit pas « ce pair n'est pas membre », il dit « je ne sais pas encore qui est
+membre ». Les deux gardes qui lisent le chemin (a) — `_isAuthorizedIncomingPeer` et
+`responseRemotePeerConnection` — **attendent la première synchronisation de présence du contexte
+avant de refuser** (`ctx.waitForPresenceSync`, adossé au fait `connection.presenceSynced` qu'écrit
+l'unique écrivain de `usersInRoom`). Jamais avant d'admettre : le chemin (b) reste immédiat, donc la
+visio n'est pas ralentie et `data-app` — qui n'a aucun canal de présence — n'attend rien.
+
+Sans cette distinction, tout contact légitime reçu pendant le démarrage d'un contexte est refusé, et
+**aucun des deux refus n'est rattrapable** : la re-demande du pair distant n'arrive que 12 s plus
+tard (`SIGNALING_STALE_MS`), et une MediaConnection refusée n'est notifiée à personne (PeerJS ne
+signale pas le `close()` d'un appel jamais répondu) — l'émetteur voit son `peerConnection` en
+`connecting`, donc `hasOpenConnection` vraie, donc son moteur de retry s'arrête. L'ordre de
+production met systématiquement l'arrivant du mauvais côté : son `usersInRoom` n'est écrit qu'après
+`waitForMeReady` (donc après le peerId local), alors que la demande du diffuseur ne coûte qu'un
+aller-retour HTTP + Reverb.
+
+L'attente est **mémoïsée par contexte** : une promesse et un timer, pour la vie du contexte, quel
+que soit le flot de connexions refusées.
+
 **Faille résiduelle connue, chemin (a)** : un membre de la room qui ouvre un **second** `new Peer()`
 (UUID neuf, donc non mappé) obtient `resolvedSlug = null`, l'anti-usurpation est sautée, et il est
 admis sur la seule foi d'un `metadata.from` déclaratif qui n'a qu'à nommer un membre. Il parle alors

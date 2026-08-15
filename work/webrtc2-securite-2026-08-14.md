@@ -328,6 +328,137 @@ autorisé ⇒ POST inchangé.
 
 ---
 
+### B2-fix — Régression : « A diffuse, B arrive, B ne voit rien » `[M]` 🔴
+
+- [x] **Corrigé le 15/08/2026**, signalé en production juste après B0.
+
+> **Le pari du « Reste vrai » ci-dessus était faux.** Le repli annoncé — « le demandeur
+> repart sur sa propre re-demande après `SIGNALING_STALE_MS` » — n'a jamais lieu à temps :
+> le premier retry qui peut re-demander est le 4ᵉ (backoff 1+2+4+8 s), et surtout le
+> `peer.call` qui suivrait se heurterait au **second** garde, `_isAuthorizedIncomingPeer`,
+> qui lit le même `usersInRoom` vide. Là, plus aucun filet : PeerJS ne notifie pas le
+> `close()` d'un appel jamais répondu, et l'émetteur voit son `peerConnection` en
+> `connecting` — donc `hasOpenConnection` vraie, donc son moteur de retry **s'arrête**.
+> Écran noir définitif, sans une seule erreur console (seulement le `console.warn`
+> « demandeur non autorisé » chez le récepteur).
+>
+> **Ce n'est pas une course symétrique.** L'ordre est structurel et joue toujours contre
+> l'arrivant : son `usersInRoom` n'est écrit qu'après `waitForMeReady`, qui attend
+> `lastLocalPeerId` — c'est-à-dire *après* la garde `getLocalPeerId` que
+> `responseRemotePeerConnection` franchissait déjà avant B2. Le garde ajouté par B2 tombe
+> donc pile dans la fenêtre que l'ancien laissait passer ; d'où « aléatoire » côté
+> utilisateur, selon que la présence Reverb a battu ou non l'aller-retour HTTP du
+> diffuseur.
+>
+> **Pourquoi le harnais ne l'a pas vu :** `connectRoom` livre la présence à tous les pairs
+> dans le même tick (choix documenté, cf. son en-tête) — il referme la fenêtre avant de
+> l'ouvrir. Le cas est désormais couvert en livrant la présence pair par pair.
+
+**Correctif — une liste vide n'est pas une réponse.** `usersInRoom` vide ne dit pas « ce
+pair n'est pas membre », il dit « je ne sais pas encore qui est membre ». Nouveau fait
+`connection.presenceSynced` (même écrivain unique que `usersInRoom` :
+`_doGetRoomUsersDiff`) et attente `ctx.waitForPresenceSync()` — mémoïsée par contexte, une
+promesse et un timer pour sa vie entière, plafond `PRESENCE_SYNC_TIMEOUT_MS` (5 s, sous
+`SIGNALING_STALE_MS` qui reste le filet extérieur).
+
+Les deux gardes du chemin (a) attendent cette synchronisation **avant de refuser**, jamais
+avant d'admettre : le chemin (b) reste immédiat, donc la visio n'est pas ralentie et
+`data-app` — sans canal de présence — n'attend rien.
+
+- `usePeerCore.responseRemotePeerConnection`
+- `usePeerTransport` : `_admitIncoming`, qui enveloppe `_isAuthorizedIncomingPeer`
+  (booléen quand la décision est immédiate, promesse dans le seul cas différé — un `async`
+  inconditionnel repoussait `setUpConnectionListeners` d'une microtâche sur **tous** les
+  chemins, ce que 20 tests ont immédiatement signalé). Option `quiet` sur le prédicat : un
+  refus provisoire ne se journalise pas.
+
+**Tests** (chacun contre-vérifié en neutralisant la ligne qui le porte) :
+- `scenarios/lateJoiner.test.js` — « B reçoit le flux quand la demande de peerId d'A
+  précède sa présence » : présence livrée à A **puis** à B ;
+- `usePeerCore.test.js` — attend puis répond · attendre n'est pas admettre ;
+- `usePeerTransport.incomingAuth.test.js` — diffère puis admet · refuse quand la présence
+  arrive sans lui.
+
+`createMockContext` déclare `presenceSynced: true` par défaut : un contexte de test qui se
+voit attribuer un `usersInRoom` décrit une room qu'il **connaît**.
+
+**Reste ouvert — même conflation, `connectToPeer` (A2).** Le garde sortant est
+**synchrone** et son booléen est le contrat du moteur de retry : il ne peut pas attendre
+sans changer ce contrat. Conséquence actuelle : un `PEER_CONNECT_TO_REMOTE_PEER` reçu avant
+la présence est refusé **avant** `addRemotePeerId`, donc le peerId frais est perdu et le
+contexte attend `SIGNALING_STALE_MS` avant de redemander. Sans effet sur le symptôme
+rapporté (le récepteur n'a pas de flux à pousser), mais visible dès que **les deux** pairs
+diffusent. À traiter avec B1.
+
+**Commit :** `fix(webrtc2): ne pas conclure sur une présence pas encore connue`
+
+> ### ⚠️ Suite — B2-fix ne suffisait pas, et la cause principale était ailleurs
+>
+> Le symptôme a persisté après le correctif ci-dessus, alors même que le dev server
+> servait bien le nouveau code. Trois observations l'ont tranché : chez B, la carte Debug
+> du contexte `stream` montrait bien alice dans `usersInRoom` (donc la présence était
+> synchronisée, le garde n'était plus en cause) ; le « demandeur non autorisé » subsistait
+> néanmoins ; et côté A, « Could not connect to peer &lt;uuid&gt; » apparaissait **une seule
+> fois, puis plus rien**. Voir l'entrée suivante.
+>
+> Ce que B2-fix corrige reste juste et nécessaire — une fenêtre réelle, désormais fermée —
+> mais ce n'était pas ce qui bloquait l'utilisateur. Le refus qu'il observait venait d'un
+> AUTRE contexte (`data-app`), pour une raison sans rapport avec la présence.
+
+---
+
+### B2-fix-2 — La recovery ne profitait qu'au premier contexte inscrit `[M]` 🔴
+
+- [x] **Corrigé le 15/08/2026.** Cause principale du « B ne voit rien » rapporté.
+
+> **Défaut 1 — le retry conclut au succès sur un appel jamais répondu.**
+> `_handleConnectionAttempt` testait son succès avec `hasOpenConnection`, qui admet une
+> MediaConnection en `connecting` — l'état exact d'un `peer.call()` sans réponse, et dont
+> WebRTC ne sort jamais seul. Le moteur s'arrêtait donc ~1 s après l'appel. Deux prédicats
+> désormais, aux postures opposées : `hasOpenConnection` (« ne pas ouvrir en double »,
+> optimiste) et `isConnectionEstablished` (« c'est fini », strict). Détail et table dans
+> [docs/modules/webrtc2/architecture.md](../docs/modules/webrtc2/architecture.md).
+>
+> **Défaut 2 — la recovery `peer-unavailable` s'auto-aveuglait.** La résolution
+> peerId → slug vivait DANS la boucle sur les contextes, et chaque tour invalidait un
+> mapping **partagé par tout l'onglet** : le premier contexte itéré consommait le fait,
+> tous les suivants sortaient sur `if (!targetSlug) return`. Or `Notifications.vue` crée
+> `data-app` au tick 0 — premier dans le registre (Map, ordre d'insertion). C'est donc lui
+> qui absorbait la relance, et le contexte de diffusion, seul à avoir un flux à repousser,
+> n'était **jamais** relancé. La résolution se fait désormais une fois, avant toute
+> mutation.
+>
+> Et comme `data-app` n'a aucun canal de présence, sa re-demande ne pouvait qu'être
+> refusée en face : c'est l'origine exacte du « demandeur non autorisé » résiduel, qui a
+> masqué le vrai problème pendant tout le cycle. La relance est maintenant réservée aux
+> contextes pour qui le pair est quelque chose — `isAuthorizedPeer`, le même prédicat que
+> les deux autres sorties du contexte, ce qui préserve la recovery de la visio 1-à-1 (elle
+> n'a aucune room commune et ne tient qu'à `authorizedCallPeers`).
+>
+> **Défaut 3 — le mock PeerJS niait l'asymétrie de PeerJS**, et c'est pourquoi 613 tests
+> verts n'avaient rien vu. Trois mensonges, tous corrigés : naissance en `connected`,
+> propagation de `close()` sur une paire jamais ouverte, et orphelin `peer-unavailable`
+> sans `conn.peer`. Ce dernier empêchait la purge de la connexion morte — le scénario de
+> bout en bout ne convergeait pas tant qu'il subsistait.
+
+**Tests** (chacun contre-vérifié en neutralisant la ligne qui le porte) :
+- `useConnectionPool.test.js` — « ne conclut PAS sur un appel ouvert mais jamais répondu » ;
+- `usePeerConnections.test.js` — `isConnectionEstablished`, dont « un canal data ouvert ne
+  vaut PAS appel média établi » (contexte `stream` : deux connexions, un seul type) ;
+- `usePeerTransport.peerUnavailable.test.js` — relance du contexte de diffusion inscrit
+  APRÈS `data-app` · pas de relance pour un contexte à qui ce pair n'est rien · relance
+  préservée pour un appel direct autorisé ;
+- `scenarios/multiContext.test.js` — bout en bout, dans l'ordre de montage réel.
+
+**Observabilité :** `Widgets/UI/Report/Debug.vue` affiche désormais `presenceSynced`, le
+peerId local, le mapping slug → peerId de l'onglet, les demandes en vol du contexte et
+l'état réel de chaque connexion. Ces quatre lignes auraient évité un aller-retour complet
+de diagnostic.
+
+**Commit :** `fix(webrtc2): le retry ne conclut plus sur une connexion non établie`
+
+---
+
 # LOT C — Backend Laravel 🟠
 
 > `UserController.php` — **C3 → C4 → C2 → E3 touchent tous le même fichier : à sérialiser**

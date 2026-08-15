@@ -114,6 +114,33 @@ describe("arrivant tardif : A diffuse déjà quand B rejoint", () => {
         expect(carol.receivedStreamsFrom()).toContain('alice')
     })
 
+    it("B reçoit le flux quand la demande de peerId d'A précède sa présence", async () => {
+        const alice = await spawn({ slug: 'alice' })
+
+        await connectRoom([alice])
+        await alice.api.startWebcamStream()
+        await settle()
+
+        const bob = await spawn({ slug: 'bob' })
+
+        // ⚠️ Présence livrée à A **puis** à B, et non dans le même tick comme le fait
+        // `connectRoom`. C'est l'ordre de production, et il n'est pas le fruit du hasard :
+        // chez B, `syncUsersConnections` attend `waitForMeReady` — donc le peerId local —
+        // AVANT d'écrire `usersInRoom`, alors que la demande d'A ne coûte qu'un
+        // aller-retour HTTP + Reverb. La demande atterrit donc régulièrement dans la
+        // fenêtre où B connaît son peerId mais pas encore la composition de sa room.
+        //
+        // Le harnais ne peut pas voir ça avec `connectRoom` (présence concurrente, cf. son
+        // en-tête) : la fenêtre y est fermée avant d'être ouverte.
+        const users = [{ slug: 'alice' }, { slug: 'bob' }]
+        await alice.api.syncUsersConnections(users)
+        await settle()
+        await bob.api.syncUsersConnections(users)
+        await settle()
+
+        expect(bob.receivedStreamsFrom()).toContain('alice')
+    })
+
     it("B est averti qu'A diffuse (annonce de présence), pas seulement servi", async () => {
         const alice = await spawn({ slug: 'alice' })
 

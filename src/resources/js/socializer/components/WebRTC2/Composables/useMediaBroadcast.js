@@ -43,9 +43,10 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
         isHubConnected, // le hub de diffusion est-il présent dans la room.
 
         // connection
-        usersInRoom, // liste des utilisateurs remote présents dans la room 
+        usersInRoom, // liste des utilisateurs remote présents dans la room
         allUsersInRoom, // liste de tous les utilisateurs présents dans la room (y compris le local)
-        
+        presenceSynced, // la composition de la room a-t-elle été synchronisée au moins une fois ? (un usersInRoom vide ne dit pas « personne », il dit « je ne sais pas encore »)
+
         // media
         currentStream, // flux média local (MediaStream) créé par getUserMedia
         screenStream, // flux de partage d'écran local (MediaStream) créé par getDisplayMedia
@@ -244,6 +245,7 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
 
         // connection
         usersInRoom,
+        presenceSynced,
 
         // media
         currentStream,

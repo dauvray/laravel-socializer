@@ -146,7 +146,21 @@ describe('usePeerConnections', () => {
         })
 
         it('media : connectionState `connected` → ouverte', () => {
-            register('alice', 'visio', createMockMediaConnection())
+            const conn = createMockMediaConnection()
+            conn.peerConnection.connectionState = 'connected'
+            register('alice', 'visio', conn)
+
+            expect(connections.hasOpenConnection('alice', ROOM, 'visio')).toBe(true)
+        })
+
+        it('media : un appel encore en vol (`connecting`) compte comme ouvert — délibérément', () => {
+            // Ce prédicat répond à « dois-je m'abstenir d'en ouvrir une seconde ? ». Un
+            // appel dont l'offre est partie doit donc compter, sinon chaque tour de retry
+            // empilerait une MediaConnection de plus.
+            //
+            // ⚠️ Il ne répond PAS à « ai-je fini ? » — c'est `isConnectionEstablished`.
+            // Les avoir confondus rendait définitive toute défaillance d'admission.
+            register('alice', 'visio', createMockMediaConnection()) // naît en `connecting`
 
             expect(connections.hasOpenConnection('alice', ROOM, 'visio')).toBe(true)
         })
@@ -213,6 +227,93 @@ describe('usePeerConnections', () => {
             ctx.peerStore.addPeerConnectionInstance('call-room', 'alice', 'data', conn)
 
             expect(connections.hasOpenConnection('alice')).toBe(true)
+        })
+    })
+
+    // ── isConnectionEstablished ───────────────────────────────────────────────
+    //
+    // Le pendant STRICT de `hasOpenConnection`. Deux prédicats sur la même liste, pour
+    // deux questions opposées : « ne pas ouvrir en double » (optimiste) et « ai-je
+    // fini ? » (strict). Les avoir confondus laissait le moteur de retry conclure au
+    // succès une seconde après un `peer.call()` que personne ne répondrait jamais.
+
+    describe('isConnectionEstablished', () => {
+        const register = (slug, type, conn) =>
+            ctx.peerStore.addPeerConnectionInstance(ROOM, slug, type, conn)
+
+        it('renvoie false quand aucune connexion n\'est enregistrée', () => {
+            expect(connections.isConnectionEstablished('alice', ROOM, 'visio')).toBe(false)
+        })
+
+        it('data : établie dès que le canal est ouvert', () => {
+            const conn = createMockDataConnection()
+            register('alice', 'data', conn)
+
+            expect(connections.isConnectionEstablished('alice', ROOM, 'data')).toBe(false)
+            conn.open = true
+            expect(connections.isConnectionEstablished('alice', ROOM, 'data')).toBe(true)
+        })
+
+        it.each(['new', 'connecting'])(
+            'media : `%s` n\'est PAS établie — l\'offre est partie, la réponse n\'est pas venue',
+            (state) => {
+                const conn = createMockMediaConnection()
+                conn.peerConnection.connectionState = state
+                register('alice', 'visio', conn)
+
+                expect(connections.isConnectionEstablished('alice', ROOM, 'visio')).toBe(false)
+                // Et le prédicat optimiste, lui, dit bien « ouverte » : c'est toute la
+                // différence, et c'est ce qui manquait.
+                expect(connections.hasOpenConnection('alice', ROOM, 'visio')).toBe(true)
+            }
+        )
+
+        it('media : `connected` est établie', () => {
+            const conn = createMockMediaConnection()
+            conn.peerConnection.connectionState = 'connected'
+            register('alice', 'visio', conn)
+
+            expect(connections.isConnectionEstablished('alice', ROOM, 'visio')).toBe(true)
+        })
+
+        it('media : un canal data ouvert ne vaut PAS appel média établi', () => {
+            // Cas réel du contexte `stream` : `connectToPeer` ouvre un `peer.call()` ET un
+            // `peer.connect()` avec la même metadata, donc stockés sous le MÊME type. Ce
+            // sont deux RTCPeerConnection distincts : le canal data peut s'établir pendant
+            // que l'appel reste sans réponse. Sans la distinction média/data, le data
+            // channel ouvert ferait conclure « flux établi » — et le récepteur resterait
+            // sur un écran noir.
+            const call = createMockMediaConnection()   // `connecting` : sans réponse
+            const data = createMockDataConnection()
+            data.open = true
+            data.peerConnection.connectionState = 'connected'  // le canal, lui, a abouti
+            register('alice', 'stream', call)
+            register('alice', 'stream', data)
+
+            expect(connections.isConnectionEstablished('alice', ROOM, 'stream')).toBe(false)
+
+            call.peerConnection.connectionState = 'connected'
+            expect(connections.isConnectionEstablished('alice', ROOM, 'stream')).toBe(true)
+        })
+
+        it('media : un RTCPeerConnection illisible n\'est pas établi (lecture défensive)', () => {
+            const conn = createMockMediaConnection()
+            Object.defineProperty(conn, 'peerConnection', {
+                get() { throw new Error('objet détruit') },
+            })
+            register('alice', 'visio', conn)
+
+            expect(connections.isConnectionEstablished('alice', ROOM, 'visio')).toBe(false)
+        })
+
+        it('media : pas de fallback optimiste — sans peerConnection, rien n\'est établi', () => {
+            // Contre-épreuve de `hasOpenConnection`, qui répond `true` dans ce cas.
+            const conn = createMockMediaConnection()
+            conn.peerConnection = null
+            register('alice', 'visio', conn)
+
+            expect(connections.isConnectionEstablished('alice', ROOM, 'visio')).toBe(false)
+            expect(connections.hasOpenConnection('alice', ROOM, 'visio')).toBe(true)
         })
     })
 

@@ -142,6 +142,36 @@ livrent la présence **séquentiellement** — cf. [tests.md](tests.md#un-onglet
 
 ---
 
+## Deux prédicats de connexion, jamais un seul
+
+`usePeerConnections` en expose deux, sur exactement la même liste de connexions, et les
+confondre a coûté une panne définitive.
+
+| Prédicat | Question | Posture | Une MediaConnection `connecting` |
+|---|---|---|---|
+| `hasOpenConnection` | « dois-je m'abstenir d'en ouvrir une seconde ? » | optimiste | **compte** |
+| `isConnectionEstablished` | « ai-je fini ? » | strict | ne compte pas |
+
+Le moteur de retry (`useConnectionPool._handleConnectionAttempt`) utilise **les deux** : le
+prédicat optimiste décide s'il faut tenter une ouverture, le strict décide s'il faut
+s'arrêter. Il n'utilisait que le premier, pour les deux usages.
+
+Pourquoi c'est fatal : un `peer.call()` que le récepteur n'a jamais répondu laisse le
+`RTCPeerConnection` en `connecting` **à vie** — WebRTC ne le fait pas basculer en `failed`
+faute de réponse, et PeerJS ne notifie pas au demandeur le `close()` d'un appel non répondu.
+L'émetteur concluait donc « connexion établie » une seconde après l'appel, annulait sa
+surveillance, et n'essayait plus jamais. Vue de l'utilisateur : écran noir chez le
+récepteur, aucune erreur nulle part, et un « Could not connect to peer &lt;uuid&gt; » qui
+n'apparaît **qu'une seule fois**.
+
+⚠️ Sur un contexte `stream`, `connectToPeer` ouvre un appel média **et** un canal data avec
+la même metadata : les deux sont stockés sous le même type, et ce sont deux
+`RTCPeerConnection` distincts. `isConnectionEstablished` ne regarde donc que la
+MediaConnection (`conn.type === 'media'`) — sans quoi un canal data ouvert ferait conclure
+« flux établi » alors que rien n'arrive.
+
+---
+
 ## Départ d'un pair : un fait métier, deux transports
 
 « Tel pair quitte l'appel » arrive soit par le signal serveur `CloseConnectionToPeerID`

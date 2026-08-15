@@ -147,6 +147,94 @@ describe('usePeerTransport — recovery peer-unavailable', () => {
         expect(ctx.peerStore.hasWaitingRemotePeerId('bob')).toBe(false)
     })
 
+    // ── Qui redemande ? ───────────────────────────────────────────────────────
+    //
+    // L'invalidation du peerId est GLOBALE (fait sur l'onglet distant, store partagé) ;
+    // la relance ne l'est pas (intention d'un contexte). Sans ce filtre, chaque contexte
+    // de l'onglet redemandait — dont le `data-app` de Notifications.vue, qui n'a aucun
+    // canal de présence : POST inutile, et « demandeur non autorisé » chez le
+    // destinataire, qui noyait les refus porteurs de sens.
+
+    /**
+     * Monte un SECOND contexte dans le même onglet — même `peerStore`, donc même mapping
+     * slug → peerId — et l'inscrit réellement au `contextRegistry`.
+     *
+     * ⚠️ `setLocalPeer()` est indispensable : c'est LUI qui enregistre le contexte.
+     * Sans lui, `contextRegistry.forEach` ne le voit pas et le test passerait sans rien
+     * prouver, quel que soit le code de production.
+     */
+    const mountSecondContext = async (overrides = {}) => {
+        const second = createMockContext({
+            contextId: 'data-app',
+            session: { currentType: 'data', currentRoom: 'app' },
+            connection: { usersInRoom: [], presenceSynced: false },
+            peerStore: ctx.peerStore,
+            ...overrides,
+        })
+        const [secondTransport, secondApp] = withSetup(() => usePeerTransport(second))
+        await secondTransport.setLocalPeer()
+        return { second, secondApp }
+    }
+
+    it('ne relance pas un contexte pour qui ce pair n\'est rien', async () => {
+        // Ni membre de la room, ni interlocuteur d'appel autorisé : exactement le
+        // contexte permanent des notifications au repos.
+        const { second, secondApp } = await mountSecondContext()
+
+        peerInstance._triggerEvent('error', peerUnavailableError())
+
+        // Le peerId mort est bien oublié — ça, c'est global…
+        expect(ctx.peerStore.getRemotePeerId('bob')).toBeNull()
+        // …mais ce contexte-là n'a rien à redemander.
+        expect(second.peerUnavailableSignal.value).toBeNull()
+
+        secondApp.unmount()
+    })
+
+    it('relance le contexte de diffusion même s\'il est inscrit APRÈS `data-app`', async () => {
+        // ⭐ Le vrai visage du bug rapporté.
+        //
+        // La résolution peerId → slug vivait DANS la boucle sur les contextes, et chaque
+        // tour invalidait le mapping — or ce mapping est partagé par l'onglet. Le premier
+        // contexte itéré consommait donc le fait, et tous les suivants sortaient sur
+        // `if (!targetSlug) return`. En production, `Notifications.vue` crée `data-app` au
+        // tick 0 : il est premier dans le registre, il absorbait la relance, et le
+        // contexte `stream` — le seul qui avait un flux à repousser — n'était jamais
+        // relancé. « Could not connect to peer » une fois, puis plus rien.
+        //
+        // Ici `ctx` (stream-live) est enregistré en premier ; on inscrit `data-app`
+        // AVANT lui pour reproduire l'ordre de production.
+        const { second: dataApp, secondApp } = await mountSecondContext({
+            contextId: 'data-app-first',
+        })
+
+        // Les deux ont une raison de parler à bob : seul l'ordre doit départager, et il
+        // ne doit départager rien du tout.
+        dataApp.markAuthorizedCallPeer('bob')
+
+        peerInstance._triggerEvent('error', peerUnavailableError())
+
+        expect(dataApp.peerUnavailableSignal.value).toBe('bob')
+        // Celui-ci était systématiquement oublié.
+        expect(ctx.peerUnavailableSignal.value).toBe('bob')
+
+        secondApp.unmount()
+    })
+
+    it('relance un contexte hors room dès lors que l\'appel direct est autorisé', async () => {
+        // Non-régression de la visio 1-à-1 : elle n'a AUCUNE room commune, son seul titre
+        // à redemander est `authorizedCallPeers`. Restreindre la relance à la présence
+        // seule la condamnerait au premier peerId périmé.
+        const { second, secondApp } = await mountSecondContext()
+        second.markAuthorizedCallPeer('bob')
+
+        peerInstance._triggerEvent('error', peerUnavailableError())
+
+        expect(second.peerUnavailableSignal.value).toBe('bob')
+
+        secondApp.unmount()
+    })
+
     it('utilise la room d\'appel quand elle est définie', () => {
         ctx.session.currentCallRoomId = 'call-42'
         const failed = connTo(STALE_PEER_ID)

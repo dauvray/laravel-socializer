@@ -116,6 +116,27 @@ export const RECONNECT_MAX_DELAY_MS = 30_000
  */
 export const STREAM_WAIT_TIMEOUT_MS = 5_000
 
+// ─── Attente de la présence (createPeerContext.waitForPresenceSync) ───────
+/**
+ * Durée maximale (ms) d'attente de la PREMIÈRE synchronisation de présence d'un
+ * contexte, avant de conclure sur un pair que rien n'autorise encore.
+ *
+ * ⚠️ Ce n'est pas un délai de politesse : `usersInRoom` vide ne dit pas « ce pair n'est
+ * pas membre », il dit « je ne sais pas encore qui est membre ». Les deux gardes
+ * d'admission (`responseRemotePeerConnection`, `_isAuthorizedIncomingPeer`) doivent
+ * distinguer les deux, sans quoi tout contact légitime reçu pendant le démarrage d'un
+ * contexte est refusé — et aucun des deux refus n'est rattrapable (cf.
+ * `scenarios/lateJoiner.test.js`, cas « la demande d'A précède sa présence »).
+ *
+ * Dimensionné sous SIGNALING_STALE_MS (12 s) : la re-demande du pair distant reste le
+ * filet extérieur, cette attente n'est que le chemin rapide.
+ *
+ * L'attente est mémoïsée par contexte : un contexte sans canal de présence (le
+ * `data-app` de Notifications.vue, qui n'ouvre que des appels directs) ne la paie
+ * qu'une fois, jamais par connexion refusée.
+ */
+export const PRESENCE_SYNC_TIMEOUT_MS = 5_000
+
 // ─── Attente identité locale (createPeerContext.waitForMeReady) ──────────
 /**
  * Durée maximale (ms) d'attente que `meStore.getMe.slug` ET

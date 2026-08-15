@@ -25,9 +25,10 @@ détectable : ils ne sont vrais ou faux que **vus du pair d'en face**.
 serait indistinguable d'un harnais cassé), `lateJoiner` (le symptôme), `broadcastLifecycle` (arrêter
 un flux n'en emporte pas un autre), `peerDeparture` (coupure brutale, peerId oublié, retour avec
 un nouveau peerId), `multiContext` (plusieurs contextes dans le même onglet — la forme réelle
-d'une page, cf. [ci-dessous](#un-onglet-plusieurs-contextes)), `outgoingAuth` (un tiers ne peut pas
-se faire pousser un flux) et `incomingMappingInvariant` (à quel instant le mapping slug→peerId est
-posé, relativement à l'admission entrante).
+d'une page, cf. [ci-dessous](#un-onglet-plusieurs-contextes), et l'ordre de montage réel :
+`data-app` d'abord, diffusion ensuite), `outgoingAuth` (un tiers ne peut pas se faire pousser un
+flux) et `incomingMappingInvariant` (à quel instant le mapping slug→peerId est posé, relativement à
+l'admission entrante).
 
 ---
 
@@ -78,6 +79,15 @@ documents à la fois. Il se relit dans la sortie du runner, et n'a rien à faire
 - **Un pair virtuel est un onglet, pas un contexte** — et la présence se livre séquentiellement
   aux contextes d'un même onglet, sans quoi le scénario reste vert malgré le bug
   ([détail](#un-onglet-plusieurs-contextes)).
+- **Une connexion refusée ne revient jamais à son émetteur.** C'est l'asymétrie la plus coûteuse de
+  PeerJS, et le mock l'a longtemps niée sur trois points, qui rendaient *structurellement*
+  inobservable la panne « A diffuse, B ne voit rien » dans sa forme définitive :
+  une MediaConnection naissait `connected` (elle naît `connecting` et ne s'établit qu'au `answer()`
+  du récepteur) ; `close()` se propageait à l'autre extrémité même sur une paire jamais ouverte
+  (il n'existe alors aucun canal pour porter l'information) ; et l'orphelin rendu sur
+  `peer-unavailable` ne portait pas le peerId visé (`conn.peer`), seul lien permettant à la recovery
+  de retrouver la connexion morte dans le store. Un mock optimiste ne rend pas les tests plus
+  faciles : il les rend muets sur toute une famille de pannes.
 
 `createPeerBus()` est **opt-in** : sans lui, le mock garde son comportement isolé historique et les
 tests unitaires existants ne voient aucune différence.
@@ -100,6 +110,15 @@ est séquentielle : les providers montent dans l'ordre du template, s'initialise
 différents (le parent en `onMounted`, le provider `stream` depuis `StreamSimpleUI`), et le canal
 de présence re-déclenche le watcher à chaque changement. Voir `syncSequentially` dans
 `scenarios/multiContext.test.js`.
+
+⚠️ **Entre onglets, `connectRoom` est concurrent — et c'est un angle mort.** Il livre la présence à
+tous les pairs dans le même tick, ce qui referme avant de l'ouvrir la fenêtre « je connais mon peerId,
+pas encore ma room » : chez un arrivant, `usersInRoom` n'est écrit qu'après `waitForMeReady` (donc
+après le peerId local), alors que la demande du diffuseur ne coûte qu'un aller-retour HTTP + Reverb.
+Cette fenêtre est réelle et a produit une régression (les gardes d'admission y refusaient tout
+contact légitime). Un scénario qui la vise livre donc la présence explicitement, un pair après
+l'autre — cf. `lateJoiner.test.js`, cas « la demande de peerId d'A précède sa présence ». La règle
+générale reste la concurrence : la séquentialité est un outil de scénario, pas un défaut de harnais.
 
 Le faux serveur reproduit la **liste blanche exacte** du `UserController` : y ajouter un champ que le
 PHP ne relaie pas fabriquerait un chemin impossible en production. Réciproquement, desserrer la liste

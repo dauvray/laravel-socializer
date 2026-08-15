@@ -40,11 +40,47 @@ describe('useConnectionPool', () => {
             requestRemotePeerConnection: vi.fn().mockResolvedValue(true),
         }
         connections = {
+            // Les deux prédicats répondent à des questions opposées et ne doivent JAMAIS
+            // être stubés d'un seul geste : `hasOpenConnection` = « ne pas ouvrir en
+            // double » (optimiste, une connexion en vol compte), `isConnectionEstablished`
+            // = « c'est fini » (strict). Les confondre ici reproduirait dans le double le
+            // bug qu'on vient de retirer de la production.
             hasOpenConnection: vi.fn(() => false),
+            isConnectionEstablished: vi.fn(() => false),
             connectToPeer: vi.fn(() => true),
             getRoomUsersDiff: vi.fn().mockResolvedValue({ newUsers: [], removedUsers: [] }),
         }
         ;[pool, app] = withSetup(() => useConnectionPool(context, { core, connections }))
+    }
+
+    /**
+     * Rend le double `connections` fidèle à une ouverture qui ABOUTIT : le type ouvert
+     * devient d'abord « en vol » (`hasOpenConnection`) puis établi
+     * (`isConnectionEstablished`), et le pool peut conclure.
+     *
+     * ⚠️ Sans cette transition, le double décrit une connexion qui n'aboutit jamais —
+     * état parfaitement légitime (un `peer.call()` que personne ne répond), mais qui
+     * n'est pas le cas nominal. Les deux prédicats restent distincts : les stuber d'un
+     * seul geste réintroduirait dans le double la confusion qu'on vient de retirer de la
+     * production.
+     *
+     * Reproduit aussi la sortie « rien ouvert faute de flux » de connectToPeer : sur un
+     * type média sans MediaStream valide, il renvoie `true` sans rien ouvrir.
+     */
+    const connectionsThatSucceed = () => {
+        const opened = new Set()
+
+        connections.connectToPeer.mockImplementation(({ type }) => {
+            if (type !== 'data') {
+                const stream = type === 'screen' ? ctx.media.screenStream : ctx.media.currentStream
+                if (!(stream instanceof MediaStream)) return true
+            }
+            opened.add(type)
+            return true
+        })
+
+        connections.hasOpenConnection.mockImplementation((_slug, _room, type) => opened.has(type))
+        connections.isConnectionEstablished.mockImplementation((_slug, _room, type) => opened.has(type))
     }
 
     beforeEach(() => {
@@ -145,6 +181,51 @@ describe('useConnectionPool', () => {
             await vi.advanceTimersByTimeAsync(SECOND_RETRY_MS)
 
             expect(connections.connectToPeer).not.toHaveBeenCalled()
+        })
+
+        it('ne conclut PAS sur un appel ouvert mais jamais répondu', async () => {
+            // ⭐ L'invariant qui manquait, et la panne qu'il épingle.
+            //
+            // `peer.call()` a bien créé une MediaConnection : elle est « en vol », donc
+            // `hasOpenConnection` est vrai — c'est correct, il ne faut pas en ouvrir une
+            // seconde. Mais le récepteur ne l'a jamais répondue (refus à l'admission,
+            // contexte introuvable, stream local absent…), donc le RTCPeerConnection
+            // reste `connecting`, et WebRTC ne le fera JAMAIS basculer en `failed`.
+            //
+            // Conclure ici, c'est abandonner pour toujours : l'émetteur croit avoir
+            // réussi, le récepteur n'a rien, et aucune erreur n'apparaît nulle part.
+            // C'est le « une seule fois, puis plus rien » observé en production.
+            ctx.session.currentType = 'stream'
+            ctx.media.currentStream = liveStream()
+            ctx.peerStore.addRemotePeerId('alice', 'peer-alice')
+
+            // L'appel s'ouvre (donc « en vol ») mais ne s'établit jamais.
+            // ⚠️ Le flux local est valide et la tentative ne renvoie pas d'erreur : rien
+            // d'autre que l'établissement ne peut faire la différence ici. C'est ce qui
+            // rend ce test discriminant — avant le correctif, le moteur sortait par
+            // `return settled` avec `settled === true`.
+            const opened = new Set()
+            connections.connectToPeer.mockImplementation(({ type }) => {
+                opened.add(type)
+                return true
+            })
+            connections.hasOpenConnection.mockImplementation((_s, _r, type) => opened.has(type))
+            connections.isConnectionEstablished.mockReturnValue(false)
+
+            pool.requestOrConnectPeer('alice')
+            expect(connections.connectToPeer).toHaveBeenCalledTimes(1)
+
+            // Tour après tour, la surveillance reste armée sans rouvrir en double.
+            await vi.advanceTimersByTimeAsync(FIRST_RETRY_MS)
+            await vi.advanceTimersByTimeAsync(SECOND_RETRY_MS)
+            expect(connections.connectToPeer).toHaveBeenCalledTimes(1)
+
+            // Et le jour où la connexion morte disparaît du store, le retry la rouvre —
+            // ce qu'un moteur arrêté une seconde après l'appel ne pourrait plus faire.
+            opened.clear()
+            await vi.advanceTimersByTimeAsync(4400)
+
+            expect(connections.connectToPeer).toHaveBeenCalledTimes(2)
         })
 
         it('arrête les tentatives pendant un teardown (isShuttingDown)', async () => {
@@ -260,6 +341,7 @@ describe('useConnectionPool', () => {
         })
 
         it('conclut dès que le flux local devient émettable', async () => {
+            connectionsThatSucceed()
             ctx.session.currentType = 'stream'
             ctx.media.currentStream = null
             ctx.peerStore.addRemotePeerId('alice', 'peer-alice')
@@ -279,22 +361,23 @@ describe('useConnectionPool', () => {
 
         it('data : conclut après une tentative, sans empiler les connexions', async () => {
             // Non-régression du filet de retry : un data channel n'attend aucun flux, donc
-            // une tentative sans erreur suffit à conclure. Si on réessayait tant que
-            // `conn.open` est false, chaque tour rappellerait peer.connect() et empilerait
-            // des DataConnection en double — d'où le prédicat _canEmitStreamFor plutôt
-            // qu'une boucle sur hasOpenConnection.
+            // il s'établit dès l'ouverture et le retry conclut au tour suivant.
+            //
+            // Ce qui empêche d'empiler des DataConnection n'est PAS de conclure tôt, c'est
+            // `hasOpenConnection` : tant qu'une connexion est en vol, la tentative est
+            // sautée. La distinction compte — c'est en concluant tôt « pour ne pas
+            // empiler » qu'on tuait la surveillance d'un appel média jamais répondu.
+            connectionsThatSucceed()
             ctx.peerStore.addRemotePeerId('alice', 'peer-alice')
 
             pool.requestOrConnectPeer('alice')
-            connections.connectToPeer.mockClear()
-
-            await vi.advanceTimersByTimeAsync(FIRST_RETRY_MS)
             expect(connections.connectToPeer).toHaveBeenCalledTimes(1)
 
-            // Plus rien ensuite : le retry s'est arrêté.
-            connections.connectToPeer.mockClear()
+            // Le canal est ouvert donc établi : les tours suivants concluent sans jamais
+            // rouvrir. Une seule ouverture sur toute la vie du retry.
+            await vi.advanceTimersByTimeAsync(FIRST_RETRY_MS)
             await vi.advanceTimersByTimeAsync(SECOND_RETRY_MS)
-            expect(connections.connectToPeer).not.toHaveBeenCalled()
+            expect(connections.connectToPeer).toHaveBeenCalledTimes(1)
         })
 
         it('replanifie une tentative quand connectToPeer échoue', async () => {

@@ -28,7 +28,7 @@ import { createCallStateMachine } from '~socializer/components/WebRTC2/Composabl
 import { isValidSlug } from '~socializer/components/WebRTC2/Composables/utils/validators.js'
 import { isPayloadWithinLimit } from '~socializer/components/WebRTC2/Composables/utils/payloadSize.js'
 import { sanitizeMetadataType } from '~socializer/components/WebRTC2/Composables/utils/sanitizeMetadata.js'
-import { ME_READY_TIMEOUT_MS } from '~socializer/components/WebRTC2/webrtc2.config.js'
+import { ME_READY_TIMEOUT_MS, PRESENCE_SYNC_TIMEOUT_MS } from '~socializer/components/WebRTC2/webrtc2.config.js'
 
 // `options = {}` par défaut : `options.topology` / `options.hubSlug` /
 // `options.videoContainer` étaient lus SANS optional chaining alors que
@@ -109,6 +109,16 @@ export function createPeerContext({ type, room, options = {} }) {
     // CONNECTION STATE
     const connection = reactive({
         usersInRoom: [],
+
+        // La composition de la room a-t-elle été synchronisée AU MOINS UNE FOIS ?
+        //
+        // ⚠️ Distinct de `usersInRoom.length > 0`, et c'est tout l'intérêt : un tableau
+        // vide ne dit pas « personne n'est membre », il dit « je ne sais pas encore ».
+        // Les gardes d'admission lisent cette différence — refuser sur « je ne sais pas »
+        // ferme la porte à tout contact légitime reçu pendant le démarrage du contexte.
+        //
+        // Même écrivain unique que `usersInRoom` : usePeerConnections._doGetRoomUsersDiff.
+        presenceSynced: false,
     })
 
     // LIFECYCLE STATE
@@ -188,6 +198,10 @@ export function createPeerContext({ type, room, options = {} }) {
         isShuttingDown: computed(() => lifecycle.shutdownCount > 0),
 
         usersInRoom: computed(() => connection.usersInRoom),
+        // Exposé parce que deux gardes d'admission en dépendent : sans lui, un refus
+        // légitime et un refus « je ne savais pas encore » sont indiscernables depuis
+        // l'extérieur — c'est ce qui a coûté un aller-retour de diagnostic complet.
+        presenceSynced: computed(() => connection.presenceSynced),
         // Tous les utilisateurs dans la room, moi compris.
         // Pas d'exclusion du hub : c'est `usersInRoom` brut + mySlug (sans doublon).
         allUsersInRoom: computed(() => {
@@ -280,7 +294,52 @@ export function createPeerContext({ type, room, options = {} }) {
         })
     }
 
-    // WeakSet interne pour suivre les connexions déjà bindées et éviter les doublon s de listeners (idempotence) 
+    // Attente de la PREMIÈRE synchronisation de présence de ce contexte.
+    //
+    // Même idiome que waitForMeReady (effectScope détaché + watchEffect, pas de polling),
+    // mais MÉMOÏSÉE : une seule promesse et un seul timer par contexte, pour la vie du
+    // contexte. C'est ce qui la rend sûre à appeler depuis un garde d'admission — un
+    // contexte sans canal de présence (`data-app` de Notifications.vue, qui n'ouvre que
+    // des appels directs) paierait sinon le timeout à chaque connexion refusée, et un
+    // flot de connexions forgées y accumulerait autant de promesses en vol.
+    //
+    // Résout `true` dès que la présence est connue, `false` au timeout — et reste
+    // résolue : après un échec, les gardes concluent immédiatement.
+    let _presenceSyncPromise = null
+
+    const waitForPresenceSync = (timeoutMs = PRESENCE_SYNC_TIMEOUT_MS) => {
+        if (connection.presenceSynced) return Promise.resolve(true)
+        if (_presenceSyncPromise) return _presenceSyncPromise
+
+        _presenceSyncPromise = new Promise((resolve) => {
+            let resolved = false
+            let timeoutId = null
+            const scope = effectScope(true)
+
+            const _resolve = (value) => {
+                if (resolved) return
+                resolved = true
+                clearTimeout(timeoutId)
+                scope.stop()
+                resolve(value)
+            }
+
+            // Armé AVANT scope.run() : le watchEffect s'exécute immédiatement et peut
+            // résoudre de façon synchrone (même piège que waitForMeReady — un timer
+            // déclaré après survivrait à son clearTimeout).
+            timeoutId = setTimeout(() => _resolve(false), timeoutMs)
+
+            scope.run(() => {
+                watchEffect(() => {
+                    if (connection.presenceSynced) _resolve(true)
+                })
+            })
+        })
+
+        return _presenceSyncPromise
+    }
+
+    // WeakSet interne pour suivre les connexions déjà bindées et éviter les doublon s de listeners (idempotence)
     // sans polluer les objets tiers PeerJS avec des flags personnalisés.
     const _boundConnections = new WeakSet()
 
@@ -610,8 +669,10 @@ export function createPeerContext({ type, room, options = {} }) {
         // Remet la machine d'état d'appel à IDLE et vide closingUsers
         callMachine.reset()
 
-        // Réinitialise la liste des utilisateurs en room
+        // Réinitialise la liste des utilisateurs en room — et le fait de la connaître :
+        // un contexte détruit ne sait plus qui est membre, il ne sait pas « personne ».
         connection.usersInRoom = []
+        connection.presenceSynced = false
 
         // ⚠️ lifecycle.shutdownCount n'est PAS réinitialisé : le garde doit rester
         // actif après le teardown terminal pour bloquer tout retry résiduel.
@@ -654,6 +715,7 @@ export function createPeerContext({ type, room, options = {} }) {
 
         // helpers
         waitForMeReady,
+        waitForPresenceSync,
         beginShutdown,
         endShutdown,
         setUpConnectionListeners,

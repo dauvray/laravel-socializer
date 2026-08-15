@@ -457,6 +457,54 @@ describe('usePeerCore', () => {
             expect(await core.responseRemotePeerConnection(buildPayload())).toBe(false)
             expect(postsToResponseEndpoint()).toHaveLength(0)
         })
+
+        // ── Contexte au démarrage : la présence n'est pas encore connue ─────────
+        //
+        // `usersInRoom` vide ne dit pas « ce pair n'est pas membre », il dit « je ne
+        // sais pas encore qui est membre ». Et l'ordre de production met l'arrivant du
+        // mauvais côté à tous les coups : son `usersInRoom` n'est écrit qu'après
+        // `waitForMeReady` (donc après le peerId local), alors que la demande du
+        // diffuseur ne coûte qu'un aller-retour HTTP + Reverb. Refuser ici, c'est
+        // refuser le seul contact qui pouvait amener le flux.
+
+        it('attend la première synchronisation de présence avant de refuser', async () => {
+            ctx.connection.presenceSynced = false
+            ctx.connection.usersInRoom = []
+
+            const pending = core.responseRemotePeerConnection(buildPayload())
+
+            // Rien n'est parti : la décision n'est pas encore prise.
+            await Promise.resolve()
+            expect(postsToResponseEndpoint()).toHaveLength(0)
+
+            // La présence arrive — mallory était membre depuis le début.
+            ctx.connection.usersInRoom = ['mallory']
+            ctx.connection.presenceSynced = true
+
+            await expect(pending).resolves.toBe(true)
+            expect(postsToResponseEndpoint()).toHaveLength(1)
+            expect(warnSpy).not.toHaveBeenCalledWith(
+                expect.stringContaining('demandeur non autorisé'),
+                expect.any(Object)
+            )
+        })
+
+        it('attendre n\'est pas admettre : refuse si la présence ne le nomme pas', async () => {
+            ctx.connection.presenceSynced = false
+            ctx.connection.usersInRoom = []
+
+            const pending = core.responseRemotePeerConnection(buildPayload())
+
+            ctx.connection.usersInRoom = ['alice']
+            ctx.connection.presenceSynced = true
+
+            await expect(pending).resolves.toBe(false)
+            expect(postsToResponseEndpoint()).toHaveLength(0)
+            expect(warnSpy).toHaveBeenCalledWith(
+                expect.stringContaining('demandeur non autorisé'),
+                expect.any(Object)
+            )
+        })
     })
 
     // ── requestAuthorizationRemotePeerId ────────────────────────────────────

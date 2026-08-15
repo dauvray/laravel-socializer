@@ -273,6 +273,15 @@ export async function connectRoom(peers, { rounds = 4 } = {}) {
     // ouvrir sa connexion alors que le second n'a pas encore peuplé son `usersInRoom` :
     // `_isAuthorizedIncomingPeer` la refuse (« émetteur ni membre de la room ni
     // interlocuteur autorisé »), et le test échoue pour une raison de harnais.
+    //
+    // ⚠️ ANGLE MORT ASSUMÉ, et il a coûté une régression. « Quasi simultanément » n'est
+    // pas « dans le même tick » : chez l'arrivant, `usersInRoom` n'est écrit qu'après
+    // `waitForMeReady` — donc après le peerId local — alors que la demande du diffuseur
+    // ne coûte qu'un aller-retour HTTP + Reverb. La fenêtre « je connais mon peerId, pas
+    // encore ma room » existe donc bel et bien, et ce helper la referme avant de
+    // l'ouvrir. Le scénario qui la vise livre la présence explicitement, un pair après
+    // l'autre — cf. `lateJoiner.test.js`, cas « la demande de peerId d'A précède sa
+    // présence ».
     await Promise.all(contexts.map((api) => api.syncUsersConnections(users)))
 
     await settle(rounds)

@@ -104,6 +104,55 @@ describe('plusieurs contextes dans le même onglet (forme de Exemples/Home.vue)'
         expect(bob.receivedStreamsFrom()).toContain('alice')
     })
 
+    it("le contexte permanent `data-app` n'absorbe plus la recovery d'un peerId périmé", async () => {
+        // Ordre de montage RÉEL : `System/Notifications.vue` crée `data-app` au tick 0 —
+        // il est donc le premier inscrit au contextRegistry — et le provider de diffusion
+        // arrive après. `data-app` n'a aucun canal de présence : il ne sert qu'aux appels
+        // directs, son `usersInRoom` reste vide à vie.
+        const alice = await spawn({ slug: 'alice', type: 'data', room: 'app' })
+        const aliceStream = alice.mountContext({ type: 'stream', room: STREAM_ROOM })
+
+        const bobV1 = await spawn({ slug: 'bob', type: 'data', room: 'app' })
+        const bobStreamV1 = bobV1.mountContext({ type: 'stream', room: STREAM_ROOM })
+
+        const users = [{ slug: 'alice' }, { slug: 'bob' }]
+        const syncStreams = async (...apis) => {
+            await Promise.all(apis.map((api) => api.syncUsersConnections(users)))
+            await settle(4)
+        }
+
+        await aliceStream.api.startWebcamStream()
+        await syncStreams(aliceStream.api, bobStreamV1.api)
+        expect(bobStreamV1.receivedStreamsFrom()).toContain('alice')
+
+        // Bob recharge sa page. La présence Reverb d'alice n'a pas le temps de le voir
+        // partir : bob reste dans son `usersInRoom`, et son peerId dans le store partagé.
+        // C'est ce peerId-là qui est désormais mort.
+        server.goOffline('bob')
+        bobV1.peerInstance.destroy()
+        await settle(2)
+
+        server.goOnline('bob')
+        const bobV2 = await spawn({ slug: 'bob', type: 'data', room: 'app', peerId: 'peer-bob-v2' })
+        const bobStreamV2 = bobV2.mountContext({ type: 'stream', room: STREAM_ROOM })
+        await syncStreams(bobStreamV2.api)
+
+        // Alice relance sa diffusion (l'utilisateur rebascule sa caméra) : elle rappelle
+        // le peerId qu'elle croit valide, PeerJS répond `peer-unavailable`, et la recovery
+        // doit repartir.
+        await aliceStream.api.startWebcamStream()
+        await settle(8)
+
+        // ⭐ Avant correctif : la résolution peerId → slug vivait DANS la boucle sur les
+        // contextes et invalidait au passage un mapping partagé par tout l'onglet. Le
+        // premier itéré — `data-app`, monté en premier — consommait le fait, et tous les
+        // suivants sortaient sur `if (!targetSlug) return`. Le contexte de diffusion, seul
+        // à avoir un flux à repousser, n'était donc JAMAIS relancé : « Could not connect
+        // to peer <uuid> » une fois, puis plus rien, et un écran noir chez bob.
+        expect(alice.peerStore.getRemotePeerId('bob')).toBe('peer-bob-v2')
+        expect(bobStreamV2.receivedStreamsFrom()).toContain('alice')
+    })
+
     it('chaque contexte émet SA demande de peerId, sans être confisqué par le voisin', async () => {
         const alice = await spawn({ slug: 'alice', type: 'stream', room: STREAM_ROOM })
         alice.mountContext({ type: 'data', room: CHAT_ROOM })

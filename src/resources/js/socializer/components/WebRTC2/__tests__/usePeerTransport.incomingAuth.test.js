@@ -202,6 +202,62 @@ describe('usePeerTransport — authentification des connexions entrantes', () =>
         expect(conn.close).toHaveBeenCalled()
     })
 
+    // ── Contexte au démarrage : la présence n'est pas encore connue ─────────────
+    // `usersInRoom` vide ne dit pas « personne n'est membre », il dit « je ne sais pas
+    // encore ». Conclure dessus refuse le `peer.call` qui apporte son flux à un arrivant,
+    // et ce refus n'est rattrapable par personne : PeerJS ne notifie pas le `close()`
+    // d'un appel jamais répondu, et l'émetteur voit sa MediaConnection en `connecting`
+    // (donc `hasOpenConnection` vraie, donc son moteur de retry s'arrête). La décision
+    // attend donc la première synchronisation de présence — sans jamais s'assouplir.
+
+    const unsyncedCtx = () => createMockContext({
+        contextId: CTX_ID,
+        connection: { usersInRoom: [], presenceSynced: false },
+    })
+
+    it('diffère la décision tant que la présence est inconnue, puis admet le membre annoncé', async () => {
+        app.unmount()
+        ctx = unsyncedCtx()
+        ;[transport, app] = withSetup(() => usePeerTransport(ctx))
+        await transport.setLocalPeer()
+        peerInstance = getLastPeerInstance()
+
+        const call = incomingCall({ from: 'alice' }, 'peer-alice')
+        peerInstance._triggerEvent('call', call)
+
+        // Rien n'est tranché : ni répondu, ni fermé.
+        await Promise.resolve()
+        expect(call.answer).not.toHaveBeenCalled()
+        expect(call.close).not.toHaveBeenCalled()
+
+        // La présence Reverb arrive — alice était bien membre depuis le début.
+        ctx.connection.usersInRoom = ['alice']
+        ctx.connection.presenceSynced = true
+
+        await vi.waitFor(() => expect(call.answer).toHaveBeenCalled())
+        expect(ctx.setUpConnectionListeners).toHaveBeenCalledWith(call)
+        expect(call.close).not.toHaveBeenCalled()
+    })
+
+    it("refuse quand la présence arrive enfin et ne nomme pas l'émetteur", async () => {
+        app.unmount()
+        ctx = unsyncedCtx()
+        ;[transport, app] = withSetup(() => usePeerTransport(ctx))
+        await transport.setLocalPeer()
+        peerInstance = getLastPeerInstance()
+
+        const call = incomingCall({ from: 'mallory' }, 'peer-mallory')
+        peerInstance._triggerEvent('call', call)
+
+        ctx.connection.usersInRoom = ['alice']
+        ctx.connection.presenceSynced = true
+
+        // Attendre n'est pas admettre : la présence connue, le garde tranche comme avant.
+        await vi.waitFor(() => expect(call.close).toHaveBeenCalled())
+        expect(call.answer).not.toHaveBeenCalled()
+        expect(ctx.setUpConnectionListeners).not.toHaveBeenCalled()
+    })
+
     it("rejette une connexion data d'un interlocuteur d'appel direct dont le peerId réel ne correspond pas au mapping", () => {
         // mallory est mappée à 'peer-mallory' via signalisation, mais la connexion entrante
         // arrive avec un autre peerId — usurpation rejetée par le chemin appel direct.

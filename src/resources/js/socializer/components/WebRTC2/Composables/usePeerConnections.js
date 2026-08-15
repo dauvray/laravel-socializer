@@ -47,6 +47,13 @@ export function usePeerConnections(ctx) {
 
         ctx.connection.usersInRoom = nextSlugs
 
+        // Ce contexte SAIT désormais qui est membre — fait distinct de la liste
+        // elle-même, et lu par les gardes d'admission pour ne pas confondre « tu n'es
+        // pas membre » avec « je ne sais pas encore ». Écrit ici parce que c'est ici
+        // qu'est écrit `usersInRoom` : un seul écrivain pour les deux, donc jamais de
+        // désaccord entre la liste et la connaissance qu'on en a.
+        ctx.connection.presenceSynced = true
+
         // Projection dans le store : ce contexte témoigne de la présence de ces pairs.
         // Unique écrivain de `usersInRoom`, donc unique écrivain de l'index — c'est ce
         // qui permet à `removeRemotePeerId` de répondre « absent de TOUTES les rooms »
@@ -66,6 +73,74 @@ export function usePeerConnections(ctx) {
     const getNewUsersInRoom = async (users = []) => {
         const diff = await getRoomUsersDiff(users)
         return diff.newUsers
+    }
+
+    /**
+     * Les connexions stockées pour ce pair, sous ce type, dans cette room.
+     * Extrait parce que deux prédicats de sens opposé lisent exactement la même liste.
+     */
+    const _storedConnections = (userSlug, roomArg = null, typeArg = null) => {
+        const room = roomArg || ctx.session.currentCallRoomId || ctx.session.currentRoom
+        const type = typeArg || ctx.currentType.value
+        const stored = ctx.peerStore.getConnections?.[room]?.[userSlug]?.[type] ?? []
+        return { type, list: Array.isArray(stored) ? stored : [] }
+    }
+
+    /**
+     * Une MediaConnection PeerJS, par opposition à une DataConnection ?
+     *
+     * ⚠️ Nécessaire parce qu'un contexte `stream` stocke les DEUX sous le même type :
+     * `connectToPeer` ouvre l'appel média ET un canal data avec la même `metadata`. Or
+     * ce sont deux `RTCPeerConnection` distincts (un négociateur chacun) : le canal data
+     * peut très bien s'établir pendant que l'appel média reste sans réponse. Un prédicat
+     * qui ne les distingue pas conclurait « flux établi » sur la foi du data channel.
+     *
+     * `conn.type` est l'API PeerJS ('media' | 'data') ; le repli sur `answer` couvre les
+     * doubles de test qui ne le portent pas.
+     */
+    const _isMediaConnection = (conn) => (
+        conn?.type === 'media' || (conn?.type !== 'data' && typeof conn?.answer === 'function')
+    )
+
+    /**
+     * « La connexion attendue est-elle réellement ÉTABLIE ? »
+     *
+     * ⚠️ À ne pas confondre avec `hasOpenConnection`, qui répond à une question opposée
+     * (« dois-je m'abstenir d'en ouvrir une seconde ? ») et doit rester optimiste. Les
+     * deux ont longtemps été un seul prédicat, et c'est ce qui rendait DÉFINITIVE toute
+     * défaillance d'admission :
+     *
+     *   `hasOpenConnection` admet une MediaConnection en `new` / `connecting` — l'état
+     *   exact d'un `peer.call()` que le récepteur n'a jamais répondu. Sans réponse, le
+     *   `RTCPeerConnection` reste `connecting` À VIE (WebRTC ne le fait pas basculer en
+     *   `failed` faute d'answer). Le moteur de retry lisait donc « connexion établie »
+     *   une seconde après l'appel, annulait sa surveillance, et l'émetteur n'essayait
+     *   plus jamais — écran noir chez le récepteur, sans une seule erreur console.
+     *
+     * Ici, rien n'est établi tant que le transport ne l'est pas : `open === true` pour un
+     * canal data, `connectionState === 'connected'` pour un appel média. Tout le reste —
+     * `new`, `connecting`, `peerConnection` illisible — vaut « pas encore ».
+     *
+     * @returns {boolean}
+     */
+    const isConnectionEstablished = (userSlug, roomArg = null, typeArg = null) => {
+        const { type, list } = _storedConnections(userSlug, roomArg, typeArg)
+        if (list.length === 0) return false
+
+        return list.some((conn) => {
+            if (!conn) return false
+            if (type === 'data') return conn.open === true
+
+            // Sur un type média, seule la MediaConnection fait foi (cf. _isMediaConnection).
+            if (!_isMediaConnection(conn)) return false
+
+            // Lecture défensive : le RTCPeerConnection peut être en cours de destruction.
+            try {
+                return conn.peerConnection?.connectionState === 'connected'
+            } catch {
+                return false
+            }
+        })
     }
 
     const hasOpenConnection = (userSlug, roomArg = null, typeArg = null) => {
@@ -430,6 +505,7 @@ export function usePeerConnections(ctx) {
         getNewUsersInRoom,
         getRoomUsersDiff,
         hasOpenConnection,
+        isConnectionEstablished,
         connectToPeer,
         closePeerConnection,
     }
