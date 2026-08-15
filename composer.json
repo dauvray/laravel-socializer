@@ -1,7 +1,10 @@
 {
   "name": "dauvray/laravel-socializer",
   "description": "genaral functionality for Laravel CMS",
-  "keywords": ["laravel", "cms"],
+  "keywords": [
+    "laravel",
+    "cms"
+  ],
   "license": "MIT",
   "authors": [
     {
@@ -12,17 +15,25 @@
   "require": {
     "php": "^8.2",
     "laravel/framework": "^13.0",
+    "cviebrock/eloquent-sluggable": "^13.0",
     "vesoft-inc/nebula-php": "dev-main"
+  },
+  "require-dev": {
+    "orchestra/testbench": "^11.0"
   },
   "autoload": {
     "psr-4": {
-      "Dauvray\\Socializer\\": "src/",
-      "Dauvray\\Socializer\\Factories\\": "src/factories/",
-      "Dauvray\\Socializer\\Seeders\\": "src/seeders/"
+      "Dauvray\\Socializer\\": "src/"
     },
-    "files": [
-
-    ]
+    "files": []
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "Dauvray\\Socializer\\Tests\\": "tests/",
+      "App\\": "tests/Stubs/App/",
+      "Dauvray\\Estarter\\": "tests/Stubs/Estarter/",
+      "Innovation\\formdesigner\\": "tests/Stubs/Formdesigner/"
+    }
   },
   "minimum-stability": "dev",
   "prefer-stable": true,
@@ -31,10 +42,8 @@
       "providers": [
         "Dauvray\\Socializer\\ServiceProvider"
       ],
-      "aliases": {
-      }
+      "aliases": {}
     }
   },
-  "repositories": {
-  }
+  "repositories": {}
 }

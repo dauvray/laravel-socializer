@@ -4,4 +4,11 @@
 composer.phar
 .DS_Store
 
+# Suite PHP. `composer.lock` n'est pas versionné : ce paquet est une BIBLIOTHÈQUE, c'est
+# l'application d'accueil qui fige les versions. Le figer ici ne contraindrait qu'un
+# `composer install` de développement, tout en donnant l'illusion inverse.
+composer.lock
+.phpunit.cache/
+.phpunit.result.cache
+
 /laravel-socializer.iml

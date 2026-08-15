@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    phpunit.xml — suite PHP du paquet.
+
+    ⚠️ Contrairement à la suite JS, celle-ci tourne DEPUIS LE PAQUET, pas depuis le projet
+    hôte : c'est Orchestra Testbench qui fabrique l'application Laravel de test. Le paquet
+    porte donc son propre `vendor/` (gitignoré) — `composer install` ici, jamais à la racine.
+
+    Aucun serveur n'est requis : sqlite en mémoire, NebulaGraph remplacé par un faux, et les
+    broadcasts observés via `Event::fake()`. Voir docs/architecture/tests.md.
+-->
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         colors="true"
+         cacheDirectory=".phpunit.cache"
+         failOnRisky="true"
+         failOnWarning="true">
+    <testsuites>
+        <!-- Pas de suite `Unit` tant qu'aucun test unitaire n'existe : PHPUnit 12 échoue au
+             démarrage sur un répertoire absent, et git ne versionne pas un dossier vide. -->
+        <testsuite name="Feature">
+            <directory>tests/Feature</directory>
+        </testsuite>
+    </testsuites>
+
+    <source>
+        <include>
+            <directory>src/app</directory>
+        </include>
+    </source>
+
+    <php>
+        <env name="APP_ENV" value="testing"/>
+        <!-- ⚠️ Volontairement `true` : C3 doit prouver qu'AUCUNE trace ne fuit même quand
+             le mode debug est actif — c'est précisément ce qu'`APP_DEBUG=false` masquerait. -->
+        <env name="APP_DEBUG" value="true"/>
+        <env name="DB_CONNECTION" value="testing"/>
+        <env name="BROADCAST_CONNECTION" value="null"/>
+    </php>
+</phpunit>
