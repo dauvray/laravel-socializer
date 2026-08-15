@@ -25,7 +25,16 @@ vi.mock('~socializer/components/WebRTC2/Widgets/Mediaplayer/MediaBroadcastPlayer
             setup(props) {
                 counters.mounted++
                 onUnmounted(() => { counters.unmounted++ })
-                return () => h('div', { class: 'player-stub' }, props.videoId ?? '')
+                return () => h(
+                    'div',
+                    {
+                        class: 'player-stub',
+                        // Le player réel n'affiche QUE `streamData.metadata` : on l'expose
+                        // ici pour vérifier que le pool le transmet bien.
+                        'data-from-name': props.streamData?.metadata?.fromName ?? '',
+                    },
+                    props.videoId ?? ''
+                )
             },
         },
     }
@@ -71,6 +80,38 @@ describe('usePeerMedia — pool de players', () => {
                 videoId: 'local-webcam',
                 type: 'visio',
             })
+        })
+
+        /**
+         * Régression : le slot forçait `metadata: {}`. Les seules infos transmises
+         * (nickname, peer, roomId) ne sont pas des props déclarées du player — elles
+         * retombaient en attributs HTML. Résultat : tout flux passé par le pool
+         * s'affichait « Inconnu », compteur d'audience à 0.
+         */
+        it("transmet au player les métadonnées du flux", async () => {
+            await media.createVideoElement(
+                { videoId: 'remote-alice-visio', metadata: { fromName: 'Alice', isMe: false } },
+                fakeStream()
+            )
+            await nextTick()
+
+            expect(document.querySelector('.player-stub').dataset.fromName).toBe('Alice')
+        })
+
+        it("repart d'un slot vierge quand une instance est recyclée", async () => {
+            await media.createVideoElement(
+                { videoId: 'remote-alice-visio', metadata: { fromName: 'Alice' } },
+                fakeStream('a')
+            )
+            await nextTick()
+            media.removeVideoElement('remote-alice-visio')
+            await nextTick()
+
+            await media.createVideoElement({ videoId: 'remote-bob-visio' }, fakeStream('b'))
+            await nextTick()
+
+            expect(counters.mounted).toBe(1) // même instance réutilisée
+            expect(document.querySelector('.player-stub').dataset.fromName).toBe('')
         })
 
         it('ignore un videoId absent', async () => {

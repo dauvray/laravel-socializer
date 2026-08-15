@@ -174,9 +174,28 @@ describe('useCallManager', () => {
             expect(ctx.session.currentCallUsers).toEqual([{ userSlug: 'alice', type: 'visio' }])
             expect(media.startCurrentStream).toHaveBeenCalledWith(true)
             expect(media.createVideoElement).toHaveBeenCalledWith(
-                { videoId: 'local-webcam', type: 'visio', source: 'local' },
+                expect.objectContaining({ videoId: 'local-webcam', type: 'visio', source: 'local' }),
                 ctx.media.currentStream
             )
+        })
+
+        /**
+         * Le player du pool n'affiche QUE `streamData.metadata`. `isMe` en particulier
+         * n'est pas décoratif : c'est lui qui coupe le son du player local — sans lui,
+         * ma propre voix me revient dans les oreilles.
+         */
+        it('transmet au player local mon identité et le drapeau isMe', async () => {
+            await cm.acceptCallFromPeer(invitePayload())
+
+            const [options] = media.createVideoElement.mock.calls[0]
+
+            expect(options.metadata).toMatchObject({
+                from: 'test-user',
+                fromName: 'Test User',
+                currentType: 'visio',
+                room: 'call-room-1',
+                isMe: true,
+            })
         })
 
         it('répond toujours à l\'initiateur, inviteId inclus', async () => {

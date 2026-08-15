@@ -40,9 +40,16 @@
             <div class="video-tools">
                 <span class="user-info">
                     {{ props.streamData.metadata?.fromName || 'Inconnu' }}
-                    <template v-if="props.streamData.metadata?.currentType !== 'visio'">
-                        <IconWidget icon="eye"></IconWidget> 
-                        {{ props.streamData.metadata?.countViewers || 0 }}
+                    <!--
+                        Le compteur n'a de sens qu'en DIFFUSION, où un flux a une audience.
+                        Il n'appartient donc pas au player : seul le consommateur sait
+                        compter son audience, et il le dit en fournissant `countViewers`.
+                        Le laisser dépendre du type (`!== 'visio'`) l'affichait à 0 sur tous
+                        les autres appels directs (vocal, écran), qui n'en fournissent aucun.
+                    -->
+                    <template v-if="showViewersCount">
+                        <IconWidget icon="eye"></IconWidget>
+                        {{ props.streamData.metadata.countViewers }}
                     </template>
                     <IconWidget v-if="props.muted" icon="microphone-slash"></IconWidget>
                 </span>
@@ -115,6 +122,12 @@ const showSpinner = computed(() =>
     && props.videoActive
     && !!props.streamData?.stream
     && !slots.video
+)
+
+// Audience du flux : affichée seulement si le consommateur en fournit une
+// (`0` reste une valeur légitime — « personne ne regarde »).
+const showViewersCount = computed(() =>
+    props.streamData.metadata?.countViewers != null
 )
 
 // si c'est mon propre flux, on mute toujours localement (sinon écho)

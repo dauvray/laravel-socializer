@@ -104,6 +104,22 @@ PIP, fullscreen, overlay d'attente d'image), `LocalMediaPlayer.vue` / `RemoteMed
 `PlayerHost.vue` (hôte du pool d'instances). ⚠️ `LocalMediaPlayer` **jette** sans
 `MediaBroadcastProvider` parent.
 
+⚠️ **Ce que le player affiche vient uniquement de `streamData.metadata`** — il n'interroge aucun
+store. Champs lus : `fromName` (sinon « Inconnu »), `isMe` (coupe le son du player local),
+`countViewers` (compteur d'audience, affiché **seulement s'il est fourni** : un appel direct n'a
+pas d'audience), `isAudioMuted` / `isVideoEnabled`, `roomId` (portée du redimensionnement).
+Deux producteurs de cet objet, à tenir cohérents : le consommateur qui rend ses players lui-même
+(`Exemples/StreamSimple/StreamSimpleUI.vue`) et `usePeerMedia.createVideoElement({ metadata })`
+pour le pool — dont les appelants sont `useStreamManager.handleStreamReceived` (flux distant) et
+`useCallManager._enterCallSession` (flux local d'appel).
+
+⚠️ Sur une connexion **sortante**, `conn.metadata.fromName` porte **mon** nom, pas celui du
+distant (cf. [`resolveRemoteSlug`](../../../src/resources/js/socializer/components/WebRTC2/Composables/utils/resolveRemoteSlug.js)
+pour la même règle sur le slug) : `useStreamManager` retombe donc sur le slug distant. La
+signalisation serveur ne transportant que des slugs, l'appelant ne connaît pas le *nom* de
+l'appelé — le lui faire afficher demanderait un champ `fromUserName` dans les événements de
+`UserController`.
+
 `Widgets/UI/Buttons/` — `CallManagerBtn.vue`, `CallRemotePeerBtn.vue` (props `user`, `type`),
 `GroupLocalStreamBtn.vue` (prop `api`), `LocalStreamBtn.vue`, `LocalCaptureBtn.vue`.
 

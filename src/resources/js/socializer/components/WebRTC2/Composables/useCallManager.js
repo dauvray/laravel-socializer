@@ -150,8 +150,28 @@ export function useCallManager(ctx, { core, media, connections, transport, pool 
         ctx.session.currentType = type
 
         await media.startCurrentStream(true)
+
+        const me = ctx.meStore.getMe
+
         media.createVideoElement(
-            { videoId: 'local-webcam', type, source: 'local' },
+            {
+                videoId: 'local-webcam',
+                type,
+                source: 'local',
+                roomId: ctx.session.currentCallRoomId,
+                // `isMe` n'est pas décoratif : c'est lui qui coupe le son du player local
+                // (cf. MediaBroadcastPlayer.isLocallyMuted). Sans métadonnées, ma propre
+                // voix me revenait dans les oreilles.
+                metadata: {
+                    from: me?.slug || null,
+                    fromName: me?.name || me?.slug || null,
+                    room: ctx.session.currentCallRoomId,
+                    currentType: type,
+                    isMe: true,
+                    isAudioMuted: ctx.ui.streamStates.isMuted,
+                    isVideoEnabled: ctx.ui.streamStates.isVideoEnabled,
+                },
+            },
             ctx.media.currentStream
         )
     }

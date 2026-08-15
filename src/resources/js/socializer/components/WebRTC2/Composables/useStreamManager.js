@@ -43,6 +43,21 @@ export function useStreamManager(ctx, { media, callManager }) {
         resolveRemoteSlug(metadata, ctx.meStore.getMe?.slug || null)
 
     /**
+     * Nom à afficher pour le pair distant.
+     *
+     * `metadata.fromName` décrit celui qui a **ouvert** la connexion : ce n'est le nom du
+     * distant que sur une connexion ENTRANTE (`from` === le distant). Sur une connexion
+     * sortante — moi qui appelle, le flux de réponse arrivant sur MA connexion — `fromName`
+     * porte MON nom : l'afficher tel quel collerait mon pseudo sur la vignette de l'autre.
+     * Le slug distant est alors le seul identifiant fiable disponible : la signalisation
+     * serveur ne transporte que des slugs (cf. UserController::responseToPeerAuthorization).
+     */
+    const _resolveRemoteName = (metadata = {}, remoteSlug = null) =>
+        (metadata?.from && metadata.from === remoteSlug && metadata.fromName)
+            ? String(metadata.fromName)
+            : remoteSlug
+
+    /**
      * Supprime les entrées stales (trop anciennes ou map trop grande) de remoteStreamsMap.
      * Appelé avant chaque ajout pour garantir une taille bornée.
      */
@@ -153,6 +168,16 @@ export function useStreamManager(ctx, { media, callManager }) {
                     videoId: `remote-${remoteSlug}-${remoteType}`,
                     type: remoteType,
                     source: 'remote',
+                    roomId: meta?.room || ctx.session.currentCallRoomId || null,
+                    // Identité affichée par le player (cf. usePeerMedia._acquireSlot) :
+                    // sans elle, la vignette du pair distant reste anonyme.
+                    metadata: {
+                        ...meta,
+                        fromName: _resolveRemoteName(meta, remoteSlug),
+                        currentType: remoteType,
+                        peerId: conn?.peer || null,
+                        isMe: false,
+                    },
                 },
                 stream
             )

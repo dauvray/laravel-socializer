@@ -175,7 +175,17 @@ export function usePeerMedia(ctx) {
         slot.roomId = options?.roomId || ctx.session.currentRoom
         // markRaw : même raison que ctx.media.currentStream — pas de réactivité profonde
         // sur un MediaStream.
-        slot.streamData = { stream: stream ? markRaw(stream) : null, metadata: {} }
+        //
+        // ⚠️ `metadata` EST l'identité du flux telle que l'affiche MediaBroadcastPlayer
+        // (nom du pair, type, isMe…). Les autres props passées par PlayerHost — nickname,
+        // peer, roomId — ne sont PAS déclarées par le player : elles retombent en
+        // attributs et ne s'affichent nulle part. Tant que ce champ restait vide, tout
+        // flux passé par le pool s'affichait « Inconnu ». Copie, et non référence :
+        // le slot est recyclé d'un flux à l'autre.
+        slot.streamData = {
+            stream: stream ? markRaw(stream) : null,
+            metadata: options.metadata ? { ...options.metadata } : {},
+        }
 
         return slot
     }

@@ -83,9 +83,48 @@ describe('useStreamManager', () => {
             await sm.handleStreamReceived(stream, fakeConn())
 
             expect(media.createVideoElement).toHaveBeenCalledWith(
-                { videoId: 'remote-alice-visio', type: 'visio', source: 'remote' },
+                expect.objectContaining({
+                    videoId: 'remote-alice-visio',
+                    type: 'visio',
+                    source: 'remote',
+                    roomId: 'call-room-1',
+                }),
                 stream
             )
+        })
+
+        /**
+         * Le player du pool n'affiche QUE `streamData.metadata` : sans ces champs, la
+         * vignette du pair distant reste « Inconnu ». Cf. usePeerMedia._acquireSlot.
+         */
+        it('transmet au player l\'identité du flux distant', async () => {
+            await sm.handleStreamReceived(fakeStream(), fakeConn({
+                metadata: { from: 'alice', fromName: 'Alice', type: 'visio', room: 'call-room-1' },
+            }))
+
+            const [options] = media.createVideoElement.mock.calls[0]
+
+            expect(options.metadata).toMatchObject({
+                fromName: 'Alice',
+                currentType: 'visio',
+                peerId: 'peer-alice',
+                isMe: false,
+            })
+        })
+
+        /**
+         * Connexion SORTANTE (c'est moi qui ai appelé) : `fromName` porte MON nom, pas
+         * celui du distant. L'afficher tel quel collerait mon pseudo sur la vignette de
+         * l'autre — on retombe sur son slug, seule identité fiable dans ce sens.
+         */
+        it('n\'affiche pas mon propre nom sur la vignette du distant', async () => {
+            await sm.handleStreamReceived(fakeStream(), fakeConn({
+                metadata: { from: 'me', fromName: 'Me', slug: 'alice', type: 'visio', room: 'call-room-1' },
+            }))
+
+            const [options] = media.createVideoElement.mock.calls[0]
+
+            expect(options.metadata.fromName).toBe('alice')
         })
 
         it('confirme l\'établissement de l\'appel via le CallManager', async () => {
