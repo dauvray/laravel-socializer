@@ -12,7 +12,7 @@
 | Direction | État | Détail |
 |---|---|---|
 | **Entrant** (`peer.on('connection')`, `peer.on('call')`) | durci — audit du 20/05/2026 | garde `_isAuthorizedIncomingPeer`, anti-usurpation, gardes de taille, sanitisation |
-| **Sortant** (`connectToPeer`, `responseRemotePeerConnection`) | 🔴 **aucun contrôle d'autorisation** | audit du 14/08/2026, lot A — chantier ouvert |
+| **Sortant** (`connectToPeer`, `responseRemotePeerConnection`) | durci **côté client** — audit du 14/08/2026 | prédicat unique `utils/isAuthorizedPeer.js` : membre de la room **ou** interlocuteur d'appel marqué. Le garde autoritatif, côté serveur, reste à écrire |
 | **Backend** (`UserController`, routes) | partiel | `fromUserSlug` authentifié + liste blanche de champs ; ni `throttle`, ni `validate()`, ni contrôle de relation |
 | **Credentials TURN** | 🟠 compilés dans le bundle | identifiants longue durée lisibles par quiconque ouvre le JS |
 
@@ -25,6 +25,13 @@ réels et bien faits, mais son périmètre était le sens **entrant** ; le sens 
 périmètre plutôt qu'un verdict.
 
 ### La chaîne d'attaque du sens sortant (tracée statiquement, non exploitée)
+
+> **Fermée côté client** par le prédicat `utils/isAuthorizedPeer.js`, posé à l'étape 5
+> (`connectToPeer`, avant `addRemotePeerId`) et sur la livraison du peerId qui l'alimente
+> (`responseRemotePeerConnection`). Elle est conservée telle quelle parce que **les étapes 1
+> et 2 restent vraies** : le backend relaie toujours sans exiger de relation entre les deux
+> parties. Un client modifié rejoue donc la chaîne jusqu'au bout contre un pair dont le garde
+> a été retiré — c'est ce que modélise `scenarios/outgoingAuth.test.js`.
 
 1. un utilisateur authentifié quelconque POSTe `/response-to-peer-id` avec `toUserSlug: <victime>`,
    **son propre** `peerId`, et un `type`/`room` correspondant à un contexte monté chez la victime ;

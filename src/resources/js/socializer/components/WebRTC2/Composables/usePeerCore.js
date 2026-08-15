@@ -19,6 +19,7 @@
 import { onUnmounted } from 'vue'
 import { usePeerRetry } from '~socializer/components/WebRTC2/Composables/utils/usePeerRetry.js'
 import { createRateLimiter } from '~socializer/components/WebRTC2/Composables/utils/createRateLimiter.js'
+import { isAuthorizedPeer } from '~socializer/components/WebRTC2/Composables/utils/isAuthorizedPeer.js'
 import {
     ASK_PEER_MAX_REQUESTS_PER_WINDOW,
     ASK_PEER_RATE_WINDOW_MS,
@@ -165,7 +166,8 @@ export function usePeerCore(ctx) {
      * Répond à une demande de connexion d'un peer distant en lui envoyant notre peerId.
      *
      * @param {Object} payload - { fromUserSlug, room, type }
-     * @returns {Promise<boolean>} false si le peer local n'est pas prêt ou si le POST échoue
+     * @returns {Promise<boolean>} false si le peer local n'est pas prêt, si le demandeur
+     *                             n'est pas autorisé, ou si le POST échoue
      */
     const responseRemotePeerConnection = async (payload) => {
 
@@ -178,6 +180,34 @@ export function usePeerCore(ctx) {
         const localPeerId = ctx.peerStore.getLocalPeerId
         if (!localPeerId) {
             console.warn('[usePeerCore] responseRemotePeerConnection: localPeer pas encore prêt')
+            return false
+        }
+
+        // Garde d'autorisation du DEMANDEUR — même prédicat que le garde sortant de
+        // `connectToPeer` (utils/isAuthorizedPeer.js) : une seule définition de « pair
+        // autorisé », les deux chemins d'un même contexte ne peuvent pas diverger.
+        //
+        // Ce payload vient de la signalisation, donc de n'importe quel authentifié.
+        // Répondre sans condition, c'est offrir la récolte de peerId à la demande : le
+        // peerId local est la matière première des deux failles voisines — ouverture de
+        // connexion entrante sous une identité déclarée, et empoisonnement du mapping
+        // slug → peerId qui sert d'allowlist à l'admission.
+        //
+        // ⚠️ `false`, jamais `true`. Ici comme dans `connectToPeer`, `true` signifie
+        // « rien à conclure » côté appelant : un demandeur légitime dont la présence
+        // Reverb n'a pas encore peuplé `usersInRoom` sera rattrapé par sa propre
+        // re-demande (garde `waiting` / SIGNALING_STALE_MS de son côté), pas par nous.
+        if (!isAuthorizedPeer(payload?.fromUserSlug, ctx)) {
+            console.warn(
+                '[usePeerCore] responseRemotePeerConnection: demandeur non autorisé — peerId non communiqué',
+                {
+                    fromUserSlug: payload?.fromUserSlug,
+                    room: payload?.room,
+                    type: payload?.type,
+                    usersInRoom: [...(ctx.connection?.usersInRoom ?? [])],
+                    isAuthorizedCallPeer: ctx.isAuthorizedCallPeer?.(payload?.fromUserSlug) === true,
+                }
+            )
             return false
         }
 

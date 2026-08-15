@@ -242,7 +242,33 @@ Selon le verdict de B0 :
 
 ### B2 — `responseRemotePeerConnection` ne répond qu'à un demandeur autorisé `[S]` 🟠
 
-- [ ] **Dépend de :** A1 + A2 (réutilise `utils/isAuthorizedPeer.js`).
+- [x] **Dépend de :** A1 + A2 (réutilise `utils/isAuthorizedPeer.js`). — ✅ fait le 15/08/2026.
+
+> **Delta assumé — les tests nominaux préexistants ne l'étaient pas.** Les 5 cas du
+> `describe('responseRemotePeerConnection')` répondaient à `bob` avec un `usersInRoom`
+> **vide** : ils décrivaient donc, sans le dire, le chemin que ce garde ferme. Un
+> `beforeEach` local déclare désormais `bob` présent. Ne pas le lire comme un
+> assouplissement du test : c'est l'inverse, le chemin nominal a maintenant une
+> précondition explicite, et les cas offensifs repartent d'une room vide.
+>
+> **Deux tests au-delà des trois prévus** : slug invalide (`undefined`, `''`, malformé,
+> non-string — le payload vient du réseau, `isValidSlug` sort en premier) et une
+> contre-épreuve de purge (autorisé ⇒ répond, `clearAuthorizedCallPeer` ⇒ refuse à
+> nouveau). Sans elle, un garde qui lirait un état toujours vrai — `currentCallUsers`,
+> précisément l'écueil qu'A1 a écarté — passerait le cas nominal (b).
+>
+> **Pourquoi ce garde ne peut pas casser un chemin légitime** que A2 n'ait pas déjà
+> fermé : c'est le **même prédicat sur le même contexte**. Refuser de livrer son peerId à
+> un pair vers qui `connectToPeer` refuserait déjà d'ouvrir ne retire rien. La symétrie
+> tient parce que les deux chemins d'autorisation le sont : `usersInRoom` vient du même
+> canal Reverb pour les deux parties, et `authorizedCallPeers` est marqué **des deux
+> côtés** par `useCallManager` (`acceptCallFromPeer` chez l'appelé, `openCallBetweenPeer`
+> chez l'appelant).
+>
+> **Reste vrai :** une demande légitime arrivée avant que la présence Reverb n'ait peuplé
+> `usersInRoom` **de mon côté** est refusée. D'où `return false` et non `true` — le
+> demandeur repart sur sa propre re-demande une fois `SIGNALING_STALE_MS` écoulé. Même
+> arbitrage qu'en A2, pour la même raison.
 
 `usePeerCore.responseRemotePeerConnection` renvoie le peerId local à **tout** demandeur,
 sans vérifier son appartenance → récolte de peerId à la demande, qui alimente les deux
@@ -469,8 +495,8 @@ surdimensionné rejeté.
 
 ## Vérification globale
 
-- `npx vitest run` après **chaque** tâche. Référence relue le 15/08/2026, après A2+A3 :
-  **599 tests / 34 fichiers, ~3,2 s**. Rejouée par `hooks/pre-push` et
+- `npx vitest run` après **chaque** tâche. Référence relue le 15/08/2026, après B2 :
+  **604 tests / 34 fichiers, ~3,1 s**. Rejouée par `hooks/pre-push` et
   `.github/workflows/webrtc2-tests.yml`.
 - Les scénarios sont le filet qui compte : `lateJoiner`, `peerDeparture`,
   `broadcastLifecycle` doivent rester verts sur A2, B1 et D2 — ce sont eux qui observent le

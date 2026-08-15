@@ -297,6 +297,14 @@ describe('usePeerCore', () => {
             ...overrides,
         })
 
+        // ⚠️ Répondre son peerId n'est plus inconditionnel : le demandeur doit être
+        // autorisé (membre de la room OU interlocuteur d'appel marqué). `bob` est donc
+        // déclaré présent pour que les cas nominaux ci-dessous décrivent bien le chemin
+        // nominal — les cas du garde, eux, repartent d'une room vide.
+        beforeEach(() => {
+            ctx.connection.usersInRoom = ['bob']
+        })
+
         it('envoie un POST à RESPONSE_TO_PEER_ID avec le peerId local et les métadonnées du payload', async () => {
             const payload = buildPayload()
 
@@ -356,6 +364,98 @@ describe('usePeerCore', () => {
 
         it('retourne true quand le POST aboutit', async () => {
             await expect(core.responseRemotePeerConnection(buildPayload())).resolves.toBe(true)
+        })
+    })
+
+    // ── responseRemotePeerConnection : autorisation du demandeur ────────────
+    //
+    // Le peerId local est ce qui rend une connexion possible : le livrer à tout
+    // demandeur, c'est offrir la récolte de peerId à la demande, matière première des
+    // deux failles voisines (empoisonnement du mapping côté sortant, usurpation côté
+    // entrant). Même prédicat que le garde sortant de `connectToPeer` —
+    // `utils/isAuthorizedPeer.js`, une seule définition de « pair autorisé ».
+
+    describe('responseRemotePeerConnection — autorisation du demandeur', () => {
+
+        let warnSpy
+
+        const buildPayload = (overrides = {}) => ({
+            fromUserSlug: 'mallory',
+            room: 'room-42',
+            type: 'visio',
+            ...overrides,
+        })
+
+        const postsToResponseEndpoint = () => ctx.AjaxService.load.mock.calls
+            .filter(([url]) => url === ENDPOINTS.RESPONSE_TO_PEER_ID)
+
+        beforeEach(() => {
+            warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        })
+
+        afterEach(() => {
+            warnSpy.mockRestore()
+        })
+
+        it('ne répond rien à un demandeur ni membre de la room ni interlocuteur d\'appel autorisé', async () => {
+            // Room vide et registre d'appel vide : mallory n'est autorisé par aucun
+            // des deux chemins.
+            const result = await core.responseRemotePeerConnection(buildPayload())
+
+            expect(result).toBe(false)
+            expect(postsToResponseEndpoint()).toHaveLength(0)
+            expect(warnSpy).toHaveBeenCalledWith(
+                expect.stringContaining('demandeur non autorisé'),
+                expect.any(Object)
+            )
+        })
+
+        it('ne répond rien à un demandeur au slug invalide', async () => {
+            // Le payload vient du réseau : `fromUserSlug` peut être absent ou malformé.
+            // Le prédicat le refuse en premier (isValidSlug), avant toute lecture d'état.
+            for (const fromUserSlug of [undefined, '', 'not a slug!', 42]) {
+                ctx.AjaxService.load.mockClear()
+
+                await expect(
+                    core.responseRemotePeerConnection(buildPayload({ fromUserSlug }))
+                ).resolves.toBe(false)
+                expect(postsToResponseEndpoint()).toHaveLength(0)
+            }
+        })
+
+        it('répond normalement à un membre de la room', async () => {
+            ctx.connection.usersInRoom = ['mallory']
+
+            const result = await core.responseRemotePeerConnection(buildPayload())
+
+            expect(result).toBe(true)
+            expect(postsToResponseEndpoint()).toHaveLength(1)
+        })
+
+        it('répond normalement à un interlocuteur d\'appel autorisé, hors room', async () => {
+            // Non-régression essentielle : la visio 1-à-1 n'a AUCUNE room commune, elle
+            // ne passe que par le registre `authorizedCallPeers` (chemin (b)). C'est
+            // exactement le cas que le correctif entrant de mai avait cassé.
+            ctx.connection.usersInRoom = []
+            ctx.markAuthorizedCallPeer('mallory')
+
+            const result = await core.responseRemotePeerConnection(buildPayload())
+
+            expect(result).toBe(true)
+            expect(postsToResponseEndpoint()).toHaveLength(1)
+        })
+
+        it('refuse à nouveau une fois l\'autorisation d\'appel purgée', async () => {
+            // Contre-épreuve du cas précédent : sans elle, un garde qui lirait un état
+            // toujours vrai (ex. `currentCallUsers`) passerait les deux.
+            ctx.markAuthorizedCallPeer('mallory')
+            expect(await core.responseRemotePeerConnection(buildPayload())).toBe(true)
+
+            ctx.clearAuthorizedCallPeer('mallory')
+            ctx.AjaxService.load.mockClear()
+
+            expect(await core.responseRemotePeerConnection(buildPayload())).toBe(false)
+            expect(postsToResponseEndpoint()).toHaveLength(0)
         })
     })
 
