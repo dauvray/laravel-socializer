@@ -94,7 +94,16 @@ sécurité couple politique et affichage ». Il faut un registre dédié, à pro
 
 ### A2 — Garde d'autorisation sortante dans `connectToPeer` `[M]` 🔴
 
-- [ ] **Dépend de :** A1.
+- [x] **Dépend de :** A1. — ✅ fait le 15/08/2026.
+
+> **Delta assumé — placement du garde.** Ce plan demandait de le poser « après
+> l'acquisition du verrou `inFlightConnections`, pour rester dans la section critique ».
+> Il est en réalité posé **juste après la garde anti-self**, donc avant le verrou :
+> `connectToPeer` est **entièrement synchrone** (aucun `await` de bout en bout), rien ne
+> peut donc s'intercaler entre la lecture de `usersInRoom` et `peer.call()` — l'argument
+> de section critique ne s'applique pas. L'exigence « avant `addRemotePeerId` », elle,
+> est réelle : cette écriture vit **hors** du verrou, et c'est la seconde moitié de la
+> faille. Le garde va donc au plus tôt.
 
 - Nouveau `Composables/utils/isAuthorizedPeer.js` — prédicat pur, sans état, importable de
   partout (comme le reste de `utils/`) : `isAuthorizedPeer(userSlug, ctx)` =
@@ -134,7 +143,20 @@ exerce le chemin signalisation → `connectToPeer` que ce garde durcit.
 
 ### A3 — Scénario bout en bout « mallory » `[M]`
 
-- [ ] **Dépend de :** A2.
+- [x] **Dépend de :** A2. — ✅ fait le 15/08/2026 (`scenarios/outgoingAuth.test.js`).
+
+> **Delta assumé — mallory doit désarmer son propre garde entrant.** Écrit tel que décrit
+> ci-dessous, le scénario était **vert avant le correctif** : alice poussait bien son
+> flux, mais `_isAuthorizedIncomingPeer` **chez mallory** le refusait — l'attaquant se
+> protégeait tout seul. Exactement le faux positif que le protocole « rouge d'abord »
+> sert à détecter, et il l'a détecté.
+>
+> Le fichier déclare donc `alice` dans le `usersInRoom` **local** de mallory
+> (`claimLocally`, un `syncUsersConnections` sans aucune autorité : la vue qu'alice a de
+> sa room est inchangée). C'est la seule façon, dans le harnais, de modéliser ce qu'un
+> vrai attaquant obtient en supprimant ce garde de son bundle. Avec elle, les 3 cas
+> offensifs échouent avant A2 (`receivedStreamsFrom()` = `['alice']`, mapping =
+> `peer-mallory`) et passent après — contre-vérifié en neutralisant le garde.
 
 Nouveau `__tests__/scenarios/outgoingAuth.test.js`, sur le harnais existant
 (`createVirtualPeer` + `fakeSignalingServer` + `__mocks__/peerjs.js` en mode bus).
@@ -447,8 +469,8 @@ surdimensionné rejeté.
 
 ## Vérification globale
 
-- `npx vitest run` après **chaque** tâche. Référence relue le 15/08/2026, après A1 :
-  **566 tests / 32 fichiers, ~2,9 s**. Rejouée par `hooks/pre-push` et
+- `npx vitest run` après **chaque** tâche. Référence relue le 15/08/2026, après A2+A3 :
+  **599 tests / 34 fichiers, ~3,2 s**. Rejouée par `hooks/pre-push` et
   `.github/workflows/webrtc2-tests.yml`.
 - Les scénarios sont le filet qui compte : `lateJoiner`, `peerDeparture`,
   `broadcastLifecycle` doivent rester verts sur A2, B1 et D2 — ce sont eux qui observent le
