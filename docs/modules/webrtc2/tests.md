@@ -24,8 +24,10 @@ détectable : ils ne sont vrais ou faux que **vus du pair d'en face**.
 `scenarios/` couvre aujourd'hui `harness.smoke` (le harnais lui-même — sans lui, un scénario rouge
 serait indistinguable d'un harnais cassé), `lateJoiner` (le symptôme), `broadcastLifecycle` (arrêter
 un flux n'en emporte pas un autre), `peerDeparture` (coupure brutale, peerId oublié, retour avec
-un nouveau peerId) et `multiContext` (plusieurs contextes dans le même onglet — la forme réelle
-d'une page, cf. [ci-dessous](#un-onglet-plusieurs-contextes)).
+un nouveau peerId), `multiContext` (plusieurs contextes dans le même onglet — la forme réelle
+d'une page, cf. [ci-dessous](#un-onglet-plusieurs-contextes)), `outgoingAuth` (un tiers ne peut pas
+se faire pousser un flux) et `incomingMappingInvariant` (à quel instant le mapping slug→peerId est
+posé, relativement à l'admission entrante).
 
 ---
 
@@ -102,6 +104,18 @@ de présence re-déclenche le watcher à chaque changement. Voir `syncSequential
 Le faux serveur reproduit la **liste blanche exacte** du `UserController` : y ajouter un champ que le
 PHP ne relaie pas fabriquerait un chemin impossible en production. Réciproquement, desserrer la liste
 blanche côté PHP rendrait le harnais menteur.
+
+### Deux canaux, pas un
+
+Les signaux de room (`.AskToPeerID`, `.ResponseToPeerID`) arrivent dans la **file de signaux du
+store** et sont routés par `useSignalingQueue` — c'est ce que `_dispatchTo` reproduit. Les
+invitations d'appel direct (`.AlertToUser`, `.ResponseToAuthorizationPeer`) arrivent sur le **canal
+utilisateur** Reverb, que `System/Notifications.vue` écoute, et le store ne les voit jamais. Un test
+d'appel direct passe donc par `server.bindUserChannel(slug, handler)`.
+
+⚠️ Le harnais s'arrête **au bord du composant** : `.AlertToUser` ouvre un composant d'alerte, donc une
+décision humaine, et c'est au test de tenir ce rôle en appelant `acceptCallFromPeer`. Router jusqu'au
+verbe demanderait de monter `Notifications.vue`, et le scénario ne parlerait plus de WebRTC.
 
 ---
 

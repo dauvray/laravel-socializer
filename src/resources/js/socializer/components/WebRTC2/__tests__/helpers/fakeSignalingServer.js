@@ -22,6 +22,19 @@
  * est le `contextId` du destinataire) : un scénario qui passe ici emprunte exactement
  * le chemin de production.
  *
+ * ── Le second canal : l'invitation d'appel direct ─────────────────────────────
+ *
+ *   A: POST /send-alert-to-user { toUserSlug: 'bob', options: { peerId: <A>, … } }
+ *        └─► B reçoit  .AlertToUser  → composant d'alerte → acceptCallFromPeer()
+ *   B: POST /response-to-authorization-peer { options: { peerId: <B>, … }, status }
+ *        └─► A reçoit  .ResponseToAuthorizationPeer → openCallBetweenPeer()
+ *              └─► requestOrConnectPeer() ouvre la connexion PeerJS
+ *
+ * Ces deux events ne passent PAS par la file de signaux du store : ils arrivent sur le
+ * canal utilisateur, que `Notifications.vue` écoute. Le harnais les livre à un handler
+ * branché par `bindUserChannel(slug, handler)` — c'est au test de tenir le rôle de ce
+ * composant, décision humaine du composant d'alerte comprise.
+ *
  * ── Branchement dans un fichier de test ───────────────────────────────────────
  *
  * `useAjaxService()` n'est appelé qu'une fois, dans `createPeerContext`. On le mocke
@@ -48,6 +61,8 @@ export function createFakeSignalingServer() {
     const peers = new Map()
     /** client AjaxService → slug (lié par createVirtualPeer après le montage) */
     const clientOwners = new Map()
+    /** slug → (eventName, payload) => void — le rôle de `System/Notifications.vue` */
+    const userChannels = new Map()
     /** Slugs devenus injoignables (onglet fermé) : leurs signaux sont abandonnés. */
     const unreachable = new Set()
     /** Journal de tous les POST, pour assertions et diagnostic. */
@@ -89,6 +104,28 @@ export function createFakeSignalingServer() {
         return true
     }
 
+    /**
+     * Achemine un event du canal utilisateur Reverb (`App.Models.User.<id>`).
+     *
+     * ⚠️ Ce canal n'est PAS la file de signaux du store : `Notifications.vue` route les
+     * invitations d'appel vers `acceptCallFromPeer` / `openCallBetweenPeer`, et
+     * `.AlertToUser` passe même par une décision humaine (le composant d'alerte). Le
+     * harnais s'arrête donc au bord du composant : il livre l'event, c'est au test de
+     * jouer le rôle que `Notifications.vue` tient en production — sans quoi il faudrait
+     * monter le composant, et le scénario ne parlerait plus de WebRTC.
+     *
+     * Même granularité que `_dispatchTo` : une tâche de boucle d'événement par event.
+     */
+    const _broadcastToUser = (toSlug, eventName, payload) => {
+        if (unreachable.has(toSlug)) return false
+
+        const handler = userChannels.get(toSlug)
+        if (!handler) return false
+
+        setTimeout(() => handler(eventName, payload), 0)
+        return true
+    }
+
     const _handlePost = (client, url, method, data = {}) => {
         const fromUserSlug = clientOwners.get(client) ?? null
         requests.push({ from: fromUserSlug, url, method, data })
@@ -125,10 +162,30 @@ export function createFakeSignalingServer() {
                 })
                 break
 
-            // Les autres endpoints (invitations d'appel, notification de fermeture) sont
-            // journalisés mais non routés : les scénarios de diffusion n'en dépendent pas.
-            // Les router demanderait de rejouer aussi les events `.AlertToUser` /
-            // `.CloseConnectionToPeerID`, hors périmètre tant qu'aucun scénario ne les vise.
+            // Invitation d'appel direct : `UserController::sendAlertToUser` ne relaie que
+            // `options` (verbatim) et le `fromUserSlug` AUTHENTIFIÉ — pas de `status`,
+            // pas de room, pas de type au premier niveau.
+            case ENDPOINTS.SEND_ALERT_TO_USER:
+                _broadcastToUser(toUserSlug, 'AlertToUser', {
+                    options: data.options,
+                    fromUserSlug,
+                })
+                break
+
+            // Réponse à l'invitation : `UserController::responseToPeerAuthorization`
+            // relaie `options` et `status`. C'est `sendAuthorizationRemotePeerId` qui a
+            // déjà écrasé `options.peerId` par le peerId LOCAL du répondeur — le backend
+            // ne le fabrique pas.
+            case ENDPOINTS.RESPONSE_TO_AUTHORIZATION_PEER:
+                _broadcastToUser(toUserSlug, 'ResponseToAuthorizationPeer', {
+                    options: data.options,
+                    status: data.status,
+                    fromUserSlug,
+                })
+                break
+
+            // `/close-connection-to-peer-id` reste journalisé mais non routé : aucun
+            // scénario ne vise encore `.CloseConnectionToPeerID`.
             default:
                 break
         }
@@ -165,6 +222,17 @@ export function createFakeSignalingServer() {
         },
 
         /**
+         * Branche le canal utilisateur Reverb d'un pair — un seul par slug, comme le
+         * `useReverbChannel(userChannel)` unique de `Notifications.vue`.
+         *
+         * @param {string}   slug
+         * @param {Function} handler  (eventName, payload) => void
+         */
+        bindUserChannel(slug, handler) {
+            userChannels.set(slug, handler)
+        },
+
+        /**
          * Simule un onglet fermé : le pair n'émet plus et ne reçoit plus rien.
          * Le reste du système ne l'apprend que par la fermeture de ses connexions —
          * exactement le cas « coupure brutale, sans signal serveur ».
@@ -179,6 +247,7 @@ export function createFakeSignalingServer() {
         destroy() {
             peers.clear()
             clientOwners.clear()
+            userChannels.clear()
             unreachable.clear()
             requests.length = 0
             if (globalThis[SIGNALING_SERVER_KEY] === server) {

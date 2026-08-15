@@ -187,7 +187,26 @@ Respecter les trois invariants du harnais (cf. [`docs/modules/webrtc2/tests.md`]
 
 ### B0 — Caractériser : le mapping peerId précède-t-il l'admission ? `[S]`
 
-- [ ] **Dépend de :** rien. **Prérequis de B1** — sans lui, B1 est un pari.
+- [x] **Dépend de :** rien. **Prérequis de B1.** — ✅ fait le 15/08/2026
+  (`scenarios/incomingMappingInvariant.test.js`).
+
+> ## 🔴 VERDICT : le mapping est ABSENT sur le chemin présence
+>
+> | chemin d'admission | mapping posé quand la connexion arrive ? |
+> |---|---|
+> | arrivant tardif (`stream`) | ❌ **non** |
+> | partage d'écran (`screen`) | ❌ **non** |
+> | appel direct accepté (`visio`) | ✅ oui, et concordant |
+>
+> **La cause est structurelle, pas une course.** Le mapping du récepteur est écrit par
+> **sa propre** `connectToPeer` — donc quand c'est LUI qui ouvre. Sur le chemin présence,
+> le premier contact est l'appel **entrant** de l'autre : il arrive nécessairement avant.
+> Sur l'appel direct, `acceptCallFromPeer` écrit le mapping **avant même de répondre** à
+> l'invitation, et l'appel entrant ne vient qu'après. Les deux chemins sont opposés par
+> construction — aucun réglage de timing ne les rapprochera.
+>
+> **B1 prend donc sa seconde forme** (cf. ci-dessous) : fusionner (a) et (b) fermerait
+> toute diffusion en room. C'était exactement le pari que cette tâche servait à éviter.
 
 L'anti-usurpation de `_isAuthorizedIncomingPeer` (règle 3) ne se déclenche que si
 `_resolveSenderSlugFromIncomingConn` résout le peerId entrant. La rendre inconditionnelle
@@ -198,6 +217,22 @@ Assertion sur l'invariant, dans `scenarios/lateJoiner.test.js` ou un fichier voi
 moment de `peer.on('connection'|'call')` chez le récepteur,
 `peerStore.getRemotePeerId(metadata.from)` vaut-il `conn.peer` ? À mesurer sur les **trois**
 chemins — arrivant tardif, appel direct accepté, partage d'écran.
+
+> **Delta assumé — le harnais a dû apprendre l'invitation d'appel.** Le chemin « appel
+> direct » n'était atteignable par aucun scénario : `fakeSignalingServer` journalisait
+> `/send-alert-to-user` et `/response-to-authorization-peer` sans les router (choix
+> explicite de l'époque, « hors périmètre tant qu'aucun scénario ne les vise »). Ils le
+> sont désormais, sur un **second canal** : ces deux events arrivent sur le canal
+> utilisateur Reverb, que `Notifications.vue` écoute — pas sur la file de signaux du
+> store. Le harnais s'arrête au bord du composant (`bindUserChannel`) et laisse le test
+> tenir son rôle, décision humaine du composant d'alerte comprise ; le router jusqu'au
+> bout aurait demandé de monter le composant.
+>
+> **Delta assumé — le probe lit avant le garde, pas après.** Un `peer.on('connection')`
+> posé par le test passerait **après** le handler de production (le mock appelle ses
+> handlers dans l'ordre d'enregistrement, et `initializePeerConnection` a déjà branché le
+> sien) : on mesurerait l'état d'après l'admission. Le probe est donc inséré en tête de
+> `_handlers` — seul point d'observation qui réponde à la question posée.
 
 **Done :** l'invariant est **documenté par un test**, vrai ou faux. S'il est faux sur un
 chemin, B1 change de forme — ce test décide.
@@ -222,12 +257,20 @@ qu'un slug déclaré présent dans `usersInRoom`.
 *(Le hub star, lui, est sain : `forwardStarMessage` abandonne quand l'expéditeur n'est pas
 résolu depuis la connexion — la retransmission n'est pas usurpable.)*
 
-Selon le verdict de B0 :
-- **mapping toujours présent** ⇒ fusionner (a) et (b) : n'admettre que si
-  `peerStore.getRemotePeerId(from) === conn.peer`. Le plus simple et le plus sûr.
-- **mapping parfois absent** ⇒ conserver deux chemins, mais exiger sur (a) que le peerId
-  entrant ne soit résolu à **aucun** autre slug, **et** journaliser l'admission non
-  corroborée en préparation d'un durcissement ultérieur.
+~~Selon le verdict de B0~~ — **tranché** : le mapping est **absent** à l'admission sur tout
+le chemin présence (diffusion, écran), et c'est structurel. La première option est donc
+**morte** ; elle aurait fermé toute diffusion en room.
+
+- ~~**mapping toujours présent** ⇒ fusionner (a) et (b)~~ — exclu par B0.
+- ✅ **Forme retenue** — conserver deux chemins, mais exiger sur (a) que le peerId entrant
+  ne soit résolu à **aucun** autre slug, **et** journaliser l'admission non corroborée en
+  préparation d'un durcissement ultérieur.
+
+> ⚠️ Conséquence directe : `_resolveSenderSlugFromIncomingConn` renvoie `null` dans le cas
+> **nominal** du chemin présence. Le durcissement porte donc sur « résolu à un AUTRE
+> slug ⇒ rejet », jamais sur « non résolu ⇒ rejet » — cette seconde lecture est
+> précisément celle que B0 vient d'écarter. Le test de non-régression qui l'épingle est
+> le cas « arrivant tardif » de `scenarios/incomingMappingInvariant.test.js`.
 
 **Tests** — `usePeerTransport.incomingAuth.test.js` :
 - `metadata.from` = membre de la room + peerId neuf non mappé ⇒ **rejet** (aujourd'hui
@@ -495,8 +538,8 @@ surdimensionné rejeté.
 
 ## Vérification globale
 
-- `npx vitest run` après **chaque** tâche. Référence relue le 15/08/2026, après B2 :
-  **604 tests / 34 fichiers, ~3,1 s**. Rejouée par `hooks/pre-push` et
+- `npx vitest run` après **chaque** tâche. Référence relue le 15/08/2026, après B0 :
+  **608 tests / 35 fichiers, ~3,2 s**. Rejouée par `hooks/pre-push` et
   `.github/workflows/webrtc2-tests.yml`.
 - Les scénarios sont le filet qui compte : `lateJoiner`, `peerDeparture`,
   `broadcastLifecycle` doivent rester verts sur A2, B1 et D2 — ce sont eux qui observent le
