@@ -5,7 +5,16 @@
 
 ---
 
-## Une seule suite, et elle tourne côté hôte
+## Deux suites, et elles ne tournent pas au même endroit
+
+| Suite | Lancée depuis | Outillage |
+|---|---|---|
+| **JS** (Vitest) | la racine du projet **hôte** | `vitest.config.js`, `node_modules` de l'hôte |
+| **PHP** (PHPUnit) | **ce dépôt** | `phpunit.xml` + `vendor/` propres au package |
+
+---
+
+## Suite JS — côté hôte
 
 Le package **n'a ni `package.json` ni `node_modules`** : il est développé directement dans
 `vendor/` du projet hôte, qui porte tout l'outillage front.
@@ -31,8 +40,54 @@ Configuration : `/var/www/estarter-test/vitest.config.js`. Points à connaître 
 - ⚠️ **pas de `clearMocks`** : les `vi.fn()` globaux de `setup.js` ne sont pas réinitialisés entre les
   tests. Faire ses `mockReset()` en `beforeEach`.
 
-**Aucun test PHP.** Pas de `tests/`, pas de `phpunit.xml`, pas de `require-dev` dans le
-`composer.json`. Un chantier backend qui demande des tests doit d'abord poser cette infrastructure.
+---
+
+## Suite PHP — dans le package, via Orchestra Testbench
+
+```bash
+cd /var/www/estarter-test/vendor/dauvray/laravel-socializer
+composer install        # une fois — crée un vendor/ propre au package (gitignoré)
+vendor/bin/phpunit
+```
+
+Testbench fabrique une application Laravel de test : **aucun serveur n'est requis** — ni MySQL, ni
+MongoDB, ni NebulaGraph, ni Reverb. Le `vendor/` du package vit à l'intérieur de celui de l'hôte ;
+c'est sans effet (l'autoloader de l'hôte ne le voit pas) et c'est gitignoré.
+
+### Les cinq décisions du harnais
+
+Elles sont toutes contraintes par l'état réel du package. Les défaire sans lire ce qui suit fait
+perdre une demi-journée — le détail et le pourquoi vivent dans le docblock de `tests/TestCase.php`.
+
+1. **Pile de middlewares sans `web`.** `ServiceProvider::boot` pousse
+   `Dauvray\Estarter\...\UserActivity` dans le groupe `web`. `defineEnvironment` réduit donc
+   `estarter.routes_middlewares.classic.private` à `['auth']`. ⚠️ **Delta assumé** : la pile de test
+   n'est pas celle de production (`['web','auth','routeProtect','verified','restrictedMode']`).
+2. **Aucune migration du package.** Celles qu'il enregistre contiennent du MongoDB et du
+   NebulaGraph : injouables sur sqlite. Le harnais crée à la main la seule table `users`, et
+   n'utilise **pas** `RefreshDatabase`.
+3. **NebulaGraph remplacé au conteneur.** Le package n'atteint le graphe que par
+   `app('nebulaGraph')` — couture unique, d'où `fakeNebulaGraph()`. C'est ce qui rend les gardes de
+   relation testables.
+4. **Les broadcasts s'observent par `Event::fake()`.** Il n'existe **pas** de `Broadcast::fake()`
+   dans Laravel 13. `Broadcast::private(…)->sendNow()` construit un `AnonymousEvent` que
+   `PendingBroadcast::__destruct` remet au dispatcher : c'est là qu'on l'intercepte. Helpers :
+   `fakeBroadcasts()`, `assertBroadcastSent()`, `assertNoBroadcastSent()`.
+5. **Les dépendances de la famille sont doublées, pas installées.** Le package a des dépendances
+   implicites vers `Dauvray\Estarter\*` et `Innovation\formdesigner\*`
+   ([package.md](package.md#dépendances-implicites)), qui vivent dans un GitLab **privé** ; les
+   déclarer mettrait une URL interne dans le manifeste d'un package publié sur GitHub public.
+   `tests/Stubs/` en porte donc des doublures, mappées par `autoload-dev`. ⚠️ **Elles lèvent toutes**
+   plutôt que de renvoyer `null` : une doublure silencieuse ferait passer au vert un test qui
+   croirait exercer le vrai comportement. Elles ne s'étoffent que quand un test l'exige.
+
+Deux doublures sont là uniquement parce que `ServiceProvider::boot` fait un `require_once` de **tous**
+les `src/app/Helpers/*.php` : sans elles, l'application de test ne démarre pas.
+
+> **Piège Eloquent.** Le trait `Socializable` fait
+> `$this->fillable = array_merge($this->fillable, ['is_bot'])`. Définir `fillable`, même
+> indirectement, **annule** `guarded` : un modèle de test en `guarded = []` se retrouve avec le seul
+> `is_bot` assignable, et `create()` insère une ligne vide. Le stub déclare donc `$fillable`.
 
 ---
 
@@ -45,11 +100,14 @@ cd /var/www/estarter-test/vendor/dauvray/laravel-socializer
 git config core.hooksPath hooks
 ```
 
-Le hook remonte l'arborescence jusqu'au `vitest.config.js` du projet hôte avant de lancer le runner,
-et dégrade proprement (push autorisé) si le projet hôte ou `node_modules` est introuvable.
-Contournement : `git push --no-verify`.
+Il lance **les deux suites** : PHP d'abord (la plus rapide, donc elle échoue en premier), puis JS. Il
+remonte l'arborescence pour trouver `phpunit.xml` d'un côté et le `vitest.config.js` de l'hôte de
+l'autre, et **dégrade proprement** — dépendances absentes ⇒ suite non lancée, push autorisé, message
+explicite. Un hook qui bloque un push parce qu'on n'a pas installé de quoi le vérifier se fait
+désactiver en une semaine. Contournement délibéré : `git push --no-verify`.
 
-CI côté hôte : `.github/workflows/webrtc2-tests.yml`.
+⚠️ **Il n'y a pas de CI.** Pas de `.github/` dans ce dépôt : `hooks/pre-push` est le seul filet
+automatique, et son activation est une config **locale**, jamais versionnée.
 
 **Rien ne se pousse en rouge.** La raison est historique : plusieurs régressions ont été introduites
 *le jour même* par le correctif précédent, faute de filet automatique entre les deux.
@@ -104,8 +162,11 @@ testable directement, et ça se voit.
 - **Chat** — un seul fichier (`dateSeparatorRender.test.js`). Plan en 5 couches, non démarré :
   [`work/chat-tests-plan.md`](../../work/chat-tests-plan.md), avec une décision en attente (helpers
   dédiés vs partagés — `mockEcho`, `mockRoute`, `seedChatStore`).
+- **Signalisation WebRTC (PHP)** — le socle Testbench et les routes de signalisation vues du
+  serveur. C'est le premier test PHP du package ; le lot backend qui s'appuie dessus est suivi dans
+  [`work/webrtc2-securite-2026-08-14.md`](../../work/webrtc2-securite-2026-08-14.md).
 - **Rien** pour Feed, Comment, Server, User, System, Application, Page, Whiteboard, les stores Pinia
-  hors `peers2`, ni les services PHP.
+  hors `peers2`, ni le reste des services PHP.
 
 Les invariants d'une doc de module (`docs/modules/*`) sont des **points de test**, pas des choses à
 contourner : quand une doc dit « ne pas optimiser ceci », le test correspondant est ce qui l'épingle.

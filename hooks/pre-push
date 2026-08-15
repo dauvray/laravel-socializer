@@ -6,14 +6,19 @@
 # lancée. Historiquement, plusieurs régressions ont été introduites le jour même par le
 # correctif précédent, faute de filet automatique entre les deux.
 #
-# `npm run test:run` lance TOUTE la suite du paquet, pas seulement WebRTC2 (le Chat y a
-# déjà un fichier) : le filet couvre le paquet entier, et n'a pas à être élargi quand un
-# module s'ajoute.
+# DEUX suites, et elles ne se lancent pas au même endroit :
 #
-# ⚠️ Les tests vivent dans ce paquet mais sont exécutés par le PROJET HÔTE : c'est lui
-# qui porte `vitest.config.js`, `package.json` et `node_modules` (le paquet est
-# développé directement dans `vendor/`). Le hook remonte donc jusqu'à la racine du
-# projet avant de lancer le runner.
+#   • JS  — `npm run test:run` depuis le PROJET HÔTE. Les tests vivent dans ce paquet mais
+#     c'est l'hôte qui porte `vitest.config.js`, `package.json` et `node_modules` (le paquet
+#     est développé directement dans `vendor/`). Le hook remonte donc jusqu'à sa racine.
+#     Couvre TOUT le paquet, pas seulement WebRTC2 — rien à élargir quand un module s'ajoute.
+#
+#   • PHP — `vendor/bin/phpunit` depuis CE dépôt, avec son propre `vendor/` (gitignoré),
+#     fabriqué par Orchestra Testbench. Aucun serveur requis. Cf. docs/architecture/tests.md.
+#
+# Les deux dégradent gracieusement : dépendances absentes ⇒ suite non lancée, push autorisé,
+# message explicite. Un hook qui bloque un push parce qu'on n'a pas installé de quoi le
+# vérifier se fait désactiver en une semaine.
 #
 # ✅ Activé dans ce dépôt le 2026-08-15.
 #
@@ -23,10 +28,11 @@
 #
 set -uo pipefail
 
-find_project_root() {
-    local dir="${1:-$PWD}"
+find_upwards() {
+    local marker="$1"
+    local dir="${2:-$PWD}"
     while [ "$dir" != "/" ]; do
-        if [ -f "$dir/vitest.config.js" ]; then
+        if [ -f "$dir/$marker" ]; then
             printf '%s' "$dir"
             return 0
         fi
@@ -35,26 +41,56 @@ find_project_root() {
     return 1
 }
 
-ROOT="$(find_project_root "$PWD")" || {
-    echo "[pre-push] vitest.config.js introuvable en remontant depuis $PWD."
-    echo "[pre-push] Tests non exécutés — push autorisé (checkout hors projet hôte)."
-    exit 0
-}
+FAILED=0
 
-if [ ! -d "$ROOT/node_modules" ]; then
-    echo "[pre-push] node_modules absent dans $ROOT — lancez 'npm ci'."
-    echo "[pre-push] Tests non exécutés — push autorisé."
-    exit 0
+# ── Suite PHP (la plus rapide : elle échoue en premier) ──────────────────────────────
+
+PKG="$(find_upwards phpunit.xml "$PWD")" || PKG=""
+
+if [ -z "$PKG" ]; then
+    echo "[pre-push] phpunit.xml introuvable — suite PHP non exécutée."
+elif [ ! -x "$PKG/vendor/bin/phpunit" ]; then
+    echo "[pre-push] vendor/bin/phpunit absent dans $PKG — lancez 'composer install' ici."
+    echo "[pre-push] Suite PHP non exécutée."
+else
+    echo "[pre-push] Suite PHP (depuis $PKG)…"
+    if (cd "$PKG" && vendor/bin/phpunit); then
+        echo "[pre-push] ✅ Suite PHP verte."
+    else
+        echo "[pre-push] ❌ Suite PHP rouge."
+        FAILED=1
+    fi
 fi
 
-echo "[pre-push] Suite du paquet (depuis $ROOT)…"
+# ── Suite JS ─────────────────────────────────────────────────────────────────────────
 
-if ! (cd "$ROOT" && npm run --silent test:run); then
+ROOT="$(find_upwards vitest.config.js "$PWD")" || ROOT=""
+
+# ⚠️ Aucun `exit 0` dans les branches de saut : elles doivent tomber sur le verdict final,
+# sinon une suite PHP rouge serait effacée par une suite JS simplement non lançable.
+if [ -z "$ROOT" ]; then
+    echo "[pre-push] vitest.config.js introuvable en remontant depuis $PWD."
+    echo "[pre-push] Suite JS non exécutée (checkout hors projet hôte)."
+elif [ ! -d "$ROOT/node_modules" ]; then
+    echo "[pre-push] node_modules absent dans $ROOT — lancez 'npm ci'."
+    echo "[pre-push] Suite JS non exécutée."
+else
+    echo "[pre-push] Suite JS (depuis $ROOT)…"
+    if (cd "$ROOT" && npm run --silent test:run); then
+        echo "[pre-push] ✅ Suite JS verte."
+    else
+        echo "[pre-push] ❌ Suite JS rouge."
+        FAILED=1
+    fi
+fi
+
+# ── Verdict ──────────────────────────────────────────────────────────────────────────
+
+if [ "$FAILED" -ne 0 ]; then
     echo
-    echo "[pre-push] ❌ Suite rouge — push refusé."
+    echo "[pre-push] Push refusé."
     echo "[pre-push] Pour passer outre en connaissance de cause : git push --no-verify"
     exit 1
 fi
 
-echo "[pre-push] ✅ Suite verte."
 exit 0

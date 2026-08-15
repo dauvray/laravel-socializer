@@ -27,8 +27,11 @@ rooms, chat, visio/diffusion WebRTC, tableau blanc, applications IA.
 ## Commandes
 
 ```bash
-# Tests — DEPUIS LA RACINE DU PROJET HÔTE
+# Tests JS — DEPUIS LA RACINE DU PROJET HÔTE
 cd /var/www/estarter-test && npm run test:run
+
+# Tests PHP — DEPUIS CE PAQUET (Orchestra Testbench, aucun serveur requis)
+composer install && vendor/bin/phpunit
 
 # Installation / mise à jour du package dans l'app (publish + migrate + seed + patch de fichiers)
 php artisan socializer:build
@@ -76,7 +79,10 @@ est dans git.
   **backend** n'a ni throttle, ni validation, ni contrôle de relation — et c'est lui qui porte la
   seule fermeture possible de l'usurpation intra-room. Voir
   [docs/modules/webrtc2/securite.md](docs/modules/webrtc2/securite.md).
-- **Aucun test PHP** n'existe (pas de `tests/`, pas de `phpunit.xml`, pas de `require-dev`).
+- **La suite PHP ne couvre que la signalisation WebRTC** — c'est un socle tout neuf, pas un filet.
+  Ses cinq décisions de harnais (pile de middlewares réduite, aucune migration du paquet, doublures
+  qui lèvent) sont dans [docs/architecture/tests.md](docs/architecture/tests.md#suite-php--dans-le-package-via-orchestra-testbench) : les
+  ignorer coûte une demi-journée.
 - **Le front est en français en dur**, sans `$t()`. Introduire l'i18n est un chantier à part entière.
 - Plusieurs zones sont mortes ou vides (`admin.php` commenté, `console.php` vide, deux mappings
   PSR-4 vers des dossiers inexistants) —
