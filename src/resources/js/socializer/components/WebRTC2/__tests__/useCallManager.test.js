@@ -299,9 +299,26 @@ describe('useCallManager', () => {
         })
 
         beforeEach(() => {
-            // L'ouverture suit toujours une invitation émise
-            cm.startCallWithPeer({ toUserSlug: 'alice', type: 'visio' })
+            // ⚠️ Le mock DOIT écrire la demande en vol, comme le fait la production
+            // (`usePeerCore.requestAuthorizationRemotePeerId`) : c'est le fait que lit la
+            // garde d'`openCallBetweenPeer`. Le mock nu d'avant laissait le store vide, si
+            // bien que les cas « nominaux » de ce bloc décrivaient en réalité, sans le
+            // dire, le chemin « acceptation sans invitation » que cette garde ferme.
+            core.requestAuthorizationRemotePeerId = vi.fn(async ({ toUserSlug, type }) => {
+                ctx.peerStore.addWaitingRemotePeerId(toUserSlug, {
+                    room: ctx.session.currentCallRoomId,
+                    type,
+                    contextId: ctx.contextId,
+                })
+                return 'invite-1'
+            })
+
+            // L'ouverture suit toujours une invitation émise. Room imposée pour qu'elle
+            // coïncide avec celle qu'`answerPayload()` renvoie — le distant renvoie
+            // `options.room` verbatim, la clé de la demande doit donc se refermer.
+            cm.startCallWithPeer({ toUserSlug: 'alice', type: 'visio', room: 'call-room-1' })
             core.requestAuthorizationRemotePeerId.mockClear()
+            ctx.peerStore.addWaitingRemotePeerId.mockClear()
         })
 
         it('arrête le retry d\'invitation quel que soit le statut', async () => {
@@ -368,6 +385,90 @@ describe('useCallManager', () => {
             await cm.openCallBetweenPeer(answerPayload({ status: false }))
 
             expect(ctx.session.authorizedCallPeers.size).toBe(0)
+        })
+
+        // ── B3 : une acceptation ne vaut que pour une invitation en vol ──────────
+        //
+        // Sans ces cas, `authorizedCallPeers` — la seconde branche d'`isAuthorizedPeer`,
+        // donc l'allowlist que consultent les gardes A2 et B2 — est écrivable par
+        // quiconque POSTe `/response-to-authorization-peer`. Le refus de la FSM
+        // (IDLE → CONNECTED invalide) ne protège pas : les écritures le précédaient.
+
+        it('acceptation d\'un pair jamais invité : n\'inscrit RIEN', async () => {
+            await cm.openCallBetweenPeer(answerPayload({
+                fromUserSlug: 'mallory',
+                options: { room: 'call-room-1', type: 'visio', peerId: 'peer-mallory' },
+            }))
+
+            expect(ctx.isAuthorizedCallPeer('mallory')).toBe(false)
+            expect(ctx.session.authorizedCallPeers.size).toBe(0)
+            expect(ctx.peerStore.addRemotePeerId).not.toHaveBeenCalled()
+            expect(pool.requestOrConnectPeer).not.toHaveBeenCalled()
+            expect(media.startCurrentStream).not.toHaveBeenCalled()
+            // L'invitation en cours vers alice n'est pas emportée par le refus.
+            expect(ctx.callMachine.callState.value).toBe(CALL_STATES.CALLING)
+            expect(ctx.peerStore.hasWaitingRemotePeerId('alice', 'call-room-1', 'visio')).toBe(true)
+        })
+
+        it('acceptation sur une autre room ou un autre type que l\'invitation : refusée', async () => {
+            // La clé est composite (slug, room, type) : un garde indexé sur le slug seul
+            // passerait ces deux cas sans rien voir.
+            await cm.openCallBetweenPeer(answerPayload({
+                options: { room: 'call-room-AUTRE', type: 'visio', peerId: 'peer-alice' },
+            }))
+            expect(ctx.isAuthorizedCallPeer('alice')).toBe(false)
+
+            await cm.openCallBetweenPeer(answerPayload({
+                options: { room: 'call-room-1', type: 'vocal', peerId: 'peer-alice' },
+            }))
+            expect(ctx.isAuthorizedCallPeer('alice')).toBe(false)
+
+            expect(ctx.peerStore.addRemotePeerId).not.toHaveBeenCalled()
+            expect(pool.requestOrConnectPeer).not.toHaveBeenCalled()
+        })
+
+        it('acceptation d\'une invitation réellement émise : inchangée', async () => {
+            // Non-régression de la visio 1-à-1 — le seul chemin nominal de cette fonction.
+            await cm.openCallBetweenPeer(answerPayload())
+
+            expect(ctx.isAuthorizedCallPeer('alice')).toBe(true)
+            expect(ctx.peerStore.addRemotePeerId).toHaveBeenCalledWith('alice', 'peer-alice')
+            expect(pool.requestOrConnectPeer).toHaveBeenCalledWith('alice')
+            // La demande est consommée : une seconde acceptation ne repasse pas.
+            expect(ctx.peerStore.hasWaitingRemotePeerId('alice', 'call-room-1', 'visio')).toBe(false)
+        })
+
+        it('invitation émise par un AUTRE contexte de l\'onglet : admise', async () => {
+            // Delta assumé. Le store est partagé par l'onglet et `openCallBetweenPeer` ne
+            // s'exécute QUE dans le contexte de `Notifications.vue` (`useMediaBroadcast()`
+            // sans argument), seul destinataire de `.ResponseToAuthorizationPeer` — alors
+            // que `startCallWithPeer` est exposé par toute instance du composable. Exiger
+            // l'égalité des `contextId` casserait l'appel initié par un provider de room.
+            // Ce test est là pour virer au rouge si un tel contrôle se glissait.
+            ctx.peerStore.addWaitingRemotePeerId('carol', {
+                room: 'call-room-2',
+                type: 'visio',
+                contextId: 'un-autre-contexte',
+            })
+
+            await cm.openCallBetweenPeer(answerPayload({
+                fromUserSlug: 'carol',
+                options: { room: 'call-room-2', type: 'visio', peerId: 'peer-carol' },
+            }))
+
+            expect(ctx.isAuthorizedCallPeer('carol')).toBe(true)
+            expect(pool.requestOrConnectPeer).toHaveBeenCalledWith('carol')
+        })
+
+        it('acceptation sans peerId : n\'empoisonne pas le mapping', async () => {
+            // Le payload vient du réseau. `acceptCallFromPeer` conditionne déjà son
+            // écriture à la présence du peerId ; ici elle était inconditionnelle —
+            // `options` absent levait un TypeError, `peerId` absent écrivait `undefined`.
+            await cm.openCallBetweenPeer(answerPayload({
+                options: { room: 'call-room-1', type: 'visio' },
+            }))
+
+            expect(ctx.peerStore.addRemotePeerId).not.toHaveBeenCalled()
         })
     })
 

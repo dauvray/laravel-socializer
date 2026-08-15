@@ -247,17 +247,47 @@ export function useCallManager(ctx, { core, media, connections, transport, pool 
         const room = payload?.options?.room || null
         const type = isValidCallType(payload?.options?.type) ? payload.options.type : 'visio'
 
-        // L'invitation est acceptée : MA demande d'autorisation n'est plus en vol. Clé
-        // exacte — `requestAuthorizationRemotePeerId` l'a enregistrée sur
-        // (slug, currentCallRoomId, type), et `room` est cette room, renvoyée telle
-        // quelle par le distant. Purger sur le slug seul emporterait les demandes des
-        // autres contextes de l'onglet, qui n'ont rien à voir avec cet appel.
-        ctx.peerStore.removeWaitingRemotePeerId(
-            fromUserSlug,
-            room || ctx.session.currentCallRoomId,
-            type,
-        )
-        ctx.peerStore.addRemotePeerId(fromUserSlug, payload.options.peerId)
+        // Clé exacte de MA demande — `requestAuthorizationRemotePeerId` l'a enregistrée
+        // sur (slug, currentCallRoomId, type), et `room` est cette room, renvoyée telle
+        // quelle par le distant. Lire ou purger sur le slug seul emporterait les demandes
+        // des autres contextes de l'onglet, qui n'ont rien à voir avec cet appel.
+        const callRoom = room || ctx.session.currentCallRoomId
+
+        // ⚠️ Une acceptation ne vaut QUE pour une invitation que cet onglet a émise.
+        //
+        // Sans cette garde, un POST forgé sur `/response-to-authorization-peer` suffisait
+        // à se faire inscrire dans `authorizedCallPeers` et dans le mapping peerId d'une
+        // victime qui n'a jamais invité personne. Le refus de la FSM juste en dessous
+        // (IDLE → CONNECTED est une transition invalide) ne protégeait rien : les deux
+        // écritures le précédaient. Or `authorizedCallPeers` est la seconde branche
+        // d'`utils/isAuthorizedPeer.js` — l'attaquant obtenait donc ensuite le peerId
+        // local (garde de `responseRemotePeerConnection`) ET l'ouverture de connexion
+        // (garde de `connectToPeer`) : les lots A et B étaient contournés par cette route.
+        //
+        // Le client peut trancher ce cas seul, contrairement à l'usurpation intra-room :
+        // « ai-je invité ce pair ? » est un fait purement local.
+        //
+        // Pas de contrôle du `contextId` de la demande, bien que le store soit partagé par
+        // l'onglet : `openCallBetweenPeer` ne s'exécute que dans le contexte de
+        // `Notifications.vue`, seul destinataire de `.ResponseToAuthorizationPeer`, alors
+        // que `startCallWithPeer` est exposé par toute instance de `useMediaBroadcast`.
+        // L'exiger casserait un appel initié depuis un provider de room.
+        if (!ctx.peerStore.hasWaitingRemotePeerId(fromUserSlug, callRoom, type)) {
+            console.warn(
+                '[useCallManager] acceptation d\'appel sans invitation en vol — ignorée',
+                { fromUserSlug, room: callRoom, type, contextId: ctx.contextId },
+            )
+            return
+        }
+
+        // L'invitation est acceptée : MA demande d'autorisation n'est plus en vol.
+        ctx.peerStore.removeWaitingRemotePeerId(fromUserSlug, callRoom, type)
+
+        // Conditionné à la présence du peerId, comme `acceptCallFromPeer` : le payload
+        // vient du réseau, une écriture inconditionnelle mappait `undefined`.
+        if (payload?.options?.peerId) {
+            ctx.peerStore.addRemotePeerId(fromUserSlug, payload.options.peerId)
+        }
 
         // Mon invitation a été acceptée : c'est moi qui vais ouvrir la connexion
         // (`pool.requestOrConnectPeer` juste en dessous), et ce pair n'est pas
