@@ -105,7 +105,7 @@ class UserController extends Controller
             ->sendNow();
         }
         catch (\Exception $ex) {
-           return $ex;
+            return $this->signalingFailure($ex, $request);
         }
     }
 
@@ -132,7 +132,7 @@ class UserController extends Controller
             ->sendNow();
         }
         catch (\Exception $ex) {
-           return $ex;
+            return $this->signalingFailure($ex, $request);
         }
     }
 
@@ -152,7 +152,7 @@ class UserController extends Controller
             ->sendNow();
         }
         catch (\Exception $ex) {
-           return $ex;
+            return $this->signalingFailure($ex, $request);
         }
     }
 
@@ -184,7 +184,7 @@ class UserController extends Controller
             ->sendNow();
         }
         catch (\Exception $ex) {
-           return $ex;
+            return $this->signalingFailure($ex, $request);
         }
     }
 
@@ -203,7 +203,38 @@ class UserController extends Controller
             ->sendNow();
         }
         catch (\Exception $ex) {
-           return $ex;
+            return $this->signalingFailure($ex, $request);
         }
+    }
+
+    /**
+     * Échec de broadcast sur une route de signalisation : journaliser, ne rien divulguer.
+     *
+     * Les 5 méthodes ci-dessus faisaient `return $ex;`. Ce n'est pas un simple bavardage :
+     * le routeur ne sait pas quoi faire d'un objet quelconque, alors il le confie à
+     * `Response::setContent`, qui accepte tout ce qui est `__toString()`-able — et
+     * `Throwable::__toString()` rend le message, LE CHEMIN DU FICHIER, la ligne et LA TRACE
+     * COMPLÈTE. Le tout en **200**, donc le client croyait avoir signalé, et
+     * **indépendamment d'`APP_DEBUG`** (qui ne gouverne que le rendu du handler d'exceptions,
+     * jamais une valeur retournée volontairement par un contrôleur).
+     *
+     * Point unique plutôt que cinq blocs recopiés : le nom de la route suffit à discriminer,
+     * et un format de log unique reste lisible en production. Contexte calqué sur le
+     * `Log::warning` d'usurpation de `closeConnectionToPeerId`.
+     */
+    private function signalingFailure(\Exception $ex, Request $request)
+    {
+        $user = Auth::user();
+
+        Log::error('Échec de broadcast sur une route de signalisation', [
+            'route' => $request->route()?->getName(),
+            'auth_user_id' => $user?->id,
+            'auth_user_slug' => $user?->slug,
+            'target_slug' => $request->get('toUserSlug'),
+            'ip' => $request->ip(),
+            'exception' => $ex,
+        ]);
+
+        return response()->json(['ok' => false], 500);
     }
 }

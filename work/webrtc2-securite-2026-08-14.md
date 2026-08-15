@@ -609,7 +609,8 @@ n'importe quel utilisateur.
 
 ### C3 — Ne plus renvoyer l'objet exception `[S]`
 
-- [ ] **Dépend de :** rien. À faire avant C4/C2 (même fichier).
+- [x] **Dépend de :** rien. À faire avant C4/C2 (même fichier). — ✅ fait le 15/08/2026, avec
+  le **socle de tests PHP** qu'il a servi à valider.
 
 Les 5 méthodes de signalisation font `catch (\Exception $ex) { return $ex; }`. Laravel
 sérialise l'objet : message, chemins de fichiers et trace partent au client,
@@ -617,8 +618,32 @@ sérialise l'objet : message, chemins de fichiers et trace partent au client,
 
 - `Log::error(...)` + réponse neutre (`abort(500)` ou `response()->json(['ok' => false], 500)`).
 
-**Tests :** échec de broadcast provoqué ⇒ la réponse ne contient ni chemin de fichier ni
-trace ; l'erreur est bien dans les logs.
+> **La fuite était pire que « Laravel sérialise l'objet ».** Mesurée par le test avant
+> correctif : le routeur ne sait pas quoi faire d'un objet quelconque, alors il le confie à
+> `Response::setContent`, qui accepte tout ce qui est `__toString()`-able — et
+> `Throwable::__toString()` rend le message, le chemin, la ligne **et la trace complète**. Le
+> tout en **200**, donc le client croyait avoir signalé. `APP_DEBUG` n'y pouvait rien : il ne
+> gouverne que le handler d'exceptions, jamais une valeur retournée volontairement par un
+> contrôleur. D'où `APP_DEBUG=true` dans `phpunit.xml` — le mode debug ne doit rien changer au
+> verdict.
+>
+> **Delta assumé — un point unique plutôt que cinq blocs.** `UserController::signalingFailure()`
+> porte le log et la réponse ; le nom de la route suffit à discriminer, et un format de log
+> unique reste lisible en production. Contexte calqué sur le `Log::warning` d'usurpation déjà
+> en place dans `closeConnectionToPeerId`.
+>
+> **Delta assumé — la pile de middlewares du harnais n'est pas celle de production.**
+> `['auth']` au lieu de `['web','auth','routeProtect','verified','restrictedMode']` : traverser
+> `web` ferait résoudre `Dauvray\Estarter\...\UserActivity`, poussé dans ce groupe par le
+> ServiceProvider, et obligerait à tirer un paquet privé dans le harnais. **À rouvrir en C1** :
+> le throttle s'ajoutera sur les routes elles-mêmes, donc il sera bien exercé — mais tout garde
+> qui vivrait dans la pile `web` échapperait à ces tests.
+
+**Tests :** ✅ `tests/Feature/Signaling/ExceptionLeakTest.php` — 7 tests, 23 assertions. Les 5
+routes en `dataProvider` (ni chemin, ni trace, ni classe d'exception dans le corps · statut
+500) · l'échec est journalisé avec de quoi diagnostiquer · le chemin nominal est inchangé
+(200 vide, broadcast bien émis). Contre-épreuve : avant le correctif, les 5 cas échouaient en
+exhibant le chemin **et** la trace.
 **Commit :** `secu(socializer): ne plus exposer les exceptions de signalisation`
 
 ---
@@ -840,11 +865,17 @@ surdimensionné rejeté.
 ## Vérification globale
 
 - `npx vitest run` après **chaque** tâche. Référence relue le 15/08/2026, après B3 :
-  **645 tests / 36 fichiers, ~3,7 s**. Rejouée par `hooks/pre-push` et
-  `.github/workflows/webrtc2-tests.yml`.
+  **645 tests / 36 fichiers, ~3,7 s**.
+- **Backend** : `vendor/bin/phpunit` **depuis le paquet** (Orchestra Testbench, aucun serveur
+  requis) — cf. [docs/architecture/tests.md](../docs/architecture/tests.md). Socle posé avec C3
+  le 15/08/2026.
+- `hooks/pre-push` rejoue **les deux** suites. ⚠️ Il n'y a **pas** de CI : la mention d'un
+  `.github/workflows/webrtc2-tests.yml` qui figurait ici était fausse — ce dépôt n'a pas de
+  `.github/`, et l'activation du hook est une config locale, jamais versionnée.
 - Les scénarios sont le filet qui compte : `lateJoiner`, `peerDeparture`,
   `broadcastLifecycle` doivent rester verts sur A2, B1 et D2 — ce sont eux qui observent le
   seul symptôme qui casse (« A diffuse, B arrive, B ne voit rien »).
-- Backend : `php artisan test` sur C1 → C4 et E3.
+- ~~Backend : `php artisan test`~~ — le paquet n'a pas d'app : c'est `vendor/bin/phpunit`
+  depuis le paquet (cf. ci-dessus) sur C1 → C4 et E3.
 - Recette manuelle après le lot A : visio 1-à-1, diffusion + arrivant tardif, partage
   d'écran seul — les trois chemins que le garde sortant traverse.
