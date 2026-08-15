@@ -17,14 +17,15 @@ A1 ──┬─> A2 ──┬─> A3
      │        └─> B2
      └─────────────┘
 B0 ──> B1
-C3 ──> C4 ──> C2 ──> E3      (tous sur UserController — à sérialiser)
-C1                            (indépendant)
+C3 ──> C4 ──> C2 ──┬─> E3     (tous sur UserController — à sérialiser)
+                   └─> C5     (front : le bouton d'appel)
+B3, C1                        (indépendants)
 D1 ──> D2
 E1, E2                        (indépendants)
 F1                            (dernier)
 ```
 
-`A` est bloquant. `C1`, `C3`, `E1`, `E2` ne bloquent personne : à intercaler librement.
+`A` est bloquant. `B3`, `C1`, `C3`, `E1`, `E2` ne bloquent personne : à intercaler librement.
 
 ---
 
@@ -494,6 +495,89 @@ de diagnostic.
 
 ---
 
+### B3 — Une acceptation non sollicitée ne doit rien inscrire `[S]` 🔴
+
+- [x] **Dépend de :** rien. **Trouvé le 15/08/2026** en cadrant l'arbitrage de C2 — ✅ fait le
+  15/08/2026.
+
+> **Delta assumé — pas de contrôle du `contextId`, contrairement au plan initial.** Le
+> troisième test prévu ici (« acceptation d'un autre contexte de l'onglet ⇒ n'autorise pas
+> ce contexte-ci ») décrivait un durcissement qui aurait **fabriqué** une régression. En
+> traçant les appelants : `openCallBetweenPeer` ne s'exécute que dans le contexte de
+> `Notifications.vue` (`useMediaBroadcast()` sans argument ⇒ `data-app`), seul destinataire
+> de `.ResponseToAuthorizationPeer`, alors que `startCallWithPeer` est exposé par **toute**
+> instance de `useMediaBroadcast`. Une invitation émise par un provider de room porterait
+> donc un `contextId` différent de celui qui traite l'acceptation. Le test est **inversé** :
+> ce cas est admis, et il vire au rouge si un contrôle de `contextId` se glisse un jour.
+> Aucune perte de sécurité — l'onglet a bien invité ce pair, c'est le seul fait qui compte.
+>
+> **Delta assumé — le `beforeEach` du bloc de tests n'était pas fidèle.** Il annonçait
+> « l'ouverture suit toujours une invitation émise » et appelait bien `startCallWithPeer`,
+> mais `core` était un mock nu : **aucune demande en vol n'était réellement enregistrée**.
+> Les six cas « nominaux » du bloc décrivaient donc, sans le dire, le chemin que cette garde
+> ferme. Le mock de `core.requestAuthorizationRemotePeerId` écrit désormais dans le store
+> comme la production, et l'invitation impose sa room pour que la clé se referme sur celle
+> qu'`answerPayload()` renvoie. Même nature que le delta relevé en B2 — ne pas le lire comme
+> un assouplissement : le chemin nominal a maintenant une précondition explicite.
+>
+> **Durcissement joint** : `addRemotePeerId` est désormais conditionné à la présence de
+> `options.peerId`, comme le fait déjà `acceptCallFromPeer`. L'écriture était
+> inconditionnelle — `options` absent levait un TypeError dans un handler `async`, et un
+> `peerId` absent mappait `undefined`. Même classe de défaut : le payload vient du réseau.
+>
+> **La branche `!payload.status`** (refus distant) est laissée telle quelle : morte en
+> production, `Notifications.vue` traite le refus lui-même sans appeler cette fonction.
+
+> **Les lots A et B sont contournables par la route de réponse.** Tracé statiquement, non
+> exploité en live.
+>
+> Dans `useCallManager.openCallBetweenPeer`, `ctx.peerStore.addRemotePeerId(...)` et
+> `ctx.markAuthorizedCallPeer(...)` s'exécutent **avant** la garde
+> `ctx.callMachine.transition(CALL_STATES.CONNECTED)`. La machine refuse bien
+> IDLE → CONNECTED (`utils/useCallStateMachine.js`, table `VALID_TRANSITIONS`) : aucune
+> session ne démarre. **Mais les deux écritures ont déjà eu lieu.**
+>
+> Conséquence : un POST `/response-to-authorization-peer` avec `status: true` vers une
+> victime **qui n'a jamais invité personne** inscrit l'attaquant dans
+> `session.authorizedCallPeers` — précisément l'allowlist créée par A1 et lue par
+> `utils/isAuthorizedPeer.js`. À partir de là, l'attaquant satisfait le prédicat aux
+> **deux** sorties du contexte : B2 lui livre le peerId de la victime, A2 laisse
+> `connectToPeer` lui ouvrir la connexion. Si la victime diffuse, son flux part.
+>
+> **Ce cas-là, le client PEUT le trancher seul** — contrairement à l'usurpation
+> intra-room de B1. « Ai-je invité ce pair ? » est un fait purement local, déjà porté par
+> `peerStore.waitingRemotePeerId`, que `requestAuthorizationRemotePeerId` écrit sur la clé
+> exacte (slug, room d'appel, type). Aucune source de vérité serveur n'est nécessaire.
+>
+> ⚠️ **Ne pas se contenter de C2.** Le garde serveur réduira la surface aux seuls pairs en
+> relation, mais un contact légitime resterait capable de s'auto-autoriser sans invitation.
+> Les deux correctifs sont complémentaires, celui-ci est indépendant et immédiat.
+
+- `openCallBetweenPeer` : exiger la demande en vol **avant** toute écriture — lire
+  `waitingRemotePeerId` sur la clé (slug, `room || currentCallRoomId`, type) au lieu de la
+  purger inconditionnellement, et sortir si elle est absente. Déplacer `addRemotePeerId` et
+  `markAuthorizedCallPeer` **après** cette garde.
+
+**Tests** — `useCallManager.test.js`, 5 cas ajoutés, négatifs d'abord :
+- acceptation d'un pair jamais invité ⇒ **rien** n'est écrit : ni `remotePeersId`, ni
+  `authorizedCallPeers`, aucune connexion ouverte, et l'invitation en cours vers un tiers
+  n'est pas emportée ;
+- acceptation sur une **autre** room ou un **autre** type que l'invitation ⇒ même refus
+  (épingle la clé composite : un garde indexé sur le slug seul passerait sans rien voir) ;
+- acceptation d'une invitation réellement émise ⇒ inchangé (non-régression de la visio
+  1-à-1), et la demande est **consommée** — une seconde acceptation ne repasse pas ;
+- invitation émise par un **autre** contexte de l'onglet ⇒ **admise** (contre-épreuve du
+  delta assumé ci-dessus) ;
+- acceptation sans `peerId` ⇒ le mapping n'est pas écrit.
+
+**Done :** ✅ **645 tests / 36 fichiers** verts (15/08/2026). Les trois cas offensifs étaient
+rouges avant la garde — contre-vérifié. `scenarios/incomingMappingInvariant.test.js`, qui
+exerce l'appel direct avec le **vrai** `usePeerCore`, reste vert sans retouche : la clé se
+referme donc aussi hors mock.
+**Commit :** `secu(webrtc2): n'accepter une réponse d'appel que pour une invitation en vol`
+
+---
+
 # LOT C — Backend Laravel 🟠
 
 > `UserController.php` — **C3 → C4 → C2 → E3 touchent tous le même fichier : à sérialiser**
@@ -567,18 +651,66 @@ N'importe quel authentifié peut aujourd'hui signaler n'importe quel autre utili
 son slug. `fromUserSlug` est bien authentifié (correctif de mai), mais aucun lien n'est
 exigé entre les deux parties.
 
-- Réutiliser `canJoinRoom` / `canJoinServer` — déjà utilisés par
-  [`channels.php`](../src/routes/socializer/channels.php) — pour exiger un contexte
-  partagé sur `askForPeerId` / `responseToPeerId`.
-- Pour l'appel direct (`sendAlertToUser`, `responseToPeerAuthorization`) : allowlist de
-  contacts. ⚠️ **Arbitrage produit nécessaire** — qui a le droit d'appeler qui ? À trancher
-  avant d'écrire le code.
+> ## ✅ Arbitrage produit tranché le 15/08/2026 — « follow mutuel OU contexte partagé »
+>
+> **`mayReach($from, $to)` = les deux se suivent mutuellement **OU** ils partagent une
+> room / un serveur.** Un seul prédicat pour les **5** routes, appliqué à
+> `Auth::user()` → `toUserSlug`. Il est **symétrique**, ce qui règle la route de réponse
+> sans traitement particulier (cf. ci-dessous).
+>
+> **Ce que la règle ferme :** l'appel « à froid » d'un inconnu total, qui est la règle de
+> fait aujourd'hui — le bouton d'appel vit sur la cover de **n'importe quel** profil, dès
+> que la personne est en ligne (`components/User/Cover.vue`, à côté de `FollowButton`).
+>
+> **Ce qu'elle préserve :** les deux seuls usages légitimes que le produit expose — appeler
+> un contact (follow réciproque) et appeler un membre d'une room ou d'un serveur commun.
+>
+> **Pourquoi pas le chat 1-à-1 comme troisième voie** : `conversations()` serait un
+> prédicat **auto-servi** — `/get-or-create-chat-room` crée une conversation avec
+> n'importe qui, donc un attaquant s'octroie la relation en une requête. Écarté.
+>
+> **Pourquoi une relation symétrique, et pas le follow simple.** L'invitation d'appel est
+> un broadcast *fire-and-forget* : **aucune invitation n'est persistée côté serveur**, donc
+> `responseToPeerAuthorization` n'a rien contre quoi se valider. Avec une relation
+> asymétrique il aurait fallu l'inverser (« mon interlocuteur aurait-il eu le droit de
+> m'appeler ? ») — une seconde règle à tenir juste. La symétrie l'évite.
+
+- **`askForPeerId` / `responseToPeerId`** — réutiliser `canJoinRoom` / `canJoinServer`, déjà
+  utilisés par [`channels.php`](../src/routes/socializer/channels.php), sur la `room` du
+  payload.
+- **`sendAlertToUser` / `responseToPeerAuthorization` / `closeConnectionToPeerId`** — pas de
+  room exploitable dans le payload (la `room` de l'appel direct est générée côté client,
+  ce n'est pas un vertex). Il faut donc une **nouvelle requête Nebula** « ces deux users
+  partagent-ils un vertex ? » — `MATCH (a:user)-[:registered_in]->(x)<-[:registered_in]-(b:user)`
+  — plus la réciprocité du follow (arête `followed_by` du mur de chacun vers l'autre, cf.
+  [`Users.php`](../src/app/Services/Users.php)). ⚠️ **C'est ce qui fait de C2 un `[M]` et
+  non le `[S]` que la ligne « réutiliser canJoinRoom » laissait croire.**
+- Poser le prédicat en **une seule méthode** sur `Socializable` (`mayReach`), pas cinq
+  contrôles recopiés — convention « un seul système ».
 - 403 + `Log::warning` traçant `auth_user_id`, `target_slug`, `ip`, `user_agent` — même
   format que le log d'usurpation déjà en place dans `closeConnectionToPeerId`.
 
-**Tests :** utilisateur sans room commune ⇒ 403 et **aucun broadcast émis** · membre de la
-même room ⇒ 200.
+**Tests :** inconnu (ni follow réciproque ni vertex commun) ⇒ 403 et **aucun broadcast
+émis** · follow à sens unique ⇒ 403 · follow réciproque ⇒ 200 · membre de la même room
+⇒ 200 · membre du même serveur ⇒ 200.
 **Commit :** `secu(socializer): exiger une relation entre émetteur et destinataire`
+
+---
+
+### C5 — Aligner le bouton d'appel sur la règle C2 `[S]`
+
+- [ ] **Dépend de :** C2.
+
+Sans ça le bouton **ment** : [`components/User/Cover.vue`](../src/resources/js/socializer/components/User/Cover.vue)
+affiche `CallRemotePeerBtn` dès que `user.connected`, sans rien savoir de la relation.
+Après C2, tout appel hors relation part en 403 — l'utilisateur verrait un bouton qui
+échoue silencieusement.
+
+- Exposer le verdict de `mayReach` dans la charge utile du profil (à côté de
+  `nb_followers` / `is_me`, déjà présents) et conditionner l'affichage du bouton.
+- Le serveur reste l'autorité : ce masquage est de l'UX, **pas** un contrôle.
+
+**Commit :** `feat(socializer): n'afficher le bouton d'appel que si la relation le permet`
 
 ---
 
@@ -695,6 +827,9 @@ surdimensionné rejeté.
 - [`docs/modules/webrtc2/architecture.md`](../docs/modules/webrtc2/architecture.md) : ajouter la
   ligne `authorizedCallPeers` dans la table des propriétaires uniques (posée en A1), et la règle
   **tout chemin qui ouvre une connexion porte un garde d'autorisation, dans les deux sens**.
+  Y joindre le corollaire de B3 : **tout chemin qui ÉCRIT dans cette allowlist en porte un
+  aussi** — une acceptation d'appel ne vaut que pour une invitation en vol, et la garde va
+  avant l'écriture, pas après (la FSM ne protège que ce qui la suit).
 - Ce fichier : consigner les deltas assumés, puis le **supprimer** s'il ne reste rien
   (cf. [`docs/ecrire-la-doc.md`](../docs/ecrire-la-doc.md)).
 
@@ -704,8 +839,8 @@ surdimensionné rejeté.
 
 ## Vérification globale
 
-- `npx vitest run` après **chaque** tâche. Référence relue le 15/08/2026, après B0 :
-  **608 tests / 35 fichiers, ~3,2 s**. Rejouée par `hooks/pre-push` et
+- `npx vitest run` après **chaque** tâche. Référence relue le 15/08/2026, après B3 :
+  **645 tests / 36 fichiers, ~3,7 s**. Rejouée par `hooks/pre-push` et
   `.github/workflows/webrtc2-tests.yml`.
 - Les scénarios sont le filet qui compte : `lateJoiner`, `peerDeparture`,
   `broadcastLifecycle` doivent rester verts sur A2, B1 et D2 — ce sont eux qui observent le
