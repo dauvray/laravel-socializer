@@ -22,6 +22,7 @@
  */
 import { markRaw } from 'vue'
 import { MAX_PEERS_PER_ROOM, VALID_CONNECTION_TYPES } from '../webrtc2.config.js'
+import { isAuthorizedPeer } from './utils/isAuthorizedPeer.js'
 
 export function usePeerConnections(ctx) {
 
@@ -145,6 +146,37 @@ export function usePeerConnections(ctx) {
             return true
         }
 
+        // Garde 2 : autorisation SORTANTE — membre de la room OU interlocuteur d'appel
+        // autorisé (cf. utils/isAuthorizedPeer.js).
+        //
+        // ⚠️ Placée AVANT `addRemotePeerId` ci-dessous, et c'est la moitié du correctif :
+        // ce payload vient de la signalisation, donc de n'importe quel authentifié. Écrire
+        // le mapping sans condition laissait un tiers s'inscrire lui-même comme
+        // « interlocuteur d'appel vérifié » et empoisonner l'allowlist du chemin (b) de
+        // `_isAuthorizedIncomingPeer` — sans qu'aucun appel n'ait jamais été autorisé.
+        // L'autre moitié est le `peer.call(attaquant, monFlux)` qui suivait.
+        //
+        // ⚠️ `false`, jamais `true` : `true` signifie « rien à conclure » et ANNULE le
+        // retry, `false` le diffère. Un signal légitime reçu avant que la présence Reverb
+        // n'ait peuplé `usersInRoom` doit être rattrapé par le moteur de retry, pas perdu.
+        //
+        // ⚠️ Ce garde ne va PAS dans `useSignalingQueue` : l'absence de précondition au
+        // routage est un invariant documenté (un signal abandonné là l'est définitivement).
+        if (!isAuthorizedPeer(userSlug, ctx)) {
+            console.warn(
+                '[usePeerConnections] connectToPeer: pair non autorisé — connexion sortante refusée',
+                {
+                    userSlug,
+                    peerId,
+                    room,
+                    type,
+                    usersInRoom: [...(ctx.connection?.usersInRoom ?? [])],
+                    isAuthorizedCallPeer: ctx.isAuthorizedCallPeer?.(userSlug) === true,
+                }
+            )
+            return false
+        }
+
         // ⚠️ AVANT les gardes, et ce n'est pas cosmétique : ce peerId vient de la
         // signalisation backend (PEER_CONNECT_TO_REMOTE_PEER ou peer-access-permission),
         // il décrit donc l'état COURANT du pair — strictement plus frais que le store,
@@ -161,7 +193,7 @@ export function usePeerConnections(ctx) {
         ctx.peerStore.addRemotePeerId(userSlug, peerId)
         ctx.peerStore.removeWaitingRemotePeerId(userSlug, ctx.session.onAirRoom, type)
 
-        // Garde 2: évite les doubles tentatives concurrentes pour la même cible
+        // Garde 3: évite les doubles tentatives concurrentes pour la même cible
         const lockKey = room + ':' + type + ':' + userSlug
         if (inFlightConnections.has(lockKey)) {
             return true
@@ -173,13 +205,13 @@ export function usePeerConnections(ctx) {
         inFlightConnections.add(lockKey)
 
         try {
-            // Garde 3 (dans le verrou) : vérifié après acquisition pour que l'état lu
+            // Garde 4 (dans le verrou) : vérifié après acquisition pour que l'état lu
             // et l'action qui suit soient atomiques vis-à-vis des appels concurrents.
             if (hasOpenConnection(userSlug, room, type)) {
                 return true
             }
 
-            // Garde 4 : limite du nombre de peers par room en topologie mesh.
+            // Garde 5 : limite du nombre de peers par room en topologie mesh.
             // Compté à l'intérieur du verrou pour que la lecture et la décision
             // soient atomiques vis-à-vis des appels concurrents.
             const activePeerCount = _countActivePeersInRoom(room, type)

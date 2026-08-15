@@ -218,6 +218,14 @@ describe('usePeerConnections', () => {
 
     // ── connectToPeer ─────────────────────────────────────────────────────────
     describe('connectToPeer', () => {
+        // Le garde d'autorisation sortante exige que la cible soit membre de la room ou
+        // interlocuteur d'appel autorisé. On déclare donc la room ici, et pas dans
+        // `makeCtx` : les tests de `getRoomUsersDiff` assertent sur le contenu exact de
+        // `usersInRoom` après diff et une valeur initiale non vide les fausserait.
+        beforeEach(() => {
+            ctx.connection.usersInRoom = ['alice', 'bob']
+        })
+
         it('refuse un payload sans userSlug ou sans peerId', () => {
             expect(connections.connectToPeer({ peerId: 'p1' })).toBe(false)
             expect(connections.connectToPeer({ userSlug: 'alice' })).toBe(false)
@@ -454,6 +462,98 @@ describe('usePeerConnections', () => {
                         isVideoEnabled: true,
                     },
                 })
+            })
+        })
+
+        // ── autorisation sortante ─────────────────────────────────────────────
+        //
+        // Le pendant de `usePeerTransport.incomingAuth` : durcir l'entrant ne protège de
+        // rien tant qu'un tiers peut obtenir de sa victime un `connectToPeer(lui)` — sur
+        // un appel média, c'est l'émetteur qui livre son flux. Le payload vient de la
+        // signalisation, donc de n'importe quel authentifié.
+        //
+        // Cas NÉGATIFS d'abord : c'est l'absence d'effet qui est le correctif.
+        describe('autorisation sortante', () => {
+            const INTRUS = 'mallory'
+
+            beforeEach(() => {
+                // Des flux prêts à partir : sans eux, l'absence d'émission ne prouverait
+                // rien (les types porteurs de flux sortent tôt quand le flux est absent).
+                ctx.media.currentStream = liveStream()
+                ctx.media.screenStream = liveStream()
+            })
+
+            it("refuse un pair ni membre de la room ni interlocuteur d'appel autorisé", () => {
+                expect(connections.connectToPeer({ userSlug: INTRUS, peerId: 'p-mallory' })).toBe(false)
+
+                expect(ctx.peerStore.getLocalPeer.call).not.toHaveBeenCalled()
+                expect(ctx.peerStore.getLocalPeer.connect).not.toHaveBeenCalled()
+            })
+
+            it("n'écrit pas le mapping peerId d'un pair refusé (empoisonnement de l'allowlist entrante)", () => {
+                // Seconde moitié de la faille : `addRemotePeerId` inconditionnel inscrivait
+                // l'intrus comme « interlocuteur d'appel vérifié » pour le chemin (b) de
+                // `_isAuthorizedIncomingPeer`, sans qu'aucun appel n'ait été autorisé.
+                connections.connectToPeer({ userSlug: INTRUS, peerId: 'p-mallory' })
+
+                expect(ctx.peerStore.addRemotePeerId).not.toHaveBeenCalled()
+                expect(ctx.peerStore.getRemotePeerId(INTRUS)).toBeNull()
+            })
+
+            it.each(['stream', 'screen', 'visio', 'vocal'])(
+                "%s : aucun flux n'est émis vers un pair refusé",
+                (type) => {
+                    expect(connections.connectToPeer({
+                        userSlug: INTRUS,
+                        peerId: 'p-mallory',
+                        type,
+                    })).toBe(false)
+
+                    expect(ctx.peerStore.getLocalPeer.call).not.toHaveBeenCalled()
+                },
+            )
+
+            it('refuse un slug au format invalide, même déclaré dans la room', () => {
+                ctx.connection.usersInRoom = ['pas un slug !']
+
+                expect(connections.connectToPeer({
+                    userSlug: 'pas un slug !',
+                    peerId: 'p-forge',
+                })).toBe(false)
+                expect(ctx.peerStore.getLocalPeer.connect).not.toHaveBeenCalled()
+            })
+
+            it('renvoie false — jamais true — pour que le retry diffère au lieu de conclure', () => {
+                // `true` signifie « rien à conclure » et ANNULE le retry (cf. le piège de
+                // `vocal`, qui tombait sur le `return true` final). Un signal légitime reçu
+                // avant que la présence n'ait peuplé `usersInRoom` doit être rattrapé.
+                ctx.connection.usersInRoom = []
+
+                expect(connections.connectToPeer({ userSlug: 'alice', peerId: 'p-alice' })).toBe(false)
+            })
+
+            it('laisse passer un membre de la room (non-régression)', () => {
+                expect(connections.connectToPeer({ userSlug: 'alice', peerId: 'p-alice' })).toBe(true)
+                expect(ctx.peerStore.getLocalPeer.connect).toHaveBeenCalled()
+            })
+
+            it("laisse passer un interlocuteur d'appel autorisé HORS room", () => {
+                // La visio 1-à-1 n'a aucune room commune : c'est exactement le cas que le
+                // correctif du sens entrant de mai avait cassé (appel bloqué en « pending »).
+                // Le registre `authorizedCallPeers` (A1) existe pour lui.
+                ctx.markAuthorizedCallPeer('carol')
+
+                expect(ctx.connection.usersInRoom).not.toContain('carol')
+                expect(connections.connectToPeer({
+                    userSlug: 'carol',
+                    peerId: 'p-carol',
+                    type: 'visio',
+                })).toBe(true)
+                expect(ctx.peerStore.getLocalPeer.call).toHaveBeenCalledWith(
+                    'p-carol',
+                    ctx.media.currentStream,
+                    expect.anything(),
+                )
             })
         })
     })
