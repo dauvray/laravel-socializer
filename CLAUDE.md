@@ -72,8 +72,9 @@ est dans git.
 
 ## À savoir avant de conclure quoi que ce soit
 
-- **La sécurité WebRTC2 n'est pas « faite »** : le sens **entrant** des connexions est durci, le
-  sens **sortant** n'a aucun contrôle d'autorisation. Voir
+- **La sécurité WebRTC2 n'est pas « faite »** : les deux sens sont durcis **côté client**, mais le
+  **backend** n'a ni throttle, ni validation, ni contrôle de relation — et c'est lui qui porte la
+  seule fermeture possible de l'usurpation intra-room. Voir
   [docs/modules/webrtc2/securite.md](docs/modules/webrtc2/securite.md).
 - **Aucun test PHP** n'existe (pas de `tests/`, pas de `phpunit.xml`, pas de `require-dev`).
 - **Le front est en français en dur**, sans `$t()`. Introduire l'i18n est un chantier à part entière.

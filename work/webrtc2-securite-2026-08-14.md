@@ -242,7 +242,35 @@ chemin, B1 change de forme — ce test décide.
 
 ### B1 — Anti-usurpation inconditionnelle sur le chemin présence `[M]` 🟠
 
-- [ ] **Dépend de :** B0.
+- [x] **Dépend de :** B0. — ✅ fait le 15/08/2026.
+
+> ## ⚠️ Ce que B1 ferme — et ce qu'il ne ferme pas
+>
+> **La faille d'origine reste ouverte, et c'est structurel.** Après le verdict de B0, le cas
+> **nominal** de la présence et l'usurpation ont la **même signature locale** : slug déclaré
+> membre, peerId entrant inconnu. Aucun garde côté récepteur ne peut les distinguer — il lui
+> manque la source de vérité. B1 fait donc les deux seules choses qu'un client puisse faire :
+> rendre la règle 3 **inconditionnelle**, et **tracer** l'admission non corroborée. La
+> fermeture revient à **C2**, seul détenteur du lien `Auth::user()` ↔ peerId relayé. Ne pas
+> clore le lot B en lisant « anti-usurpation faite ».
+>
+> **Trouvaille — le chemin (b) était perméable dans l'autre sens.** La règle 3 était enfermée
+> dans `if (isRoomMember)` au motif que (b) vérifie déjà la concordance. Mais (b) ne la
+> vérifie que dans le sens **slug → peerId** : un pair hors room dont le mapping concorde
+> était admis alors que ce **même peerId** était aussi mappé à un membre de la room. La
+> résolution inverse, désormais hors du `if`, le refuse. C'est le seul durcissement de B1 qui
+> change un verdict, et il a sa contre-épreuve (test rouge sans le correctif, vérifié).
+>
+> **Delta assumé — la liste de tests prévue datait de l'option morte.** Le premier cas écrit
+> ici (« membre + peerId neuf ⇒ **rejet** ») est mot pour mot la lecture que B0 a écartée. Il
+> est **inversé** : c'est une contre-épreuve d'admission, qui épingle en plus la trace de
+> non-corroboration. Le laisser tel quel aurait fait implémenter la régression que B0 a servi
+> à éviter.
+>
+> **Registre de la trace : `console.debug`, pas `warn`.** Sur le chemin présence la
+> non-corroboration est **nominale** — elle arrive à chaque connexion entrante légitime. Au
+> niveau `warn` elle noierait les vrais refus. Le logger centralisé reste un item de
+> [webrtc2-todo.md](webrtc2-todo.md).
 
 **Faille :** un membre de la room qui ouvre un **second** `new Peer()` (UUID neuf, donc non
 mappé) obtient `resolvedSlug = null` → la règle 3 est **sautée** → il est admis sur la
@@ -272,13 +300,20 @@ le chemin présence (diffusion, écran), et c'est structurel. La première optio
 > précisément celle que B0 vient d'écarter. Le test de non-régression qui l'épingle est
 > le cas « arrivant tardif » de `scenarios/incomingMappingInvariant.test.js`.
 
-**Tests** — `usePeerTransport.incomingAuth.test.js` :
-- `metadata.from` = membre de la room + peerId neuf non mappé ⇒ **rejet** (aujourd'hui
-  admis : c'est le test qui prouve la faille) ;
-- mapping concordant ⇒ admis · mapping discordant ⇒ rejet (non-régression) ;
-- appel direct vérifié ⇒ admis (non-régression du correctif de mai).
+**Tests** — `usePeerTransport.incomingAuth.test.js`, 3 cas ajoutés (20 dans le fichier) :
+- ~~`from` = membre + peerId neuf non mappé ⇒ **rejet**~~ → **inversé** : ⇒ **admis**, et la
+  trace « Admission entrante non corroborée » est émise. Contre-épreuve de la lecture que B0
+  a écartée ;
+- hors room + mapping concordant, **mais** ce peerId est aussi mappé à un membre de la room
+  ⇒ **rejet**. C'est le cas que le `if (isRoomMember)` laissait passer — vérifié rouge en
+  réintroduisant le garde d'avant ;
+- peerId résolu au slug déclaré ⇒ admis **sans** trace de non-corroboration (sinon un garde
+  qui tracerait tout passerait le premier cas sans rien mesurer) ;
+- mapping concordant ⇒ admis · discordant ⇒ rejet · usurpation intra-room ⇒ rejet · appel
+  direct vérifié ⇒ admis : non-régressions déjà couvertes, inchangées.
 
-**Done :** `scenarios/` toujours vert, en particulier `lateJoiner` et `peerDeparture`.
+**Done :** suite complète verte — **35 fichiers, 630 tests** (15/08/2026), dont `lateJoiner`,
+`peerDeparture` et `incomingMappingInvariant`.
 **Commit :** `secu(webrtc2): anti-usurpation inconditionnelle à l'admission entrante`
 
 ---

@@ -11,7 +11,7 @@
 
 | Direction | État | Détail |
 |---|---|---|
-| **Entrant** (`peer.on('connection')`, `peer.on('call')`) | durci — audit du 20/05/2026 | garde `_isAuthorizedIncomingPeer`, anti-usurpation, gardes de taille, sanitisation |
+| **Entrant** (`peer.on('connection')`, `peer.on('call')`) | durci **côté client**, une faille résiduelle assumée — audits du 20/05 et du 14/08/2026 | garde `_isAuthorizedIncomingPeer`, anti-usurpation inconditionnelle, gardes de taille, sanitisation. Reste aveugle au membre de room qui se présente avec un peerId neuf sous le slug d'un autre — seul le backend peut trancher |
 | **Sortant** (`connectToPeer`, `responseRemotePeerConnection`) | durci **côté client** — audit du 14/08/2026 | prédicat unique `utils/isAuthorizedPeer.js` : membre de la room **ou** interlocuteur d'appel marqué. Le garde autoritatif, côté serveur, reste à écrire |
 | **Backend** (`UserController`, routes) | partiel | `fromUserSlug` authentifié + liste blanche de champs ; ni `throttle`, ni `validate()`, ni contrôle de relation |
 | **Credentials TURN** | 🟠 compilés dans le bundle | identifiants longue durée lisibles par quiconque ouvre le JS |
@@ -127,10 +127,29 @@ L'identité de l'émetteur se lit **toujours** depuis la connexion — `resolveR
 
 ### `_isAuthorizedIncomingPeer` — deux chemins disjoints
 
-Un pair entrant est admis par **(a)** appartenance à `ctx.connection.usersInRoom` (présence Reverb)
-avec anti-usurpation conditionnelle, **ou** **(b)** appel direct vérifié :
-`peerStore.getRemotePeerId(from)` existe **et** correspond à `conn.peer` — allowlist et
-anti-usurpation fusionnées en une seule condition stricte.
+Un pair entrant est admis par **(a)** appartenance à `ctx.connection.usersInRoom` (présence Reverb),
+**ou** **(b)** appel direct vérifié : `peerStore.getRemotePeerId(from)` existe **et** correspond à
+`conn.peer` — allowlist et anti-usurpation fusionnées en une seule condition stricte.
+
+L'anti-usurpation par **résolution inverse** — le peerId réel de la connexion ne doit être résolu à
+aucun **autre** slug — s'applique ensuite aux **deux** chemins. Sur (b) elle n'est pas redondante :
+la concordance n'y est vérifiée que dans le sens slug → peerId, et laissait donc passer un pair dont
+le peerId identifie *aussi* quelqu'un d'autre. Ce qu'elle ne fait **jamais**, c'est conclure sur une
+non-résolution — voir « Le mapping peerId n'existe pas à l'admission » ci-dessous.
+
+### Le mapping peerId n'existe pas à l'admission, sur le chemin présence
+
+Mesuré, pas supposé (`scenarios/incomingMappingInvariant.test.js`) : quand une connexion entrante
+arrive par le chemin (a) — arrivant tardif, partage d'écran — `peerStore.getRemotePeerId(from)` est
+**vide**. La cause est structurelle : le mapping du récepteur est écrit par **sa propre**
+`connectToPeer`, donc quand c'est LUI qui ouvre ; sur la présence, le premier contact est l'appel
+**entrant** de l'autre, qui arrive nécessairement avant. Sur l'appel direct c'est l'inverse —
+`acceptCallFromPeer` écrit le mapping avant même de répondre à l'invitation. Les deux chemins sont
+opposés par construction ; aucun réglage de timing ne les rapprochera.
+
+Conséquence de conception : « peerId non résolu » ne vaut **pas** refus, sous peine de fermer toute
+diffusion en room. L'admission est accordée et tracée (`console.debug`, « Admission entrante non
+corroborée ») — la trace mesure la surface que le contrôle backend devra couvrir.
 
 ⚠️ **`ctx.session.currentCallUsers` ne peut pas servir d'allowlist.** C'est un état **UI** (qui voir,
 qui raccrocher) ; le réutiliser comme politique de sécurité couplerait affichage et autorisation.
@@ -161,12 +180,18 @@ aller-retour HTTP + Reverb.
 L'attente est **mémoïsée par contexte** : une promesse et un timer, pour la vie du contexte, quel
 que soit le flot de connexions refusées.
 
-**Faille résiduelle connue, chemin (a)** : un membre de la room qui ouvre un **second** `new Peer()`
-(UUID neuf, donc non mappé) obtient `resolvedSlug = null`, l'anti-usurpation est sautée, et il est
-admis sur la seule foi d'un `metadata.from` déclaratif qui n'a qu'à nommer un membre. Il parle alors
+**Faille résiduelle connue, chemin (a) — non fermable côté client.** Un membre de la room qui ouvre
+un **second** `new Peer()` (UUID neuf, donc non mappé) obtient `resolvedSlug = null` et est admis
+sur la seule foi d'un `metadata.from` déclaratif qui n'a qu'à nommer un autre membre. Il parle alors
 sous l'identité de l'usurpé : chat, `BROADCAST_STATE` et `AUDIO_MUTE_TOGGLE` lisent tous
-`resolveRemoteSlug`. Le commentaire du code qualifie ce contrôle de « défense-en-profondeur » alors
-qu'il est en réalité **le seul** anti-usurpation de ce chemin. Traitement prévu en lot B.
+`resolveRemoteSlug`. Le durcissement du lot B a fait ce qu'un client peut faire — rejeter la
+résolution **contradictoire** sur les deux chemins, tracer l'admission non corroborée — mais le cas
+nominal de la présence et l'usurpation ont ici la **même signature locale** : slug déclaré membre,
+peerId inconnu. Les distinguer demande une source de vérité que le récepteur n'a pas.
+
+La fermeture appartient donc au backend, seul détenteur du lien `Auth::user()` ↔ peerId relayé
+(lot C). Ne pas lire cette règle comme une défense-en-profondeur : sur le chemin (a) elle est le
+**seul** anti-usurpation, et elle est incomplète.
 
 ### Gardes de taille — trois points, une mécanique
 

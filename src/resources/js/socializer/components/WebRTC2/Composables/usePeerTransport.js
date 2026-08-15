@@ -177,9 +177,17 @@ function _resolveSenderSlugFromIncomingConn(conn, ctx) {
 //          backend `peer-access-permission` (acceptCallFromPeer côté récepteur,
 //          openCallBetweenPeer côté initiateur), donc sa présence ET sa correspondance
 //          tiennent lieu d'autorisation ET d'anti-usurpation en une seule condition.
-//   3. Pour le chemin présence : défense-en-profondeur — si l'identité PeerJS réelle
-//      est déjà résolue à un slug connu (via le mapping global), ce slug doit
-//      correspondre à `metadata.from` — sinon tentative d'usurpation intra-room → rejet.
+//   3. Anti-usurpation, sur LES DEUX chemins — si l'identité PeerJS réelle de la
+//      connexion est déjà résolue à un slug connu (via le mapping global), ce slug
+//      doit être `metadata.from`, sinon rejet. Si elle n'est résolue à AUCUN slug,
+//      l'admission est accordée mais dite NON CORROBORÉE, et tracée : sur le chemin
+//      présence, le mapping du récepteur n'est écrit que lorsque c'est LUI qui ouvre
+//      (connectToPeer), donc il est structurellement absent quand l'appel entrant
+//      arrive le premier — refuser sur « non résolu » fermerait toute diffusion en
+//      room (mesuré par scenarios/incomingMappingInvariant.test.js).
+//      Cette règle n'est PAS une défense-en-profondeur : c'est le seul anti-usurpation
+//      du chemin (a), qui n'exige rien d'autre qu'un slug déclaré présent dans
+//      `usersInRoom`. La corroboration autoritative appartient au backend (lot C).
 //
 // Important : `ctx.session.currentCallUsers` n'est PAS consulté ici. C'est un état UI
 // (qui voir/raccrocher) alimenté à partir de la même signalisation, mais réutiliser un
@@ -192,6 +200,7 @@ function _resolveSenderSlugFromIncomingConn(conn, ctx) {
 function _isAuthorizedIncomingPeer(metadata, conn, ctx, { quiet = false } = {}) {
     const declaredFrom = metadata?.from
     const warn = quiet ? () => {} : console.warn
+    const debug = quiet ? () => {} : console.debug
 
     if (!_isValidSlug(declaredFrom)) {
         warn(
@@ -223,18 +232,28 @@ function _isAuthorizedIncomingPeer(metadata, conn, ctx, { quiet = false } = {}) 
         return false
     }
 
-    // Anti-usurpation chemin (a) — si membre de room et que le peerId réel est
-    // déjà résolu à un autre slug, rejet. Pour le chemin (b), la correspondance
-    // mappedPeerId === senderPeerId est déjà vérifiée plus haut.
-    if (isRoomMember) {
-        const resolvedSlug = _resolveSenderSlugFromIncomingConn(conn, ctx)
-        if (resolvedSlug && resolvedSlug !== declaredFrom) {
-            warn(
-                '[WebRTC2] Connexion entrante refusée: usurpation détectée (peerId réel ≠ `from` déclaré)',
-                { declaredFrom, resolvedSlug, senderPeerId }
-            )
-            return false
-        }
+    // Anti-usurpation — inconditionnelle : le peerId réel de la connexion ne doit être
+    // résolu à AUCUN autre slug, quel que soit le chemin qui a admis. Le chemin (b)
+    // vérifie déjà `mappedPeerId === senderPeerId` dans le sens slug → peerId ; la
+    // résolution inverse ferme le cas où ce même peerId est aussi mappé à un autre slug.
+    const resolvedSlug = _resolveSenderSlugFromIncomingConn(conn, ctx)
+    if (resolvedSlug && resolvedSlug !== declaredFrom) {
+        warn(
+            '[WebRTC2] Connexion entrante refusée: usurpation détectée (peerId réel ≠ `from` déclaré)',
+            { declaredFrom, resolvedSlug, senderPeerId }
+        )
+        return false
+    }
+
+    // Admission non corroborée : rien ne rattache ce peerId à `declaredFrom` — le slug
+    // déclaré est la seule identité disponible. C'est le cas NOMINAL du chemin présence
+    // (cf. règle 3), pas une anomalie : trace de niveau debug, jamais un refus. Elle
+    // mesure la surface qu'un contrôle backend (lot C) devra couvrir.
+    if (!resolvedSlug) {
+        debug(
+            '[WebRTC2] Admission entrante non corroborée: peerId entrant résolu à aucun slug',
+            { declaredFrom, senderPeerId, path: isRoomMember ? 'presence' : 'direct-call' }
+        )
     }
 
     return true

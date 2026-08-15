@@ -5,9 +5,11 @@
  *
  * Faille couverte : [HAUTE] Aucune authentification des connexions WebRTC entrantes.
  * Avant d'appeler setUpConnectionListeners (data) ou call.answer (media), l'émetteur
- * déclaré (metadata.from) doit (a) avoir un format de slug valide, (b) figurer dans
- * usersInRoom, et (c) — défense-en-profondeur — ne pas usurper le slug d'un autre
- * membre si son peerId réel est déjà résolu.
+ * déclaré (metadata.from) doit (a) avoir un format de slug valide, (b) être autorisé
+ * par la présence OU par un mapping peerId concordant, et (c) ne pas usurper le slug
+ * d'un autre membre si son peerId réel est déjà résolu — (c) n'est pas une
+ * défense-en-profondeur mais le SEUL anti-usurpation du chemin présence, qui n'exige
+ * rien d'autre qu'un slug déclaré présent dans usersInRoom.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createMockContext } from './helpers/createMockContext.js'
@@ -267,5 +269,52 @@ describe('usePeerTransport — authentification des connexions entrantes', () =>
 
         expect(ctx.setUpConnectionListeners).not.toHaveBeenCalled()
         expect(conn.close).toHaveBeenCalled()
+    })
+
+    // ── Anti-usurpation inconditionnelle ────────────────────────────────────────
+    // La règle 3 ne s'exécutait que sur le chemin présence. Elle s'applique désormais
+    // aux deux, et son verdict « peerId non résolu » ne vaut PAS refus : sur le chemin
+    // présence, le mapping du récepteur n'est écrit que lorsque c'est lui qui ouvre la
+    // connexion, donc il est structurellement absent quand l'appel entrant arrive le
+    // premier (mesuré par scenarios/incomingMappingInvariant.test.js). Refuser dessus
+    // fermerait toute diffusion en room.
+
+    it('admet un membre de la room dont le peerId est neuf et non mappé, et trace la non-corroboration', () => {
+        const debugSpy = vi.spyOn(console, 'debug').mockImplementation(() => {})
+        // Cas NOMINAL de l'arrivant tardif : bob est membre, son peerId n'est mappé
+        // nulle part chez nous. Contre-épreuve de la lecture « non résolu ⇒ rejet ».
+        const conn = incomingConn({ from: 'bob' }, 'peer-bob-fresh')
+        peerInstance._triggerEvent('connection', conn)
+
+        expect(ctx.setUpConnectionListeners).toHaveBeenCalledWith(conn)
+        expect(conn.close).not.toHaveBeenCalled()
+        expect(debugSpy).toHaveBeenCalledWith(
+            expect.stringContaining('Admission entrante non corroborée'),
+            expect.objectContaining({ declaredFrom: 'bob', senderPeerId: 'peer-bob-fresh' })
+        )
+    })
+
+    it("rejette un interlocuteur d'appel direct dont le peerId est aussi mappé à un membre de la room", () => {
+        // Le chemin (b) ne vérifie la concordance que dans le sens slug → peerId : il
+        // admettait donc mallory alors que ce même peerId identifie déjà alice. La
+        // résolution inverse, désormais appliquée hors du chemin présence, le refuse.
+        ctx.peerStore.addRemotePeerId('alice', 'peer-shared')
+        ctx.peerStore.addRemotePeerId('mallory', 'peer-shared')
+        const conn = incomingConn({ from: 'mallory' }, 'peer-shared')
+        peerInstance._triggerEvent('connection', conn)
+
+        expect(ctx.setUpConnectionListeners).not.toHaveBeenCalled()
+        expect(conn.close).toHaveBeenCalled()
+    })
+
+    it('ne trace aucune non-corroboration quand le peerId entrant est résolu au slug déclaré', () => {
+        const debugSpy = vi.spyOn(console, 'debug').mockImplementation(() => {})
+        ctx.peerStore.addRemotePeerId('bob', 'peer-bob')
+        peerInstance._triggerEvent('connection', incomingConn({ from: 'bob' }, 'peer-bob'))
+
+        expect(debugSpy).not.toHaveBeenCalledWith(
+            expect.stringContaining('Admission entrante non corroborée'),
+            expect.anything()
+        )
     })
 })
