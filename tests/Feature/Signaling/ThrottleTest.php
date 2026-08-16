@@ -247,11 +247,13 @@ class ThrottleTest extends TestCase
 
         $this->askPeerId($alice, $bob)->assertOk();
 
+        // ⚠️ Un vrai UUID, pas un 'p1' : depuis C4 un peerId non-UUID part en 422, et ce
+        // test ne mesurerait plus la consommation du bucket qu'il vise.
         $this->actingAs($alice)->postJson('/response-to-peer-id', [
             'toUserSlug' => $bob->slug,
             'room' => 'r1',
             'type' => 'stream',
-            'peerId' => 'p1',
+            'peerId' => '550e8400-e29b-41d4-a716-446655440000',
         ])->assertOk();
 
         $this->actingAs($alice)->postJson('/close-connection-to-peer-id', [

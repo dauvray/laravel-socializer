@@ -26,16 +26,24 @@ class ExceptionLeakTest extends TestCase
     private const LEAKY_PATH = '/var/www/estarter-test/vendor/dauvray/laravel-socializer/src/secret.php';
 
     /**
+     * ⚠️ Ces payloads doivent rester VALIDES au sens de C4 : depuis la validation des
+     * payloads relayés, un `peerId` bidon ou un `options` vide part en 422 — donc bien
+     * avant le `Broadcast::private` dont ce fichier teste l'échec. Le test resterait vert
+     * pour la mauvaise raison, en n'exerçant plus rien.
+     *
      * @return array<string, array{0: string, 1: array<string, mixed>}>
      */
     public static function signalingRoutes(): array
     {
+        $peerId = '550e8400-e29b-41d4-a716-446655440000';
+        $options = ['type' => 'visio', 'action' => 'peer-access-permission', 'peerId' => $peerId];
+
         return [
             'askForPeerId' => ['/ask-to-peer-id', ['room' => 'r1', 'type' => 'stream']],
-            'responseToPeerId' => ['/response-to-peer-id', ['room' => 'r1', 'type' => 'stream', 'peerId' => 'p1']],
-            'responseToPeerAuthorization' => ['/response-to-authorization-peer', ['status' => true, 'options' => []]],
+            'responseToPeerId' => ['/response-to-peer-id', ['room' => 'r1', 'type' => 'stream', 'peerId' => $peerId]],
+            'responseToPeerAuthorization' => ['/response-to-authorization-peer', ['status' => true, 'options' => $options]],
             'closeConnectionToPeerId' => ['/close-connection-to-peer-id', ['room' => 'r1', 'type' => 'stream']],
-            'sendAlertToUser' => ['/send-alert-to-user', ['options' => []]],
+            'sendAlertToUser' => ['/send-alert-to-user', ['options' => $options]],
         ];
     }
 

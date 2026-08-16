@@ -704,7 +704,7 @@ exhibant le chemin **et** la trace.
 
 ### C4 — Validation des payloads relayés `[S]`
 
-- [ ] **Dépend de :** C3.
+- [x] **Dépend de :** C3. — ✅ fait le 16/08/2026.
 
 Aucun `validate()` sur les 5 méthodes : `room`, `type`, `connectionType`, `peerId` et
 `options` sont relayés bruts vers le client destinataire.
@@ -716,15 +716,113 @@ Aucun `validate()` sur les 5 méthodes : `room`, `type`, `connectionType`, `peer
 > ⚠️ Conserver la liste blanche de champs déjà en place à l'émission — c'est elle que
 > `__tests__/helpers/fakeSignalingServer.js` reproduit **à l'identique**. La desserrer
 > fabriquerait un chemin impossible en production et rendrait le harnais menteur.
+> ✅ **Respectée** : C4 ne fait que *resserrer* (réduction d'`options` à ses clés
+> attendues), la liste blanche de premier niveau du `->with()` est intacte, et le client
+> n'a jamais envoyé d'autre clé. Suite JS inchangée, 645 tests.
 
-**Tests :** type hors liste ⇒ 422 · `peerId` non-UUID ⇒ 422 · payload nominal ⇒ 200.
+> ## ⚠️ La sévérité était le risque, pas la permissivité
+>
+> Un 422 sur `/ask-to-peer-id` ou `/response-to-peer-id` reproduit « A diffuse, B arrive, B
+> ne voit rien ». Chaque règle est donc calquée sur une émission **relue dans le client**,
+> jamais sur une intuition de forme. Trois nullables qui ressemblent à des oublis et n'en
+> sont pas :
+>
+> - **`connectionType`** — le module v1 (mort mais encore appelé par `AudioRoom`) ne
+>   l'envoie pas, et le repli `connectionType || type` est un choix documenté de
+>   rétrocompatibilité. Le rendre requis couperait ces appelants.
+> - **`options.action`, sur la route de RÉPONSE seulement** — un refus d'appel n'envoie que
+>   `{ type }` (`sendAuthorizationRemotePeerId`). L'exiger des deux côtés casserait le refus.
+>   D'où le paramètre `actionRequired` d'`optionsRules()`, unique point de divergence entre
+>   les deux routes d'invitation.
+> - **`options.peerId`** — `getLocalPeerId` peut être `null` quand l'invitation part avant
+>   l'ouverture du peer local.
+>
+> **`room` est bornée en longueur mais sans motif** : elle vaut tantôt un
+> `crypto.randomUUID()`, tantôt `'app'`, tantôt un `room.id` de l'hôte. Il n'y a pas de
+> forme commune à exiger.
+
+> ## Delta assumé — les listes blanches sont des CONSTANTES, pas de la config
+>
+> C1 avait mis ses plafonds dans `config/socializer.php`, et la symétrie invitait à y mettre
+> aussi les types valides. Écarté : un plafond est un **réglage** (légitimement ajustable en
+> prod), une liste blanche est un **contrat** partagé avec le front. En config, un hôte la
+> desserre sans toucher au JS qui la reflète, et le `mergeConfigFrom` peu profond signalé par
+> C1 en fait une arme à écrasement silencieux.
+>
+> Le prix de ce choix est une duplication JS ↔ PHP que rien dans le build ne rapproche. Elle
+> est **épinglée par un test** (`la_liste_blanche_php_reflete_le_front`) qui relit
+> `webrtc2.config.js`, en extrait `VALID_CONNECTION_TYPES` et `SLUG_PATTERN`, et compare aux
+> constantes du contrôleur. Sans lui, ajouter un type côté client produirait un 422 en
+> production dont la cause serait invisible.
+
+> ## Delta assumé — `options` est réduit à ses clés, pas seulement validé
+>
+> La tâche disait « `options` en tableau à clés attendues ». Validé ne suffisait pas :
+> `options` est le **seul champ relayé verbatim**, donc valider `options.type` sans réduire
+> l'objet laissait passer tout le reste — n'importe quelle charge, de n'importe quelle
+> taille, poussée chez la victime. Il est désormais réduit à
+> `RELAYED_OPTION_KEYS = ['type','action','room','peerId','inviteId']`, qui sont exactement
+> les clés lues côté client (`useCallManager`, `Notifications.vue`, `AlertComponent.vue` —
+> vérifié, aucune autre).
+>
+> `Arr::only` est **redondant** avec `Factory::$excludeUnvalidatedArrayKeys` (vrai par
+> défaut). Conservé quand même : un hôte qui appelle `Validator::includeUnvalidatedArrayKeys()`
+> rouvrirait le relais en silence, et la liste blanche doit être lisible à côté du `->with()`
+> qu'elle gouverne.
+>
+> Corollaire trouvé en chemin : **`options.action` en liste blanche n'est pas cosmétique.**
+> `AlertComponent.vue` déréférence `mappingComponents[options.action][options.type]` sans
+> garde — une action inconnue y lève un TypeError chez le destinataire.
+
+> ## ⚠️ Le `validate()` va HORS du `try` de C3, et c'est structurel
+>
+> `ValidationException` étend `\Exception`. Posé à l'intérieur, il serait avalé par
+> `signalingFailure()` : le client recevrait un 500 `{"ok":false}` — il croirait à une panne
+> serveur, et la vraie cause (son propre payload) serait invisible des deux côtés. Le cas
+> `une_erreur_de_validation_ne_tombe_pas_dans_le_handler_d_echec` épingle exactement ça.
+>
+> Ordre effectif de la pile : `throttle` (routes) → `validate()` (contrôleur) →
+> `firstOrFail()` → broadcast. **La clé du limiteur porte donc un `toUserSlug` non validé et
+> le restera** — sans conséquence, `ThrottleRequests` md5-hashe la clé, mais le commentaire
+> du `ServiceProvider` a été corrigé pour ne plus laisser croire que C4 fermerait ce point.
+
+> ## Dette payée en passant — deux tests devenus verts pour la mauvaise raison
+>
+> `ExceptionLeakTest` et `ThrottleTest` envoyaient `peerId: 'p1'` et `options: []`. Ces
+> payloads partent maintenant en **422**, donc bien avant le `Broadcast::private` dont ces
+> deux fichiers testent respectivement l'échec et la consommation de bucket : ils seraient
+> restés verts en n'exerçant plus rien. Payloads rendus valides, avec le ⚠️ qui dit pourquoi
+> ils doivent le rester.
+
+**Tests :** ✅ `tests/Feature/Signaling/ValidationTest.php` — 24 cas. Nominal des 5 routes ⇒
+200 **et** broadcast émis (le cas qui compte le plus) · refus d'appel `{ type }` seul ⇒ 200 ·
+`connectionType` absent ⇒ 200 avec `null` relayé · type hors liste ⇒ 422 sur les 5 routes ·
+`peerId` et `options.peerId` non-UUID ⇒ 422 · `action` inconnue ⇒ 422 · `toUserSlug` malformé
+⇒ **422 et non 404**, donc avant le `firstOrFail()` · `room` de 101 caractères ⇒ 422 · clés
+inconnues d'`options` non relayées · un 422 reste un 422 · miroir JS ↔ PHP. **Chaque cas
+invalide asserte `assertNoBroadcastSent()`** : un refus qui laisserait partir le broadcast
+n'en serait pas un.
+
+Cinq contre-épreuves passées : `Rule::in` retiré des types ⇒ les 5 cas de type rougissent ;
+`peerId` ramené à `string` ⇒ le cas UUID rougit, seul ; `Arr::only` court-circuité ⇒ le cas
+de la liste blanche rougit, seul ; `validate()` déplacé DANS le `try` ⇒ 4 cas d'`ask` passent
+en 500, dont celui qui vise ce point ; un type ajouté à la constante PHP ⇒ le miroir rougit,
+seul. ⚠️ Les deux premières et la quatrième débordent sur
+`une_erreur_de_validation_ne_tombe_pas_dans_le_handler_d_echec`, qui a besoin d'*une*
+violation pour observer la **forme** de la réponse : le recouvrement est inhérent, pas un
+défaut d'isolation.
+
+**Done :** ✅ **39 tests PHP / 118 assertions** verts (16/08/2026) ; suite JS **inchangée**
+(645 tests / 36 fichiers, 3,45 s).
 **Commit :** `secu(socializer): valider les payloads de signalisation`
 
 ---
 
 ### C2 — Contrôle de relation émetteur ↔ destinataire `[M]` 🟠
 
-- [ ] **Dépend de :** C4. Jumeau serveur de A2 — c'est la version **autoritative** du garde.
+- [ ] **Dépend de :** C4 (✅ 16/08). Jumeau serveur de A2 — c'est la version **autoritative**
+  du garde. Le terrain est prêt : `toUserSlug` arrive désormais validé en forme, et
+  `mayReach()` se posera juste après le `validate()`, avant le `firstOrFail()`.
 
 N'importe quel authentifié peut aujourd'hui signaler n'importe quel autre utilisateur par
 son slug. `fromUserSlug` est bien authentifié (correctif de mai), mais aucun lien n'est
@@ -903,6 +1001,12 @@ surdimensionné rejeté.
 - [`docs/modules/webrtc2/securite.md`](../docs/modules/webrtc2/securite.md) : basculer le sens
   sortant de « 🔴 aucun contrôle » à durci ; documenter le prédicat unique
   `utils/isAuthorizedPeer.js` ; retirer de « Bornes non fermées » ce qui a été fermé.
+  ✅ **Déjà fait pour le backend** (16/08, avec C4) : la ligne « Backend » du périmètre et
+  l'entrée « Bornes non fermées » ne mentionnent plus le `throttle`, le `validate()` ni la
+  fuite d'exception — seuls restent l'énumération et le contrôle de relation. Idem pour le
+  ⚠️ de [`docs/architecture/signalisation.md`](../docs/architecture/signalisation.md), devenu
+  un **troisième invariant backend** (validation dans le contrôleur, hors du `try`).
+  Ne pas re-décrire ces trois points, vérifier qu'ils sont exacts.
 - [`docs/modules/webrtc2/architecture.md`](../docs/modules/webrtc2/architecture.md) : ajouter la
   ligne `authorizedCallPeers` dans la table des propriétaires uniques (posée en A1), et la règle
   **tout chemin qui ouvre une connexion porte un garde d'autorisation, dans les deux sens**.
@@ -922,7 +1026,7 @@ surdimensionné rejeté.
   **645 tests / 36 fichiers, ~3,7 s**.
 - **Backend** : `vendor/bin/phpunit` **depuis le paquet** (Orchestra Testbench, aucun serveur
   requis) — cf. [docs/architecture/tests.md](../docs/architecture/tests.md). Socle posé avec C3
-  le 15/08/2026, référence après C1 : **15 tests / 67 assertions, ~1 s**.
+  le 15/08/2026, référence après C4 : **39 tests / 118 assertions, ~2,4 s**.
 - `hooks/pre-push` rejoue **les deux** suites. ⚠️ Il n'y a **pas** de CI : la mention d'un
   `.github/workflows/webrtc2-tests.yml` qui figurait ici était fausse — ce dépôt n'a pas de
   `.github/`, et l'activation du hook est une config locale, jamais versionnée.

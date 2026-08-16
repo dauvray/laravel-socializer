@@ -13,7 +13,7 @@
 |---|---|---|
 | **Entrant** (`peer.on('connection')`, `peer.on('call')`) | durci **côté client**, une faille résiduelle assumée — audits du 20/05 et du 14/08/2026 | garde `_isAuthorizedIncomingPeer`, anti-usurpation inconditionnelle, gardes de taille, sanitisation. Reste aveugle au membre de room qui se présente avec un peerId neuf sous le slug d'un autre — seul le backend peut trancher |
 | **Sortant** (`connectToPeer`, `responseRemotePeerConnection`) | durci **côté client** — audit du 14/08/2026 | prédicat unique `utils/isAuthorizedPeer.js` : membre de la room **ou** interlocuteur d'appel marqué. Le garde autoritatif, côté serveur, reste à écrire |
-| **Backend** (`UserController`, routes) | partiel | `fromUserSlug` authentifié + liste blanche de champs ; ni `throttle`, ni `validate()`, ni contrôle de relation |
+| **Backend** (`UserController`, routes) | partiel | `fromUserSlug` authentifié, liste blanche de champs, `throttle` par utilisateur (deux buckets) et `validate()` sur les 5 payloads. Manque le **contrôle de relation** émetteur ↔ destinataire — n'importe quel authentifié peut encore signaler n'importe qui par son slug |
 | **Credentials TURN** | 🟠 compilés dans le bundle | identifiants longue durée lisibles par quiconque ouvre le JS |
 
 **La leçon réutilisable, et la seule qui compte : un garde d'admission ne sécurise qu'une
@@ -246,10 +246,11 @@ vit dans `Composables/utils/createRateLimiter.js` : **un seul système** pour le
   message (`MAX_PAYLOAD_BYTES`), mais **leur produit par le fan-out ne l'est pas**. Or star est la
   topologie des grandes rooms : à 100 membres, un client d'apparence honnête fait sortir ~128 Mo/s
   du hub.
-- **Backend** : aucun `throttle` sur les 5 routes de signalisation, aucun `validate()` sur les
-  payloads relayés, `catch (\Exception $ex) { return $ex; }` qui renvoie chemins de fichiers et trace
-  au client **indépendamment d'`APP_DEBUG`**, `firstOrFail()` sur un slug arbitraire qui permet
-  l'énumération d'utilisateurs, et aucun contrôle de relation entre émetteur et destinataire.
+- **Backend** : `firstOrFail()` sur un slug arbitraire, qui permet l'énumération d'utilisateurs, et
+  surtout **aucun contrôle de relation entre émetteur et destinataire** — c'est la borne qui porte
+  la fermeture de l'usurpation intra-room. Fermés depuis : le `throttle` des 5 routes, la validation
+  des payloads relayés, et le `catch (\Exception $ex) { return $ex; }` qui renvoyait chemins de
+  fichiers et trace au client indépendamment d'`APP_DEBUG`.
 - **TURN** : `VITE_COTURN_USERNAME` / `VITE_COTURN_CREDENTIAL` sont compilés dans le bundle servi à
   tous — identifiants longue durée, partagés → relais ouvert, bande passante imputable au serveur.
 

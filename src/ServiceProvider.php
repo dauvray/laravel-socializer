@@ -217,8 +217,10 @@ class ServiceProvider extends \Illuminate\Support\ServiceProvider
 
             return [
                 // Par cible : c'est cette limite-là qui ferme le harcèlement d'un utilisateur
-                // précis. Le slug vient du réseau et n'est pas encore validé (c'est C4), mais
-                // `ThrottleRequests` md5-hashe la clé : sa longueur ne peut pas dégrader le cache.
+                // précis. ⚠️ Le slug est ici NON VALIDÉ et le restera : la validation de C4 vit
+                // dans le contrôleur, donc en aval de ce limiteur. Sans conséquence —
+                // `ThrottleRequests` md5-hashe la clé, sa forme et sa longueur ne peuvent pas
+                // dégrader le cache — mais ne jamais lire cette valeur comme un slug de confiance.
                 Limit::perMinute(config('socializer.signaling.throttle.invite_per_target_per_minute', 20))
                     ->by('socializer-call-invite:'.$from.':'.$request->input('toUserSlug')),
 

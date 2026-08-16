@@ -54,7 +54,7 @@ directement par `Notifications.vue`.
 
 ---
 
-## Deux invariants backend
+## Trois invariants backend
 
 **1. `fromUserSlug` diffusé est toujours `Auth::user()->slug`**, jamais la valeur du payload.
 `closeConnectionToPeerId` journalise tout écart (`auth_user_id`, `auth_user_slug`, `claimed_slug`,
@@ -65,9 +65,16 @@ directement par `Notifications.vue`.
 desserrer fabriquerait un chemin impossible en production et rendrait le harnais menteur ; y ajouter
 un champ côté JS sans l'ajouter côté PHP produit un champ qui n'arrive jamais.
 
-⚠️ Ce que ces routes **n'ont pas** : ni `throttle`, ni `validate()`, ni contrôle de relation entre
-émetteur et destinataire, et un `catch (\Exception $ex) { return $ex; }` qui renvoie la trace au
-client indépendamment d'`APP_DEBUG`. Voir
+**3. Les payloads sont validés dans le contrôleur, jamais avant.** Chaque méthode ouvre sur un
+`$request->validate()` : `toUserSlug` en format slug, `type` / `connectionType` en liste blanche
+(miroir de `VALID_CONNECTION_TYPES`), `peerId` en UUID, `room` bornée en longueur, et `options`
+réduit à ses clés attendues — c'est le seul champ relayé verbatim. La validation est posée **avant
+le `firstOrFail()` et hors du `try`** : `ValidationException` étend `\Exception`, donc à
+l'intérieur elle repartirait en 500 par le handler d'échec. Le `throttle`, lui, s'exécute **en
+amont** du contrôleur : la clé de plafonnement porte un `toUserSlug` encore non validé.
+
+⚠️ Ce qui manque encore à ces routes : le **contrôle de relation** entre émetteur et destinataire
+— n'importe quel authentifié peut toujours signaler n'importe qui par son slug. Voir
 [modules/webrtc2/securite.md](../modules/webrtc2/securite.md).
 
 ---
