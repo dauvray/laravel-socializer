@@ -285,6 +285,23 @@ L'arête `user -[:registered_in]-> group` n'est écrite qu'à la création du co
 Un slug inconnu et une absence de relation répondent **le même 403** : la différence était un oracle
 d'énumération. Le `Log::warning`, lui, conserve `target_exists` — il n'est pas exposé.
 
+### Le verdict est exposé au profil — de l'UX, pas un contrôle
+
+`Users::getGraphUser` place le résultat de `mayReach` dans la charge utile du mur (`may_reach`), et
+`Cover.vue` n'affiche le bouton d'appel que s'il est vrai. **Ce n'est pas un second garde** : le
+serveur refuse de toute façon, et rien de ce qui est masqué n'est rendu impossible par le masquage.
+
+C'est un correctif d'**honnêteté de l'interface**. Un garde serveur ajouté sans ce pendant crée un
+bouton qui ment : l'appel part en 403, aucun composable WebRTC2 n'inspecte le statut HTTP — tous ces
+POST sont dans un `catch` nu — donc l'utilisateur ne voit ni appel, ni erreur. La règle générale :
+**tout garde posé sur une action proposée par l'UI doit être lisible par cette UI**, sinon l'échec
+devient silencieux.
+
+> ⚠️ Corollaire à ne pas perdre : le verdict est calculé **au chargement du profil**. S'abonner
+> depuis le mur peut créer la réciprocité qui rend l'appel légitime — le serveur oublie bien son
+> verdict mémorisé (`Users::forgetRelationVerdict`), mais le bouton n'apparaîtra qu'au rechargement
+> de la page.
+
 ### Ce que les tests ne prouvent pas
 
 `FakeNebulaGraph` fait du `str_contains` sur le nGQL, **il ne le parse pas**. Les cas « follow » de

@@ -25,6 +25,15 @@ class Users
 
         $is_me = $me->vertexid === $user->vertexid;
 
+        // Verdict de la règle de relation (C2), calculé AVANT que `$user` ne soit écrasé plus
+        // bas par la réponse du graphe. C'est le prédicat que les 5 routes de signalisation
+        // appliquent déjà : le profil ne fait que le rendre visible, pour que le bouton
+        // d'appel cesse de proposer un appel qui partira en 403.
+        //
+        // ⚠️ UX seulement — le serveur reste l'autorité. Masquer le bouton n'est PAS un
+        // contrôle : la route refuse de toute façon.
+        $may_reach = $me->mayReach($user);
+
         // recupere le user et le nombre de followers
         $query = "
             MATCH (u:user {active: 1}) where id(u) == '$user->vertexid' 
@@ -53,6 +62,7 @@ class Users
 
         // format
         $user[0]['user']['nb_followers'] = $user[0]['nb_followers'];
+        $user[0]['user']['may_reach'] = $may_reach;
 
         if(!$is_me) {
             $user[0]['user']['follow_status'] = $user[0]['follow_status'];

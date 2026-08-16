@@ -966,19 +966,47 @@ intersection non typée la ferait rentrer par la porte de derrière.
 
 ### C5 — Aligner le bouton d'appel sur la règle C2 `[S]` 🟠
 
-- [ ] **Dépend de :** C2 (✅ 16/08). **C'est désormais la plus urgente** : depuis C2 le bouton
-  ment pour de bon, et l'échec est silencieux.
+- [x] **Dépend de :** C2 (✅ 16/08). — ✅ fait le 16/08/2026.
 
-Le bouton **ment** : [`components/User/Cover.vue`](../src/resources/js/socializer/components/User/Cover.vue)
-affiche `CallRemotePeerBtn` dès que `user.connected`, sans rien savoir de la relation.
+Le bouton **mentait** : [`components/User/Cover.vue`](../src/resources/js/socializer/components/User/Cover.vue)
+affichait `CallRemotePeerBtn` dès que `user.connected`, sans rien savoir de la relation.
 Tout appel hors relation part en 403 — et **aucun composable WebRTC2 n'inspecte le statut
-HTTP**, tous ces appels sont dans un `catch` nu. L'utilisateur voit donc un bouton qui ne fait
-strictement rien, sans le moindre retour.
+HTTP**, tous ces appels sont dans un `catch` nu. L'utilisateur voyait donc un bouton qui ne
+faisait strictement rien, sans le moindre retour.
 
-- Exposer le verdict de `mayReach` dans la charge utile du profil (à côté de
-  `nb_followers` / `follow_status`, déjà produits par `Users::getGraphUser`) et conditionner
-  l'affichage du bouton.
+- ✅ `Users::getGraphUser` calcule `mayReach` et le pose dans la charge utile du mur
+  (`may_reach`), à côté de `nb_followers` / `follow_status` ; `Http/Resources/User` le
+  sérialise ; `Cover.vue` conditionne le bouton sur `user.connected && user.may_reach`.
 - Le serveur reste l'autorité : ce masquage est de l'UX, **pas** un contrôle.
+
+> **Fail-closed sur l'ABSENCE de clé, et c'est délibéré.** Une charge utile sans `may_reach`
+> masque le bouton. La ressource n'émet la clé que si elle est posée (`when(isset(...))`), et
+> seul `getGraphUser` la pose : tout autre producteur de profil (`getUsersList`, les ressources
+> `Post` / `Server`) ne porte pas le verdict. Traiter l'absence comme une autorisation aurait
+> rendu le correctif vide dès qu'un second chemin alimenterait `Cover`.
+>
+> **Le calcul est fait au chargement du profil, pas au clic.** S'abonner depuis le mur peut
+> créer la réciprocité qui rend l'appel légitime : le serveur oublie bien son verdict mémorisé
+> (`Users::forgetRelationVerdict`, posé en C2), mais le bouton n'apparaîtra qu'au rechargement.
+> Écarté sciemment — rafraîchir le verdict après un follow demanderait soit un second appel,
+> soit de le renvoyer dans la réponse de `/follow-user`.
+>
+> **`$user` est écrasé au milieu de `getGraphUser`** par la réponse du graphe : le verdict est
+> calculé AVANT, sinon `mayReach` recevrait un tableau.
+
+**Tests :** ✅ `tests/Feature/Profile/RelationVerdictTest.php` — les deux jambes du prédicat
+vues du profil, le refus, le court-circuit d'identité, et le fait que le verdict ne paie pas
+d'aller-retour au graphe quand le groupe a déjà tranché. ✅
+`components/User/__tests__/coverCallButton.test.js` — le bouton n'apparaît que
+`connected && may_reach`, le verdict absent masque, et le masquage vise le bouton d'appel et
+non la zone d'outils (`FollowButton` reste là). Contre-épreuve faite dans les deux sens :
+ligne de production neutralisée ⇒ 4 tests PHP et 2 tests JS rouges.
+
+⚠️ **Le dernier maillon n'est pas testé** : `Http/Resources/User` étend la ressource d'estarter
+et appelle `revealIdentifier()`, et `WallController` référence `App\Models\User` **en dur** (et
+non `config('estarter.models.user')`) — deux raisons pour lesquelles ni la ressource ni la
+route `/wall/{slug}` n'entrent dans le harnais Testbench. La chaîne service → ressource → HTTP
+se contre-vérifie dans l'application.
 
 **Commit :** `feat(socializer): n'afficher le bouton d'appel que si la relation le permet`
 
@@ -1125,6 +1153,35 @@ propre vérification.
 canal du serveur privé de ce groupe · un non-membre ne le peut pas · `canJoinchatRoom` refuse
 un chat privé dont on n'est pas membre.
 **Commit :** `fix(socializer): l'appartenance à un groupe ne dérive plus des gardes de canal`
+
+---
+
+### E5 — Un refus de signalisation s'affiche vide `[S]` 🟡
+
+- [ ] **Dépend de :** rien. **Trouvé le 16/08/2026** en livrant C5 — le masquage du bouton
+  retire le cas nominal, il ne répare pas le retour d'erreur des autres chemins.
+
+Le diagnostic de C5 disait « aucun composable WebRTC2 n'inspecte le statut HTTP ». C'est vrai
+— `usePeerCore` fait `console.error` et retourne `false` — mais **incomplet**, et la moitié
+manquante change le correctif :
+
+`AjaxService.load` (estarter), lui, inspecte bien le statut. Sur un 403 il émet `httpError`,
+que `widgets/Alert.vue` transforme en `AWN.alert(msg)`. **Un toast part donc déjà.** Son
+message vaut `data.message || toaster.err` — or `UserController::signalingDenied` renvoie
+`response()->json(['ok' => false], 403)`, **sans clé `message`**, et les appels WebRTC2 ne
+passent aucun `toaster`. L'utilisateur reçoit une alerte **au contenu nul**.
+
+> ⚠️ Le `'Accès interdit'` passé en 4e argument dans `AjaxService` est **mort** : `EmitEvent`
+> n'a que trois paramètres. Ne pas le lire comme le libellé en vigueur.
+
+- Donner un `message` à la réponse de `signalingDenied` — **le même dans les deux cas** (slug
+  inconnu et absence de relation), sinon on rouvre l'oracle d'énumération que C2 a fermé.
+- Vérifier au passage les autres refus de ce contrôleur : `signalingFailure` (C3) renvoie
+  `['ok' => false]` en 500, même symptôme.
+
+**Tests :** le corps du 403 porte un message · il est identique pour un slug inconnu et pour
+une absence de relation (`RelationGuardTest` a déjà la paire de cas).
+**Commit :** `fix(socializer): un refus de signalisation dit pourquoi`
 
 ---
 

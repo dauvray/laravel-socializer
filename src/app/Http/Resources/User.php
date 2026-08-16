@@ -37,6 +37,16 @@ class User extends JsonResource
                 return $this->resource->follow_status == 'followed' ? true : false;
             }),
             'nb_followers' => $this->resource->nb_followers,
+            // Verdict de la règle de relation (C2), posé par `Users::getGraphUser` — donc
+            // présent sur la charge utile du mur, absent partout ailleurs. Le front s'en sert
+            // pour ne pas afficher un bouton d'appel qui partirait en 403.
+            //
+            // ⚠️ `isset()` et non `array_key_exists` : identique au `followed` ci-dessus, et
+            // sans conséquence ici puisque le verdict est un booléen, jamais null. C'est ce
+            // qui permet au front de traiter l'ABSENCE de clé comme un refus.
+            'may_reach' => $this->when(isset($this->resource->may_reach), function () {
+                return (bool) $this->resource->may_reach;
+            }),
             'cover' => $this->resource->extras['cover'] ?? $this->resource?->cover ?? null,
             'vertexid' => isset($this->resource->vertexid) ? $this->resource->vertexid : null,
             'channel' => $this->when($is_me, function () use ($user_id) {

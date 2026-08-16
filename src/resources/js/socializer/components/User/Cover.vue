@@ -26,8 +26,12 @@
                     style="--bs-btn-padding-y: .25rem; --bs-btn-padding-x: .5rem; --bs-btn-font-size: .70rem;"
                     :user="element"
                 ></FollowButton>
+                <!-- `may_reach` : verdict serveur de la règle de relation (C2), sans lequel
+                     tout appel part en 403 sans le moindre retour visible. Absent ⇒ masqué :
+                     un bouton qui ne fait rien est pire que pas de bouton. C'est de l'UX,
+                     PAS un contrôle — le serveur refuse de toute façon. -->
                 <CallRemotePeerBtn
-                    v-if="user.connected"
+                    v-if="user.connected && user.may_reach"
                     :user="element"
                 ></CallRemotePeerBtn>
             </div>
