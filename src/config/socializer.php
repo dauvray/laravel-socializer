@@ -589,5 +589,37 @@ return [
              */
             'invite_per_minute' => (int) env('SOCIALIZER_CALL_INVITE_THROTTLE_PER_MINUTE', 40),
         ],
+
+        /*
+        |--------------------------------------------------------------------------
+        | Garde de relation (C2)
+        |--------------------------------------------------------------------------
+        |
+        | `Socializable::mayReach()` refuse de signaler un utilisateur avec qui on n'a
+        | ni groupe commun ni follow réciproque. Posé sur les 5 routes ci-dessus.
+        |
+        */
+
+        'relation' => [
+
+            /*
+             * Durée de mémorisation du verdict, en secondes. La rafale de join émet 14
+             * requêtes dans le même tick : sans cache, c'est 14 fois le prédicat.
+             *
+             * Le follow est invalidé explicitement (`Users::followUser`/`unfollowUser`),
+             * donc un refus périmé ne survit pas à un nouveau follow. Les changements de
+             * groupe, eux, sont pilotés par Backpack hors du paquet : ce TTL est la seule
+             * borne de leur péremption.
+             */
+            'cache_ttl' => (int) env('SOCIALIZER_RELATION_CACHE_TTL', 60),
+
+            /*
+             * Pivot user ↔ group de `innovation/laravel-estarter`. Son nom est en dur dans
+             * `Dauvray\Estarter\...\GroupUser::$table` — non configurable en amont, d'où
+             * cette clé. Lu par requête directe et non via `EstarterUser::groups()` : cette
+             * relation vit dans un paquet que le harnais de tests double par un stub.
+             */
+            'group_user_table' => env('SOCIALIZER_RELATION_GROUP_USER_TABLE', 'group_user'),
+        ],
     ],
 ];

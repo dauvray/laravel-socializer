@@ -21,11 +21,16 @@ C3 ──> C4 ──> C2 ──┬─> E3     (tous sur UserController — à s�
                    └─> C5     (front : le bouton d'appel)
 B3, C1                        (indépendants)
 D1 ──> D2
-E1, E2                        (indépendants)
+E1, E2, E4                    (indépendants)
 F1                            (dernier)
 ```
 
-`A` est bloquant. `B3`, `C1`, `C3`, `E1`, `E2` ne bloquent personne : à intercaler librement.
+`A` est bloquant. `B3`, `C1`, `C3`, `E1`, `E2`, `E4` ne bloquent personne : à intercaler
+librement.
+
+Le lot C est **terminé** (C1, C3, C4, C2 — 15 et 16/08). Ce qu'il a débloqué : **C5**, qui est
+maintenant la plus urgente (le bouton d'appel ment depuis C2), et **E3**, dont C2 a déjà fait la
+part portant sur les 5 routes.
 
 ---
 
@@ -820,9 +825,9 @@ défaut d'isolation.
 
 ### C2 — Contrôle de relation émetteur ↔ destinataire `[M]` 🟠
 
-- [ ] **Dépend de :** C4 (✅ 16/08). Jumeau serveur de A2 — c'est la version **autoritative**
-  du garde. Le terrain est prêt : `toUserSlug` arrive désormais validé en forme, et
-  `mayReach()` se posera juste après le `validate()`, avant le `firstOrFail()`.
+- [x] **Dépend de :** C4 (✅ 16/08). Jumeau serveur de A2 — c'est la version **autoritative**
+  du garde. — ✅ **fait le 16/08/2026**, avec **trois écarts assumés** par rapport à la lettre
+  du plan ci-dessous : voir « Ce que la lecture du code a invalidé ».
 
 N'importe quel authentifié peut aujourd'hui signaler n'importe quel autre utilisateur par
 son slug. `fromUserSlug` est bien authentifié (correctif de mai), mais aucun lien n'est
@@ -852,39 +857,127 @@ exigé entre les deux parties.
 > asymétrique il aurait fallu l'inverser (« mon interlocuteur aurait-il eu le droit de
 > m'appeler ? ») — une seconde règle à tenir juste. La symétrie l'évite.
 
-- **`askForPeerId` / `responseToPeerId`** — réutiliser `canJoinRoom` / `canJoinServer`, déjà
-  utilisés par [`channels.php`](../src/routes/socializer/channels.php), sur la `room` du
-  payload.
-- **`sendAlertToUser` / `responseToPeerAuthorization` / `closeConnectionToPeerId`** — pas de
-  room exploitable dans le payload (la `room` de l'appel direct est générée côté client,
-  ce n'est pas un vertex). Il faut donc une **nouvelle requête Nebula** « ces deux users
-  partagent-ils un vertex ? » — `MATCH (a:user)-[:registered_in]->(x)<-[:registered_in]-(b:user)`
-  — plus la réciprocité du follow (arête `followed_by` du mur de chacun vers l'autre, cf.
-  [`Users.php`](../src/app/Services/Users.php)). ⚠️ **C'est ce qui fait de C2 un `[M]` et
-  non le `[S]` que la ligne « réutiliser canJoinRoom » laissait croire.**
-- Poser le prédicat en **une seule méthode** sur `Socializable` (`mayReach`), pas cinq
-  contrôles recopiés — convention « un seul système ».
-- 403 + `Log::warning` traçant `auth_user_id`, `target_slug`, `ip`, `user_agent` — même
-  format que le log d'usurpation déjà en place dans `closeConnectionToPeerId`.
+> ## ⚠️ Ce que la lecture du code a invalidé — la jambe « contexte partagé » devient « même groupe MariaDB »
+>
+> Le plan prévoyait `canJoinRoom` / `canJoinServer` sur la `room` du payload, plus une requête
+> Nebula à vertex partagé. **Les deux sont infaisables**, pour trois raisons vérifiées :
+>
+> **1. `canJoinRoom` / `canJoinServer` ne sont pas des prédicats d'appartenance.** Dans
+> [`Socializable.php`](../src/app/Helpers/ModelTraits/Socializable.php), `u` n'est pas
+> l'appelant mais *n'importe quel* utilisateur enregistré ; le `vertexid` de l'appelant ne
+> pèse que sur la branche `privacy == 1`. Sur une room publique la requête renvoie une ligne
+> dès qu'un membre quelconque existe ⇒ **`true` pour tout le monde**. Le garde aurait été
+> contournable en nommant une room publique. (Effet miroir : une room publique **vide**
+> renvoie `false`, même à son propriétaire.) Ils restent inchangés — ce sont les gardes de
+> canal Reverb.
+>
+> **2. Le graphe ne connaît pas l'appartenance aux rooms.**
+> `user -[:registered_in]-> room` n'est écrite qu'en un seul endroit,
+> [`Server.php:532`](../src/app/Services/Server.php) dans `createRoomServer()` — donc pour le
+> **créateur** seulement. Aucune route « rejoindre une room ». La jambe aurait été morte.
+>
+> **3. La copie graphe de l'appartenance aux groupes dérive.** `GroupUserCreatedListener`
+> (estarter) est **entièrement commenté** : ajouter un utilisateur à un groupe ne propage rien
+> dans Nebula. L'arête n'est posée qu'à la création du compte (`createUserAndNetwork`) et par
+> `socializer:nebula-populate`. **MariaDB est la source de vérité, le graphe un réplica non
+> resynchronisé.**
+>
+> Ce n'est pas un affaiblissement : `canJoinServer` définit *déjà* l'accès serveur **par le
+> groupe**. On lit la même notion, à la bonne source — une requête SQL indexée
+> (`unique(['user_id','group_id'])`) au lieu d'un aller-retour Thrift.
+>
+> **Arbitrages tranchés avec le porteur produit (16/08)** : granularité = **même `group_id`
+> exactement**, pas de remontée dans le nested set · **pas** de co-présence Redis, deux jambes
+> suffisent · slug inconnu ⇒ **403 uniforme**, ce qui fait d'avance le travail de E3 sur ces
+> cinq routes · appel à soi-même autorisé (multi-onglet) · graphe muet ⇒ refus, jamais 500.
 
-**Tests :** inconnu (ni follow réciproque ni vertex commun) ⇒ 403 et **aucun broadcast
-émis** · follow à sens unique ⇒ 403 · follow réciproque ⇒ 200 · membre de la même room
-⇒ 200 · membre du même serveur ⇒ 200.
+- Prédicat en **une seule méthode** sur `Socializable` (`mayReach`), pas cinq contrôles
+  recopiés — convention « un seul système ». Deux jambes, évaluées dans cet ordre : le groupe
+  (SQL indexé, connexion déjà ouverte), puis le follow réciproque (Nebula, dernier recours).
+- Une **seule** requête nGQL pour le follow mutuel, n'employant que des constructions attestées
+  en production (`MATCH` multi-motifs par virgule, `RETURN count(*) > 0 AS x`). Évite
+  délibérément `wall()`, qui fait `return $wall[0]` et plante sur un utilisateur sans mur.
+- Verdict mémorisé par **paire non ordonnée** — `mayReach` est symétrique. Invalidé
+  explicitement par `Users::followUser`/`unfollowUser` : une autorisation périmée n'est qu'une
+  fenêtre bornée, un refus périmé est un bouton qui échoue juste après qu'on s'est abonné.
+- 403 + `Log::warning` traçant `auth_user_id`, `target_slug`, `ip`, `user_agent` — même
+  format que le log d'usurpation déjà en place dans `closeConnectionToPeerId`. Le journal garde
+  `target_exists`, que la réponse HTTP tait.
+
+**Tests :** ✅ `tests/Feature/Signaling/RelationGuardTest.php` — 34 cas. Sur les 5 routes :
+inconnus ⇒ 403 · follow à sens unique ⇒ 403 · groupes différents ⇒ 403 · groupe commun ⇒ 200
+et broadcast émis · follow réciproque ⇒ 200 et broadcast émis. Puis : slug inexistant ⇒ **403
+et non 404**, sans toucher au graphe · soi-même ⇒ 200 sans toucher au graphe · groupe commun
+⇒ graphe non interrogé · mémorisation dans les deux sens ⇒ une seule requête nGQL · graphe
+muet (JsonResponse d'erreur **et** zéro ligne) ⇒ 403 · refus journalisé · le garde précède le
+journal d'usurpation. **Chaque refus asserte `assertNoBroadcastSent()`.**
+
+Quatre contre-épreuves passées : garde retiré de `sendAlertToUser` seul ⇒ 3 cas rougissent,
+tous sur cette route (le fournisseur couvre bien les 5) · `mayReach` renvoyant `true` ⇒ 21 cas
+· `sharesGroupWith` sans le filtre sur le destinataire ⇒ 5 cas, exactement « groupes
+différents » · court-circuit d'identité retiré ⇒ 1 cas, celui du multi-onglet.
+
+⚠️ **Ce que ces tests ne prouvent pas.** `FakeNebulaGraph` fait du `str_contains`, il ne parse
+pas le nGQL : les cas « follow » testent « le graphe a répondu vrai/faux », jamais la
+réciprocité. **Une requête syntaxiquement invalide passerait au vert.** Reste à contre-vérifier
+sur l'environnement Docker (hors de portée du shell de dev, base sur l'hôte `mariadb`) :
+1. la requête de `followsMutually` contre un vrai Nebula, sur trois paires connues, **plus** la
+   contre-épreuve par retrait d'un des deux motifs `followed_by` ;
+2. `SELECT g.id, g.name, COUNT(*) n FROM group_user gu JOIN groups g ON g.id = gu.group_id
+   GROUP BY g.id ORDER BY n DESC LIMIT 5` — écarter le groupe racine universel, qui rendrait la
+   jambe groupe **vacante**.
+
+### La borne connue de C2 : la room publique
+
+Mesuré le 16/08 sur `estarter_test` : **un seul groupe** (`Innovation`, 2 membres), **10
+comptes sur 12 sans aucun groupe**. Le risque redouté — un groupe racine coiffant tout le monde,
+qui aurait rendu le prédicat vacant — est donc **écarté**.
+
+Un compte sans groupe ni follow ne joint personne : c'est la règle, pas un défaut. Une seule
+exception mérite d'être suivie.
+
+> **`Server::getRoom()` ouvre une room `privacy == 0` à n'importe quel authentifié**, sans
+> exiger ni groupe ni follow ([`Server.php:629`](../src/app/Services/Server.php)). Deux comptes
+> sans relation peuvent donc se retrouver **légitimement** dans la même room, et leur mesh est
+> désormais refusé. Les rooms `privacy == 1` et `2` ne posent pas la question : leur accès
+> exige déjà d'être enregistré dans la room ou d'en être le créateur.
+
+À vérifier avant mise en production — `MATCH (r:room) RETURN r.room.privacy AS privacy,
+count(*) AS n`. Aucune room à `privacy == 0` ⇒ rien à faire. Sinon, le correctif ciblé est une
+**troisième jambe de co-présence** dans `mayReach` : `presence:room:*` / `presence:server:*`
+sont écrits côté serveur par `getRoom()`/`getServer()` (donc non forgeables depuis le payload),
+lus en O(1) par le singleton `redisService` — la même couture testable que `nebulaGraph`.
+Écartée sciemment à la livraison : deux jambes, deux sources, et la rafale de join ne la
+justifiait pas à elle seule.
+
+⚠️ Si elle est ajoutée, **ne pas la mettre en cache** : la co-présence est volatile, un verdict
+mémorisé 60 s survivrait au départ de la room. Le cache doit rester sur ce qui est cher et lent
+à bouger — groupe et follow.
+
+⚠️ Ne PAS intersecter `presence:chat:*` : l'arbitrage du 15/08 a écarté le chat parce que
+`/get-or-create-chat-room` permet à un attaquant de s'octroyer la relation en une requête. Une
+intersection non typée la ferait rentrer par la porte de derrière.
+
+**Done :** ✅ **73 tests PHP / 190 assertions** verts (16/08/2026, contre 39 avant) ; suite JS
+**inchangée** (645 tests / 36 fichiers).
 **Commit :** `secu(socializer): exiger une relation entre émetteur et destinataire`
 
 ---
 
-### C5 — Aligner le bouton d'appel sur la règle C2 `[S]`
+### C5 — Aligner le bouton d'appel sur la règle C2 `[S]` 🟠
 
-- [ ] **Dépend de :** C2.
+- [ ] **Dépend de :** C2 (✅ 16/08). **C'est désormais la plus urgente** : depuis C2 le bouton
+  ment pour de bon, et l'échec est silencieux.
 
-Sans ça le bouton **ment** : [`components/User/Cover.vue`](../src/resources/js/socializer/components/User/Cover.vue)
+Le bouton **ment** : [`components/User/Cover.vue`](../src/resources/js/socializer/components/User/Cover.vue)
 affiche `CallRemotePeerBtn` dès que `user.connected`, sans rien savoir de la relation.
-Après C2, tout appel hors relation part en 403 — l'utilisateur verrait un bouton qui
-échoue silencieusement.
+Tout appel hors relation part en 403 — et **aucun composable WebRTC2 n'inspecte le statut
+HTTP**, tous ces appels sont dans un `catch` nu. L'utilisateur voit donc un bouton qui ne fait
+strictement rien, sans le moindre retour.
 
 - Exposer le verdict de `mayReach` dans la charge utile du profil (à côté de
-  `nb_followers` / `is_me`, déjà présents) et conditionner l'affichage du bouton.
+  `nb_followers` / `follow_status`, déjà produits par `Users::getGraphUser`) et conditionner
+  l'affichage du bouton.
 - Le serveur reste l'autorité : ce masquage est de l'UX, **pas** un contrôle.
 
 **Commit :** `feat(socializer): n'afficher le bouton d'appel que si la relation le permet`
@@ -978,13 +1071,60 @@ surdimensionné rejeté.
 
 ### E3 — Ne plus énumérer les utilisateurs `[S]`
 
-- [ ] **Dépend de :** C2 (même fichier, même garde).
+- [ ] **Dépend de :** C2 (✅ 16/08). **Périmètre réduit** — voir ci-dessous.
 
-`firstOrFail()` sur un slug arbitraire distingue 404 (utilisateur inexistant) de 200
-(existant) → énumération. Aligner sur la réponse du garde de C2 (403 uniforme).
+> ✅ **Fait sur les 5 routes de signalisation** (16/08, avec C2) : `firstOrFail()` y est
+> remplacé par `first()`, et un slug inexistant reçoit le **même 403, même corps**
+> (`{"ok": false}`) qu'un slug existant hors relation. Couvert par
+> `RelationGuardTest::un_slug_inexistant_repond_403_et_non_404`.
 
-**Tests :** slug inexistant et slug existant hors relation ⇒ **même** code et même corps.
+**Reste à faire** : `getUsersList` ([`UserController.php`](../src/app/Http/Controllers/Front/UserController.php)),
+qui liste **tous** les utilisateurs actifs — son contrôle de permission `list_users` est
+commenté. C'est une énumération bien plus directe que le sondage de slugs, et elle ne partage
+ni le garde ni le fichier avec ce qui vient d'être fait : elle sert la liste de contacts du
+produit, donc son arbitrage est produit, pas technique.
+
+**Tests :** ✅ pour les 5 routes. Reste : la liste ne renvoie que les utilisateurs joignables,
+ou exige `list_users`.
 **Commit :** `secu(socializer): réponse uniforme sur slug inexistant ou non autorisé`
+
+---
+
+### E4 — `canJoinServer` dérive avec les groupes `[M]` 🟠
+
+- [ ] **Dépend de :** rien. **Trouvé le 16/08/2026** en cadrant C2 — hors périmètre de l'audit
+  du 14/08 (ce n'est pas WebRTC2), mais découvert par lui et trop concret pour être perdu.
+
+[`Socializable::canJoinServer`](../src/app/Helpers/ModelTraits/Socializable.php) autorise le
+canal Reverb d'un serveur **privé** en lisant l'arête `user -[:registered_in]-> group` dans
+NebulaGraph. Or `GroupUserCreatedListener` (estarter) est **entièrement commenté** : ajouter
+quelqu'un à un groupe depuis Backpack ne propage rien. L'arête n'existe que si le compte a été
+créé *après* son rattachement, ou si `socializer:nebula-populate` a été rejoué depuis.
+
+**Symptôme attendu en production** : un utilisateur ajouté à un service ne reçoit pas les
+événements temps réel de son serveur, sans message d'erreur, jusqu'à la prochaine
+repopulation. Ce n'est pas un trou de sécurité — c'est un **faux négatif**, donc silencieux et
+difficile à diagnostiquer.
+
+Trois issues, à arbitrer :
+1. décommenter `GroupUserCreatedListener` / `GroupUserDeletedListener` et y poser
+   `setRegisteredRelation` / la suppression d'arête — corrige la cause, touche estarter ;
+2. lire l'appartenance dans MariaDB comme le fait désormais `mayReach` — cohérent, mais deux
+   sources pour la même notion tant que 1. n'est pas fait ;
+3. rejouer `socializer:nebula-populate` périodiquement — colmatage, pas correctif.
+
+⚠️ **Constat annexe à ne pas perdre** : `canJoinRoom`/`canJoinServer`/`canJoinchatRoom` ne sont
+pas des prédicats d'appartenance. Sur une room `privacy == 0` la clause est vraie pour
+n'importe quel couple `(room, user)` ⇒ `true` pour tout le monde — comportement probablement
+voulu pour un canal public, mais qui les rend **inutilisables comme gardes de relation**.
+`canJoinchatRoom` va plus loin : son `OPTIONAL MATCH` renvoie toujours une ligne, donc
+**toujours `true`**, y compris sur un chat privé dont on n'est pas membre. Celui-là mérite sa
+propre vérification.
+
+**Tests :** un utilisateur ajouté à un groupe après création de son compte peut rejoindre le
+canal du serveur privé de ce groupe · un non-membre ne le peut pas · `canJoinchatRoom` refuse
+un chat privé dont on n'est pas membre.
+**Commit :** `fix(socializer): l'appartenance à un groupe ne dérive plus des gardes de canal`
 
 ---
 

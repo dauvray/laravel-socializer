@@ -31,13 +31,9 @@ use PHPUnit\Framework\Attributes\Test;
  */
 class ValidationTest extends TestCase
 {
-    /** Un peerId réaliste : le serveur PeerJS génère des UUID. */
-    private const PEER_ID = '550e8400-e29b-41d4-a716-446655440000';
-
-    /** Une room d'appel réaliste : `ensureCurrentCallRoomId` fait `crypto.randomUUID()`. */
-    private const CALL_ROOM = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
-
-    private const INVITE_ID = '9c858901-8a57-4791-81fe-4c455b099bc9';
+    // `signalingRoutes()` (fournisseur de données) et `nominalPayload()`, partagés avec
+    // `RelationGuardTest`.
+    use SignalingPayloads;
 
     protected function setUp(): void
     {
@@ -46,73 +42,6 @@ class ValidationTest extends TestCase
         // Tout le fichier repose sur « un refus n'émet rien » : sans interception, un
         // broadcast parti malgré un 422 passerait inaperçu.
         $this->fakeBroadcasts();
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | Payloads de référence — ce que le client envoie vraiment
-    |--------------------------------------------------------------------------
-    */
-
-    /**
-     * @return array<string, array{0: string, 1: string}>
-     */
-    public static function signalingRoutes(): array
-    {
-        return [
-            'askForPeerId' => ['/ask-to-peer-id', 'AskToPeerID'],
-            'responseToPeerId' => ['/response-to-peer-id', 'ResponseToPeerID'],
-            'sendAlertToUser' => ['/send-alert-to-user', 'AlertToUser'],
-            'responseToPeerAuthorization' => ['/response-to-authorization-peer', 'ResponseToAuthorizationPeer'],
-            'closeConnectionToPeerId' => ['/close-connection-to-peer-id', 'CloseConnectionToPeerID'],
-        ];
-    }
-
-    /**
-     * Le payload nominal d'une route, calqué sur `usePeerCore`.
-     */
-    private function nominalPayload(string $uri, User $to, User $from): array
-    {
-        $callOptions = [
-            'type' => 'visio',
-            'action' => 'peer-access-permission',
-            'room' => self::CALL_ROOM,
-            'peerId' => self::PEER_ID,
-            'inviteId' => self::INVITE_ID,
-        ];
-
-        return match ($uri) {
-            '/ask-to-peer-id' => [
-                'toUserSlug' => $to->slug,
-                'room' => 'app',
-                'type' => 'stream',
-                // Le cas du partage d'écran : `type` reste celui du contexte, seul
-                // `connectionType` vaut 'screen'.
-                'connectionType' => 'screen',
-            ],
-            '/response-to-peer-id' => [
-                'toUserSlug' => $to->slug,
-                'peerId' => self::PEER_ID,
-                'room' => 'app',
-                'type' => 'stream',
-                'connectionType' => 'screen',
-            ],
-            '/send-alert-to-user' => [
-                'toUserSlug' => $to->slug,
-                'options' => $callOptions,
-            ],
-            '/response-to-authorization-peer' => [
-                'toUserSlug' => $to->slug,
-                'status' => true,
-                'options' => $callOptions,
-            ],
-            '/close-connection-to-peer-id' => [
-                'toUserSlug' => $to->slug,
-                'fromUserSlug' => $from->slug,
-                'room' => 'app',
-                'type' => 'visio',
-            ],
-        };
     }
 
     /** Chemin du champ « type » d'une route : au premier niveau, ou dans `options`. */

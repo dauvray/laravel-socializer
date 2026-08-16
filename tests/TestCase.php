@@ -6,6 +6,7 @@ use Dauvray\Socializer\ServiceProvider as SocializerServiceProvider;
 use Dauvray\Socializer\Tests\Stubs\FakeNebulaGraph;
 use Dauvray\Socializer\Tests\Stubs\User;
 use Illuminate\Broadcasting\AnonymousEvent;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Schema;
 use Orchestra\Testbench\TestCase as BaseTestCase;
@@ -25,11 +26,16 @@ use Orchestra\Testbench\TestCase as BaseTestCase;
  *
  *  2. AUCUNE MIGRATION DU PAQUET. `ServiceProvider::boot` enregistre `src/database/migrations`,
  *     qui contient du MongoDB et du NebulaGraph : les jouer sur sqlite casse immédiatement.
- *     D'où la table `users` fabriquée à la main ci-dessous, et l'absence de `RefreshDatabase`.
+ *     D'où les tables fabriquées à la main ci-dessous, et l'absence de `RefreshDatabase`.
+ *     `users` pour la résolution du destinataire ; `group_user` pour le garde de relation,
+ *     dont la migration vit qui plus est dans un AUTRE paquet (estarter).
  *
  *  3. NEBULAGRAPH REMPLACÉ AU CONTENEUR. Le paquet n'atteint le graphe que par
  *     `app('nebulaGraph')`, singleton posé dans `ServiceProvider::register`. Cette couture
- *     unique est ce qui rendra C2 testable.
+ *     unique est ce qui rend le garde de relation de C2 testable. ⚠️ Elle a une limite :
+ *     `FakeNebulaGraph` fait du `str_contains` sur le nGQL, il ne le PARSE pas. Un test vert
+ *     sur la jambe follow ne prouve donc rien de la requête elle-même — cf. l'avertissement
+ *     en tête de `RelationGuardTest`.
  *
  *  4. LES BROADCASTS S'OBSERVENT PAR `Event::fake()`. Il n'existe PAS de `Broadcast::fake()`
  *     dans Laravel 13. `Broadcast::private(…)->sendNow()` construit un `AnonymousEvent` que
@@ -82,7 +88,7 @@ abstract class TestCase extends BaseTestCase
     protected function defineDatabaseMigrations(): void
     {
         // Cf. décision 2 : surtout pas les migrations du paquet. Le strict nécessaire à
-        // `config('estarter.models.user')::where('slug', …)->firstOrFail()`.
+        // `config('estarter.models.user')::where('slug', …)->first()`.
         if (Schema::hasTable('users')) {
             return;
         }
@@ -96,6 +102,17 @@ abstract class TestCase extends BaseTestCase
             $table->string('password')->default('secret');
             $table->timestamps();
         });
+
+        // Pivot user ↔ group d'estarter, lu par `Socializable::mayReach`. Fabriqué à la main
+        // pour la même raison que `users` : sa migration vit dans un AUTRE paquet, absent du
+        // harnais. La table `groups` elle-même n'est pas nécessaire — le prédicat retenu est
+        // « même group_id exactement », il ne remonte pas le nested set.
+        Schema::create('group_user', function ($table) {
+            $table->id();
+            $table->unsignedBigInteger('user_id');
+            $table->unsignedBigInteger('group_id');
+            $table->unique(['user_id', 'group_id']);
+        });
     }
 
     /*
@@ -105,15 +122,45 @@ abstract class TestCase extends BaseTestCase
     */
 
     /**
-     * Crée un utilisateur. Le slug est dérivé du nom par Sluggable, comme en production.
+     * Groupe par défaut de `makeUser`. Deux utilisateurs du harnais sont donc joignables au
+     * sens de `mayReach` sans rien déclarer.
      */
-    protected function makeUser(string $name, array $attributes = []): User
+    protected const DEFAULT_GROUP_ID = 1;
+
+    /**
+     * Crée un utilisateur. Le slug est dérivé du nom par Sluggable, comme en production.
+     *
+     * ⚠️ L'inscrit dans `DEFAULT_GROUP_ID` par défaut. Sans ça, le garde de relation de C2
+     * refuserait toute signalisation entre deux utilisateurs du harnais, et les suites qui
+     * testent AUTRE CHOSE (throttle, fuite d'exception, validation) échoueraient en 403 sans
+     * rapport avec ce qu'elles vérifient.
+     *
+     * Passer `groupId: null` pour un inconnu — c'est ce dont `RelationGuardTest` a besoin.
+     */
+    protected function makeUser(string $name, array $attributes = [], ?int $groupId = self::DEFAULT_GROUP_ID): User
     {
-        return User::create(array_merge([
+        $user = User::create(array_merge([
             'name' => $name,
             'email' => $name.'@example.test',
             'vertexid' => 'user'.$name,
         ], $attributes));
+
+        if ($groupId !== null) {
+            $this->joinGroup($user, $groupId);
+        }
+
+        return $user;
+    }
+
+    /**
+     * Inscrit un utilisateur dans un groupe — la jambe « contexte partagé » de `mayReach`.
+     */
+    protected function joinGroup(User $user, int $groupId): void
+    {
+        DB::table('group_user')->insert([
+            'user_id' => $user->id,
+            'group_id' => $groupId,
+        ]);
     }
 
     /**

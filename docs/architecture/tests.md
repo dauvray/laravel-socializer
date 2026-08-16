@@ -64,11 +64,15 @@ perdre une demi-journée — le détail et le pourquoi vivent dans le docblock d
    `estarter.routes_middlewares.classic.private` à `['auth']`. ⚠️ **Delta assumé** : la pile de test
    n'est pas celle de production (`['web','auth','routeProtect','verified','restrictedMode']`).
 2. **Aucune migration du package.** Celles qu'il enregistre contiennent du MongoDB et du
-   NebulaGraph : injouables sur sqlite. Le harnais crée à la main la seule table `users`, et
-   n'utilise **pas** `RefreshDatabase`.
+   NebulaGraph : injouables sur sqlite. Le harnais crée à la main les tables dont il a besoin —
+   `users`, et `group_user` pour le garde de relation, dont la migration vit qui plus est dans un
+   **autre** package (estarter). Il n'utilise **pas** `RefreshDatabase`.
 3. **NebulaGraph remplacé au conteneur.** Le package n'atteint le graphe que par
    `app('nebulaGraph')` — couture unique, d'où `fakeNebulaGraph()`. C'est ce qui rend les gardes de
-   relation testables.
+   relation testables. ⚠️ **Sa limite** : `FakeNebulaGraph` fait du `str_contains` sur le nGQL, il ne
+   le **parse** pas. Un test vert sur une jambe qui interroge le graphe prouve le câblage, jamais la
+   requête — une requête syntaxiquement invalide passe au vert. Ces requêtes se contre-vérifient
+   contre un vrai NebulaGraph.
 4. **Les broadcasts s'observent par `Event::fake()`.** Il n'existe **pas** de `Broadcast::fake()`
    dans Laravel 13. `Broadcast::private(…)->sendNow()` construit un `AnonymousEvent` que
    `PendingBroadcast::__destruct` remet au dispatcher : c'est là qu'on l'intercepte. Helpers :
@@ -83,6 +87,13 @@ perdre une demi-journée — le détail et le pourquoi vivent dans le docblock d
 
 Deux doublures sont là uniquement parce que `ServiceProvider::boot` fait un `require_once` de **tous**
 les `src/app/Helpers/*.php` : sans elles, l'application de test ne démarre pas.
+
+> **Défaut de fixture.** `makeUser()` inscrit l'utilisateur dans `DEFAULT_GROUP_ID`, donc deux
+> utilisateurs du harnais sont joignables au sens de `mayReach` sans rien déclarer. Sans ce défaut,
+> les suites qui testent **autre chose** (throttle, fuite d'exception, validation) échoueraient toutes
+> en 403 sans rapport avec ce qu'elles vérifient. Passer `groupId: null` pour un inconnu — c'est ce
+> dont `RelationGuardTest` a besoin, et écrire ce fichier avec le défaut le rendrait entièrement vert
+> pour la mauvaise raison.
 
 > **Piège Eloquent.** Le trait `Socializable` fait
 > `$this->fillable = array_merge($this->fillable, ['is_bot'])`. Définir `fillable`, même

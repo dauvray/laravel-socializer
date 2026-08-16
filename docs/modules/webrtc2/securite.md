@@ -11,9 +11,9 @@
 
 | Direction | État | Détail |
 |---|---|---|
-| **Entrant** (`peer.on('connection')`, `peer.on('call')`) | durci **côté client**, une faille résiduelle assumée — audits du 20/05 et du 14/08/2026 | garde `_isAuthorizedIncomingPeer`, anti-usurpation inconditionnelle, gardes de taille, sanitisation. Reste aveugle au membre de room qui se présente avec un peerId neuf sous le slug d'un autre — seul le backend peut trancher |
-| **Sortant** (`connectToPeer`, `responseRemotePeerConnection`) | durci **côté client** — audit du 14/08/2026 | prédicat unique `utils/isAuthorizedPeer.js` : membre de la room **ou** interlocuteur d'appel marqué. Le garde autoritatif, côté serveur, reste à écrire |
-| **Backend** (`UserController`, routes) | partiel | `fromUserSlug` authentifié, liste blanche de champs, `throttle` par utilisateur (deux buckets) et `validate()` sur les 5 payloads. Manque le **contrôle de relation** émetteur ↔ destinataire — n'importe quel authentifié peut encore signaler n'importe qui par son slug |
+| **Entrant** (`peer.on('connection')`, `peer.on('call')`) | durci **côté client**, borné côté serveur — audits du 20/05 et du 14/08/2026 | garde `_isAuthorizedIncomingPeer`, anti-usurpation inconditionnelle, gardes de taille, sanitisation. Reste aveugle au membre de room qui se présente avec un peerId neuf sous le slug d'un autre ; le garde de relation serveur borne désormais qui peut tenter |
+| **Sortant** (`connectToPeer`, `responseRemotePeerConnection`) | durci **côté client**, garde autoritatif posé côté serveur | prédicat unique `utils/isAuthorizedPeer.js` : membre de la room **ou** interlocuteur d'appel marqué. Son jumeau serveur `Socializable::mayReach` tranche ce que le navigateur ne peut pas voir |
+| **Backend** (`UserController`, routes) | durci | `fromUserSlug` authentifié, liste blanche de champs, `throttle` par utilisateur (deux buckets), `validate()` sur les 5 payloads, et **contrôle de relation** émetteur ↔ destinataire en 403 uniforme |
 | **Credentials TURN** | 🟠 compilés dans le bundle | identifiants longue durée lisibles par quiconque ouvre le JS |
 
 **La leçon réutilisable, et la seule qui compte : un garde d'admission ne sécurise qu'une
@@ -240,17 +240,77 @@ vit dans `Composables/utils/createRateLimiter.js` : **un seul système** pour le
 
 ---
 
+## Décisions en vigueur (backend, août 2026)
+
+### Le garde de relation — `Socializable::mayReach`
+
+Les 5 routes de signalisation exigent un lien entre l'émetteur et le destinataire : **même groupe
+MariaDB OU follow réciproque**. C'est le jumeau serveur de `utils/isAuthorizedPeer.js`, et la seule
+fermeture possible de l'usurpation intra-room — côté navigateur, le cas nominal et l'attaque ont la
+même signature locale.
+
+**Pourquoi symétrique.** L'invitation d'appel est un broadcast *fire-and-forget* : **aucune
+invitation n'est persistée côté serveur**, donc `responseToPeerAuthorization` n'a rien contre quoi se
+valider. Avec une relation asymétrique il aurait fallu l'inverser sur la route de réponse (« mon
+interlocuteur aurait-il eu le droit de m'appeler ? ») — une seconde règle à tenir juste. La symétrie
+l'évite, et permet une seule entrée de cache par paire non ordonnée.
+
+**Pourquoi pas le chat 1-à-1 comme troisième voie.** `conversations()` serait un prédicat
+**auto-servi** : `/get-or-create-chat-room` crée une conversation avec n'importe qui, donc un
+attaquant s'octroie la relation en une requête.
+
+### Deux pièges du graphe que ce garde contourne
+
+**1. `canJoinRoom` / `canJoinServer` ne sont pas des prédicats d'appartenance.** Dans les deux, `u`
+est *n'importe quel* utilisateur enregistré, pas l'appelant, dont le `vertexid` ne pèse que sur la
+branche `privacy == 1`. Sur une room publique la requête renvoie une ligne dès qu'un membre
+quelconque existe : **`true` pour tout le monde**. (Effet miroir : une room publique **vide** renvoie
+`false`, même à son propriétaire.) Ce sont des gardes de **canal Reverb** ; les employer comme gardes
+de relation rendrait le contrôle contournable en nommant une room publique.
+
+**2. L'appartenance vit dans MariaDB, pas dans le graphe.** `GroupUserCreatedListener` (estarter) est
+entièrement commenté : ajouter un utilisateur à un groupe ne propage **rien** dans NebulaGraph.
+L'arête `user -[:registered_in]-> group` n'est écrite qu'à la création du compte
+(`createUserAndNetwork`) et par `socializer:nebula-populate`. De même,
+`user -[:registered_in]-> room` n'est posée que pour le **créateur** de la room — aucune route
+« rejoindre une room » ne l'ajoute.
+
+> **La leçon durable : le graphe est un réplica, pas une source de vérité.** Un garde qui l'interroge
+> pour une donnée dont MySQL est le maître refuse des accès légitimes, sans motif visible, et dérive
+> d'autant plus que le temps passe. Le follow y reste lu — c'est la seule donnée dont le graphe est
+> bien le maître.
+
+### 403 uniforme, et ce que le journal garde
+
+Un slug inconnu et une absence de relation répondent **le même 403** : la différence était un oracle
+d'énumération. Le `Log::warning`, lui, conserve `target_exists` — il n'est pas exposé.
+
+### Ce que les tests ne prouvent pas
+
+`FakeNebulaGraph` fait du `str_contains` sur le nGQL, **il ne le parse pas**. Les cas « follow » de
+`RelationGuardTest` testent donc « le graphe a répondu vrai/faux », jamais la réciprocité elle-même.
+Toute la sémantique de cette jambe vit dans une requête que le harnais ne sait pas évaluer, et une
+requête syntaxiquement invalide y passerait au vert. Elle se contre-vérifie contre un vrai
+NebulaGraph.
+
+Corollaire moins visible : le défaut `[]` de la doublure **n'est pas** « pas de follow ». La requête
+finit par `RETURN count(*) > 0`, un agrégat — un vrai graphe renvoie toujours exactement une ligne.
+Zéro ligne veut dire « le graphe n'a pas répondu », et c'est traité comme un refus. Écrire un test
+d'absence de relation sur `[]` revient à tester une panne.
+
+---
+
 ## Bornes non fermées, connues
 
 - **Amplification du hub star** : les gardes sont par émetteur (`HUB_MAX_MESSAGES_PER_WINDOW`) et par
   message (`MAX_PAYLOAD_BYTES`), mais **leur produit par le fan-out ne l'est pas**. Or star est la
   topologie des grandes rooms : à 100 membres, un client d'apparence honnête fait sortir ~128 Mo/s
   du hub.
-- **Backend** : `firstOrFail()` sur un slug arbitraire, qui permet l'énumération d'utilisateurs, et
-  surtout **aucun contrôle de relation entre émetteur et destinataire** — c'est la borne qui porte
-  la fermeture de l'usurpation intra-room. Fermés depuis : le `throttle` des 5 routes, la validation
-  des payloads relayés, et le `catch (\Exception $ex) { return $ex; }` qui renvoyait chemins de
-  fichiers et trace au client indépendamment d'`APP_DEBUG`.
+- **Backend** — fermés depuis l'audit : le `throttle` des 5 routes, la validation des payloads
+  relayés, le `catch (\Exception $ex) { return $ex; }` qui renvoyait chemins de fichiers et trace au
+  client indépendamment d'`APP_DEBUG`, le contrôle de relation émetteur ↔ destinataire, et
+  l'énumération par `firstOrFail()` sur ces cinq routes. **Reste ouvert** : la même énumération sur
+  `getUsersList`, qui liste tous les utilisateurs actifs sans contrôle.
 - **TURN** : `VITE_COTURN_USERNAME` / `VITE_COTURN_CREDENTIAL` sont compilés dans le bundle servi à
   tous — identifiants longue durée, partagés → relais ouvert, bande passante imputable au serveur.
 

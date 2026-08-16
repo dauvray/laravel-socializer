@@ -3,6 +3,7 @@
 namespace Dauvray\Socializer\app\Services;
 
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 use Dauvray\Socializer\app\Http\Resources\UserCollection;
 
 class Users
@@ -90,7 +91,9 @@ class Users
         $wall_id = $user_tofollow->wall();
 
         $result = setFollowedByRelation($wall_id, $this->user->vertexid);
-        
+
+        $this->forgetRelationVerdict($user_tofollow);
+
         if (count($result) === 0) {
             return true;
        }
@@ -109,11 +112,27 @@ class Users
             ]
         );
 
+        $this->forgetRelationVerdict($user_followed);
+
         if (count($result) === 0) {
             return true;
        }
 
        return false;
+    }
+
+    /**
+     * Oublie le verdict mémorisé par `Socializable::mayReach` pour cette paire.
+     *
+     * Un follow qui ne l'invaliderait pas ne débloquerait l'appel qu'au bout du TTL. C'est
+     * le sens qui compte : une AUTORISATION périmée n'est qu'une fenêtre bornée, un REFUS
+     * périmé est un bouton qui échoue juste après qu'on s'est abonné.
+     */
+    private function forgetRelationVerdict($other): void
+    {
+        Cache::forget(
+            config('estarter.models.user')::relationCacheKey($this->user->getKey(), $other->getKey())
+        );
     }
 
     public function createGroup($group) 

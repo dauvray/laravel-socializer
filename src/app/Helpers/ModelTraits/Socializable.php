@@ -6,6 +6,9 @@ use Cviebrock\EloquentSluggable\Sluggable;
 use Cviebrock\EloquentSluggable\SluggableScopeHelpers;
 use Dauvray\Socializer\app\Notifications\CommentReplyOf;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Dauvray\Socializer\app\Models\Post;
 
 trait Socializable
@@ -177,8 +180,132 @@ trait Socializable
 
             return true;
         }
-      
+
         return false;
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | GARDE DE RELATION (C2)
+    |--------------------------------------------------------------------------
+    |
+    | Qui a le droit de signaler qui. Posé sur les 5 routes de signalisation WebRTC2 —
+    | c'est la version AUTORITATIVE du garde sortant `isAuthorizedPeer` du client, et la
+    | seule fermeture possible de l'usurpation intra-room : côté navigateur, le cas
+    | nominal et l'attaque ont la même signature locale.
+    |
+    | Règle produit tranchée le 15/08/2026 : « follow mutuel OU contexte partagé ».
+    |
+    | ⚠️ Ne PAS confondre avec `canJoinRoom` / `canJoinServer` ci-dessus, qui gardent les
+    | canaux Reverb et ne sont pas des prédicats d'appartenance : dans les deux, `u` est
+    | n'importe quel utilisateur enregistré et non l'appelant, dont le `vertexid` ne pèse
+    | que sur la branche `privacy == 1`. Sur une room publique ils répondent `true` à tout
+    | le monde. Les réutiliser ici rendrait le garde contournable en nommant une room
+    | publique.
+    |
+    */
+
+    /**
+     * L'utilisateur courant a-t-il le droit de signaler `$other` ?
+     *
+     * Symétrique — ses deux jambes le sont. C'est ce qui règle la route de réponse sans
+     * traitement particulier : l'invitation d'appel est un broadcast fire-and-forget, rien
+     * n'est persisté côté serveur, donc `responseToPeerAuthorization` n'a rien contre quoi
+     * se valider. Avec une relation asymétrique il aurait fallu l'inverser (« mon
+     * interlocuteur aurait-il eu le droit de m'appeler ? ») — une seconde règle à tenir juste.
+     */
+    public function mayReach($other): bool
+    {
+        if (! $other) {
+            return false;
+        }
+
+        // Multi-onglet : un même utilisateur se signale d'un onglet à l'autre.
+        if ((string) $this->getKey() === (string) $other->getKey()) {
+            return true;
+        }
+
+        return Cache::remember(
+            static::relationCacheKey($this->getKey(), $other->getKey()),
+            config('socializer.signaling.relation.cache_ttl', 60),
+            // Le groupe d'abord : une requête SQL indexée sur une connexion déjà ouverte,
+            // là où le graphe coûte un aller-retour Thrift synchrone.
+            fn () => $this->sharesGroupWith($other) || $this->followsMutually($other)
+        );
+    }
+
+    /**
+     * Clé de mémorisation d'une PAIRE, pas d'un sens : `mayReach` étant symétrique, les
+     * deux sens partagent une entrée. Publique et statique parce que `Users::followUser`
+     * doit pouvoir l'oublier sans dupliquer sa construction.
+     */
+    public static function relationCacheKey($a, $b): string
+    {
+        $ids = [(string) $a, (string) $b];
+        sort($ids);
+
+        return 'socializer:may-reach:'.$ids[0].':'.$ids[1];
+    }
+
+    /**
+     * Appartenance à un même groupe, lue dans MariaDB.
+     *
+     * ⚠️ Pourquoi pas le graphe, alors que `canJoinServer` y lit la même notion
+     * (`(u:user)-[:registered_in]->(g:group)<-[:owned_by]-(s:server)`) : parce que la copie
+     * graphe DÉRIVE. `GroupUserCreatedListener` (estarter) est entièrement commenté, donc
+     * ajouter un utilisateur à un groupe ne propage rien ; l'arête n'est écrite qu'à la
+     * création du compte (`createUserAndNetwork`) et par `socializer:nebula-populate`.
+     * MariaDB est la source de vérité, le graphe un réplica non resynchronisé.
+     *
+     * ⚠️ Requête directe et non `$this->groups()` : cette relation vit sur `EstarterUser`,
+     * d'un paquet que le harnais de tests remplace par un stub qui lève.
+     */
+    private function sharesGroupWith($other): bool
+    {
+        $table = config('socializer.signaling.relation.group_user_table', 'group_user');
+
+        return DB::table($table.' as a')
+            ->join($table.' as b', 'a.group_id', '=', 'b.group_id')
+            ->where('a.user_id', $this->getKey())
+            ->where('b.user_id', $other->getKey())
+            ->exists();
+    }
+
+    /**
+     * Follow réciproque, lu dans le graphe — seule source de l'arête `followed_by`.
+     *
+     * Direction : `followUser` écrit `wall_de_la_cible -> suiveur`, donc
+     * `wa -[:followed_by]-> b` se lit « b suit a ». Les deux motifs sont donc les deux sens.
+     *
+     * N'emploie que des constructions attestées en production — `MATCH` multi-motifs séparés
+     * par virgule (`Feed.php`) et `RETURN count(*) > 0 AS x` (`isFollowedBy`). Évite
+     * délibérément `wall()`, qui fait `return $wall[0]` et plante sur un utilisateur sans mur.
+     */
+    private function followsMutually($other): bool
+    {
+        $from = $this->vertexid;
+        $to = $other->vertexid;
+
+        $result = app('nebulaGraph')->execute("
+            MATCH (wa:wall)-[:owned_by]->(a:user), (wa)-[:followed_by]->(b:user),
+                  (wb:wall)-[:owned_by]->(b), (wb)-[:followed_by]->(a)
+            WHERE id(a) == '$from' AND id(b) == '$to'
+            RETURN count(*) > 0 AS mutual
+        ");
+
+        // `execute()` renvoie un JsonResponse — un OBJET, donc truthy — quand nGQL échoue
+        // (cf. NebulaGraphConnection::responseJson, qui ne lève pas). Sur un chemin
+        // d'autorisation, tout ce qui n'est pas une réponse exploitable est un refus.
+        if (! is_array($result) || ! isset($result[0])) {
+            Log::warning('mayReach : le graphe n\'a pas répondu, refus par défaut', [
+                'from_vertexid' => $from,
+                'to_vertexid' => $to,
+            ]);
+
+            return false;
+        }
+
+        return (bool) $result[0];
     }
 
     /*

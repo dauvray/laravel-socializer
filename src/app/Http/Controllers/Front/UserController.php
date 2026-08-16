@@ -187,9 +187,10 @@ class UserController extends Controller
     */
     public function askForPeerId(Request $request)
     {
-        // ⚠️ AVANT le `firstOrFail` et surtout HORS du `try` : `ValidationException` étend
-        // `\Exception`, donc un `validate()` posé à l'intérieur repartirait en 500 par
-        // `signalingFailure()`. Même règle dans les quatre méthodes suivantes.
+        // ⚠️ AVANT la résolution du destinataire et surtout HORS du `try` :
+        // `ValidationException` étend `\Exception`, donc un `validate()` posé à l'intérieur
+        // repartirait en 500 par `signalingFailure()`. Même règle dans les quatre méthodes
+        // suivantes, et même raison pour le garde de relation qui suit.
         $data = $request->validate([
             'toUserSlug' => $this->slugRules(),
             'room' => $this->roomRules(),
@@ -199,8 +200,12 @@ class UserController extends Controller
             'connectionType' => $this->typeRules(false),
         ]);
 
-        $to = config('estarter.models.user')::where('slug', $data['toUserSlug'])->firstOrFail();
+        $to = config('estarter.models.user')::where('slug', $data['toUserSlug'])->first();
         $user = Auth::user();
+
+        if (! $to || ! $user->mayReach($to)) {
+            return $this->signalingDenied($request, $data['toUserSlug'], $to !== null);
+        }
 
         try {
             Broadcast::private('App.Models.User.'.$to->id)
@@ -240,8 +245,12 @@ class UserController extends Controller
             'connectionType' => $this->typeRules(false),
         ]);
 
-        $to = config('estarter.models.user')::where('slug', $data['toUserSlug'])->firstOrFail();
+        $to = config('estarter.models.user')::where('slug', $data['toUserSlug'])->first();
         $user = Auth::user();
+
+        if (! $to || ! $user->mayReach($to)) {
+            return $this->signalingDenied($request, $data['toUserSlug'], $to !== null);
+        }
 
         try {
             Broadcast::private('App.Models.User.'.$to->id)
@@ -269,8 +278,12 @@ class UserController extends Controller
             'status' => ['required', 'boolean'],
         ], $this->optionsRules(actionRequired: false)));
 
-        $to = config('estarter.models.user')::where('slug', $data['toUserSlug'])->firstOrFail();
+        $to = config('estarter.models.user')::where('slug', $data['toUserSlug'])->first();
         $user = Auth::user();
+
+        if (! $to || ! $user->mayReach($to)) {
+            return $this->signalingDenied($request, $data['toUserSlug'], $to !== null);
+        }
 
         try {
             Broadcast::private('App.Models.User.'.$to->id)
@@ -301,8 +314,12 @@ class UserController extends Controller
             'type' => $this->typeRules(),
         ]);
 
-        $to = config('estarter.models.user')::where('slug', $data['toUserSlug'])->firstOrFail();
+        $to = config('estarter.models.user')::where('slug', $data['toUserSlug'])->first();
         $user = Auth::user();
+
+        if (! $to || ! $user->mayReach($to)) {
+            return $this->signalingDenied($request, $data['toUserSlug'], $to !== null);
+        }
 
         $claimedSlug = $data['fromUserSlug'] ?? null;
         if ($claimedSlug !== null && $claimedSlug !== '' && $claimedSlug !== $user->slug) {
@@ -337,8 +354,12 @@ class UserController extends Controller
             'toUserSlug' => $this->slugRules(),
         ], $this->optionsRules(actionRequired: true)));
 
-        $to = config('estarter.models.user')::where('slug', $data['toUserSlug'])->firstOrFail();
+        $to = config('estarter.models.user')::where('slug', $data['toUserSlug'])->first();
         $user = Auth::user();
+
+        if (! $to || ! $user->mayReach($to)) {
+            return $this->signalingDenied($request, $data['toUserSlug'], $to !== null);
+        }
 
         try {
             Broadcast::private('App.Models.User.'.$to->id)
@@ -383,5 +404,36 @@ class UserController extends Controller
         ]);
 
         return response()->json(['ok' => false], 500);
+    }
+
+    /**
+     * Signalisation refusée par le garde de relation (C2).
+     *
+     * Deux causes, UNE seule réponse. Le `firstOrFail` d'avant renvoyait 404 sur un slug
+     * inconnu et le garde renverrait 403 sur une absence de relation : la différence est un
+     * oracle d'énumération, un attaquant distingue les slugs qui existent en les sondant. Le
+     * journal, lui, garde la distinction — il n'est pas exposé.
+     *
+     * Vérifié avant de changer le code : aucun composable WebRTC2 n'inspecte le statut HTTP,
+     * tous ces appels sont dans un `catch` nu. Le passage de 404 à 403 est invisible côté
+     * client.
+     *
+     * Contexte calqué sur le `Log::warning` d'usurpation de `closeConnectionToPeerId`.
+     */
+    private function signalingDenied(Request $request, string $targetSlug, bool $targetExists)
+    {
+        $user = Auth::user();
+
+        Log::warning('Signalisation refusée : aucune relation entre émetteur et destinataire', [
+            'route' => $request->route()?->getName(),
+            'auth_user_id' => $user?->id,
+            'auth_user_slug' => $user?->slug,
+            'target_slug' => $targetSlug,
+            'target_exists' => $targetExists,
+            'ip' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+        ]);
+
+        return response()->json(['ok' => false], 403);
     }
 }
