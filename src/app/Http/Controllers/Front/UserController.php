@@ -120,6 +120,29 @@ class UserController extends Controller
     private const MAX_RELAYED_ID_LENGTH = 100;
 
     /**
+     * Libellé d'un refus de signalisation, servi tel quel à l'utilisateur.
+     *
+     * Le MÊME dans les deux causes — slug inconnu et absence de relation. Les distinguer
+     * rouvrirait par le libellé l'oracle d'énumération que C2 a fermé en unifiant le code de
+     * retour : un attaquant n'a pas besoin du statut HTTP pour sonder, un texte suffit. Le
+     * point d'appel étant unique (`signalingDenied`), la règle tient structurellement — et
+     * `RelationGuardTest` la vérifie plutôt que de la supposer.
+     *
+     * Français en dur, et non `trans()` : le paquet n'a qu'un `resources/lang/fr/`, sans
+     * `fallback` correspondant. Un hôte en `APP_LOCALE=en` afficherait la clé brute dans un
+     * toast — pire que le cadre vide qu'on corrige ici. L'i18n est un chantier à part entière.
+     */
+    private const DENIED_MESSAGE = 'Vous ne pouvez pas contacter cet utilisateur : aucune relation ne vous y lie.';
+
+    /**
+     * Libellé d'un échec de broadcast. Volontairement muet sur la panne : le diagnostic vit
+     * dans le `Log::error` de `signalingFailure` (C3), jamais dans la réponse. Constante
+     * statique, donc structurellement incapable de transporter le message d'exception —
+     * c'est ce que `ExceptionLeakTest` continue de vérifier.
+     */
+    private const FAILURE_MESSAGE = 'La demande n\'a pas pu être transmise. Réessayez dans un instant.';
+
+    /**
      * Règles d'un slug utilisateur venu du réseau.
      */
     private function slugRules(bool $required = true): array
@@ -403,7 +426,7 @@ class UserController extends Controller
             'exception' => $ex,
         ]);
 
-        return response()->json(['ok' => false], 500);
+        return response()->json(['ok' => false, 'message' => self::FAILURE_MESSAGE], 500);
     }
 
     /**
@@ -414,9 +437,14 @@ class UserController extends Controller
      * oracle d'énumération, un attaquant distingue les slugs qui existent en les sondant. Le
      * journal, lui, garde la distinction — il n'est pas exposé.
      *
-     * Vérifié avant de changer le code : aucun composable WebRTC2 n'inspecte le statut HTTP,
-     * tous ces appels sont dans un `catch` nu. Le passage de 404 à 403 est invisible côté
-     * client.
+     * ⚠️ « Aucun composable WebRTC2 n'inspecte le statut HTTP, donc le passage de 404 à 403 est
+     * invisible côté client » — vrai des composables (tous ces POST sont dans un `catch` nu),
+     * FAUX de la chaîne complète, et c'est l'angle mort qui a produit E5. `AjaxService.load`
+     * d'estarter, lui, inspecte bien le statut : sur un 403 il émet `httpError`, que
+     * `widgets/Alert.vue` transforme en `AWN.alert(data.message || toaster.err)`. Les appels
+     * WebRTC2 ne passant aucun `toaster`, un corps sans `message` produisait un toast au
+     * contenu **nul** — d'où `DENIED_MESSAGE`. Corollaire à ne pas perdre : le corps de cette
+     * réponse est du texte affiché, pas seulement une donnée de protocole.
      *
      * Contexte calqué sur le `Log::warning` d'usurpation de `closeConnectionToPeerId`.
      */
@@ -434,6 +462,6 @@ class UserController extends Controller
             'user_agent' => $request->userAgent(),
         ]);
 
-        return response()->json(['ok' => false], 403);
+        return response()->json(['ok' => false, 'message' => self::DENIED_MESSAGE], 403);
     }
 }

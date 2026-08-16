@@ -285,6 +285,20 @@ L'arête `user -[:registered_in]-> group` n'est écrite qu'à la création du co
 Un slug inconnu et une absence de relation répondent **le même 403** : la différence était un oracle
 d'énumération. Le `Log::warning`, lui, conserve `target_exists` — il n'est pas exposé.
 
+L'uniformité porte sur le **corps entier, libellé compris**. Le refus dit maintenant pourquoi
+(`DENIED_MESSAGE`), et ce message est unique : un texte qui distinguerait les deux causes rouvrirait
+mot pour mot l'oracle que le code de retour vient de fermer. Le point d'appel est unique, donc la
+règle tient structurellement — `RelationGuardTest` compare tout de même les deux corps.
+
+> **Le corps d'une réponse de signalisation est du texte affiché, pas seulement une donnée de
+> protocole.** Il est tentant de conclure « aucun composable WebRTC2 n'inspecte le statut HTTP, donc
+> le corps n'est lu par personne » : c'est vrai des composables — tous ces POST sont dans un `catch`
+> nu — et faux de la chaîne complète. `AjaxService.load` d'estarter, lui, inspecte le statut et émet
+> `httpError` sur 403 comme sur 500 ; `widgets/Alert.vue` en fait un `AWN.alert(data.message ||
+> toaster.err)`. Les appels WebRTC2 ne passant aucun `toaster`, un corps sans `message` produisait un
+> toast **au contenu nul** : l'utilisateur voyait une alerte vide, ce qui est pire que pas d'alerte.
+> Un garde n'est fini que lorsqu'on a suivi son refus jusqu'au pixel.
+
 ### Le verdict est exposé au profil — de l'UX, pas un contrôle
 
 `Users::getGraphUser` place le résultat de `mayReach` dans la charge utile du mur (`may_reach`), et

@@ -21,16 +21,17 @@ C3 ──> C4 ──> C2 ──┬─> E3     (tous sur UserController — à s�
                    └─> C5     (front : le bouton d'appel)
 B3, C1                        (indépendants)
 D1 ──> D2
-E1, E2, E4                    (indépendants)
+E1, E2, E4, E5, E6            (indépendants)
 F1                            (dernier)
 ```
 
-`A` est bloquant. `B3`, `C1`, `C3`, `E1`, `E2`, `E4` ne bloquent personne : à intercaler
+`A` est bloquant. `B3`, `C1`, `C3`, `E1`, `E2`, `E4`, `E6` ne bloquent personne : à intercaler
 librement.
 
-Le lot C est **terminé** (C1, C3, C4, C2 — 15 et 16/08). Ce qu'il a débloqué : **C5**, qui est
-maintenant la plus urgente (le bouton d'appel ment depuis C2), et **E3**, dont C2 a déjà fait la
-part portant sur les 5 routes.
+Les lots A, B et C sont **terminés**, ainsi que **C5** (le bouton d'appel) et **E5** (le libellé
+du refus) — 15 et 16/08. Restent : **D** (TURN, requiert une modif d'infra coturn), **E1**, **E2**,
+la part `getUsersList` d'**E3**, **E4** (la seule 🟠 sans dépendance externe), **E6** (périmètre
+estarter) et **F1** en clôture.
 
 ---
 
@@ -1158,8 +1159,9 @@ un chat privé dont on n'est pas membre.
 
 ### E5 — Un refus de signalisation s'affiche vide `[S]` 🟡
 
-- [ ] **Dépend de :** rien. **Trouvé le 16/08/2026** en livrant C5 — le masquage du bouton
-  retire le cas nominal, il ne répare pas le retour d'erreur des autres chemins.
+- [x] **Dépend de :** rien. **Trouvé le 16/08/2026** en livrant C5 — le masquage du bouton
+  retire le cas nominal, il ne répare pas le retour d'erreur des autres chemins. — ✅ fait le
+  16/08/2026.
 
 Le diagnostic de C5 disait « aucun composable WebRTC2 n'inspecte le statut HTTP ». C'est vrai
 — `usePeerCore` fait `console.error` et retourne `false` — mais **incomplet**, et la moitié
@@ -1179,9 +1181,93 @@ passent aucun `toaster`. L'utilisateur reçoit une alerte **au contenu nul**.
 - Vérifier au passage les autres refus de ce contrôleur : `signalingFailure` (C3) renvoie
   `['ok' => false]` en 500, même symptôme.
 
-**Tests :** le corps du 403 porte un message · il est identique pour un slug inconnu et pour
-une absence de relation (`RelationGuardTest` a déjà la paire de cas).
+**Livré** : deux constantes de classe (`DENIED_MESSAGE`, `FAILURE_MESSAGE`) et les deux retours.
+Français en dur plutôt que `trans()` : le paquet n'a qu'un `resources/lang/fr/` sans `fallback`
+correspondant, donc un hôte en `APP_LOCALE=en` afficherait la **clé brute** dans le toast — pire
+que le cadre vide qu'on corrige. L'i18n reste un chantier à part.
+
+> **La leçon d'E5 tient en une phrase** : le corps d'une réponse de signalisation est du **texte
+> affiché**, pas seulement une donnée de protocole. Le docblock de `signalingDenied` concluait
+> « aucun composable WebRTC2 n'inspecte le statut HTTP, donc le passage de 404 à 403 est invisible
+> côté client » — vrai des composables, faux de la chaîne, parce qu'`AjaxService` s'intercale entre
+> les deux. **Un garde n'est fini que lorsqu'on a suivi son refus jusqu'au pixel.**
+
+#### Ce que la contre-épreuve a trouvé : l'assertion de fuite de C3 était vide de sens
+
+En faisant volontairement fuiter `$ex->getMessage()` dans la réponse 500, les **cinq** cas de
+`ExceptionLeakTest::la_reponse_ne_contient_ni_chemin_ni_trace_quand_le_broadcast_echoue` sont
+restés **verts** — alors que le corps contenait le chemin complet.
+
+Cause : `json_encode` échappe les `/` en `\/`. Chercher `/var/www/…` dans un corps JSON brut ne
+peut **jamais** matcher. Le test ne fonctionnait que contre la forme ORIGINALE du bug de C3 — un
+`return $ex;` rendu en texte brut par `Response::setContent` — et dès que C3 a converti la réponse
+en JSON, il a cessé de garder quoi que ce soit sur le chemin, sans virer au rouge. Les assertions
+sur `'#0 '` et `'RuntimeException'`, elles, tenaient toujours : aucune ne contient de `/`.
+
+Corrigé sur place (`str_replace('\\/', '/', …)` avant les recherches). Contre-épreuve refaite :
+les 6 tests passent au rouge.
+
+⚠️ **À retenir pour tout test de non-fuite sur un corps JSON** : le sérialiseur transforme la
+chaîne qu'on cherche. Un `assertStringNotContainsString` sur un chemin, une URL ou tout ce qui
+porte un `/` est vert par construction s'il lit le JSON brut.
+
+**Tests :** ✅ `RelationGuardTest::le_refus_porte_un_message_lisible` ·
+`::le_message_ne_distingue_pas_le_slug_inconnu_de_l_absence_de_relation` (compare les corps
+**entiers**, pas seulement `message` : toute clé future ajoutée d'un seul côté serait un oracle de
+plus) · `ExceptionLeakTest::la_reponse_500_porte_un_message_sans_rien_divulguer`.
+Contre-épreuve faite dans les trois sens — clé retirée, libellés divergents, message d'exception
+relayé — chaque fois rouge, et rouge sur le bon test.
+
+**Done :** ✅ **81 tests PHP / 210 assertions** verts (16/08/2026, contre 78/199 avant — la
+référence de 73/190 citée plus haut datait d'avant C5). Suite JS **inchangée à 649 tests / 37
+fichiers** : la modif est backend, et `__tests__/helpers/fakeSignalingServer.js` ne modélise aucun
+refus — il ne devient donc pas menteur. (La référence de 645/36 citée en « Vérification globale »
+datait elle aussi d'avant C5.)
 **Commit :** `fix(socializer): un refus de signalisation dit pourquoi`
+
+---
+
+### E6 — L'interface répète la même erreur N fois, et se tait sur 429 `[M]` 🟡
+
+- [ ] **Dépend de :** rien. **Périmètre : estarter, pas socializer.** Trouvé le 16/08/2026 en
+  cadrant E5 — écarté sciemment de sa livraison, qui devait rester un commit dans un dépôt.
+
+E5 rend les refus lisibles ; il ne dit rien de leur **nombre**. Le toast part sur **chaque** 403,
+y compris sur les chemins automatiques : `requestRemotePeerConnection` autorise 3 demandes/10 s par
+cible (`ASK_PEER_MAX_REQUESTS_PER_WINDOW`) et une rafale de join en émet jusqu'à 14 dans le même
+tick ; l'invitation d'appel est réémise ~9 fois en 55 s par `inviteRetryManager`. Dans une room
+`privacy == 0` peuplée d'inconnus — la borne connue de C2, ci-dessus — ça fait plusieurs toasts par
+pair.
+
+> **E5 ne dégrade rien** : ces toasts partaient déjà, vides. Il les rend lisibles, donc voyants.
+> C'est une raison de traiter le volume, pas de regretter le message.
+
+**Le bon endroit est le rendu, pas le transport.** Un dédoublonnage « même message dans les N
+dernières secondes » posé dans `widgets/Alert.vue::handleError` couvre **tous** les producteurs de
+`httpError`, y compris ceux qui court-circuitent `AjaxService` — formdesigner émet directement sur
+l'eventBus (`VersionManager.vue:70`, `FieldOtherAnswersModal.vue:111`). Un flag `toaster.silent`
+dans `AjaxService`, à l'inverse, ne servirait qu'aux appelants qui pensent à le passer, et rendrait
+à nouveau muets les refus qu'E5 vient de rendre lisibles.
+
+**Angle mort voisin, même fichier.** `AjaxService` **n'a pas de branche 429** : un appel étranglé
+par le `throttle` de C1 tombe dans le `else` final, qui ne teste que
+`error.response.data.error === 'passwords.token'` → **aucun toast, aucune trace**. Or Laravel met
+déjà un `message` dans le corps d'un 429 : la branche manquante suffirait.
+
+**Ce que ça coûte.** estarter a son propre dépôt (`.git`, branche `laravel13`), donc la modif est
+versionnable — mais elle n'a **aucun filet** : le `vitest.config.js` de l'hôte restreint `include`
+à socializer, et la couverture JS d'estarter est un chantier à part entière (les
+`stores/__tests__/notifications/*.spec.js` de mai 2025 sont obsolètes). Couvrir demande d'élargir
+`include` dans un fichier qui n'appartient à aucun des deux paquets. Rayon d'impact : toutes les
+pages de l'application.
+
+⚠️ Levier plus faible, pour mémoire : AWN accepte `maxNotifications`, configuré dans
+`resources/js/vue.js` de l'hôte. Ça plafonne l'affichage sans dédoublonner — masque plutôt que
+corrige.
+
+**Tests :** deux toasts identiques dans la fenêtre ⇒ un seul affiché · deux messages différents
+⇒ deux affichés · un 429 produit un toast. Nécessite d'élargir `include` côté hôte.
+**Commit :** `fix(estarter): ne pas répéter le même toast, et ne plus taire un 429`
 
 ---
 
@@ -1219,11 +1305,11 @@ une absence de relation (`RelationGuardTest` a déjà la paire de cas).
 
 ## Vérification globale
 
-- `npx vitest run` après **chaque** tâche. Référence relue le 15/08/2026, après B3 :
-  **645 tests / 36 fichiers, ~3,7 s**.
+- `npx vitest run` après **chaque** tâche. Référence relue le 16/08/2026, après E5 :
+  **649 tests / 37 fichiers, ~3,8 s**.
 - **Backend** : `vendor/bin/phpunit` **depuis le paquet** (Orchestra Testbench, aucun serveur
   requis) — cf. [docs/architecture/tests.md](../docs/architecture/tests.md). Socle posé avec C3
-  le 15/08/2026, référence après C4 : **39 tests / 118 assertions, ~2,4 s**.
+  le 15/08/2026, référence après E5 : **81 tests / 210 assertions, ~4,6 s**.
 - `hooks/pre-push` rejoue **les deux** suites. ⚠️ Il n'y a **pas** de CI : la mention d'un
   `.github/workflows/webrtc2-tests.yml` qui figurait ici était fausse — ce dépôt n'a pas de
   `.github/`, et l'activation du hook est une config locale, jamais versionnée.

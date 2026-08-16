@@ -196,6 +196,53 @@ class RelationGuardTest extends TestCase
     }
 
     #[Test]
+    public function le_refus_porte_un_message_lisible(): void
+    {
+        $this->fakeGraphAnswering(false);
+
+        [$alice, $mallory] = $this->makeStrangers();
+
+        $response = $this->signal($alice, $mallory, '/ask-to-peer-id')->assertStatus(403);
+
+        // Le corps de cette réponse est du TEXTE AFFICHÉ, pas seulement une donnée de
+        // protocole : `AjaxService.load` d'estarter émet `httpError` sur un 403, et
+        // `widgets/Alert.vue` appelle `AWN.alert(data.message || toaster.err)`. Les appels
+        // WebRTC2 ne passant aucun `toaster`, un corps sans `message` produisait un
+        // `AWN.alert(null)` — une alerte au contenu nul.
+        $message = $response->json('message');
+
+        $this->assertIsString($message, 'Le refus doit porter un message : sinon le toast part vide.');
+        $this->assertNotSame('', trim($message));
+    }
+
+    #[Test]
+    public function le_message_ne_distingue_pas_le_slug_inconnu_de_l_absence_de_relation(): void
+    {
+        // Un seul graphe pour les deux causes : la première ne l'interroge pas (pas de
+        // destinataire ⇒ pas de prédicat), la seconde a besoin qu'il réponde vraiment non.
+        $this->fakeGraphAnswering(false);
+
+        [$alice, $mallory] = $this->makeStrangers();
+
+        // Cause A — le destinataire n'existe pas.
+        $slugInconnu = $this->actingAs($alice)->postJson('/ask-to-peer-id', [
+            'toUserSlug' => 'personne-de-ce-nom',
+            'room' => 'app',
+            'type' => 'stream',
+        ])->assertStatus(403);
+
+        // Cause B — il existe, mais rien ne les lie.
+        $sansRelation = $this->signal($alice, $mallory, '/ask-to-peer-id')->assertStatus(403);
+
+        // L'oracle d'énumération refermé par C2 ne tenait qu'à l'unification du CODE de
+        // retour ; un libellé qui divergerait le rouvrirait mot pour mot — sonder des slugs
+        // suffirait de nouveau à distinguer les comptes existants. On compare le corps
+        // ENTIER, pas seulement `message` : toute clé future ajoutée d'un seul côté serait un
+        // oracle de plus.
+        $this->assertSame($slugInconnu->json(), $sansRelation->json());
+    }
+
+    #[Test]
     public function un_utilisateur_peut_toujours_se_signaler_a_lui_meme(): void
     {
         $graph = $this->fakeNebulaGraph();

@@ -54,7 +54,7 @@ directement par `Notifications.vue`.
 
 ---
 
-## Trois invariants backend
+## Quatre invariants backend
 
 **1. `fromUserSlug` diffusé est toujours `Auth::user()->slug`**, jamais la valeur du payload.
 `closeConnectionToPeerId` journalise tout écart (`auth_user_id`, `auth_user_slug`, `claimed_slug`,
@@ -69,13 +69,17 @@ un champ côté JS sans l'ajouter côté PHP produit un champ qui n'arrive jamai
 `$request->validate()` : `toUserSlug` en format slug, `type` / `connectionType` en liste blanche
 (miroir de `VALID_CONNECTION_TYPES`), `peerId` en UUID, `room` bornée en longueur, et `options`
 réduit à ses clés attendues — c'est le seul champ relayé verbatim. La validation est posée **avant
-le `firstOrFail()` et hors du `try`** : `ValidationException` étend `\Exception`, donc à
+la résolution du destinataire et hors du `try`** : `ValidationException` étend `\Exception`, donc à
 l'intérieur elle repartirait en 500 par le handler d'échec. Le `throttle`, lui, s'exécute **en
 amont** du contrôleur : la clé de plafonnement porte un `toUserSlug` encore non validé.
 
-⚠️ Ce qui manque encore à ces routes : le **contrôle de relation** entre émetteur et destinataire
-— n'importe quel authentifié peut toujours signaler n'importe qui par son slug. Voir
-[modules/webrtc2/securite.md](../modules/webrtc2/securite.md).
+**4. Un refus est uniforme jusqu'au libellé, et il dit pourquoi.** Le garde de relation
+(`Socializable::mayReach`) répond le même 403 sur un slug inconnu et sur une absence de relation —
+corps compris, message compris : distinguer les deux causes par le texte rouvrirait l'oracle
+d'énumération que le code de retour ferme. Et ce corps porte un `message`, parce qu'il est **affiché**
+— `AjaxService` d'estarter en tire un toast, qui restait vide sans lui. Même règle pour l'échec de
+broadcast (500), dont le message est une constante : le diagnostic vit dans le `Log::error`, jamais
+dans la réponse. Voir [modules/webrtc2/securite.md](../modules/webrtc2/securite.md).
 
 ---
 

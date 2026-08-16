@@ -62,7 +62,14 @@ class ExceptionLeakTest extends TestCase
         $response = $this->actingAs($alice)
             ->postJson($uri, array_merge(['toUserSlug' => $bob->slug], $payload));
 
-        $body = $response->getContent();
+        // ⚠️ `json_encode` échappe les `/` en `\/` : chercher `/var/www/…` dans le corps JSON
+        // brut ne peut JAMAIS matcher, quel que soit ce qu'il contient réellement. Ce test ne
+        // fonctionnait que contre la forme ORIGINALE du bug de C3 — un `return $ex;` rendu en
+        // texte brut par `Response::setContent`. Depuis que le corps est du JSON, l'assertion
+        // sur le chemin était vide de sens : trouvé en contre-épreuve d'E5, en faisant
+        // volontairement fuiter `$ex->getMessage()` dans la réponse — ces cinq cas sont restés
+        // verts. On déséchappe donc avant de chercher.
+        $body = str_replace('\\/', '/', $response->getContent());
 
         $this->assertStringNotContainsString(
             self::LEAKY_PATH,
@@ -82,6 +89,35 @@ class ExceptionLeakTest extends TestCase
 
         // 200 sur une panne serait pire qu'un simple bavardage : le client croit avoir signalé.
         $response->assertStatus(500);
+    }
+
+    #[Test]
+    public function la_reponse_500_porte_un_message_sans_rien_divulguer(): void
+    {
+        $alice = $this->makeUser('alice');
+        $bob = $this->makeUser('bob');
+
+        Broadcast::shouldReceive('private')
+            ->andThrow(new \RuntimeException('Connexion Reverb refusée dans '.self::LEAKY_PATH));
+
+        $response = $this->actingAs($alice)->postJson('/ask-to-peer-id', [
+            'toUserSlug' => $bob->slug,
+            'room' => 'r1',
+            'type' => 'stream',
+        ])->assertStatus(500);
+
+        // Une panne muette reste une panne : `AjaxService` d'estarter émet `httpError` sur un
+        // 500 comme sur un 403, et sans `message` dans le corps l'utilisateur reçoit un
+        // `AWN.alert(null)` — un cadre vide au lieu d'une raison.
+        $message = $response->json('message');
+
+        $this->assertIsString($message, "L'échec doit porter un message : sinon le toast part vide.");
+        $this->assertNotSame('', trim($message));
+
+        // Et ce message est une constante statique : il ne PEUT pas transporter la panne.
+        // C'est la moitié qui compte — rendre l'échec lisible sans rouvrir la fuite de C3.
+        $this->assertStringNotContainsString('Reverb', $message);
+        $this->assertStringNotContainsString(self::LEAKY_PATH, $message);
     }
 
     #[Test]
