@@ -384,6 +384,9 @@ class SocializerInstall extends EstarterPrepare
         $this->executeArtisanProcess('route:clear');
         $this->executeArtisanProcess('view:clear');
 
+        // Après config:clear, pour que boost:update lise la config à jour.
+        $this->registerBoostGuidelines('dauvray/laravel-socializer');
+
         $this->info('Installation terminée.');
     }
 }

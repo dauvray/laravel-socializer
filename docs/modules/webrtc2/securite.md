@@ -259,6 +259,16 @@ l'évite, et permet une seule entrée de cache par paire non ordonnée.
 **auto-servi** : `/get-or-create-chat-room` crée une conversation avec n'importe qui, donc un
 attaquant s'octroie la relation en une requête.
 
+> **« Pas de relation ⇒ pas de contact » est la règle voulue, pas un trou de couverture.** Un compte
+> sans follow réciproque ni groupe commun ne joint personne : c'est ce que le garde énonce. Mesurer
+> que 10 comptes de la base sur 12 n'ont aucun groupe ne décrit pas une règle trop stricte, ça décrit
+> des comptes sans relations.
+>
+> **Avant de proposer d'assouplir ce garde, exhiber un scénario légitime nommable qu'il bloque — pas
+> une statistique.** Sur des données clairsemées la statistique est toujours alarmante et ne prouve
+> rien. Le seul scénario réel trouvé jusqu'ici est la room `privacy == 0`, que `Server::getRoom()`
+> ouvre à tout authentifié ; il se tranche par une requête sur les données, pas par un arbitrage.
+
 ### Deux pièges du graphe que ce garde contourne
 
 **1. `canJoinRoom` / `canJoinServer` ne sont pas des prédicats d'appartenance.** Dans les deux, `u`

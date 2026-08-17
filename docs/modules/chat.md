@@ -22,6 +22,22 @@ a été retirée une fois terminée — c'est le modèle à suivre, cf. [ecrire-
   restent dans le composant.
 - `useReverbPresence` est déjà un composable partagé : **ne pas y toucher** depuis ici.
 
+## La visio n'appartient pas au chat
+
+**`ChatComponent.vue` n'embarque ni visio ni audio.** Les imports v1
+(`MediaBroadcastProvider`, `StreamDefaultUserButtonUI`, `CaptureDefaultUserButtonUI`) y ont été
+retirés : ils étaient importés mais **jamais montés** dans le `<template>` — résidu de copier-coller,
+et venus du `WebRTC/` v1 mort, monté nulle part dans le paquet.
+
+Le paquet suit un patron **« provider + slot, monté au besoin »** : `MediaBroadcastProvider` porte la
+logique de connexion et de flux, le **parent** fournit l'UI en slot selon le cas (voir
+`components/AudioRoom/AudioComponent.vue` et `components/WebRTC2/Exemples/Home.vue`).
+
+**Quand la visio doit cohabiter avec le chat, la composer dans le parent** — monter
+`<MediaBroadcastProvider>` à côté de `<ChatComponent>`, UI en slot — et cibler `WebRTC2/`. L'embarquer
+en dur dans le chat coupleait deux préoccupations et tirait le poids WebRTC dans chaque montage de
+chat.
+
 ## Pièges à ne PAS « optimiser »
 
 - **Scroll / pagination** (`~socializer/composables/useStickyScroll.js`) : conserver tels quels

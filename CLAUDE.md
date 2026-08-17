@@ -73,6 +73,23 @@ est dans git.
 
 ---
 
+## Ce que le paquet dit de lui-même aux projets hôtes
+
+`resources/boost/guidelines/core.blade.php` est **livré avec le tag** et injecté par
+`php artisan boost:update` dans le `CLAUDE.md` de chaque projet qui installe le paquet. Il ne contient
+qu'un routeur — 5 lignes toujours visibles (v1 morte, alias `~socializer`, « lire ce fichier ») et un
+bloc `@scoped(['vendor/dauvray/laravel-socializer/**'])` avec les pièges qui ne mordent qu'une fois
+dans le paquet.
+
+> **La substance reste ici, dans `docs/`.** Le routeur ne doit jamais grossir : deux copies d'un même
+> fait divergent. Si une règle mérite d'être connue de tous les projets hôtes, elle est courte, ou
+> elle est un pointeur.
+
+`socializer:build` déclare le paquet auprès de Boost (`boost.json`) puis relance `boost:update` : un
+projet consommateur n'a rien à câbler à la main.
+
+---
+
 ## À savoir avant de conclure quoi que ce soit
 
 - **La sécurité WebRTC2 n'est pas « faite »** : les deux sens sont durcis **côté client**, mais le

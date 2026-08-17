@@ -138,7 +138,7 @@ C'est le découpage validé sur WebRTC2, et le modèle à reprendre.
 L'étage bout en bout est celui qui manque toujours et sans lequel les vrais symptômes ne sont pas
 observables : ils ne sont vrais ou faux que **vus de l'autre côté**.
 
-### Quatre règles
+### Cinq règles
 
 1. **Un bug vécu s'écrit d'abord en repro, rouge avant le fix.** C'est le seul protocole qui n'a
    jamais produit de régression derrière lui.
@@ -148,6 +148,26 @@ observables : ils ne sont vrais ou faux que **vus de l'autre côté**.
 4. **Contrôle de harnais** : neutraliser la ligne de production censée porter le correctif et
    vérifier que les tests rougissent. Quand deux mécanismes indépendants tiennent la même propriété,
    il faut les neutraliser tous les deux — et c'est à écrire dans le docblock du test.
+5. **Une assertion négative ne vaut que si on l'a vue rouge une fois.** Elle ne signale rien quand
+   elle cesse de garder quoi que ce soit — voir juste en dessous.
+
+### Le sérialiseur transforme l'aiguille
+
+`ExceptionLeakTest` asserte que la réponse 500 des routes de signalisation ne contient ni chemin de
+fichier, ni trace, ni classe d'exception. L'assertion sur le **chemin** ne pouvait plus jamais
+matcher : `json_encode` échappe les `/` en `\/`, donc chercher `/var/www/…` dans le corps JSON brut
+de `$response->getContent()` est vert quoi qu'il contienne.
+
+Le test ne fonctionnait que contre la forme initiale du bug — un `return $ex;` rendu en texte brut
+par `Response::setContent`. Dès que la réponse est devenue du JSON, l'assertion a cessé de garder
+quoi que ce soit **sans virer au rouge**. Les assertions voisines sur `'#0 '` et `'RuntimeException'`
+tenaient toujours : aucune ne contient de `/`.
+
+**Règle.** Pour tout test de non-fuite sur un corps sérialisé, déséchapper avant de chercher
+(`str_replace('\\/', '/', $response->getContent())`) ou asserter sur le corps **décodé**. Se méfier
+de toute aiguille contenant `/`, `"` ou un caractère que le sérialiseur transforme : chemin, URL,
+regex. Trouvé uniquement en contre-épreuve (faire fuiter `$ex->getMessage()` volontairement et
+constater que les cas restaient verts) — jamais en relisant le test.
 
 ⚠️ **Aucun décompte de tests dans `docs/`.** Ce chiffre a divergé du réel dans trois documents à la
 fois, tous datés du même jour. Il se relit dans la sortie du runner.

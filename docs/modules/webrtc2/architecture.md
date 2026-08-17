@@ -117,7 +117,7 @@ onglet fermé survivait alors indéfiniment : au retour du pair on rappelait un 
 (`Could not connect to peer <uuid>`) sans jamais redemander le frais, puisqu'on croyait déjà
 en avoir un.
 
-Trois corollaires à ne pas défaire :
+Quatre corollaires à ne pas défaire :
 
 - **`connectToPeer` enregistre le peerId AVANT ses gardes.** Un peerId de signalisation
   décrit l'état courant du pair, que la connexion s'ouvre ou non derrière. Placé après,
@@ -135,6 +135,17 @@ Trois corollaires à ne pas défaire :
   sur « tout ce qui concerne ce pair ». Seule `invalidateRemotePeerId` purge sans scope :
   le peerId est mort, donc aucune demande le concernant n'a plus d'objet, quel que soit le
   contexte émetteur.
+- **Dans un `contextRegistry.forEach`, résoudre AVANT de muter.** Le store étant partagé par
+  l'onglet, toute résolution qui le lit doit être faite hors de la boucle. La recovery
+  `peer-unavailable` résolvait `peerId → slug` *à l'intérieur*, en invalidant au passage : le
+  premier contexte itéré consommait le fait, tous les suivants sortaient sur
+  `if (!targetSlug) return`. Or `Notifications.vue` crée `data-app` au tick 0, donc **premier**
+  dans la `Map` — et comme il n'a aucun canal de présence, sa re-demande ne pouvait qu'être
+  refusée en face (« demandeur non autorisé », faux signal qui masquait le vrai). Le contexte de
+  diffusion, seul à avoir un flux à repousser, n'était jamais relancé. La règle qui en découle :
+  **invalider est global** (c'est un fait constaté sur l'onglet distant), **relancer est une
+  intention de contexte** — donc filtré par `isAuthorizedPeer`, ce qui préserve la visio 1-à-1,
+  qui n'a aucune room commune et ne tient qu'à `authorizedCallPeers`.
 
 ⚠️ **Un test à un seul contexte par onglet ne peut pas voir ces pannes.** Le harnais monte
 donc plusieurs contextes par pair virtuel (`peer.mountContext()`), et les scénarios leur
