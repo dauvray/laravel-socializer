@@ -20,14 +20,14 @@ Le package **n'a ni `package.json` ni `node_modules`** : il est développé dire
 `vendor/` du projet hôte, qui porte tout l'outillage front.
 
 ```bash
-cd /var/www/estarter-test      # ← la racine du projet HÔTE, pas le package
+cd ../../..                    # ← la racine du projet HÔTE, pas le package
 npm run test:run               # une passe
 npm run test                   # mode watch
 npm run test:ui                # interface Vitest
 npm run test:coverage
 ```
 
-Configuration : `/var/www/estarter-test/vitest.config.js`. Points à connaître :
+Configuration : le `vitest.config.js` **de l'hôte**, à sa racine. Points à connaître :
 
 - `include` cible **uniquement** le package :
   `vendor/dauvray/laravel-socializer/src/resources/js/**/__tests__/**/*.test.{js,ts}`
@@ -45,7 +45,7 @@ Configuration : `/var/www/estarter-test/vitest.config.js`. Points à connaître 
 ## Suite PHP — dans le package, via Orchestra Testbench
 
 ```bash
-cd /var/www/estarter-test/vendor/dauvray/laravel-socializer
+cd vendor/dauvray/laravel-socializer   # depuis la racine du projet hôte
 composer install        # une fois — crée un vendor/ propre au package (gitignoré)
 vendor/bin/phpunit
 ```
@@ -107,7 +107,7 @@ les `src/app/Helpers/*.php` : sans elles, l'application de test ne démarre pas.
 `hooks/pre-push` refuse de pousser une suite rouge. Activation, une fois, dans le dépôt du package :
 
 ```bash
-cd /var/www/estarter-test/vendor/dauvray/laravel-socializer
+cd vendor/dauvray/laravel-socializer   # depuis la racine du projet hôte
 git config core.hooksPath hooks
 ```
 

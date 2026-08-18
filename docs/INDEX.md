@@ -54,7 +54,7 @@ docs/
 
 1. **`components/WebRTC/` (sans le 2) est mort.** L'implémentation vivante est `WebRTC2/`. Un
    symbole trouvé au grep peut venir de la v1.
-2. **Les tests tournent depuis `/var/www/estarter-test`**, pas depuis le package — il n'a ni
+2. **Les tests JS se lancent depuis la racine du projet hôte**, pas depuis le package — il n'a ni
    `package.json` ni `node_modules`.
 3. **`type` ≠ `connectionType`** dans la signalisation. Le premier est une clé de routage ; les
    confondre envoie la réponse dans une file que personne n'observe.

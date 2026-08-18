@@ -13,9 +13,9 @@ rooms, chat, visio/diffusion WebRTC, tableau blanc, applications IA.
 1. **`components/WebRTC/` (sans le 2) est mort.** L'implémentation vivante est
    `components/WebRTC2/`. Les deux coexistent dans l'arbre et ont des fichiers homonymes
    (`MediaBroadcastProvider.vue`) — un symbole trouvé au grep peut venir de la v1.
-2. **Les tests tournent depuis `/var/www/estarter-test`**, la racine du projet **hôte**. Le package
-   n'a ni `package.json` ni `node_modules` : il est développé directement dans `vendor/`, avec son
-   propre dépôt git.
+2. **Les tests JS se lancent depuis la racine du projet hôte**, jamais depuis le package : il n'a ni
+   `package.json` ni `node_modules`, tout l'outillage front vit côté hôte. Depuis ce dossier,
+   `cd ../../..`. Le package a en revanche son **propre dépôt git** et sa propre suite PHP.
 3. **Imports front toujours via l'alias `~socializer`**, jamais en relatif profond. L'alias est
    défini côté hôte dans `vite.config.js` **et** `vitest.config.js` ; un relatif casserait l'un des
    deux.
@@ -27,8 +27,8 @@ rooms, chat, visio/diffusion WebRTC, tableau blanc, applications IA.
 ## Commandes
 
 ```bash
-# Tests JS — DEPUIS LA RACINE DU PROJET HÔTE
-cd /var/www/estarter-test && npm run test:run
+# Tests JS — DEPUIS LA RACINE DU PROJET HÔTE (cd ../../.. depuis ce paquet)
+npm run test:run
 
 # Tests PHP — DEPUIS CE PAQUET (Orchestra Testbench, aucun serveur requis)
 composer install && vendor/bin/phpunit
