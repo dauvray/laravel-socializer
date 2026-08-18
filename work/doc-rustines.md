@@ -54,7 +54,7 @@ Elles ne touchent aucun fichier du chantier, et deux d'entre elles **servent** l
 
 | Tâche d'ici | Entre en collision avec |
 |---|---|
-| Renommer `canJoinRoom` / `canJoinServer` (lot 3) | **E4 est ouverte** et porte exactement `canJoinServer` (« dérive avec les groupes », 🟠, sans dépendance externe) |
+| Renommer `canJoinRoom` / `canJoinServer` (lot 3) | **E4 est ouverte** et porte les trois `canJoin*` (requalifiée 🔴 le 18/08 : `canJoinchatRoom` rend toujours `true`, et les trois sont *fail-open*). Le correctif passe avant le renommage |
 | Renommer `hasOpenConnection` / `isConnectionEstablished` (lot 4) | cœur de A2 et B2 — déjà source des régressions du 13/08 |
 | Renommer `remoteStreams` (lot 3) | `createPeerContext`, touché par C5 puis E5 |
 | Convertir les 9 pièges de mock en tests (lot 4) | le harnais bouge encore — [webrtc2-tests-plan.md](webrtc2-tests-plan.md) a des tâches ouvertes, dont 6 et 7 **gelées** |
@@ -89,6 +89,11 @@ Deux gestes qui suffisent :
 Le lot le plus rentable : aucun risque, et il retire les annotations qui trompent activement.
 Quatre contradictions **internes à la doc** : dans chaque paire, une des deux affirmations est
 fausse, et un lecteur ne peut pas savoir laquelle.
+
+**Plus une cinquième d'un autre genre, trouvée le 18/08** : une annotation que **le code**
+contredit — donc invisible à une relecture de la doc seule, et bien plus coûteuse, puisqu'elle a
+produit une tâche de plan entièrement fausse. Son enseignement : une annotation qui décrit l'état
+d'une *classe nommée* se vérifie sur le **câblage**, jamais sur le premier fichier de ce nom.
 
 - [x] **Trancher : le backend WebRTC est-il durci ?** · effort [S] · **fait**
       `CLAUDE.md:95-98` disait « le **backend** n'a ni throttle, ni validation, ni contrôle de
@@ -130,6 +135,28 @@ fausse, et un lecteur ne peut pas savoir laquelle.
             zones encore vraies (`table_names` vide, `socializer:upgrade` commenté) à la place ;
             l'emplacement réel des seeders reste porté par l'arborescence de `package.md:80`
       - [x] Tests — sans objet
+
+- [x] **Trancher : le graphe est-il synchronisé sur l'appartenance aux groupes ?** · effort [S] ·
+      **fait le 18/08/2026** — cinquième entrée, d'un autre genre que les quatre ci-dessus : ce
+      n'est pas la doc qui se contredit, c'est **le code qui contredit la doc**.
+      Trois couches affirmaient que « `GroupUserCreatedListener` (estarter) est entièrement
+      commenté, donc ajouter un utilisateur à un groupe ne propage rien ». **Faux** : deux classes
+      **homonymes** sont abonnées à `GroupUserCreated`, une par paquet, et c'est celle de **ce**
+      paquet qui écrit l'arête (son pendant `Deleted` la retire). Le pivot dispatche, et
+      `->using(GroupUser::class)` est déclaré des deux côtés de la relation — sans quoi rien ne
+      partirait, listener décommenté ou pas.
+      **Ce que l'annotation fausse a coûté** : une tâche 🟠 entière du plan de sécurité, dont le
+      correctif proposé (« décommenter le listener du socle ») n'aurait rien corrigé, et dont le
+      symptôme annoncé était **l'inverse** du vrai (faux négatif au lieu de faux positif).
+      Annotation : `docs/modules/webrtc2/securite.md` (piège 2) ·
+      `src/app/Helpers/ModelTraits/Socializable.php` (docblock de `sharesGroupWith`) ·
+      `work/webrtc2-securite-2026-08-14.md` (diagnostic de C2, et E4)   (3 couches + le plan)
+      - [x] Code — sans objet : il n'y avait pas de défaut à corriger
+      - [x] Doc — les trois couches réécrites ; la dérive réelle (cascade des clés étrangères) y
+            remplace le motif faux, et le sens du symptôme est corrigé
+      - [x] Tests — sans objet ici ; les tests qui manquent portent sur les défauts que la
+            requalification a mis au jour, et sont dans **E4** (`canJoinchatRoom` toujours `true`,
+            gardes *fail-open*)
 
 - [ ] **Corriger les imports de la référence `use-reverb-channel`** · effort [S]
       Tous les exemples de `docs/reference/use-reverb-channel.md` (`:51`, `:160`, `:212`, …) écrivent
@@ -253,8 +280,10 @@ plusieurs de ces noms ont **déjà coûté des régressions**.
       « Sur une room publique la requête renvoie une ligne dès qu'un membre quelconque existe :
       **`true` pour tout le monde**. (Effet miroir : une room publique **vide** renvoie `false`,
       même à son propriétaire.) » Le nom ment dans les deux sens, sur un prédicat de sécurité.
+      `canJoinchatRoom` est le pire des trois : son `OPTIONAL MATCH` le rend **toujours vrai**.
       ⚠️ **À traiter avec le lot sécurité en cours**, pas contre lui : voir
-      [webrtc2-securite-2026-08-14.md](webrtc2-securite-2026-08-14.md), tâches C2 et E4.
+      [webrtc2-securite-2026-08-14.md](webrtc2-securite-2026-08-14.md), tâches C2 et E4 — E4
+      corrige le comportement, ce renommage ne vient qu'après.
       Annotation : `docs/modules/webrtc2/securite.md:274-279`
       - [ ] Code · - [ ] Doc · - [ ] Tests
 
@@ -381,11 +410,25 @@ sortie C est immédiatement disponible, et elle vide beaucoup de doc.
       multi-pairs. Lié au `[L]` **gelé** de [webrtc2-todo.md](webrtc2-todo.md) : ne pas le dégeler
       ici.
 
-- [ ] **Le graphe NebulaGraph est un réplica, pas une source de vérité** — `GroupUserCreatedListener`
-      (estarter) est **entièrement commenté** : ajouter un utilisateur à un groupe ne propage rien.
-      La copie dérive, et un garde qui l'interroge « refuse des accès légitimes, silencieusement ».
-      ⚠️ Le code mort est dans **un autre paquet** : la tâche appartient au socle. La signaler ici,
-      la traiter là-bas.
+- [ ] **Le graphe NebulaGraph est un réplica, pas une source de vérité** — *entrée réécrite le
+      18/08 : son motif d'origine (« le listener du socle est commenté ») était faux, cf. lot 0.*
+      Ce qui reste à assumer ou corriger : le réplica **est** synchronisé à l'attachement et au
+      détachement, mais `group_user` porte `onDelete('cascade')` — supprimer un groupe ou un compte
+      retire les lignes sans événement Eloquent et **laisse l'arête**. Un garde qui lit le graphe
+      accorde alors un accès révoqué. Cadré dans
+      [webrtc2-securite-2026-08-14.md](webrtc2-securite-2026-08-14.md), **E4 point 3** — renvoyer,
+      ne pas dupliquer.
+      Annotation : `docs/modules/webrtc2/securite.md` (piège 2) ·
+      `src/app/Helpers/ModelTraits/Socializable.php` (docblock de `sharesGroupWith`)
+
+- [ ] **Deux listeners homonymes sur `GroupUserCreated`** — celui du socle est un `handle()`
+      entièrement commenté, celui de ce paquet fait le travail. Deux avertissements ⚠️ existent
+      **ici** uniquement pour empêcher la confusion que ce code mort provoque (elle a déjà coûté
+      une tâche 🟠 fausse). ⚠️ **Le code mort est dans un autre paquet** : la tâche appartient au
+      socle — [`vendor/innovation/laravel-estarter/work/doc-rustines.md`](../../../innovation/laravel-estarter/work/doc-rustines.md),
+      lot 1. La signaler ici, la traiter là-bas ; les deux annotations tombent quand elle est faite.
+      Annotation : `docs/modules/webrtc2/securite.md` (⚠️ après le piège 2) ·
+      `src/app/Helpers/ModelTraits/Socializable.php` (docblock de `sharesGroupWith`)
 
 - [ ] **Namespaces PSR-4 en casse mixte** (`Dauvray\Socializer\app\Models\Post`) et **`src/app/console/`
       en minuscule** alors que le namespace est `…\app\Console\…` — cette dernière est une

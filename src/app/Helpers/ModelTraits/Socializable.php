@@ -251,11 +251,17 @@ trait Socializable
      * Appartenance à un même groupe, lue dans MariaDB.
      *
      * ⚠️ Pourquoi pas le graphe, alors que `canJoinServer` y lit la même notion
-     * (`(u:user)-[:registered_in]->(g:group)<-[:owned_by]-(s:server)`) : parce que la copie
-     * graphe DÉRIVE. `GroupUserCreatedListener` (estarter) est entièrement commenté, donc
-     * ajouter un utilisateur à un groupe ne propage rien ; l'arête n'est écrite qu'à la
-     * création du compte (`createUserAndNetwork`) et par `socializer:nebula-populate`.
-     * MariaDB est la source de vérité, le graphe un réplica non resynchronisé.
+     * (`(u:user)-[:registered_in]->(g:group)<-[:owned_by]-(s:server)`) : MariaDB est le maître,
+     * le graphe un réplica. Ce réplica EST synchronisé à l'attachement et au détachement — le
+     * pivot `GroupUser` émet ses événements (`->using()` est déclaré des deux côtés de la
+     * relation) et `Dauvray\Socializer\app\Listeners\GroupUser{Created,Deleted}Listener` pose
+     * puis retire l'arête. Mais `group_user` porte `onDelete('cascade')` sur ses deux clés
+     * étrangères : supprimer un groupe ou un compte retire les lignes SANS événement Eloquent
+     * et laisse l'arête en place. Le réplica dérive donc encore, dans le sens qui **accorde**.
+     *
+     * ⚠️ L'homonyme `Dauvray\Estarter\app\Listeners\GroupUserCreatedListener`, abonné au même
+     * événement par le provider du socle, est lui entièrement commenté — un `Log::info` mort.
+     * Le lire au lieu de celui de ce paquet fait conclure à tort que rien ne se propage.
      *
      * ⚠️ Requête directe et non `$this->groups()` : cette relation vit sur `EstarterUser`,
      * d'un paquet que le harnais de tests remplace par un stub qui lève.

@@ -278,17 +278,26 @@ quelconque existe : **`true` pour tout le monde**. (Effet miroir : une room publ
 `false`, même à son propriétaire.) Ce sont des gardes de **canal Reverb** ; les employer comme gardes
 de relation rendrait le contrôle contournable en nommant une room publique.
 
-**2. L'appartenance vit dans MariaDB, pas dans le graphe.** `GroupUserCreatedListener` (estarter) est
-entièrement commenté : ajouter un utilisateur à un groupe ne propage **rien** dans NebulaGraph.
-L'arête `user -[:registered_in]-> group` n'est écrite qu'à la création du compte
-(`createUserAndNetwork`) et par `socializer:nebula-populate`. De même,
-`user -[:registered_in]-> room` n'est posée que pour le **créateur** de la room — aucune route
-« rejoindre une room » ne l'ajoute.
+**2. L'appartenance vit dans MariaDB, pas dans le graphe.** L'arête
+`user -[:registered_in]-> group` est bien **synchronisée** à l'attachement et au détachement : le
+pivot `GroupUser` du socle émet `GroupUserCreated` / `GroupUserDeleted` — `->using()` est déclaré
+des deux côtés de la relation, sans quoi aucun événement ne partirait — et les listeners **de ce
+paquet** posent puis retirent l'arête. Elle dérive quand même, par les chemins qui n'émettent aucun
+événement Eloquent : `group_user` porte `onDelete('cascade')` sur ses deux clés étrangères, donc
+supprimer un groupe ou un compte retire les lignes en SQL et **laisse l'arête**. À quoi s'ajoutent
+les rattachements antérieurs aux listeners, rattrapés seulement par `socializer:nebula-populate`.
+De même, `user -[:registered_in]-> room` n'est posée que pour le **créateur** de la room — aucune
+route « rejoindre une room » ne l'ajoute.
+
+> ⚠️ **Deux listeners homonymes sont abonnés au même événement**, un par paquet :
+> `Dauvray\Estarter\app\Listeners\GroupUserCreatedListener` est entièrement commenté,
+> `Dauvray\Socializer\app\Listeners\GroupUserCreatedListener` fait le travail. Ouvrir le premier
+> fait conclure que rien ne se propage.
 
 > **La leçon durable : le graphe est un réplica, pas une source de vérité.** Un garde qui l'interroge
-> pour une donnée dont MySQL est le maître refuse des accès légitimes, sans motif visible, et dérive
-> d'autant plus que le temps passe. Le follow y reste lu — c'est la seule donnée dont le graphe est
-> bien le maître.
+> pour une donnée dont MySQL est le maître hérite de tous les trous de sa synchronisation — et ici le
+> trou **accorde** au lieu de refuser, donc personne ne s'en plaint et il dérive d'autant plus que le
+> temps passe. Le follow y reste lu : c'est la seule donnée dont le graphe est bien le maître.
 
 ### 403 uniforme, et ce que le journal garde
 

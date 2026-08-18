@@ -30,8 +30,9 @@ librement.
 
 Les lots A, B et C sont **terminés**, ainsi que **C5** (le bouton d'appel) et **E5** (le libellé
 du refus) — 15 et 16/08. Restent : **D** (TURN, requiert une modif d'infra coturn), **E1**, **E2**,
-la part `getUsersList` d'**E3**, **E4** (la seule 🟠 sans dépendance externe), **E6** (périmètre
-estarter) et **F1** en clôture.
+la part `getUsersList` d'**E3**, **E4** — **requalifiée 🔴 le 18/08**, sa prémisse était fausse :
+c'est la plus grave des tâches ouvertes et elle ne dépend de rien —, **E6** (périmètre estarter)
+et **F1** en clôture.
 
 ---
 
@@ -877,11 +878,19 @@ exigé entre les deux parties.
 > [`Server.php:532`](../src/app/Services/Server.php) dans `createRoomServer()` — donc pour le
 > **créateur** seulement. Aucune route « rejoindre une room ». La jambe aurait été morte.
 >
-> **3. La copie graphe de l'appartenance aux groupes dérive.** `GroupUserCreatedListener`
-> (estarter) est **entièrement commenté** : ajouter un utilisateur à un groupe ne propage rien
-> dans Nebula. L'arête n'est posée qu'à la création du compte (`createUserAndNetwork`) et par
-> `socializer:nebula-populate`. **MariaDB est la source de vérité, le graphe un réplica non
-> resynchronisé.**
+> **3. La copie graphe de l'appartenance aux groupes dérive.** **MariaDB est la source de
+> vérité, le graphe un réplica.**
+>
+> ⛔ **Le motif donné ici le 16/08 était faux — corrigé le 18/08.** Il disait
+> « `GroupUserCreatedListener` (estarter) est entièrement commenté, donc rien ne se propage ».
+> **Deux classes homonymes** sont abonnées à `GroupUserCreated`, une par paquet : celle du socle
+> est effectivement un `Log::info` mort, celle de **ce** paquet
+> ([`GroupUserCreatedListener.php`](../src/app/Listeners/GroupUserCreatedListener.php)) écrit
+> l'arête, et son pendant `Deleted` la retire. Le pivot dispatche bien, `->using()` est déclaré
+> des deux côtés de la relation : la chaîne est complète. Le choix de lire MariaDB reste bon,
+> mais pour les motifs que le code donne déjà — SQL indexé contre aller-retour Thrift, et le
+> harnais de tests qui stube `EstarterUser`. Détail et dérive réelle (cascade FK) : **E4**,
+> réécrite.
 >
 > Ce n'est pas un affaiblissement : `canJoinServer` définit *déjà* l'accès serveur **par le
 > groupe**. On lit la même notion, à la bonne source — une requête SQL indexée
@@ -1119,41 +1128,79 @@ ou exige `list_users`.
 
 ---
 
-### E4 — `canJoinServer` dérive avec les groupes `[M]` 🟠
+### E4 — Les gardes de canal Reverb accordent ce qu'ils devraient refuser `[M]` 🔴
 
-- [ ] **Dépend de :** rien. **Trouvé le 16/08/2026** en cadrant C2 — hors périmètre de l'audit
-  du 14/08 (ce n'est pas WebRTC2), mais découvert par lui et trop concret pour être perdu.
+- [ ] **Dépend de :** rien. **Trouvée le 16/08/2026** en cadrant C2 — hors périmètre de l'audit
+  du 14/08 (ce n'est pas WebRTC2), mais découverte par lui et trop concrète pour être perdue.
+  **Requalifiée le 18/08/2026 : sa prémisse était fausse, ses conclusions étaient inversées.**
 
-[`Socializable::canJoinServer`](../src/app/Helpers/ModelTraits/Socializable.php) autorise le
-canal Reverb d'un serveur **privé** en lisant l'arête `user -[:registered_in]-> group` dans
-NebulaGraph. Or `GroupUserCreatedListener` (estarter) est **entièrement commenté** : ajouter
-quelqu'un à un groupe depuis Backpack ne propage rien. L'arête n'existe que si le compte a été
-créé *après* son rattachement, ou si `socializer:nebula-populate` a été rejoué depuis.
+> ⛔ **Ce qu'elle disait, et pourquoi c'était faux.** « `GroupUserCreatedListener` (estarter) est
+> entièrement commenté, donc ajouter quelqu'un à un groupe ne propage rien » ⇒ faux négatif
+> silencieux, à corriger en décommentant le listener du socle.
+>
+> **Deux classes homonymes** sont abonnées à `GroupUserCreated`, une par paquet. Celle du socle
+> est bien un `Log::info` mort — mais celle de **ce** paquet
+> ([`GroupUserCreatedListener.php:25-37`](../src/app/Listeners/GroupUserCreatedListener.php))
+> écrit l'arête, et [son pendant `Deleted`](../src/app/Listeners/GroupUserDeletedListener.php) la
+> retire. La chaîne est complète et vérifiée de bout en bout :
+> `GroupUser::booted()` dispatche · `->using(GroupUser::class)` est déclaré **des deux côtés** de
+> la relation (`Group::users()`, `EstarterUser::groups()`) — condition sans laquelle aucun
+> événement de pivot ne partirait, listener décommenté ou pas · les deux providers enregistrent
+> leur listener respectif.
+>
+> **Leçon de méthode** : deux paquets peuvent abonner deux classes **de même nom** au même
+> événement. Ouvrir la première que rend le `find` prouve son état, pas celui du câblage. La
+> question qui tranche n'était même pas « le listener est-il commenté ? » mais « la relation
+> déclare-t-elle `using()` ? ».
 
-**Symptôme attendu en production** : un utilisateur ajouté à un service ne reçoit pas les
-événements temps réel de son serveur, sans message d'erreur, jusqu'à la prochaine
-repopulation. Ce n'est pas un trou de sécurité — c'est un **faux négatif**, donc silencieux et
-difficile à diagnostiquer.
+Ce qui reste, après vérification — trois défauts réels, dans l'ordre de gravité :
 
-Trois issues, à arbitrer :
-1. décommenter `GroupUserCreatedListener` / `GroupUserDeletedListener` et y poser
-   `setRegisteredRelation` / la suppression d'arête — corrige la cause, touche estarter ;
-2. lire l'appartenance dans MariaDB comme le fait désormais `mayReach` — cohérent, mais deux
-   sources pour la même notion tant que 1. n'est pas fait ;
-3. rejouer `socializer:nebula-populate` périodiquement — colmatage, pas correctif.
+**1. 🔴 `canJoinchatRoom` renvoie *toujours* `true`.**
+[`Socializable.php:97-110`](../src/app/Helpers/ModelTraits/Socializable.php) : son `OPTIONAL
+MATCH` rend une ligne **même sans correspondance**, et le garde se contente de `if($result)`.
+Or [`channels.php:15-19`](../src/routes/socializer/channels.php) n'autorise le canal privé
+`chat.{chatId}` que par lui : **tout utilisateur authentifié peut s'abonner à n'importe quelle
+conversation privée** et en recevoir les messages en temps réel. Ce n'est pas une dérive de
+réplica, c'est une rupture de confidentialité — et elle ne dépend d'aucune donnée.
 
-⚠️ **Constat annexe à ne pas perdre** : `canJoinRoom`/`canJoinServer`/`canJoinchatRoom` ne sont
-pas des prédicats d'appartenance. Sur une room `privacy == 0` la clause est vraie pour
-n'importe quel couple `(room, user)` ⇒ `true` pour tout le monde — comportement probablement
-voulu pour un canal public, mais qui les rend **inutilisables comme gardes de relation**.
-`canJoinchatRoom` va plus loin : son `OPTIONAL MATCH` renvoie toujours une ligne, donc
-**toujours `true`**, y compris sur un chat privé dont on n'est pas membre. Celui-là mérite sa
-propre vérification.
+**2. 🟠 Les trois `canJoin*` sont *fail-open* sur panne du graphe.**
+`execute()` → `responseJson()` renvoie `response()->json($erreur, 500)` — un **objet, donc
+truthy** — quand nGQL échoue, sans jamais lever
+([`NebulaGraphConnection.php:149-155`](../src/app/Helpers/NebulaGraphConnection.php)). Un
+`if($result) return true;` transforme donc une erreur de graphe en autorisation.
+`mayReach::followsMutually` se garde déjà exactement de ça (`! is_array($result)` ⇒ refus, avec
+`Log::warning`) : c'est le motif à recopier, pas à réinventer.
 
-**Tests :** un utilisateur ajouté à un groupe après création de son compte peut rejoindre le
-canal du serveur privé de ce groupe · un non-membre ne le peut pas · `canJoinchatRoom` refuse
-un chat privé dont on n'est pas membre.
-**Commit :** `fix(socializer): l'appartenance à un groupe ne dérive plus des gardes de canal`
+**3. 🟡 Le réplica dérive encore, mais dans le sens qui accorde.**
+[La migration](../../../innovation/laravel-estarter/src/database/migrations/3019_10_31_000025_create_user_group_table.php)
+pose `onDelete('cascade')` sur les deux clés étrangères de `group_user` : supprimer un groupe ou
+un compte retire les lignes **en SQL, sans événement Eloquent**, et l'arête `registered_in`
+survit dans le graphe. S'y ajoutent les rattachements antérieurs aux listeners. Le symptôme
+attendu est donc l'inverse de celui annoncé le 16/08 : un **faux positif** — l'ancien membre
+d'un groupe supprimé garde l'accès au canal du serveur privé — donc personne ne le signale.
+
+> **Corollaire, même famille que 2.** Les deux listeners **ignorent la valeur de retour** de
+> `insertEdge` / `deleteEdge`, qui ne lève pas non plus : un échec d'écriture d'arête est
+> totalement muet — pas d'arête, pas de log, pas d'exception. C'est *ce* chemin qui produit le
+> faux négatif que E4 attribuait au listener commenté.
+
+⚠️ **Constat annexe, déjà durable** : `canJoinRoom` / `canJoinServer` ne sont pas des prédicats
+d'appartenance (sur `privacy == 0` la clause est vraie pour n'importe quel couple ⇒ `true` pour
+tout le monde). Consigné dans
+[`docs/modules/webrtc2/securite.md`](../docs/modules/webrtc2/securite.md) (« Deux pièges du
+graphe que ce garde contourne ») — ne pas le recopier ici.
+
+**Périmètre.** Les points 1 et 2 sont dans ce paquet, sans dépendance, et livrables seuls. Le
+point 3 demande un arbitrage : re-synchroniser sur la suppression (observer sur `Group`/`User`,
+ou `deleting` en cascade applicative), ou cesser de lire l'appartenance dans le graphe pour
+`canJoinServer` comme `mayReach` l'a déjà fait pour `sharesGroupWith` — la seconde voie retire
+le sujet au lieu de le maintenir.
+
+**Tests :** `canJoinchatRoom` refuse un chat privé dont on n'est pas membre · les trois gardes
+refusent quand `execute()` rend un `JsonResponse` (graphe muet) et non un tableau · un non-membre
+ne rejoint pas le canal d'un serveur privé. Faisables dans la suite PHP existante : le harnais
+double déjà `nebulaGraph` — cf. [tests.md](../docs/architecture/tests.md).
+**Commit :** `secu(socializer): les gardes de canal Reverb refusent par défaut`
 
 ---
 
