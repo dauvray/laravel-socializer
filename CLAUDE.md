@@ -92,15 +92,20 @@ projet consommateur n'a rien à câbler à la main.
 
 ## À savoir avant de conclure quoi que ce soit
 
-- **La sécurité WebRTC2 n'est pas « faite »** : les deux sens sont durcis **côté client**, mais le
-  **backend** n'a ni throttle, ni validation, ni contrôle de relation — et c'est lui qui porte la
-  seule fermeture possible de l'usurpation intra-room. Voir
-  [docs/modules/webrtc2/securite.md](docs/modules/webrtc2/securite.md).
+- **La sécurité WebRTC2 n'est pas « faite », mais le backend l'est désormais en grande partie** :
+  les deux sens sont durcis côté client, et le backend porte un `throttle` à **deux buckets**
+  (les 5 routes n'ont pas la même cadence légitime), un `validate()` sur les 5 payloads et un
+  contrôle de relation émetteur ↔ destinataire en 403 uniforme — épinglés par
+  `tests/Feature/Signaling/` et `tests/Feature/Profile/`.
+  **Restent ouverts** : l'usurpation intra-room par un membre qui se présente avec un peerId neuf
+  sous le slug d'un autre — les deux chemins ont la même signature locale, ce n'est pas fermable
+  côté client —, les credentials TURN compilés dans le bundle, et l'énumération via
+  `getUsersList`. Voir [docs/modules/webrtc2/securite.md](docs/modules/webrtc2/securite.md).
 - **La suite PHP ne couvre que la signalisation WebRTC** — c'est un socle tout neuf, pas un filet.
   Ses cinq décisions de harnais (pile de middlewares réduite, aucune migration du paquet, doublures
   qui lèvent) sont dans [docs/architecture/tests.md](docs/architecture/tests.md#suite-php--dans-le-package-via-orchestra-testbench) : les
   ignorer coûte une demi-journée.
 - **Le front est en français en dur**, sans `$t()`. Introduire l'i18n est un chantier à part entière.
-- Plusieurs zones sont mortes ou vides (`admin.php` commenté, `console.php` vide, deux mappings
-  PSR-4 vers des dossiers inexistants) —
+- Plusieurs zones sont mortes ou vides (`admin.php` commenté, `console.php` vide, `table_names`
+  vide, `socializer:upgrade` quasi entièrement commenté) —
   [liste](docs/architecture/package.md#zones-mortes-connues).

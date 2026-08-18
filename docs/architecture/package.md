@@ -173,8 +173,6 @@ Les contrôleurs sont eux aussi substituables : les routes les référencent **p
 
 À savoir pour ne pas y chercher quelque chose :
 
-- deux mappings PSR-4 pointent vers des dossiers **inexistants** — `src/factories/`, `src/seeders/`
-  (les seeders réels sont dans `src/database/seeders`)
 - `routes/socializer/admin.php` est **entièrement commenté** ; `console.php` est vide
 - `config/socializer.php > table_names` est vide
 - `SocializerUpgrade` (`socializer:upgrade`) a son corps quasi entièrement commenté

@@ -40,7 +40,9 @@ l'admission entrante).
    fonction a été appelée ». C'est ce qui rend ces tests insensibles aux refactos internes. Un
    scénario qui passe au vert **d'emblée** est un mauvais signe : il ne teste pas ce qu'on croit.
 3. **Un mock qui ment est pire qu'un test manquant** — il rend vert pour la mauvaise raison.
-4. **Rien ne se pousse en rouge** — `hooks/pre-push` et la CI lancent la suite.
+4. **Rien ne se pousse en rouge** — `hooks/pre-push` lance les deux suites. **Il n'y a pas de CI** :
+   ce hook est le seul filet automatique, et son activation est une config locale, jamais
+   versionnée — cf. [architecture/tests.md](../../architecture/tests.md).
 5. **Contrôle de harnais.** Après un correctif, neutraliser la ligne de production censée le porter
    et vérifier que les tests rougissent. C'est ce qui distingue un test qui épingle un invariant d'un
    test qui ne tient rien. Le contrôle apprend parfois quelque chose : quand deux mécanismes
