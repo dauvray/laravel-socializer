@@ -66,7 +66,23 @@ export function useReverbChannel(channelName, options = {}) {
                 onHere?.(presentUsers)
             })
             .joining((user) => {
-                users.value = [...users.value, user]
+                // ⚠️ pusher-js ne dédoublonne PAS l'événement : son `addMember()` protège son
+                // propre hash (`if (this.get(user_id) === null) this.count++`) mais émet
+                // `pusher:member_added` dans tous les cas. Sans la garde ci-dessous, un
+                // `member_added` reçu pour quelqu'un déjà présent le compte deux fois — et
+                // `users.length` affiche 2 là où une seule personne est connectée.
+                //
+                // Deux chemins produisent ce doublon : un redémarrage de Reverb pendant qu'un
+                // client se souscrit, et `REVERB_SCALING_ENABLED` avec plus d'un process, où le
+                // garde anti-doublon de Reverb (`userIsSubscribed`) ne consulte que les
+                // connexions de SON process.
+                //
+                // `onJoining` reste appelé dans les deux cas, volontairement : le chemin présence
+                // de WebRTC2 s'en sert pour l'admission des pairs, et l'étouffer corrigerait un
+                // compteur en cassant une poignée de main. On dédoublonne la liste, pas le signal.
+                if (!users.value.some(u => u.id === user.id)) {
+                    users.value = [...users.value, user]
+                }
                 onJoining?.(user)
             })
             .leaving((user) => {
