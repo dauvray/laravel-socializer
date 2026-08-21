@@ -2,7 +2,7 @@
     <ServerParamsButton
         id="room-params"
         :server="currentServer"
-        :serverUsersTotal="serverUsers.length"
+        :serverUsers="serverUsers"
         @create-room="onCreateRoom"
         @delete-server="onDeleteServer"
         @edit-server="onEditServer"

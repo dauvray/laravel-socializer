@@ -3,7 +3,26 @@
     <router-link :to="{ name: 'server', params: { serverId: $route.params.serverId }}" class="server-name">
         {{ server.name }}
     </router-link>
-    <IconWidget icon="user-friends"></IconWidget> {{ serverUsersTotal  }}
+    <div class="dropdown server-users">
+        <button
+            class="btn p-0"
+            type="button"
+            :title="presenceLabel"
+            data-bs-toggle="dropdown"
+            aria-expanded="false">
+            <IconWidget icon="user-friends"></IconWidget> {{ serverUsersTotal }}
+        </button>
+        <div class="dropdown-menu">
+            <h6 class="dropdown-header">Présents sur ce serveur ({{ serverUsersTotal }})</h6>
+            <ServerUsersList
+                v-if="serverUsersTotal"
+                :users="serverUsers"
+            ></ServerUsersList>
+            <p v-else class="dropdown-item-text mb-0">
+                Connexion au canal de présence…
+            </p>
+        </div>
+    </div>
     <div v-if="isOwner" class="dropdown">
         <button 
             class="btn p-0" 
@@ -47,6 +66,7 @@
 
 <script>
     import IconWidget from '~estarter/components/widgets/IconWidget.vue'
+    import ServerUsersList from './ServerUsersList.vue'
     import { useServerStore } from '~socializer/stores/server.js'
     import { useMeStore } from '~estarter/stores/me.js'
     import { mapState } from 'pinia'
@@ -62,16 +82,25 @@
         ],
         components: {
             IconWidget,
+            ServerUsersList,
         },
         props: {
             server: {
                 type: Object,
                 required: true
             },
-            serverUsersTotal: {
-                type: Number,
+            /**
+             * Membres actuellement souscrits au canal de présence `server.{id}` — et non les
+             * membres inscrits au serveur. La liste elle-même est passée, pas seulement son
+             * cardinal : un nombre nu et non auditable a déjà fait passer une information
+             * correcte pour un bug.
+             *
+             * @type {import('vue').PropType<Array<{id: number, name: string}>>}
+             */
+            serverUsers: {
+                type: Array,
                 required: false,
-                default: null
+                default: () => []
             }
         },
         computed: {
@@ -83,6 +112,46 @@
             }),
             isOwner: function() {
                 return this.ownerId === this.getMe.vertexid
+            },
+            serverUsersTotal: function() {
+                return this.serverUsers.length
+            },
+            /**
+             * `is_me` de la charge utile de présence est inutilisable — il vaut `true` pour tout
+             * le monde (voir `ServerUsersList.isMe`). C'est le store `me` qui tranche.
+             *
+             * @return {boolean}
+             */
+            isMePresent: function() {
+                return this.serverUsers.some(user => user.id === this.getMe?.id)
+            },
+            /**
+             * Dit ce que le chiffre compte, en distinguant « vous » des autres. Le cas
+             * « je ne suis pas dans la liste » est traité à part : la présence n'est pas encore
+             * synchronisée, et parler de « vous et N autres » y serait faux.
+             *
+             * @return {string}
+             */
+            presenceLabel: function() {
+                if(!this.serverUsersTotal) {
+                    return "Personne n'est présent sur ce serveur"
+                }
+
+                if(!this.isMePresent) {
+                    return this.serverUsersTotal === 1
+                        ? '1 personne présente sur ce serveur'
+                        : `${this.serverUsersTotal} personnes présentes sur ce serveur`
+                }
+
+                const others = this.serverUsersTotal - 1
+
+                if(!others) {
+                    return 'Vous êtes seul présent sur ce serveur'
+                }
+
+                return others === 1
+                    ? 'Vous et 1 autre personne présente sur ce serveur'
+                    : `Vous et ${others} autres personnes présentes sur ce serveur`
             },
         },
         methods: {
