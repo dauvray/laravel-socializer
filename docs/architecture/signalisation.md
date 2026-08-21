@@ -27,6 +27,48 @@ composants. ⚠️ `questionnaire.{roomId}` en retourne une aussi mais est conso
 (`Data/QuestionnaireComponent.vue`, et son émetteur `Events/QuestionnaireAnswered.php` rend un
 `PrivateChannel`) : seule la véracité du retour compte, la ressource est construite pour rien.
 
+### Ce que la présence mesure : un onglet ouvert
+
+Un canal de présence compte des **souscriptions**, donc des onglets — ni des membres, ni des
+personnes actives. Trois conséquences à ne pas confondre quand un compteur « se trompe » :
+
+- **« connecté à l'app » ne suffit pas à être compté.** `Server.vue` est le seul à souscrire à
+  `server.{serverId}` ; le feed, la liste des domaines, un mur n'y touchent pas. Quitter la page
+  serveur par une navigation SPA libère bien le canal (`Echo.leave('server.…')` — vérifié).
+- **Un onglet d'arrière-plan compte.** Une fenêtre oubliée sur la page serveur est « présente ».
+  Distinguer présence et activité demanderait un mécanisme en plus (`visibilitychange` + whisper) —
+  c'est une fonctionnalité, pas un correctif : [`work/serveur-todo.md`](../../work/serveur-todo.md).
+- **Le nombre de membres, lui, n'est pas dans la présence** : il vient de `nb_users`
+  (`Services/Server::getServer`) — aujourd'hui faux sur un serveur privé, même fichier de chantier.
+
+Devant un compteur suspect, **interroger Reverb avant de soupçonner le front** :
+`GET /apps/{appId}/channels/presence-server.{id}/users`.
+
+### Une charge utile de présence est fabriquée par son propre sujet
+
+C'est le fait le moins intuitif de tout le transport, et il a deux conséquences qui n'ont rien à
+voir entre elles.
+
+Chaque `user_info` est construite pendant la requête `/broadcasting/auth` **du membre qu'elle
+décrit** — jamais pendant celle du membre qui la lira. Donc `Auth::user()` y est **toujours** le
+sujet de la donnée. Reverb stocke le résultat par connexion, puis le diffuse aux autres membres
+via `here` et `member_added`.
+
+- ⚠️ **`is_me` vaut `true` sur TOUTES les entrées d'une liste de présence.** Un front qui s'en sert
+  pour distinguer « moi » se trompe sur chaque ligne. Le seul juge fiable côté client est le store
+  `me` (`ServerUsersList.isMe` en donne le patron). Le champ reste juste sur une charge utile
+  **HTTP** — `ThumbnailWidget`, `Cover` s'en servent légitimement : c'est la présence, et elle
+  seule, qui le retourne faux.
+- 🔴 **`EstarterUserResource` livre donc son bloc privé à tous les autres membres** — `email`,
+  `roles`, `permissions`, `groups`, `unreadNotifications`. Son garde
+  `if ($this->id === Auth::user()?->id)` n'est pas faux ; le contexte le désarme. Ouvert :
+  [`work/webrtc2-securite-2026-08-14.md`](../../work/webrtc2-securite-2026-08-14.md), tâche **E8**.
+
+La leçon réutilisable, jumelle de celle de C2 sur le graphe : **un garde qui dépend de
+`Auth::user()` ne veut plus rien dire dans un contexte où `Auth::user()` est toujours le sujet de
+la donnée.** Le périmètre d'une ressource de diffusion se décide dans la ressource, pas dans
+l'identité de la requête qui l'a fabriquée.
+
 Les méthodes `canJoin*` viennent du trait `Socializable` (`src/app/Helpers/ModelTraits/`) et
 interrogent NebulaGraph. **Un graphe muet vaut un refus** : `execute()` rend un `JsonResponse`
 *truthy* sur erreur nGQL et ne lève jamais — les quatre gardes traitent donc toute réponse

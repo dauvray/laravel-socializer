@@ -18,6 +18,7 @@ Composable Vue 3 permettant de gérer simplement les canaux **Laravel Reverb / E
    - [Canal public](#1-canal-public)
    - [Canal privé](#2-canal-privé)
    - [Canal de présence](#3-canal-de-présence)
+   - [Présence : la liste est dédoublonnée, pas le signal](#présence--la-liste-est-dédoublonnée-pas-le-signal)
    - [Canal chiffré](#4-canal-chiffré)
 7. [Patterns avancés](#patterns-avancés)
    - [Nom de canal réactif](#nom-de-canal-réactif)
@@ -106,7 +107,7 @@ useReverbChannel(channelName, options?)
 | `whispers`        | `Record<string, Function>`                           | `{}`        | Listeners pour les *client events* (ex. : indicateurs de frappe). |
 | `onNotification`  | `Function`                                           | `null`      | Callback pour les notifications Laravel (canaux privés / présence). |
 | `onHere`          | `Function`                                           | `null`      | **Presence** : appelé une fois avec la liste initiale des utilisateurs présents. |
-| `onJoining`       | `Function`                                           | `null`      | **Presence** : appelé lorsqu'un utilisateur rejoint. |
+| `onJoining`       | `Function`                                           | `null`      | **Presence** : appelé lorsqu'un utilisateur rejoint. Appelé **à chaque annonce, doublon compris** — voir [Présence : la liste est dédoublonnée, pas le signal](#présence--la-liste-est-dédoublonnée-pas-le-signal). |
 | `onLeaving`       | `Function`                                           | `null`      | **Presence** : appelé lorsqu'un utilisateur quitte. |
 | `onError`         | `Function`                                           | `null`      | Callback en cas d'erreur du canal. |
 | `autoJoin`        | `boolean`                                            | `true`      | Si `false`, vous devez appeler `join()` manuellement. |
@@ -115,7 +116,7 @@ useReverbChannel(channelName, options?)
 
 | Clé             | Type                                  | Description |
 |-----------------|---------------------------------------|-------------|
-| `users`         | `Ref<Array>`                          | Liste des utilisateurs présents (canal de présence uniquement). |
+| `users`         | `Ref<Array>`                          | Liste des utilisateurs présents (canal de présence uniquement), **dédoublonnée par `id`**. |
 | `isConnected`   | `Ref<boolean>`                        | `true` lorsque le canal est rejoint avec succès. |
 | `error`         | `Ref<any>`                            | Dernière erreur reçue, le cas échéant. |
 | `join()`        | `() => void`                          | Rejoint manuellement le canal. |
@@ -329,6 +330,33 @@ const sendTyping = () => {
   </main>
 </template>
 ```
+
+---
+
+### Présence : la liste est dédoublonnée, pas le signal
+
+**pusher-js n'émet pas `member_added` de façon idempotente.** Son `addMember()` protège son propre
+hash (`if (this.get(user_id) === null) this.count++`) mais fait partir l'`emit` dans tous les cas.
+Un `member_added` reçu pour quelqu'un déjà présent ferait donc compter la même personne deux fois —
+`users.length` affiche 2 là où une seule est connectée.
+
+Deux chemins produisent ce doublon : un redémarrage de Reverb pendant qu'un client se souscrit, et
+`REVERB_SCALING_ENABLED` avec plus d'un process, où le garde anti-doublon de Reverb
+(`InteractsWithPresenceChannels::userIsSubscribed`) ne consulte que les connexions de **son**
+process.
+
+Le composable pose donc une garde sur `id` avant d'ajouter à `users`. Ce qu'il **ne** fait pas, et
+c'est volontaire :
+
+> **`onJoining` est appelé à chaque annonce, doublon compris.** Le chemin présence de WebRTC2 s'en
+> sert pour l'admission des pairs ; l'étouffer corrigerait un compteur en cassant une poignée de
+> main. On dédoublonne la liste, jamais le signal.
+
+Épinglé par `components/System/composables/__tests__/useReverbChannel.test.js`.
+
+Corollaire côté affichage : `users` porte des `UserResource` dont **`is_me` vaut `true` pour toutes
+les entrées** — voir
+[architecture/signalisation.md](../architecture/signalisation.md#une-charge-utile-de-présence-est-fabriquée-par-son-propre-sujet).
 
 ---
 
@@ -570,6 +598,9 @@ const { users, isConnected } = useReverbPresence('room.lobby', {
 | Aucun event reçu                            | Oubli du `.` devant le nom de l'event                   | `'.MessageSent'` au lieu de `'MessageSent'` |
 | Erreur 403 sur canal privé                  | Déclaration manquante dans `src/routes/socializer/channels.php`, ou autorisation refusée | Vérifier la déclaration et la closure d'auth |
 | `users` reste vide                          | Le type n'est pas `presence`                            | Passer `type: 'presence'` |
+| Un membre compté deux fois                  | Un `member_added` en double — pusher-js ne les dédoublonne pas | Déjà gardé par le composable ; si le doublon revient, chercher un `id` absent de la charge utile du canal |
+| « 2 présents alors que je suis seul »        | Le plus souvent **vrai** : la présence compte les onglets. Un onglet d'arrière-plan sur la même page est « présent » ; être connecté ailleurs dans l'app ne compte pas | Interroger Reverb : `GET /apps/{id}/channels/presence-{canal}/users` avant de soupçonner le front |
+| `is_me` vrai pour tout le monde             | Charge utile de présence fabriquée par son propre sujet | Comparer avec le store `me`, jamais `user.is_me` |
 | Whisper ignoré                              | Canal public utilisé                                    | Les whispers nécessitent private / presence / encrypted |
 | Listeners perdus après changement de canal  | Listener ajouté manuellement via `channel().listen()`    | Utiliser `listen()` du composable (persistant) |
 | `Echo is not defined`                       | Echo non exposé globalement                             | Vérifier que l'hôte fait bien `window.Echo = new Echo(...)` — le paquet ne l'initialise pas |

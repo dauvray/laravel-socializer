@@ -26,6 +26,8 @@ puis suivre sa table de routage vers `docs/INDEX.md`. Ne pas explorer le code au
   Le dossier est `src/app/console/` (minuscule) alors que le namespace est `…\app\Console\…` :
   créer une classe autochargée y demande un `composer dump-autoload`.
 - **Le front est en français en dur**, sans `$t()`. Introduire l'i18n est un chantier à part entière.
+- **Le SCSS du paquet est copié dans l'hôte, et c'est la copie qui est compilée** : retoucher
+  `src/resources/sass/` seul ne change rien à l'écran. Modifier les deux — `docs/architecture/conventions.md#scss`.
 - Contribution documentaire : **`docs/` = définitif, `work/` = chantier**. Une case à cocher ou un
   décompte de tests ⇒ le fichier appartient à `work/`. Détail dans `docs/ecrire-la-doc.md`.
 - Installation / mise à jour dans une app hôte : `{{ $assist->artisanCommand('socializer:build') }}`.

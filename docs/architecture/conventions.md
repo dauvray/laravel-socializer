@@ -111,6 +111,16 @@ Le fichier racine est fin : il importe les trois autres et les assemble. 14 stor
 agrégés par `_socializer.scss`. Les fichiers du **projet hôte** sont notés `[host]` dans les docs
 (ils vivent dans `resources/sass/` de l'app).
 
+> ⚠️ **Le SCSS du paquet est COPIÉ dans l'hôte, et c'est la copie qui est compilée.**
+> `SocializerInstall` recopie `src/resources/sass/socializer/` vers `resources/sass/` de l'app et
+> ajoute un `@import` dans son `app.scss`. Le build de l'hôte ne lit donc **jamais** le SCSS du
+> `vendor/` : modifier le paquet seul ne change rien à l'écran, et republier écrase les
+> personnalisations de l'hôte.
+>
+> Toute retouche de style se fait donc **en deux endroits** — le paquet (pour que le correctif
+> parte avec le tag) et la copie hôte (pour qu'il agisse ici) — après un `diff` des deux pour
+> vérifier qu'elles n'ont pas divergé. C'est le pendant SCSS des vues vendor publiées.
+
 ### Ce qui est acquis, à ne pas régresser
 
 - **HTML sémantique** : classes par intention (`message-inner`, `files`, `chat-messenger`), aucune
