@@ -93,7 +93,8 @@ les `src/app/Helpers/*.php` : sans elles, l'application de test ne démarre pas.
 > les suites qui testent **autre chose** (throttle, fuite d'exception, validation) échoueraient toutes
 > en 403 sans rapport avec ce qu'elles vérifient. Passer `groupId: null` pour un inconnu — c'est ce
 > dont `RelationGuardTest` a besoin, et écrire ce fichier avec le défaut le rendrait entièrement vert
-> pour la mauvaise raison.
+> pour la mauvaise raison. Même précaution pour les gardes de canal : un test de non-appartenance à
+> un serveur écrit avec le défaut serait vert pour la mauvaise raison.
 
 > **Piège Eloquent.** Le trait `Socializable` fait
 > `$this->fillable = array_merge($this->fillable, ['is_bot'])`. Définir `fillable`, même
@@ -193,11 +194,12 @@ testable directement, et ça se voit.
 - **Chat** — un seul fichier (`dateSeparatorRender.test.js`). Plan en 5 couches, non démarré :
   [`work/chat-tests-plan.md`](../../work/chat-tests-plan.md), avec une décision en attente (helpers
   dédiés vs partagés — `mockEcho`, `mockRoute`, `seedChatStore`).
-- **Signalisation WebRTC (PHP)** — le socle Testbench et les routes de signalisation vues du
-  serveur. C'est le premier test PHP du package ; le lot backend qui s'appuie dessus est suivi dans
+- **PHP** — le socle Testbench, les routes de signalisation vues du serveur, et les gardes
+  d'autorisation de `Socializable` : gardes de canal de broadcast et garde de relation. Le lot
+  backend qui s'appuie dessus est suivi dans
   [`work/webrtc2-securite-2026-08-14.md`](../../work/webrtc2-securite-2026-08-14.md).
 - **Rien** pour Feed, Comment, Server, User, System, Application, Page, Whiteboard, les stores Pinia
-  hors `peers2`, ni le reste des services PHP.
+  hors `peers2`, ni les services PHP au-delà de l'inscription au chat.
 
 Les invariants d'une doc de module (`docs/modules/*`) sont des **points de test**, pas des choses à
 contourner : quand une doc dit « ne pas optimiser ceci », le test correspondant est ce qui l'épingle.

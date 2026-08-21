@@ -276,7 +276,9 @@ est *n'importe quel* utilisateur enregistré, pas l'appelant, dont le `vertexid`
 branche `privacy == 1`. Sur une room publique la requête renvoie une ligne dès qu'un membre
 quelconque existe : **`true` pour tout le monde**. (Effet miroir : une room publique **vide** renvoie
 `false`, même à son propriétaire.) Ce sont des gardes de **canal Reverb** ; les employer comme gardes
-de relation rendrait le contrôle contournable en nommant une room publique.
+de relation rendrait le contrôle contournable en nommant une room publique. Leur troisième sœur
+`canJoinchatRoom`, elle, **est** un prédicat d'appartenance depuis le 21/08/2026 — ne pas généraliser
+des deux premières à la troisième (`ChannelGuardTest`).
 
 **2. L'appartenance vit dans MariaDB, pas dans le graphe.** L'arête
 `user -[:registered_in]-> group` est bien **synchronisée** à l'attachement et au détachement : le
@@ -287,7 +289,8 @@ paquet** posent puis retirent l'arête. Elle dérive quand même, par les chemin
 supprimer un groupe ou un compte retire les lignes en SQL et **laisse l'arête**. À quoi s'ajoutent
 les rattachements antérieurs aux listeners, rattrapés seulement par `socializer:nebula-populate`.
 De même, `user -[:registered_in]-> room` n'est posée que pour le **créateur** de la room — aucune
-route « rejoindre une room » ne l'ajoute.
+route « rejoindre une room » ne l'ajoute. Cette dérive-là **reste ouverte** : c'est la seule des
+trois faiblesses des gardes de canal que le correctif du 21/08/2026 n'a pas fermée.
 
 > ⚠️ **Deux listeners homonymes sont abonnés au même événement**, un par paquet :
 > `Dauvray\Estarter\app\Listeners\GroupUserCreatedListener` est entièrement commenté,
@@ -298,6 +301,15 @@ route « rejoindre une room » ne l'ajoute.
 > pour une donnée dont MySQL est le maître hérite de tous les trous de sa synchronisation — et ici le
 > trou **accorde** au lieu de refuser, donc personne ne s'en plaint et il dérive d'autant plus que le
 > temps passe. Le follow y reste lu : c'est la seule donnée dont le graphe est bien le maître.
+
+> **Corollaire refermé le 21/08/2026 : un graphe qui ne répond pas vaut un refus.** `execute()` ne
+> lève jamais — sur erreur nGQL il rend un `JsonResponse`, un objet donc *truthy*. Les quatre gardes
+> du trait recopient donc le refus par défaut de `followsMutually` : réponse inexploitable ⇒ refus
+> et `Log::warning` (`ChannelGuardTest`). Ce n'est pas une ceinture ajoutée à côté du correctif de
+> `canJoinchatRoom`, c'en **est** le correctif : sa requête employait un `OPTIONAL MATCH` porteur
+> d'un `WHERE`, que NebulaGraph refuse en `SyntaxError`, et le `if($result)` d'alors faisait de cette
+> erreur permanente une autorisation permanente. Motif à reprendre pour tout nouveau garde qui lit
+> le graphe, pas à réinventer.
 
 ### 403 uniforme, et ce que le journal garde
 

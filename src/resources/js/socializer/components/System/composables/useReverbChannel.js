@@ -1,4 +1,4 @@
-// ~socializer/composables/useReverbChannel.js
+// ~socializer/components/System/composables/useReverbChannel.js
 import { ref, watch, unref, onBeforeUnmount } from 'vue'
 
 const CHANNEL_FACTORIES = {

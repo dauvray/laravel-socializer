@@ -21,18 +21,19 @@ C3 ──> C4 ──> C2 ──┬─> E3     (tous sur UserController — à s�
                    └─> C5     (front : le bouton d'appel)
 B3, C1                        (indépendants)
 D1 ──> D2
-E1, E2, E4, E5, E6            (indépendants)
+E7 ──> E4.2
+E1, E2, E5, E6                (indépendants)
 F1                            (dernier)
 ```
 
-`A` est bloquant. `B3`, `C1`, `C3`, `E1`, `E2`, `E4`, `E6` ne bloquent personne : à intercaler
+`A` est bloquant. `B3`, `C1`, `C3`, `E1`, `E2`, `E6`, `E7` ne bloquent personne : à intercaler
 librement.
 
-Les lots A, B et C sont **terminés**, ainsi que **C5** (le bouton d'appel) et **E5** (le libellé
-du refus) — 15 et 16/08. Restent : **D** (TURN, requiert une modif d'infra coturn), **E1**, **E2**,
-la part `getUsersList` d'**E3**, **E4** — **requalifiée 🔴 le 18/08**, sa prémisse était fausse :
-c'est la plus grave des tâches ouvertes et elle ne dépend de rien —, **E6** (périmètre estarter)
-et **F1** en clôture.
+Les lots A, B et C sont **terminés**, ainsi que **C5** (le bouton d'appel), **E5** (le libellé du
+refus) — 15 et 16/08 — et **E4.1** le 21/08 : la plus grave des tâches ouvertes est fermée. Restent :
+**D** (TURN, requiert une modif d'infra coturn), **E1**, **E2**, la part `getUsersList` d'**E3**,
+**E4.2** (dérive du réplica, arbitrage à produire), **E6** (périmètre estarter), **E7** (extraite
+d'E4 : les écritures d'arête échouent en silence) et **F1** en clôture.
 
 ---
 
@@ -1128,11 +1129,14 @@ ou exige `list_users`.
 
 ---
 
-### E4 — Les gardes de canal Reverb accordent ce qu'ils devraient refuser `[M]` 🔴
+### E4 — Les gardes de canal Reverb accordent ce qu'ils devraient refuser `[M]` — scindée le 21/08/2026
 
-- [ ] **Dépend de :** rien. **Trouvée le 16/08/2026** en cadrant C2 — hors périmètre de l'audit
-  du 14/08 (ce n'est pas WebRTC2), mais découverte par lui et trop concrète pour être perdue.
-  **Requalifiée le 18/08/2026 : sa prémisse était fausse, ses conclusions étaient inversées.**
+**Trouvée le 16/08/2026** en cadrant C2 — hors périmètre de l'audit du 14/08 (ce n'est pas WebRTC2),
+mais découverte par lui et trop concrète pour être perdue.
+**Requalifiée le 18/08/2026 : sa prémisse était fausse, ses conclusions étaient inversées.**
+**Scindée le 21/08/2026** : le code est livré (E4.1), l'arbitrage du réplica ne l'est pas (E4.2), et
+le corollaire des écritures muettes est sorti en tâche propre (E7). Cocher l'ensemble aurait menti ;
+le laisser vide aurait fait relire 70 lignes à chaque passage.
 
 > ⛔ **Ce qu'elle disait, et pourquoi c'était faux.** « `GroupUserCreatedListener` (estarter) est
 > entièrement commenté, donc ajouter quelqu'un à un groupe ne propage rien » ⇒ faux négatif
@@ -1153,25 +1157,89 @@ ou exige `list_users`.
 > question qui tranche n'était même pas « le listener est-il commenté ? » mais « la relation
 > déclare-t-elle `using()` ? ».
 
-Ce qui reste, après vérification — trois défauts réels, dans l'ordre de gravité :
+Ce qui restait, après vérification — trois défauts réels, dans l'ordre de gravité. Les deux premiers
+sont livrés (E4.1), le troisième reste ouvert (E4.2).
 
-**1. 🔴 `canJoinchatRoom` renvoie *toujours* `true`.**
-[`Socializable.php:97-110`](../src/app/Helpers/ModelTraits/Socializable.php) : son `OPTIONAL
-MATCH` rend une ligne **même sans correspondance**, et le garde se contente de `if($result)`.
-Or [`channels.php:15-19`](../src/routes/socializer/channels.php) n'autorise le canal privé
-`chat.{chatId}` que par lui : **tout utilisateur authentifié peut s'abonner à n'importe quelle
-conversation privée** et en recevoir les messages en temps réel. Ce n'est pas une dérive de
-réplica, c'est une rupture de confidentialité — et elle ne dépend d'aucune donnée.
+---
 
-**2. 🟠 Les trois `canJoin*` sont *fail-open* sur panne du graphe.**
+#### E4.1 — `canJoinchatRoom` exige l'appartenance, et les gardes refusent par défaut `[M]` 🔴
+
+- [x] **Dépend de :** rien. — ✅ **fait le 21/08/2026.**
+
+**1. ✅ `canJoinchatRoom` renvoyait *toujours* `true` — mais pas pour la raison écrite ici.**
+Le plan disait : « son `OPTIONAL MATCH` rend une ligne même sans correspondance ». La
+contre-épreuve contre le cluster de dev a tranché autrement, et c'est plus grave : **NebulaGraph
+3.8 refuse cette requête**, `[ERROR (-1004)]: SyntaxError: Where clause in optional match is not
+supported`. Elle ne s'est donc **jamais exécutée**. Et comme `execute()` rend un `JsonResponse`
+truthy sur erreur, le `if($result)` en faisait une **autorisation permanente** : `channels.php`
+n'autorisant le canal `chat.{chatId}` que par ce garde, tout authentifié pouvait s'abonner à
+n'importe quelle conversation privée. Corrigé en retirant le mot `OPTIONAL` — forme déjà attestée
+en production par les deux gardes jumeaux.
+
+> **Leçon, la même famille que celle du 18/08 mais sur l'autre axe.** Le 18, l'annotation fausse
+> décrivait l'état d'une *classe nommée* et se vérifiait sur le câblage. Ici elle décrivait le
+> *comportement d'une requête* — et une requête ne se vérifie ni à la lecture, ni contre
+> `FakeNebulaGraph`, qui fait du `str_contains` et ne parse rien. **Elle se vérifie contre un vrai
+> graphe.** Le harnais aurait avalé les deux formes sans broncher.
+
+**2. ✅ Les trois `canJoin*` — et `_checkIsOwner` — n'encaissaient pas la panne du graphe.**
 `execute()` → `responseJson()` renvoie `response()->json($erreur, 500)` — un **objet, donc
 truthy** — quand nGQL échoue, sans jamais lever
 ([`NebulaGraphConnection.php:149-155`](../src/app/Helpers/NebulaGraphConnection.php)). Un
-`if($result) return true;` transforme donc une erreur de graphe en autorisation.
-`mayReach::followsMutually` se garde déjà exactement de ça (`! is_array($result)` ⇒ refus, avec
-`Log::warning`) : c'est le motif à recopier, pas à réinventer.
+`if($result) return true;` transformait donc une erreur de graphe en autorisation, et le
+`count($result)` de `_checkIsOwner` levait un `TypeError` sur ce même objet — soit un 500 à la
+place d'un refus. Motif de `followsMutually` recopié : réponse inexploitable ⇒ refus +
+`Log::warning`. **`_checkIsOwner` n'était pas optionnel** : sur les canaux `room.` et
+`questionnaire.`, `isCreator` est le second terme d'un `||` que le fail-open de `canJoinRoom`
+n'atteignait jamais — durcir le premier sans le second aurait échangé un accès accordé à tort
+contre une erreur 500.
 
-**3. 🟡 Le réplica dérive encore, mais dans le sens qui accorde.**
+Le refus par défaut n'est donc pas une ceinture posée à côté du correctif du point 1 : **c'en est
+le correctif**, puisque la requête n'était pas valide.
+
+**3. ✅ Le contournement qui vidait tout le reste — trouvé en livrant.**
+`Chat::checkRegistration`, appelée par `/send-chat-message` et `/send-chat-audio`, **inscrivait son
+appelant dans n'importe quel chat qu'il nommait**, sans aucune garde. Un seul POST, et l'attaquant
+devenait un membre *légitime* : `canJoinchatRoom` répondait alors `true` à bon droit, et
+l'abonnement au canal suivait, de façon permanente. Gardée sur `canJoinchatRoom`, avec le
+court-circuit « déjà inscrit » d'abord pour ne pas payer un aller-retour Thrift par message.
+**Leçon : un garde n'est fermé que quand tous les chemins qui écrivent son état le sont aussi.**
+
+**4. ✅ Le verrou que le point 3 aurait créé, et sa sortie.**
+`getOrcreateChatVertice` n'inscrit que dans sa branche de **création**, et
+`ChatController::getOrcreateChatVertice` l'appelle **sans valeurs** ⇒ `createConversation` retombe
+sur `privacy => 1`. Tout chat de salon est donc privé avec le créateur seul inscrit : il ne
+fonctionnait que grâce au bug du point 1. Fermer le point 3 sans plus l'aurait verrouillé
+définitivement pour tous les autres participants. D'où `Chat::registerInRoomChat` : **le chat d'un
+salon hérite de la décision de son salon** (`canJoinRoom || isCreator`, le garde que `channels.php`
+applique déjà au canal `room.{roomId}`). Aucune reprise des données existantes — décision du
+21/08 : environnement de dev, aucun chat créé.
+
+**Tests :** `tests/Feature/Channels/ChannelGuardTest.php` et
+`tests/Feature/Chat/ChatRegistrationTest.php` — premiers tests de garde `Broadcast::channel` du
+paquet. Ils ont demandé trois pièces de harnais : un stub `App\Models\User` (les closures de
+`channels.php` sont typées sur la classe de l'hôte, **en dur**), `insertEdge()` sur
+`FakeNebulaGraph` (les helpers d'arête n'écrivent pas par `execute()`), et une doublure
+`onlineUsers` (sans quoi `new Chat()` n'est pas constructible). Les callbacks sont invoqués par
+`Broadcast::getChannels()` et jamais par `Broadcaster::auth()` : les drivers qui y descendent
+sérialisent le `UserResource`, ce qui explose faute des dépendances estarter.
+**Contrôle de harnais :** 18 mutations rejouées une par une, toutes rougissent.
+**Contre-épreuve nGQL** contre le cluster de dev : les quatre branches de la requête réécrite
+(privé/membre, privé/intrus, public/intrus, public sans membre) rendent 1, 0, 1 et 0 lignes.
+**Doc :** `securite.md` (piège 1, piège 2, la leçon du réplica) · `signalisation.md` (tableau des
+canaux — `questionnaire` y était annoncé « présence » et est **privé** aux deux bouts) ·
+`package.md` (les deux familles de gardes, `mayReach` y manquait) · `tests.md` · `CLAUDE.md:104` ·
+`Socializable.php` (en-tête de section créé, deux blocs condensés) · `Chat.php` (docblocks créés).
+`core.blade.php` : zéro occurrence, donc **pas de `boost:update`**.
+**Commit :** `secu(socializer): les gardes de canal Reverb refusent par défaut`
+
+---
+
+#### E4.2 — Le réplica graphe dérive dans le sens qui accorde `[M]` 🟡
+
+- [ ] **Dépend de :** un arbitrage produit, et de **E7** — arbitrer la re-synchronisation d'un
+  réplica dont les écritures peuvent échouer en silence n'a pas de sens. **Reste ouvert après le
+  21/08/2026.**
 [La migration](../../../innovation/laravel-estarter/src/database/migrations/3019_10_31_000025_create_user_group_table.php)
 pose `onDelete('cascade')` sur les deux clés étrangères de `group_user` : supprimer un groupe ou
 un compte retire les lignes **en SQL, sans événement Eloquent**, et l'arête `registered_in`
@@ -1188,19 +1256,51 @@ d'un groupe supprimé garde l'accès au canal du serveur privé — donc personn
 d'appartenance (sur `privacy == 0` la clause est vraie pour n'importe quel couple ⇒ `true` pour
 tout le monde). Consigné dans
 [`docs/modules/webrtc2/securite.md`](../docs/modules/webrtc2/securite.md) (« Deux pièges du
-graphe que ce garde contourne ») — ne pas le recopier ici.
+graphe que ce garde contourne ») — ne pas le recopier ici. **Toujours vrai après le 21/08/2026**,
+explicitement hors périmètre ; le renommage est une tâche de
+[`work/doc-rustines.md`](doc-rustines.md), lot 3, que E4.1 vient de débloquer.
 
-**Périmètre.** Les points 1 et 2 sont dans ce paquet, sans dépendance, et livrables seuls. Le
-point 3 demande un arbitrage : re-synchroniser sur la suppression (observer sur `Group`/`User`,
-ou `deleting` en cascade applicative), ou cesser de lire l'appartenance dans le graphe pour
-`canJoinServer` comme `mayReach` l'a déjà fait pour `sharesGroupWith` — la seconde voie retire
-le sujet au lieu de le maintenir.
+**Périmètre de E4.2.** L'arbitrage : re-synchroniser sur la suppression (observer sur
+`Group`/`User`, ou `deleting` en cascade applicative), ou cesser de lire l'appartenance dans le
+graphe pour `canJoinServer` comme `mayReach` l'a déjà fait pour `sharesGroupWith` — la seconde voie
+retire le sujet au lieu de le maintenir.
 
-**Tests :** `canJoinchatRoom` refuse un chat privé dont on n'est pas membre · les trois gardes
-refusent quand `execute()` rend un `JsonResponse` (graphe muet) et non un tableau · un non-membre
-ne rejoint pas le canal d'un serveur privé. Faisables dans la suite PHP existante : le harnais
-double déjà `nebulaGraph` — cf. [tests.md](../docs/architecture/tests.md).
-**Commit :** `secu(socializer): les gardes de canal Reverb refusent par défaut`
+> Corollaire des écritures d'arête muettes : sorti en **E7** le 21/08 — il ne dépend pas de cet
+> arbitrage, et le laisser ici en ferait un orphelin dans une tâche à moitié cochée.
+
+**Tests :** un ancien membre d'un groupe supprimé ne rejoint pas le canal du serveur privé.
+
+---
+
+### E7 — Les écritures dans le graphe échouent en silence `[M]` 🟠
+
+- [ ] **Dépend de :** rien. **Extraite d'E4 le 21/08/2026** : E4.1 a fermé la moitié *lecture* de
+  la famille (`execute()` truthy ⇒ refus). La moitié *écriture* n'a aucun appelant qui la regarde.
+
+Trois chemins, une seule cause — `NebulaGraphConnection` ne lève jamais :
+
+1. `GroupUserCreatedListener` / `GroupUserDeletedListener` **ignorent la valeur de retour** de
+   `insertEdge` / `deleteEdge`. Un échec d'écriture est totalement muet : pas d'arête, pas de log,
+   pas d'exception. C'est *ce* chemin qui produit le faux négatif que E4 attribuait le 16/08 au
+   listener commenté.
+2. `Chat::checkRegistration` : traité **en lecture** par E4.1 (un graphe muet n'inscrit plus et le
+   journalise), mais le motif reste à généraliser — l'écriture qui suit, elle, n'est toujours pas
+   vérifiée.
+3. Généralisation : tout appelant d'`app('nebulaGraph')` qui écrit et ne teste rien —
+   `insertEdge`, `deleteEdge`, `insertVertex`, `setRegisteredRelation` et consorts. À inventorier.
+
+**Périmètre.** Ce n'est pas un trou d'autorisation, c'est un trou d'**observabilité** sur le
+réplica — et il **précède E4.2**. Voie la plus courte : faire lever `NebulaGraphConnection` sur
+erreur nGQL (une seule couture, celle que `fakeNebulaGraph()` double déjà) et voir ce qui casse ;
+les lectures étant désormais protégées par E4.1, le risque de régression est borné aux écritures.
+
+⚠️ E4.1 a montré au passage que cette couture unique **cache aussi les erreurs de syntaxe** : la
+requête de `canJoinchatRoom` était invalide depuis toujours et personne ne l'a su. Faire lever
+rendrait visible cette classe de bugs, pas seulement les pannes d'infrastructure.
+
+**Tests :** un `insertEdge` en échec ne passe pas silencieusement · une requête syntaxiquement
+invalide ne se confond pas avec une réponse vide.
+**Commit :** `fix(socializer): une écriture de graphe qui échoue ne se tait plus`
 
 ---
 

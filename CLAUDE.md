@@ -101,7 +101,8 @@ projet consommateur n'a rien à câbler à la main.
   sous le slug d'un autre — les deux chemins ont la même signature locale, ce n'est pas fermable
   côté client —, les credentials TURN compilés dans le bundle, et l'énumération via
   `getUsersList`. Voir [docs/modules/webrtc2/securite.md](docs/modules/webrtc2/securite.md).
-- **La suite PHP ne couvre que la signalisation WebRTC** — c'est un socle tout neuf, pas un filet.
+- **La suite PHP couvre la signalisation WebRTC et les gardes d'autorisation de `Socializable`** —
+  un socle, pas un filet.
   Ses cinq décisions de harnais (pile de middlewares réduite, aucune migration du paquet, doublures
   qui lèvent) sont dans [docs/architecture/tests.md](docs/architecture/tests.md#suite-php--dans-le-package-via-orchestra-testbench) : les
   ignorer coûte une demi-journée.

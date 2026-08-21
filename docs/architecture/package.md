@@ -42,10 +42,12 @@ deux traits de `src/app/Helpers/ModelTraits/` :
 
 - **`Socializable`** (sur `App\Models\User` et `Group`) — `posts()` est la seule vraie `MorphMany` ;
   `wall()`, `feed()`, `conversations()`, `servers()`, `ownedServers()` interrogent Nebula et
-  renvoient des collections. Il porte aussi les gardes d'autorisation utilisées par les canaux de
-  broadcast : `canJoinchatRoom()`, `canJoinServer()`, `canJoinRoom()`, `isCreator()`,
-  `isServerOwner()`, `isWallOwner()`, `isFeedOwner()`, `isRoomOwner()`, plus l'accesseur pivot
-  `getVertexIdAttribute()`.
+  renvoient des collections. Il porte aussi **deux familles de gardes, à ne pas confondre** : les
+  gardes de **canal de broadcast** (`canJoinchatRoom()`, `canJoinServer()`, `canJoinRoom()`,
+  `isCreator()`, `isServerOwner()`, `isWallOwner()`, `isFeedOwner()`, `isRoomOwner()`) et le garde
+  de **relation** `mayReach()`, posé sur les 5 routes de signalisation
+  ([securite.md](../modules/webrtc2/securite.md)). Tous refusent par défaut quand le graphe ne
+  répond pas. Plus l'accesseur pivot `getVertexIdAttribute()`.
 - **`Commentable`** (sur tout modèle commentable) — `mustBeApprovedComment()`, accesseurs
   `getIsCommentableAttribute()`, `getVertexIdAttribute()`, `getNbCommentsAttribute()`.
 

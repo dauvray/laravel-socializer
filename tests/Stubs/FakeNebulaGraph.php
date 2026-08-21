@@ -58,6 +58,26 @@ class FakeNebulaGraph
         return $this->default;
     }
 
+    /**
+     * Les helpers d'écriture d'arête (`setRegisteredRelation`, `setHasCreatorRelation`, …)
+     * n'appellent pas `execute()` mais `insertEdge()`. En production celui-ci finit néanmoins
+     * par `return $this->execute($query)` (`NebulaGraphConnection::insertEdge`) : la doublure
+     * fait de même, pour que `queries()` reste le SEUL point d'observation.
+     *
+     * ⚠️ Sans cette méthode, l'appel lèverait « undefined method » — et l'assertion « aucune
+     * inscription n'est partie » ne pourrait jamais rougir autrement que par un fatal, donc ne
+     * garderait rien.
+     *
+     * La requête reconstruite n'est pas la vraie (`INSERT EDGE x (props) VALUES …`) : juste
+     * assez fidèle pour qu'un test y cherche `INSERT EDGE <label>` et la direction `from->to`.
+     *
+     * @param  array<string, mixed>  $values  clés au format `from->to`
+     */
+    public function insertEdge(string $label = 'default', array $values = []): mixed
+    {
+        return $this->execute('INSERT EDGE '.$label.' VALUES "'.((string) array_key_first($values)).'"');
+    }
+
     /** @return array<int, string> */
     public function queries(): array
     {

@@ -1,6 +1,6 @@
 # Dé-rustiner la doc — volet socializer
 
-> **Chantier ouvert, non démarré.** Objectif : que `docs/`, `CLAUDE.md` et
+> **Chantier ouvert — lot 0 terminé.** Objectif : que `docs/`, `CLAUDE.md` et
 > `resources/boost/guidelines/core.blade.php` ne contiennent plus de passage qui n'existe que pour
 > compenser un défaut du code.
 >
@@ -27,7 +27,8 @@ composer install && vendor/bin/phpunit  # PHP — depuis ce paquet
 > cadrées, avec leur analyse : [webrtc2-todo.md](webrtc2-todo.md) (renommage `usersInRoom`,
 > sémantique de `peerInitPromise`, peerId fantôme), [webrtc2-tests-plan.md](webrtc2-tests-plan.md)
 > (trous de couverture), [webrtc2-securite-2026-08-14.md](webrtc2-securite-2026-08-14.md) (TURN,
-> `getUsersList`, faille chemin (a)), [front-todo.md](front-todo.md) (directives de resize),
+> `getUsersList`, faille chemin (a), dérive du réplica en E4.2, écritures muettes en
+> **E7**), [front-todo.md](front-todo.md) (directives de resize),
 > [sass-todo.md](sass-todo.md) (thème sombre, `@extend`). Ce fichier y **renvoie** — une règle, un
 > seul endroit.
 
@@ -40,21 +41,15 @@ sa propre remontée de doc (tâche **F1**, en clôture) : les tâches ci-dessous
 elles couvrent ce que F1 ne couvre pas — F1 liste `securite.md`, `architecture.md` et son propre
 fichier, **pas le `CLAUDE.md`**.
 
-### À faire maintenant, même en plein WebRTC2 — 3 tâches, coût quasi nul
-
-Elles ne touchent aucun fichier du chantier, et deux d'entre elles **servent** le chantier :
-
-| Tâche | Pourquoi ne pas attendre |
-|---|---|
-| Backend durci ou pas (lot 0) | Le `CLAUDE.md` — premier fichier lu — annonce aujourd'hui une faille que les lots C1–C4 ont fermée. Se tromper sur l'état de la sécurité **pendant** un chantier de sécurité est le pire moment. |
-| La CI qui n'existe pas (lot 0) | `webrtc2-securite-2026-08-14.md` a **déjà tranché** (« la mention d'un `.github/workflows/…` qui figurait ici était fausse »). Il ne reste qu'un reliquat de la même erreur dans `webrtc2/tests.md:43` : une ligne. |
-| Les PSR-4 fantômes (lot 0) | Deux lignes, aucun rapport avec WebRTC2. |
+Les cinq tâches du lot 0 ont été faites du 15 au 21/08 sans jamais croiser WebRTC2 — la doctrine
+« le lot 0 se fait sans attendre » a tenu. **Le lot 0 n'a plus de tâche prête** : sa sixième entrée
+attend, comme les autres lots.
 
 ### À NE PAS toucher avant la fin des lots D et E — collisions réelles
 
 | Tâche d'ici | Entre en collision avec |
 |---|---|
-| Renommer `canJoinRoom` / `canJoinServer` (lot 3) | **E4 est ouverte** et porte les trois `canJoin*` (requalifiée 🔴 le 18/08 : `canJoinchatRoom` rend toujours `true`, et les trois sont *fail-open*). Le correctif passe avant le renommage |
+| ~~Renommer `canJoinRoom` / `canJoinServer` (lot 3)~~ | **Débloqué le 21/08** : E4.1 est livrée, les quatre gardes refusent par défaut et `canJoinchatRoom` exige l'appartenance. Le renommage ne touche plus au comportement, seulement aux noms et à leurs appelants |
 | Renommer `hasOpenConnection` / `isConnectionEstablished` (lot 4) | cœur de A2 et B2 — déjà source des régressions du 13/08 |
 | Renommer `remoteStreams` (lot 3) | `createPeerContext`, touché par C5 puis E5 |
 | Convertir les 9 pièges de mock en tests (lot 4) | le harnais bouge encore — [webrtc2-tests-plan.md](webrtc2-tests-plan.md) a des tâches ouvertes, dont 6 et 7 **gelées** |
@@ -86,14 +81,25 @@ Deux gestes qui suffisent :
 
 ## Lot 0 — Annotations déjà fausses ou contradictoires · sortie B
 
-Le lot le plus rentable : aucun risque, et il retire les annotations qui trompent activement.
-Quatre contradictions **internes à la doc** : dans chaque paire, une des deux affirmations est
-fausse, et un lecteur ne peut pas savoir laquelle.
+Le lot le plus rentable : aucun risque, et il retirait les annotations qui trompent activement.
+**Cinq entrées, toutes fermées du 15 au 21/08/2026.** Une sixième y est entrée le 21/08, née de la
+cinquième : corriger les imports d'une page de référence a mis au jour que sa table d'API avait
+divergé du fichier.
 
-**Plus une cinquième d'un autre genre, trouvée le 18/08** : une annotation que **le code**
-contredit — donc invisible à une relecture de la doc seule, et bien plus coûteuse, puisqu'elle a
-produit une tâche de plan entièrement fausse. Son enseignement : une annotation qui décrit l'état
-d'une *classe nommée* se vérifie sur le **câblage**, jamais sur le premier fichier de ce nom.
+Les quatre premières étaient des contradictions **internes à la doc** : dans chaque paire, une des
+deux affirmations était fausse, et un lecteur ne pouvait pas savoir laquelle.
+
+Les deux dernières sont d'un autre genre, et ce sont elles qui ont coûté le plus cher, parce qu'une
+relecture de la doc seule ne peut pas les voir. Chacune a livré sa règle de vérification :
+
+- une annotation qui décrit l'état d'une **classe nommée** se vérifie sur le **câblage**, jamais sur
+  le premier fichier de ce nom (18/08 — deux listeners homonymes ; l'annotation fausse avait produit
+  une tâche de plan entièrement fausse) ;
+- une annotation qui décrit le **comportement d'une requête** se vérifie contre un **vrai graphe**,
+  jamais à la lecture ni contre `FakeNebulaGraph`, qui fait du `str_contains` et ne parse rien
+  (21/08 — la requête de `canJoinchatRoom` était un `SyntaxError` depuis toujours, cf. E4.1) ;
+- une **page de référence** peut violer la convention que le paquet énonce ailleurs : ça se trouve
+  au `grep`, pas à la relecture (21/08).
 
 - [x] **Trancher : le backend WebRTC est-il durci ?** · effort [S] · **fait**
       `CLAUDE.md:95-98` disait « le **backend** n'a ni throttle, ni validation, ni contrôle de
@@ -158,18 +164,54 @@ d'une *classe nommée* se vérifie sur le **câblage**, jamais sur le premier fi
             requalification a mis au jour, et sont dans **E4** (`canJoinchatRoom` toujours `true`,
             gardes *fail-open*)
 
-- [ ] **Corriger les imports de la référence `use-reverb-channel`** · effort [S]
-      Tous les exemples de `docs/reference/use-reverb-channel.md` (`:51`, `:160`, `:212`, …) écrivent
-      `import { … } from '@/composables/useReverbChannel'`. Le chemin réel est
-      `src/resources/js/socializer/components/System/composables/useReverbChannel.js`, et la
-      convention du paquet — écrite dans `docs/architecture/conventions.md:79-80` et rappelée dans
-      trois autres fichiers — impose l'alias `~socializer`, jamais un relatif ni un autre alias.
-      La page de référence viole la règle que le paquet énonce ailleurs : un lecteur qui copie un
-      exemple casse son build.
-      - [ ] Code — sans objet
-      - [ ] Doc — corriger tous les imports de la page
-      - [ ] Tests — sans objet ; vérification : `grep -c "@/composables" docs/reference/use-reverb-channel.md`
-            doit rendre 0
+- [x] **Corriger les imports de la référence `use-reverb-channel`** · effort [S] · **fait le
+      21/08/2026**
+      Les 12 exemples de `docs/reference/use-reverb-channel.md` écrivaient
+      `import { … } from '@/composables/useReverbChannel'`. Non seulement la page violait la
+      convention que le paquet énonce dans quatre autres fichiers (alias `~socializer`, jamais un
+      relatif ni un autre alias), mais **l'alias `@` n'existe même pas côté hôte** : un lecteur qui
+      copiait un exemple ne cassait pas son build, il ne résolvait rien.
+      - [x] Code — sans objet
+      - [x] Doc — les 12 imports passés à
+            `~socializer/components/System/composables/useReverbChannel.js` (forme attestée par
+            `api.md`) ; la localisation du fichier écrite **une fois** en tête de section, puisque
+            après correction le chemin ne vivait plus que dans des chaînes d'import. Trois passages
+            que le seul remplacement d'import laissait faux, corrigés aussi : `bootstrap.js`
+            annoncé comme initialisateur d'Echo (chez cet hôte la ligne y est **commentée**, c'est
+            `resources/js/echo.js` qui le fait — reformulé de façon agnostique de l'hôte), et deux
+            mentions de `routes/channels.php` au lieu de `src/routes/socializer/channels.php`.
+            **Quatrième couche trouvée en chemin** : `useReverbChannel.js:1` citait lui-même le
+            mauvais dossier (`~socializer/composables/…`, qui existe et ne contient pas ce fichier).
+      - [x] Tests — sans objet ; vérifié : `grep -c "@/composables"` rend 0, le chemin correct
+            apparaît 12 fois, et `grep -rn "composables/useReverbChannel" docs/ src/` ne remonte
+            plus rien hors de `components/System/composables`
+
+- [ ] **La page `use-reverb-channel.md` décrit une API qui a divergé du fichier** · effort [S]
+      Trouvée le 21/08 en corrigeant ses imports — et c'est la leçon de l'entrée précédente : la
+      page n'était pas seulement mal importée, sa table d'API est incomplète et par endroits fausse.
+      Quatre écarts **vérifiés contre le code**, du plus coûteux au moins :
+      · **`listenForWhisper` / `stopListeningForWhisper` absents** de la table « Valeurs
+        retournées » alors qu'ils sont exportés (`useReverbChannel.js:187-188`) — conséquence
+        exacte : faute de les connaître, le lecteur passe par `channel().listenForWhisper()`,
+        c'est-à-dire le piège que la page elle-même liste, alors que le composable réapplique
+        déjà les whispers dynamiques à la reconnexion ;
+      · **`isConnected` n'est pas « rejoint avec succès »** hors présence : il est posé `true`
+        synchronement juste après la fabrique (`:132`), avant toute confirmation d'abonnement ;
+        seul `presence` attend `here()` (`:65`). La bonne pratique « vérifiez `isConnected` avant
+        d'émettre des whispers » est donc inopérante sur `private` et `encrypted` — les deux types
+        non-présence où les whispers sont légaux ;
+      · **la réactivité du nom de canal est conditionnée par `autoJoin`** : le `watch` n'est
+        enregistré que `if (autoJoin)` (`:170`). Avec `autoJoin: false`, un `channelName` réactif
+        ne rebascule jamais, et ni l'option ni la section « Nom de canal réactif » ne le disent ;
+      · **`stopListening(event)` ne retire pas que les listeners dynamiques** : il appelle le
+        `stopListening` d'Echo (`:147`), qui coupe **tous** les handlers de cet event, y compris
+        ceux déclarés dans `options.listeners` — lesquels reviennent au re-join. Le retrait est
+        donc durable pour les dynamiques et silencieusement temporaire pour les statiques.
+      Sortie A pour les deux premiers (compléter la table, dire l'optimisme d'`isConnected`),
+      A ou C pour les deux suivants selon qu'on juge le couplage voulu.
+      Annotation : `docs/reference/use-reverb-channel.md` (table des valeurs retournées, options,
+      bonnes pratiques, § « Nom de canal réactif »)   (1 couche)
+      - [ ] Code — sans objet · - [ ] Doc · - [ ] Tests — sans objet (la doc n'est pas exécutée)
 
 ## Lot 1 — Code mort · sortie B
 
@@ -280,11 +322,13 @@ plusieurs de ces noms ont **déjà coûté des régressions**.
       « Sur une room publique la requête renvoie une ligne dès qu'un membre quelconque existe :
       **`true` pour tout le monde**. (Effet miroir : une room publique **vide** renvoie `false`,
       même à son propriétaire.) » Le nom ment dans les deux sens, sur un prédicat de sécurité.
-      `canJoinchatRoom` est le pire des trois : son `OPTIONAL MATCH` le rend **toujours vrai**.
-      ⚠️ **À traiter avec le lot sécurité en cours**, pas contre lui : voir
-      [webrtc2-securite-2026-08-14.md](webrtc2-securite-2026-08-14.md), tâches C2 et E4 — E4
-      corrige le comportement, ce renommage ne vient qu'après.
-      Annotation : `docs/modules/webrtc2/securite.md:274-279`
+      ✅ **E4.1 livrée le 21/08** : le comportement est corrigé et les gardes refusent par défaut,
+      donc le renommage est débloqué et ne porte plus que sur ces deux méthodes —
+      `canJoinchatRoom`, elle, exige désormais l'appartenance et son nom est juste.
+      Annotation : `docs/modules/webrtc2/securite.md`, piège 1 (« ne sont pas des prédicats
+      d'appartenance ») · `docs/architecture/signalisation.md`, note sous le tableau des canaux ·
+      `docs/architecture/package.md`, liste des gardes · `Socializable.php`, en-tête
+      `GARDES DE CANAL REVERB` + en-tête `GARDE DE RELATION`   (4 couches)
       - [ ] Code · - [ ] Doc · - [ ] Tests
 
 - [ ] **`socializer:build` est l'installateur, pas un bundler** · effort [S]
@@ -416,10 +460,16 @@ sortie C est immédiatement disponible, et elle vide beaucoup de doc.
       détachement, mais `group_user` porte `onDelete('cascade')` — supprimer un groupe ou un compte
       retire les lignes sans événement Eloquent et **laisse l'arête**. Un garde qui lit le graphe
       accorde alors un accès révoqué. Cadré dans
-      [webrtc2-securite-2026-08-14.md](webrtc2-securite-2026-08-14.md), **E4 point 3** — renvoyer,
-      ne pas dupliquer.
+      [webrtc2-securite-2026-08-14.md](webrtc2-securite-2026-08-14.md), **E4.2** — renvoyer, ne pas
+      dupliquer. Les deux autres moitiés de la famille en sont sorties le 21/08 : la lecture sur
+      panne est **fermée** (E4.1), l'écriture muette est **E7**. Cette entrée ne porte plus que la
+      dérive par cascade SQL.
       Annotation : `docs/modules/webrtc2/securite.md` (piège 2) ·
       `src/app/Helpers/ModelTraits/Socializable.php` (docblock de `sharesGroupWith`)
+
+- [ ] **Les écritures dans le graphe échouent en silence** — cadré dans
+      [webrtc2-securite-2026-08-14.md](webrtc2-securite-2026-08-14.md), **E7** (extraite d'E4 le
+      21/08). **Renvoyer, ne pas dupliquer.**
 
 - [ ] **Deux listeners homonymes sur `GroupUserCreated`** — celui du socle est un `handle()`
       entièrement commenté, celui de ce paquet fait le travail. Deux avertissements ⚠️ existent
@@ -427,6 +477,8 @@ sortie C est immédiatement disponible, et elle vide beaucoup de doc.
       une tâche 🟠 fausse). ⚠️ **Le code mort est dans un autre paquet** : la tâche appartient au
       socle — [`vendor/innovation/laravel-estarter/work/doc-rustines.md`](../../../innovation/laravel-estarter/work/doc-rustines.md),
       lot 1. La signaler ici, la traiter là-bas ; les deux annotations tombent quand elle est faite.
+      **Troisième copie retirée le 21/08** en condensant le docblock de `sharesGroupWith` ; restent
+      `securite.md` et ce docblock, une ligne chacun.
       Annotation : `docs/modules/webrtc2/securite.md` (⚠️ après le piège 2) ·
       `src/app/Helpers/ModelTraits/Socializable.php` (docblock de `sharesGroupWith`)
 

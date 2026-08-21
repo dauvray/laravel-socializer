@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Response;
 use Illuminate\Support\Facades\Broadcast;
+use Illuminate\Support\Facades\Log;
 use Dauvray\Estarter\app\Helpers\ModelTraits\Thumbnails;
 use Dauvray\Socializer\app\Http\Resources\MessageCollection;
 
@@ -29,15 +30,86 @@ class Chat
         $this->usersOnlineService = app('onlineUsers');
     }
 
-    public function checkRegistration($room_id)
+    /**
+     * Inscrit l'auteur d'un message dans le chat — seulement s'il y a déjà sa place.
+     *
+     * ⚠️ Sans garde, cette méthode contournait `canJoinchatRoom` : un POST sur
+     * `/send-chat-message` posait l'arête `registered_in` dans n'importe quel chat nommé, et le
+     * join suivant devenait légitime — de façon permanente. Corriger le garde du canal sans
+     * fermer ce chemin n'aurait rien fermé. Un garde n'est fermé que quand tous les chemins qui
+     * écrivent son état le sont aussi. L'inscription d'un tiers passe par
+     * `addContactToConversation`, jamais par ici.
+     *
+     * Le refus est un RETOUR, pas un `abort()` : les deux appelants ignorent la valeur, donc un
+     * booléen ne casse personne, alors qu'un `abort` depuis `createAndDispatchMessage` couperait
+     * la requête APRÈS l'écriture du message, du vertex et de deux arêtes, et AVANT la diffusion
+     * — un message à demi écrit, jamais diffusé. Refuser l'ÉCRITURE d'un message dans un chat
+     * dont on n'est pas membre est un correctif distinct.
+     *
+     * L'ordre des branches compte : « déjà inscrit » court-circuite le garde, pour que le chemin
+     * nominal — chaque message envoyé — ne paie pas un aller-retour Thrift de plus.
+     *
+     * @return bool `true` si l'appelant est, ou vient d'être, inscrit.
+     */
+    public function checkRegistration($room_id): bool
     {
         // is registered in chat
         $is_registred = $this->nebula->execute('GO FROM "'.$this->user->vertexid.'" OVER registered_in WHERE id($$) == "'.$room_id.'" YIELD id($$) AS destination');
 
-        if(!$is_registred) {
-           // user / chat relation
-           setRegisteredRelation($this->user->vertexid, $room_id);
+        // `execute()` rend un JsonResponse — un OBJET, donc truthy — quand nGQL échoue. Le
+        // `if(!$is_registred)` d'origine y lisait « déjà inscrit » et passait son chemin.
+        if (! is_array($is_registred)) {
+            Log::warning('checkRegistration : le graphe n\'a pas répondu, inscription refusée', [
+                'chat_vertexid' => $room_id,
+                'user_vertexid' => $this->user->vertexid,
+            ]);
+
+            return false;
         }
+
+        if ($is_registred !== []) {
+            return true;
+        }
+
+        if (! $this->user->canJoinchatRoom($room_id)) {
+            Log::warning('checkRegistration : inscription refusée dans un chat non joignable', [
+                'chat_vertexid' => $room_id,
+                'user_vertexid' => $this->user->vertexid,
+            ]);
+
+            return false;
+        }
+
+        // user / chat relation
+        setRegisteredRelation($this->user->vertexid, $room_id);
+
+        return true;
+    }
+
+    /**
+     * Inscrit l'appelant dans le chat d'un salon, si le SALON l'admet.
+     *
+     * Ce n'est pas une règle nouvelle : c'est exactement le garde que `channels.php` applique
+     * déjà au canal `room.{roomId}`. Le chat d'un salon hérite ainsi de la décision de son
+     * salon, au lieu d'être plus permissif que lui.
+     *
+     * ⚠️ Sans cette jambe, fermer `canJoinchatRoom` verrouillerait tout chat de salon pour
+     * quiconque ne l'a pas créé : `getOrcreateChatVertice` n'inscrit que dans sa branche de
+     * CRÉATION, et `ChatController::getOrcreateChatVertice` l'appelle sans valeurs — donc
+     * `createConversation` retombe sur `privacy => 1`.
+     *
+     * Méthode distincte de `getOrcreateChatVertice` pour être testable : celle-ci finit par
+     * `getConversation()`, qui lit les messages et pagine.
+     */
+    public function registerInRoomChat($room_id, $chat_vid): bool
+    {
+        if (! $this->user->canJoinRoom($room_id) && ! $this->user->isCreator($room_id)) {
+            return false;
+        }
+
+        setRegisteredRelation($this->user->vertexid, $chat_vid);
+
+        return true;
     }
 
     public function sendMessage( ?Request $request, $options = [], $is_bot_answer = false ) 
@@ -496,6 +568,9 @@ class Chat
 
             return $this->getConversation($chat_vid);
         }
+
+        // Le chat existe déjà : l'inscription du visiteur est déléguée au garde du salon.
+        $this->registerInRoomChat($room_id, $result[0]['id']);
 
        return $this->getConversation($result[0]['id']);
     }

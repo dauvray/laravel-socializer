@@ -92,51 +92,114 @@ trait Socializable
     |--------------------------------------------------------------------------
     */
 
-    // permissions
+    /*
+    |--------------------------------------------------------------------------
+    | GARDES DE CANAL REVERB
+    |--------------------------------------------------------------------------
+    |
+    | Consommés par src/routes/socializer/channels.php. Deux règles, load-bearing toutes
+    | les deux :
+    |
+    | 1. `execute()` ne lève JAMAIS : sur erreur nGQL il rend un JsonResponse — un OBJET,
+    |    donc truthy (cf. NebulaGraphConnection::responseJson). Un `if($result) return true`
+    |    transforme donc une panne de graphe en autorisation, et un `count($result)` sur ce
+    |    même objet lève un TypeError, soit un 500 à la place d'un refus. D'où le verdict
+    |    commun de `_checkCanJoin` / `_checkIsOwner` : ce qui n'est pas une réponse
+    |    exploitable est un refus. Même motif que `followsMutually` plus bas, écrit là en
+    |    premier.
+    | 2. `canJoinRoom` / `canJoinServer` ne sont PAS des prédicats d'appartenance : sur
+    |    `privacy == 0` la clause est vraie pour n'importe quel couple. Constat assumé, hors
+    |    périmètre du correctif du 21/08/2026 — docs/modules/webrtc2/securite.md, piège 1.
+    |    `canJoinchatRoom`, elle, l'est depuis cette date.
+    |
+    | Épinglé par tests/Feature/Channels/ChannelGuardTest.php.
+    |
+    */
 
-    public function canJoinchatRoom($vertex_id)
+    /**
+     * L'utilisateur courant peut-il rejoindre ce chat ?
+     *
+     * ⚠️ `MATCH` et NON `OPTIONAL MATCH` : NebulaGraph 3.8 REFUSE un `OPTIONAL MATCH` porteur
+     * d'un `WHERE` (« SyntaxError: Where clause in optional match is not supported »). Cette
+     * requête ne s'exécutait donc jamais — et comme `execute()` rend un JsonResponse truthy sur
+     * erreur, l'ancien `if($result)` en faisait une autorisation permanente. `channels.php`
+     * n'autorisant le canal `chat.{chatId}` que par ce garde, tout authentifié s'abonnait à
+     * n'importe quelle conversation privée. Forme désormais alignée sur celle de ses deux
+     * jumelles ci-dessous, et contre-vérifiée contre un vrai graphe le 21/08/2026.
+     *
+     * Contrairement à elles, celui-ci EST un prédicat d'appartenance sur un chat privé. Sur
+     * `privacy == 0` il reste ouvert à tous : c'est voulu, le chat d'un salon public l'est aussi.
+     */
+    public function canJoinchatRoom($vertex_id): bool
     {
        $result = app('nebulaGraph')->execute("
-            OPTIONAL MATCH (c:chat)<-[:registered_in]-(u:user) 
-            WHERE id(c) == '$vertex_id' AND (c.chat.privacy == 0 OR (c.chat.privacy == 1 AND id(u) == '$this->vertexid')) 
+            MATCH (c:chat)<-[:registered_in]-(u:user)
+            WHERE id(c) == '$vertex_id' AND (c.chat.privacy == 0 OR (c.chat.privacy == 1 AND id(u) == '$this->vertexid'))
             RETURN id(u)
         ");
 
-        if($result) {
-            return true;
-        }
-
-        return false;
+        return $this->_checkCanJoin($result, 'canJoinchatRoom', $vertex_id);
     }
 
-    public function canJoinServer($vertex_id)
+    public function canJoinServer($vertex_id): bool
     {
        $result = app('nebulaGraph')->execute("
-            MATCH (u:user)-[:registered_in]->(g:group)<-[:owned_by]-(s:server) 
-            WHERE id(s) == '$vertex_id' AND (s.server.privacy == 0 OR (s.server.privacy == 1 AND id(u) == '$this->vertexid')) 
+            MATCH (u:user)-[:registered_in]->(g:group)<-[:owned_by]-(s:server)
+            WHERE id(s) == '$vertex_id' AND (s.server.privacy == 0 OR (s.server.privacy == 1 AND id(u) == '$this->vertexid'))
             RETURN id(u)
         ");
 
-        if($result) {
-            return true;
-        }
-
-        return false;
+        return $this->_checkCanJoin($result, 'canJoinServer', $vertex_id);
     }
 
-    public function canJoinRoom($vertex_id)
+    public function canJoinRoom($vertex_id): bool
     {
        $result = app('nebulaGraph')->execute("
-            MATCH (r:room)<-[:registered_in]-(u:user) 
-            WHERE id(r) == '$vertex_id' AND (r.room.privacy == 0 OR (r.room.privacy == 1 AND id(u) == '$this->vertexid')) 
+            MATCH (r:room)<-[:registered_in]-(u:user)
+            WHERE id(r) == '$vertex_id' AND (r.room.privacy == 0 OR (r.room.privacy == 1 AND id(u) == '$this->vertexid'))
             RETURN id(u)
         ");
 
-        if($result) {
-            return true;
+        return $this->_checkCanJoin($result, 'canJoinRoom', $vertex_id);
+    }
+
+    /**
+     * Verdict commun aux trois gardes `canJoin*`. Trois cas, à ne surtout pas confondre.
+     *
+     *  - Non-tableau ⇒ `execute()` a rendu un JsonResponse : le graphe est tombé. Refus ET
+     *    `Log::warning`, parce qu'une panne d'infrastructure doit se voir. C'est ce cas qui a
+     *    effectivement fermé la fuite de `canJoinchatRoom`, dont la requête n'était même pas
+     *    valide.
+     *  - Aucune ligne exploitable ⇒ le graphe a répondu « personne ne correspond ». Refus SANS
+     *    warning : c'est un refus légitime, et journaliser chaque refus normal ferait crier le
+     *    journal en continu, donc ne signalerait plus rien. (L'inverse de `followsMutually`,
+     *    dont le `RETURN count(*) > 0` rend toujours une ligne — là, zéro ligne EST une panne.)
+     *  - Au moins une ligne exploitable ⇒ accès accordé.
+     *
+     * ⚠️ Le verdict porte sur les lignes EXPLOITABLES et non sur leur nombre : une ligne à
+     * `null` est le résidu d'un `OPTIONAL MATCH`, jamais une appartenance. C'est ce qui rend la
+     * garde robuste à la réintroduction d'un `OPTIONAL MATCH` ici ou dans un garde futur.
+     *
+     * ⚠️ Mais il ne porte pas sur la VALEUR des lignes : filtrer sur `$this->vertexid` fermerait
+     * tous les chats et salons publics, dont la clause `privacy == 0` fait remonter n'importe
+     * quel inscrit.
+     *
+     * ⚠️ `$vertex_id` reste non typé : `Chat::addContactToConversation` lui passe un
+     * `$request->get('chat')`, et un TypeError là serait un 500 au lieu d'un refus.
+     */
+    private function _checkCanJoin($result, string $guard, $vertex_id): bool
+    {
+        if (! is_array($result)) {
+            Log::warning($guard.' : le graphe n\'a pas répondu, refus par défaut', [
+                'guard' => $guard,
+                'vertex_id' => $vertex_id,
+                'user_vertexid' => $this->vertexid,
+            ]);
+
+            return false;
         }
 
-        return false;
+        return array_filter($result, static fn ($vertexid) => $vertexid !== null) !== [];
     }
 
     public function isCreator($vertex_id)
@@ -169,19 +232,38 @@ trait Socializable
         return $this->_checkIsOwner($result); 
     }
 
-    private function _checkIsOwner($result)
+    /**
+     * Verdict commun aux cinq gardes de propriété ci-dessus.
+     *
+     * ⚠️ `is_array()` AVANT tout accès : `count()` sur le JsonResponse que rend `execute()` en
+     * cas d'erreur nGQL lève un TypeError — donc un 500 là où un refus était attendu. Ce n'était
+     * pas atteignable tant que `canJoinRoom` était fail-open : sur les canaux `room.` et
+     * `questionnaire.`, `isCreator` est le SECOND terme d'un `||` qui ne s'évaluait jamais sur
+     * panne. Rendre `canJoinRoom` fail-closed sans durcir ceci aurait donc simplement échangé un
+     * accès accordé à tort contre une erreur 500.
+     *
+     * ⚠️ `isset($result[0])` et non `count($result)` : `phpunit.xml` porte `failOnWarning`, et un
+     * « Undefined array key 0 » suffit à faire sortir la suite en erreur.
+     *
+     * Comparaison lâche conservée telle quelle : les vids sont des chaînes rendues par le graphe,
+     * la resserrer serait un changement de comportement déguisé en durcissement.
+     */
+    private function _checkIsOwner($result): bool
     {
-        if(count($result)) {
-            $owner_id = $result[0];
+        if (! is_array($result)) {
+            Log::warning('Garde de propriété : le graphe n\'a pas répondu, refus par défaut', [
+                'guard' => '_checkIsOwner',
+                'user_vertexid' => $this->vertexid,
+            ]);
 
-            if($owner_id != $this->vertexid) {
-                return false;
-            }
-
-            return true;
+            return false;
         }
 
-        return false;
+        if (! isset($result[0])) {
+            return false;
+        }
+
+        return $result[0] == $this->vertexid;
     }
 
     /*
@@ -196,12 +278,12 @@ trait Socializable
     |
     | Règle produit tranchée le 15/08/2026 : « follow mutuel OU contexte partagé ».
     |
-    | ⚠️ Ne PAS confondre avec `canJoinRoom` / `canJoinServer` ci-dessus, qui gardent les
-    | canaux Reverb et ne sont pas des prédicats d'appartenance : dans les deux, `u` est
-    | n'importe quel utilisateur enregistré et non l'appelant, dont le `vertexid` ne pèse
-    | que sur la branche `privacy == 1`. Sur une room publique ils répondent `true` à tout
-    | le monde. Les réutiliser ici rendrait le garde contournable en nommant une room
-    | publique.
+    | ⚠️ Ne PAS confondre avec `canJoinRoom` / `canJoinServer` ci-dessus : ce sont des gardes
+    | de canal Reverb, pas des prédicats d'appartenance (sur `privacy == 0` ils répondent
+    | `true` à tout le monde). Les réutiliser ici rendrait le garde contournable en nommant
+    | une room publique. Le pourquoi : docs/modules/webrtc2/securite.md, « Deux pièges du
+    | graphe que ce garde contourne ». `canJoinchatRoom`, elle, exige l'appartenance depuis
+    | le 21/08/2026.
     |
     */
 
@@ -250,18 +332,14 @@ trait Socializable
     /**
      * Appartenance à un même groupe, lue dans MariaDB.
      *
-     * ⚠️ Pourquoi pas le graphe, alors que `canJoinServer` y lit la même notion
-     * (`(u:user)-[:registered_in]->(g:group)<-[:owned_by]-(s:server)`) : MariaDB est le maître,
-     * le graphe un réplica. Ce réplica EST synchronisé à l'attachement et au détachement — le
-     * pivot `GroupUser` émet ses événements (`->using()` est déclaré des deux côtés de la
-     * relation) et `Dauvray\Socializer\app\Listeners\GroupUser{Created,Deleted}Listener` pose
-     * puis retire l'arête. Mais `group_user` porte `onDelete('cascade')` sur ses deux clés
-     * étrangères : supprimer un groupe ou un compte retire les lignes SANS événement Eloquent
-     * et laisse l'arête en place. Le réplica dérive donc encore, dans le sens qui **accorde**.
+     * ⚠️ Pourquoi pas le graphe, alors que `canJoinServer` y lit la même notion : MariaDB est le
+     * maître, le graphe un réplica — synchronisé à l'attachement et au détachement, mais pas par
+     * la cascade SQL de `group_user`, qui laisse l'arête. Détail et conséquences :
+     * docs/modules/webrtc2/securite.md, piège 2. Décision du 15/08/2026, tenue depuis.
      *
-     * ⚠️ L'homonyme `Dauvray\Estarter\app\Listeners\GroupUserCreatedListener`, abonné au même
-     * événement par le provider du socle, est lui entièrement commenté — un `Log::info` mort.
-     * Le lire au lieu de celui de ce paquet fait conclure à tort que rien ne se propage.
+     * ⚠️ Deux `GroupUserCreatedListener` homonymes sont abonnés à l'événement ; celui d'estarter
+     * est mort, celui de ce paquet écrit l'arête. Lire le premier fait conclure à tort que rien ne
+     * se propage — l'erreur a déjà coûté une tâche de plan entière (16 → 18/08/2026).
      *
      * ⚠️ Requête directe et non `$this->groups()` : cette relation vit sur `EstarterUser`,
      * d'un paquet que le harnais de tests remplace par un stub qui lève.

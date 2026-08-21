@@ -36,9 +36,9 @@ Composable Vue 3 permettant de gérer simplement les canaux **Laravel Reverb / E
 ## Prérequis
 
 - **Vue 3** (Composition API)
-- **Laravel Echo** initialisé et exposé globalement comme `window.Echo` (par exemple via `bootstrap.js`)
+- **Laravel Echo** initialisé et exposé globalement comme `window.Echo` **par le projet hôte** — le paquet n'en fournit aucun amorçage, et le fichier qui s'en charge varie d'un hôte à l'autre
 - **Laravel Reverb** (ou Pusher-compatible) configuré côté backend
-- Les routes de canaux (`routes/channels.php`) correctement déclarées pour les canaux privés / présence / chiffrés
+- Les routes de canaux correctement déclarées pour les canaux privés / présence / chiffrés — dans ce paquet, `src/routes/socializer/channels.php` ([signalisation.md](../architecture/signalisation.md))
 
 > ⚠️ Le composable suppose que `Echo` est disponible globalement. Si vous l'importez localement, adaptez le fichier en ajoutant un `import Echo from 'laravel-echo'`.
 
@@ -46,9 +46,14 @@ Composable Vue 3 permettant de gérer simplement les canaux **Laravel Reverb / E
 
 ## Installation et import
 
+Le composable vit dans le paquet, à
+`src/resources/js/socializer/components/System/composables/useReverbChannel.js` — donc importé par
+l'alias `~socializer`, jamais en relatif ni par un autre alias
+([conventions.md](../architecture/conventions.md)).
+
 ```js
 // Dans n'importe quel composant Vue 3
-import { useReverbChannel, useReverbPresence } from '@/composables/useReverbChannel'
+import { useReverbChannel, useReverbPresence } from '~socializer/components/System/composables/useReverbChannel.js'
 ```
 
 ---
@@ -157,7 +162,7 @@ class AnnouncementPosted implements ShouldBroadcast
 ```vue
 <script setup>
 import { ref } from 'vue'
-import { useReverbChannel } from '@/composables/useReverbChannel'
+import { useReverbChannel } from '~socializer/components/System/composables/useReverbChannel.js'
 
 const announcements = ref([])
 
@@ -187,7 +192,7 @@ Pour des données réservées à un utilisateur authentifié (ex. : notification
 #### Backend
 
 ```php
-// routes/channels.php
+// src/routes/socializer/channels.php (dans ce paquet)
 Broadcast::channel('orders.{orderId}', function ($user, $orderId) {
     return $user->id === Order::find($orderId)->user_id;
 });
@@ -209,7 +214,7 @@ class OrderStatusUpdated implements ShouldBroadcast
 ```vue
 <script setup>
 import { ref } from 'vue'
-import { useReverbChannel } from '@/composables/useReverbChannel'
+import { useReverbChannel } from '~socializer/components/System/composables/useReverbChannel.js'
 
 const props = defineProps({ orderId: { type: Number, required: true } })
 const status = ref('pending')
@@ -237,7 +242,7 @@ Le plus riche : permet de connaître la liste des utilisateurs présents, qui re
 #### Backend
 
 ```php
-// routes/channels.php
+// src/routes/socializer/channels.php (dans ce paquet)
 Broadcast::channel('room.{roomId}', function ($user, $roomId) {
     if ($user->canAccessRoom($roomId)) {
         return ['id' => $user->id, 'name' => $user->name, 'avatar' => $user->avatar];
@@ -261,7 +266,7 @@ class MessageSent implements ShouldBroadcast
 ```vue
 <script setup>
 import { ref } from 'vue'
-import { useReverbChannel } from '@/composables/useReverbChannel'
+import { useReverbChannel } from '~socializer/components/System/composables/useReverbChannel.js'
 
 const props = defineProps({ roomId: { type: Number, required: true } })
 const messages = ref([])
@@ -333,7 +338,7 @@ Identique au canal privé mais avec chiffrement de bout en bout (nécessite la c
 
 ```vue
 <script setup>
-import { useReverbChannel } from '@/composables/useReverbChannel'
+import { useReverbChannel } from '~socializer/components/System/composables/useReverbChannel.js'
 
 useReverbChannel(`secure.user.${window.userId}`, {
   type: 'encrypted',
@@ -358,7 +363,7 @@ Le composable observe `channelName` : si vous passez un `ref` ou un `computed`, 
 ```vue
 <script setup>
 import { ref, computed } from 'vue'
-import { useReverbChannel } from '@/composables/useReverbChannel'
+import { useReverbChannel } from '~socializer/components/System/composables/useReverbChannel.js'
 
 const currentRoomId = ref(1)
 const channelName = computed(() => `room.${currentRoomId.value}`)
@@ -385,7 +390,7 @@ Utile lorsque vous voulez ajouter / retirer des listeners en cours de vie du com
 
 ```vue
 <script setup>
-import { useReverbChannel } from '@/composables/useReverbChannel'
+import { useReverbChannel } from '~socializer/components/System/composables/useReverbChannel.js'
 
 const { listen, stopListening } = useReverbChannel('feed', { type: 'public' })
 
@@ -409,7 +414,7 @@ Les *whispers* permettent de diffuser un évènement directement entre clients, 
 
 ```vue
 <script setup>
-import { useReverbChannel } from '@/composables/useReverbChannel'
+import { useReverbChannel } from '~socializer/components/System/composables/useReverbChannel.js'
 
 const { whisper } = useReverbChannel('doc.42', {
   type: 'presence',
@@ -440,7 +445,7 @@ Le canal privé / présence d'un utilisateur (`App.Models.User.{id}`) reçoit se
 
 ```vue
 <script setup>
-import { useReverbChannel } from '@/composables/useReverbChannel'
+import { useReverbChannel } from '~socializer/components/System/composables/useReverbChannel.js'
 
 useReverbChannel(`App.Models.User.${window.userId}`, {
   type: 'private',
@@ -462,7 +467,7 @@ Si vous souhaitez déclencher le `join` plus tard (après chargement d'un user, 
 ```vue
 <script setup>
 import { ref } from 'vue'
-import { useReverbChannel } from '@/composables/useReverbChannel'
+import { useReverbChannel } from '~socializer/components/System/composables/useReverbChannel.js'
 
 const showChat = ref(false)
 
@@ -494,7 +499,7 @@ const closeChat = () => {
 
 ```vue
 <script setup>
-import { useReverbChannel } from '@/composables/useReverbChannel'
+import { useReverbChannel } from '~socializer/components/System/composables/useReverbChannel.js'
 
 const { error } = useReverbChannel('admin.metrics', {
   type: 'private',
@@ -532,7 +537,7 @@ channel()?.subscribed(() => console.log('Souscrit !'))
 Raccourci équivalent à `useReverbChannel(name, { type: 'presence', ...rest })`.
 
 ```js
-import { useReverbPresence } from '@/composables/useReverbChannel'
+import { useReverbPresence } from '~socializer/components/System/composables/useReverbChannel.js'
 
 const { users, isConnected } = useReverbPresence('room.lobby', {
   listeners: {
@@ -563,11 +568,11 @@ const { users, isConnected } = useReverbPresence('room.lobby', {
 | Symptôme                                    | Cause probable                                          | Solution |
 |---------------------------------------------|---------------------------------------------------------|----------|
 | Aucun event reçu                            | Oubli du `.` devant le nom de l'event                   | `'.MessageSent'` au lieu de `'MessageSent'` |
-| Erreur 403 sur canal privé                  | Route `routes/channels.php` manquante ou autorisation refusée | Vérifier la route et la closure d'auth |
+| Erreur 403 sur canal privé                  | Déclaration manquante dans `src/routes/socializer/channels.php`, ou autorisation refusée | Vérifier la déclaration et la closure d'auth |
 | `users` reste vide                          | Le type n'est pas `presence`                            | Passer `type: 'presence'` |
 | Whisper ignoré                              | Canal public utilisé                                    | Les whispers nécessitent private / presence / encrypted |
 | Listeners perdus après changement de canal  | Listener ajouté manuellement via `channel().listen()`    | Utiliser `listen()` du composable (persistant) |
-| `Echo is not defined`                       | Echo non exposé globalement                             | Vérifier `window.Echo = new Echo(...)` dans `bootstrap.js` |
+| `Echo is not defined`                       | Echo non exposé globalement                             | Vérifier que l'hôte fait bien `window.Echo = new Echo(...)` — le paquet ne l'initialise pas |
 | Double abonnement                           | `join()` appelé deux fois sans `leave()`                | Le composable filtre déjà si `currentName === newName` ; vérifier le code applicatif |
 
 ---

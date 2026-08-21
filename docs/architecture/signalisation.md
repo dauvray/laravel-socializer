@@ -17,14 +17,29 @@ TURN coturn).
 | Canal | Type | Autorisation | Usage |
 |---|---|---|---|
 | `App.Models.User.{userId}` | privé | `$user->id === $userId` | **toute la signalisation WebRTC2** |
-| `chat.{chatId}` | présence | `canJoinchatRoom()` | messages de chat, liste `users` |
+| `chat.{chatId}` | présence | `canJoinchatRoom()` — appartenance au chat | messages de chat, liste `users` |
 | `room.{roomId}` | présence | `canJoinRoom()` ou `isCreator()` | rooms de serveur |
 | `server.{serverId}` | présence | `canJoinServer()` | liste des membres d'un serveur |
-| `questionnaire.{roomId}` | présence | `canJoinRoom()` ou `isCreator()` | questionnaires |
+| `questionnaire.{roomId}` | **privé** | `canJoinRoom()` ou `isCreator()` | questionnaires |
 
 Les canaux de présence retournent une `UserResource` — c'est elle qui alimente la prop `users` des
-composants. Les méthodes `canJoin*` viennent du trait `Socializable`
-(`src/app/Helpers/ModelTraits/`) et interrogent NebulaGraph.
+composants. ⚠️ `questionnaire.{roomId}` en retourne une aussi mais est consommé en `Echo.private()`
+(`Data/QuestionnaireComponent.vue`, et son émetteur `Events/QuestionnaireAnswered.php` rend un
+`PrivateChannel`) : seule la véracité du retour compte, la ressource est construite pour rien.
+
+Les méthodes `canJoin*` viennent du trait `Socializable` (`src/app/Helpers/ModelTraits/`) et
+interrogent NebulaGraph. **Un graphe muet vaut un refus** : `execute()` rend un `JsonResponse`
+*truthy* sur erreur nGQL et ne lève jamais — les quatre gardes traitent donc toute réponse
+inexploitable comme une absence de droit (`ChannelGuardTest`). ⚠️ `canJoinRoom` / `canJoinServer`
+restent des gardes de canal et **non** des prédicats d'appartenance : sur `privacy == 0` ils
+répondent `true` à tout le monde
+([securite.md](../modules/webrtc2/securite.md)).
+
+⚠️ Envoyer un message n'inscrit plus son auteur dans le chat : `Chat::checkRegistration` refuse
+d'inscrire un appelant que le chat ne connaît pas, et l'entrée dans le chat d'un salon est déléguée
+au garde du salon (`Chat::registerInRoomChat`). Sans ces gardes, un POST de message posait l'arête
+`registered_in` et rouvrait au join suivant le canal que `canJoinchatRoom` venait de fermer
+(`ChatRegistrationTest`).
 
 Côté JS, la souscription passe par `useReverbChannel` / `useReverbPresence` —
 voir [reference/use-reverb-channel.md](../reference/use-reverb-channel.md).
