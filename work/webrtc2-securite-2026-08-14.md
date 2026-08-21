@@ -22,18 +22,20 @@ C3 ──> C4 ──> C2 ──┬─> E3     (tous sur UserController — à s�
 B3, C1                        (indépendants)
 D1 ──> D2
 E7 ──> E4.2
-E1, E2, E5, E6                (indépendants)
+E1, E2, E5, E6, E8            (indépendants)
 F1                            (dernier)
 ```
 
-`A` est bloquant. `B3`, `C1`, `C3`, `E1`, `E2`, `E6`, `E7` ne bloquent personne : à intercaler
-librement.
+`A` est bloquant. `B3`, `C1`, `C3`, `E1`, `E2`, `E6`, `E7`, `E8` ne bloquent personne : à intercaler
+librement. **E8 est la seule à toucher la charge utile `users`** : ne pas la sérialiser avec le
+lot B, qui l'interprète.
 
 Les lots A, B et C sont **terminés**, ainsi que **C5** (le bouton d'appel), **E5** (le libellé du
 refus) — 15 et 16/08 — et **E4.1** le 21/08 : la plus grave des tâches ouvertes est fermée. Restent :
 **D** (TURN, requiert une modif d'infra coturn), **E1**, **E2**, la part `getUsersList` d'**E3**,
 **E4.2** (dérive du réplica, arbitrage à produire), **E6** (périmètre estarter), **E7** (extraite
-d'E4 : les écritures d'arête échouent en silence) et **F1** en clôture.
+d'E4 : les écritures d'arête échouent en silence), **E8** (ajoutée le 21/08 : la présence diffuse
+le bloc privé de chaque membre) et **F1** en clôture.
 
 ---
 
@@ -1415,6 +1417,55 @@ corrige.
 **Tests :** deux toasts identiques dans la fenêtre ⇒ un seul affiché · deux messages différents
 ⇒ deux affichés · un 429 produit un toast. Nécessite d'élargir `include` côté hôte.
 **Commit :** `fix(estarter): ne pas répéter le même toast, et ne plus taire un 429`
+
+---
+
+### E8 — La présence Reverb diffuse le bloc privé de chaque membre `[M]` 🟠 — ajoutée le 21/08/2026
+
+- [ ] **Dépend de :** rien. Mais elle modifie la charge utile `users` que consomme WebRTC2 :
+      **ne pas la mener en parallèle d'une tâche du lot B**.
+
+Les trois canaux de présence — `server.{serverId}`, `room.{roomId}`, `chat.{chatId}` — renvoient
+`new UserResource($user)` depuis [`channels.php`](../src/routes/socializer/channels.php). Cette
+ressource délègue à `EstarterUserResource`, qui garde bien son bloc privé derrière
+`if ($this->id === Auth::user()?->id)`.
+
+**Le garde n'est pas faux : c'est le contexte qui le désarme.** La ressource est construite pendant
+la requête `/broadcasting/auth` **du membre lui-même**, donc `Auth::user()` y est toujours ce
+membre — la branche privée gagne systématiquement. Reverb stocke ce `user_info` par connexion, puis
+le diffuse à **tous les autres membres** via `here` et `member_added`.
+
+Mesuré le 21/08 sur `presence-server.0e64e1713d940` — charge utile de `joe bar` telle que la reçoit
+`admin` :
+
+```
+email               => 'utilisateur@estarter.com'
+roles               => ["Utilisateur"]
+permissions         => ["display_user_questionnaire","update_user_questionnaire"]
+groups              => [{"name":"Innovation","is_leader":false,"server_id":"0e64e1713d940"}]
+unreadNotifications => 0
+```
+
+C'est le même motif que C2 et E4.1, une marche plus loin : **un garde qui dépend de
+`Auth::user()` ne veut plus rien dire dans un contexte où `Auth::user()` est toujours le sujet de
+la donnée.** Le périmètre d'une ressource de diffusion doit être décidé par la ressource, pas par
+l'identité de la requête qui l'a fabriquée.
+
+Corollaire sans gravité mais piégeur : **`is_me` vaut `true` pour toutes les entrées** d'une liste
+de présence. Il reste juste sur une charge utile **HTTP** (`ThumbnailWidget`, `Cover` s'en servent
+légitimement) — c'est la présence, et elle seule, qui le retourne. Consigné dans
+[`docs/architecture/signalisation.md`](../docs/architecture/signalisation.md).
+
+- Ressource de présence dédiée (`PresenceUserResource`) dont le périmètre ne dépend d'aucune
+  identité de requête, au lieu de dériver d'une ressource à géométrie variable.
+- ⚠️ **Inventorier les consommateurs avant de retirer un champ.** Relevé du 21/08 sur les listes
+  de présence : `slug` (10 lectures), `id` (5), `name` (1) — plus `Gravatar`, qui lit `image` et
+  `gravatar`. `slug` est le pivot de l'admission des pairs WebRTC2 : un champ retiré à l'aveugle
+  casse une poignée de main, pas seulement un affichage.
+
+**Tests :** la charge utile de présence ne contient ni `email`, ni `roles`, ni `permissions`, ni
+`groups` · elle contient encore `slug`/`id`/`name`/`image` · `is_me` absent plutôt que trompeur.
+**Commit :** `secu(socializer): ressource de présence sans bloc privé`
 
 ---
 
