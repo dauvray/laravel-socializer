@@ -68,8 +68,10 @@ namespace Dauvray\Socializer\app\Helpers;
 
 use Illuminate\Database\Connection;
 
+use Dauvray\Socializer\app\Exceptions\NebulaGraphException;
 use Dauvray\Socializer\app\Helpers\NebulaGraphClient;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Log;
 
 class NebulaGraphConnection extends Connection {
 
@@ -106,11 +108,19 @@ class NebulaGraphConnection extends Connection {
 
     protected $query = [];
 
-    public function __construct(array $config) 
+    /**
+     * @param  NebulaGraphClient|null  $client  Client injecté — RÉSERVÉ AUX TESTS.
+     *
+     * Sans ce paramètre, la classe est intestable : le constructeur ouvre un `TSocket`, donc
+     * aucun test ne peut exercer le décodage de réponse ni la levée sur écriture. Les deux sites
+     * de production (`ServiceProvider::register` et `SendPostToFollowers`) ne le passent pas et
+     * n'ont pas à le connaître.
+     */
+    public function __construct(array $config, ?NebulaGraphClient $client = null)
     {
         $this->config = $config;
 
-        $this->nebula = new NebulaGraphClient($config['host'], $config['port'], $config['options']);
+        $this->nebula = $client ?? new NebulaGraphClient($config['host'], $config['port'], $config['options']);
         $this->nebula->authenticate($config['username'], $config['password']);
         $this->nebula->execute('USE '. $config['space']);
         $this->partition_num = $config['partition'];
@@ -146,26 +156,122 @@ class NebulaGraphConnection extends Connection {
         return $matches;
     }
 
-    public function responseJson($response)
+    /**
+     * @param  string|null  $stmt  le nGQL à l'origine de la réponse, pour le journal.
+     */
+    public function responseJson($response, ?string $stmt = null)
     {
-        $response = json_decode($response);
+        $decoded = json_decode($response);
 
-        if($response->errors[0]->code != 0) {
-            return response()->json($response->errors[0], 500);
+        // `'execute'` et non `'read'` : le DDL emprunte lui aussi ce chemin, et étiqueter un
+        // `CREATE TAG` comme une lecture serait faux. Ce que l'étiquette dit vraiment, c'est
+        // « chemin non levant » — la requête, dans le contexte, dit le reste.
+        $error = $this->errorIn($decoded, 'execute', $stmt);
+
+        if($error !== null) {
+            return response()->json($error, 500);
         }
 
+        return $this->rowsOf($decoded);
+    }
+
+    /**
+     * Détecte l'erreur nGQL, la JOURNALISE, et la renvoie — ou `null` si tout va bien.
+     *
+     * Point de journal UNIQUE du graphe : lectures, écritures et DDL y passent. C'est ce qui
+     * ferme le trou d'observabilité d'E7, indépendamment de qui lève et qui ne lève pas — les
+     * ~80 sites d'écriture qui jettent leur valeur de retour deviennent visibles ici, sans qu'un
+     * seul d'entre eux ait à changer.
+     *
+     * Couvre aussi le cas que le `errors[0]->code` d'origine ne couvrait pas : une réponse que
+     * `json_decode` ne sait pas lire (transport dégradé, 502 d'un proxy). `null->errors[0]->code`
+     * y produisait une cascade de warnings PHP puis concluait `code == 0`, c'est-à-dire SUCCÈS —
+     * une réponse illisible était donc indistinguable d'une lecture vide légitime.
+     *
+     * @param  string  $operation  `'execute'` pour le chemin non levant (lectures et DDL), ou le
+     *                             nom de la méthode DML pour une écriture.
+     */
+    private function errorIn($decoded, string $operation, ?string $stmt): ?object
+    {
+        $error = null;
+
+        if(!is_object($decoded) || !isset($decoded->errors[0])) {
+            $error = (object) ['code' => -1, 'message' => 'Réponse NebulaGraph illisible'];
+        } elseif($decoded->errors[0]->code != 0) {
+            $error = $decoded->errors[0];
+        }
+
+        if($error === null) {
+            return null;
+        }
+
+        Log::error('nGQL refusé par NebulaGraph', NebulaGraphException::contextFor(
+            $operation,
+            (int) $error->code,
+            (string) ($error->message ?? ''),
+            $stmt
+        ));
+
+        return $error;
+    }
+
+    /**
+     * Déplie les lignes d'une réponse en succès. Rend `[]` pour tout INSERT / UPDATE / DELETE /
+     * DDL, qui ne rendent jamais de ligne.
+     */
+    private function rowsOf($decoded): array
+    {
         $graphData = [];
-    
-        foreach($response->results as $spacename) {
+
+        foreach($decoded->results ?? [] as $spacename) {
             if(isset($spacename->data)) {
-              
+
                 foreach($spacename->data as $idx_item => $item) {
                     $graphData[] = $this->formatValues($item, $idx_item, $spacename->columns);
                 }
-            } 
+            }
         }
 
         return $graphData;
+    }
+
+    /**
+     * Exécute une ÉCRITURE : journalise puis LÈVE si le graphe refuse.
+     *
+     * L'asymétrie avec `execute()` est le cœur d'E7, et elle est délibérée — une lecture ratée
+     * doit se dégrader en refus, une écriture ratée ne doit pas se dégrader du tout :
+     *
+     *  - LECTURES : contrat inchangé. `execute()` rend un `JsonResponse` truthy, que les quatre
+     *    gardes d'E4.1 traitent comme une absence de droit (`_checkCanJoin`, `_checkIsOwner`,
+     *    `followsMutually`, `Chat::checkRegistration`). Les faire lever rendrait ces branches
+     *    inatteignables : une panne de graphe deviendrait un 500 à la place d'un 403.
+     *  - ÉCRITURES : lèvent. Une valeur de retour, ça s'ignore — c'est précisément le bug, sur
+     *    ~80 des ~95 sites. Une exception, non.
+     *  - DDL : journalise sans lever. Le schéma NebulaGraph est asynchrone (d'où les trois
+     *    `sleep()` de la migration `create_nebula`), une erreur transitoire y est normale, et
+     *    `IF NOT EXISTS` rend les relances idempotentes. Lever ferait échouer `migrate` sur un
+     *    space à moitié bâti, sans rollback exploitable.
+     *
+     * @param  string  $operation  `__FUNCTION__` de la méthode DML appelante.
+     *
+     * @throws NebulaGraphException
+     */
+    private function executeWrite(string $operation, string $query): array
+    {
+        $decoded = json_decode($this->nebula->executeJson($query));
+
+        $error = $this->errorIn($decoded, $operation, $query);
+
+        if($error !== null) {
+            throw NebulaGraphException::writeRefused(
+                $operation,
+                (int) $error->code,
+                (string) ($error->message ?? ''),
+                $query
+            );
+        }
+
+        return $this->rowsOf($decoded);
     }
 
     public function formatValues($item, $idx, $columns)
@@ -231,8 +337,8 @@ class NebulaGraphConnection extends Connection {
      * @param string $stmt
      */
     public function execute(string $stmt)
-    {  
-         $res = $this->responseJson($this->nebula->executeJson($stmt));
+    {
+         $res = $this->responseJson($this->nebula->executeJson($stmt), $stmt);
         //\Log::debug('NebulaGraph Query: '. $stmt.' Result: '.json_encode($res));
         return $res;
     }
@@ -375,9 +481,19 @@ class NebulaGraphConnection extends Connection {
 
         $query = 'INSERT VERTEX IF NOT EXISTS '. $label .' ('. implode(',', $keys) .') VALUES '. implode(',', $items);
 
-        $result = $this->execute($query);
+        $this->executeWrite(__FUNCTION__, $query);
 
-        return is_array($result) && count($result) ? $result : $items;
+        // `$items` — les fragments `"vid":(…)` construits plus haut — est le contrat de retour,
+        // lu par `getVertexIdFromInsert()` et par le `preg_match` de `Services/Comments.php:90`.
+        //
+        // Il l'a toujours été, mais par accident et à double sens : le `is_array($result) &&
+        // count($result) ? $result : $items` d'avant E7 y retombait en SUCCÈS (un INSERT ne rend
+        // jamais de ligne, donc `count()` valait 0) COMME en échec (l'erreur n'était pas un
+        // tableau). Succès et échec rendaient la même valeur, et les appelants en extrayaient un
+        // vid qu'ils écrivaient en MySQL/Mongo — pointant, en cas d'échec, vers un sommet
+        // inexistant. La levée ci-dessus est ce qui rend ce retour honnête : on n'arrive ici que
+        // si le graphe a accepté.
+        return $items;
     }
 
     public function updateVertex(string $label = "default", $vertex_id = null, array $values = [])
@@ -389,20 +505,41 @@ class NebulaGraphConnection extends Connection {
             $updates[] = $label.'.'.$key.' = '. $this->stringFormat($value);
         }
 
+        // Aucune propriété à poser : `SET ` vide est un nGQL invalide. Cf. le garde de
+        // `deleteVertex` ci-dessous pour le raisonnement.
+        if($updates === []) {
+            return [];
+        }
+
         $query = 'UPDATE VERTEX ON '. $label .' "'. $vertex_id .'" SET '. implode(',', $updates);
 
-        return $this->execute($query);
+        return $this->executeWrite(__FUNCTION__, $query);
     }
 
     public function deleteVertex(array $vids = [], bool $with_edge = false)
     {
+        // « Supprimer rien » est un no-op, pas une erreur.
+        //
+        // Sans ce garde, une liste vide produit `DELETE VERTEX  WITH EDGE` — un nGQL invalide,
+        // absorbé en silence avant E7 puisque personne ne lisait la valeur de retour. Le cas
+        // n'est pas théorique : `Services/Feed.php:281` supprime les commentaires d'un post sans
+        // garder la liste, alors que la ligne d'à côté garde bien son `count($share_ids)`. Un
+        // post SANS COMMENTAIRE y passe donc systématiquement.
+        //
+        // Le garde va ici, dans la couture, et non chez les appelants : le contrat « une liste
+        // vide ne produit aucune requête » vaut pour les quatre méthodes concernées, et la faire
+        // respecter site par site laisserait le prochain appelant le réintroduire.
+        if($vids === []) {
+            return [];
+        }
+
         $query = 'DELETE VERTEX '. implode(',', $this->stringFormatArray($vids));
-        
+
         if($with_edge) {
             $query .= ' WITH EDGE';
         }
 
-        return $this->execute($query);
+        return $this->executeWrite(__FUNCTION__, $query);
     }
 
     /*---------------------------------- EDGE ----------------------------------------*/
@@ -415,6 +552,12 @@ class NebulaGraphConnection extends Connection {
 
     public function insertEdge(string $label = "default", array $values = [])
     {
+        // Cf. le garde de `deleteVertex`. Ici la liste vide ne produit pas seulement un nGQL
+        // invalide : `array_values($values)[0]` lève d'abord un « Undefined array key 0 ».
+        if($values === []) {
+            return [];
+        }
+
         $items = [];
         $keys = [];
 
@@ -443,7 +586,7 @@ class NebulaGraphConnection extends Connection {
 
         $query = 'INSERT EDGE '. $label .' ('. implode(',', $keys) .') VALUES '. implode(',', $items);
 
-        return $this->execute($query);
+        return $this->executeWrite(__FUNCTION__, $query);
     }
 
     public function updateEdge(string $label = "default", string $direction, array $values = [])
@@ -456,11 +599,16 @@ class NebulaGraphConnection extends Connection {
 
         $query = 'UPDATE EDGE "'. $matches[1] .'" '. $matches[2] .' "'. $matches[3]  .'" OF '. $label . ' SET '. implode(',', $updates);
 
-        return $this->execute($query);
+        return $this->executeWrite(__FUNCTION__, $query);
     }
 
     public function deleteEdge(string $label = "default", array $directions = [])
     {
+        // Cf. le garde de `deleteVertex`.
+        if($directions === []) {
+            return [];
+        }
+
         $updates = [];
 
         foreach($directions as $direction) {
@@ -471,7 +619,7 @@ class NebulaGraphConnection extends Connection {
 
         $query = 'DELETE EDGE '. $label .' '. implode(',', $updates);
 
-        return $this->execute($query);
+        return $this->executeWrite(__FUNCTION__, $query);
     }
 
     public function dropEdge(string $name = "default")

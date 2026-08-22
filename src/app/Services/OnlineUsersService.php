@@ -4,6 +4,7 @@ namespace Dauvray\Socializer\app\Services;
 
 use Illuminate\Support\Facades\Auth;
 use App\Models\User;
+use Dauvray\Socializer\app\Exceptions\NebulaGraphException;
 
 
 class OnlineUsersService implements \Dauvray\Estarter\app\Contracts\OnlineUsersServiceInterface
@@ -29,7 +30,18 @@ class OnlineUsersService implements \Dauvray\Estarter\app\Contracts\OnlineUsersS
         $expireAt = now()->addMinutes(2)->timestamp;
 
         $this->redisService->zAdd($this->online_key, [$user->id => $expireAt]);
-        $this->nebula->updateVertex(config('socializer.nebulagraph.tags.user.name'), 'user' . $user->id, ['connected' => 1]);
+
+        // Rattrapage MUET, et c'est délibéré : la couture a DÉJÀ journalisé l'erreur en `error`.
+        // Ce chemin est le battement de présence — un ping par client toutes les quelques
+        // secondes —, donc un second message ici ferait crier le journal en continu et ne
+        // signalerait plus rien. Même raisonnement que le refus sans warning d'E4.1.
+        //
+        // Redis est la source de vérité de la présence ; la colonne `connected` du graphe n'en
+        // est qu'un reflet, et l'échec de son écriture ne doit pas 500 un heartbeat.
+        try {
+            $this->nebula->updateVertex(config('socializer.nebulagraph.tags.user.name'), 'user' . $user->id, ['connected' => 1]);
+        } catch (NebulaGraphException) {
+        }
     }
 
     public function removeUserOnlineStatus( int|string|null $user_id = null, User|null $user = null) : void
@@ -52,7 +64,14 @@ class OnlineUsersService implements \Dauvray\Estarter\app\Contracts\OnlineUsersS
 
         // delete user presence
         $this->redisService->del("user:$userId:presence");
-        $this->nebula->updateVertex(config('socializer.nebulagraph.tags.user.name'), 'user' . $userId, ['connected' => 0]);
+
+        // Cf. `updateUserOnlineStatus` pour le silence assumé. Ici le rattrapage a un second
+        // effet : `removeAllOutdatedUsersOnlineStatus` boucle sur cette méthode, et sans lui un
+        // seul utilisateur en échec avorterait tout le balayage des présences périmées.
+        try {
+            $this->nebula->updateVertex(config('socializer.nebulagraph.tags.user.name'), 'user' . $userId, ['connected' => 0]);
+        } catch (NebulaGraphException) {
+        }
     }
 
     public function isOnlineUser(int|string|null $user_id = null, User|null $user = null) : bool

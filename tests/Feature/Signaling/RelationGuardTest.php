@@ -329,8 +329,8 @@ class RelationGuardTest extends TestCase
     public function un_graphe_muet_refuse_au_lieu_de_planter(mixed $reponse): void
     {
         // `response()` a besoin de l'application : impossible dans un fournisseur statique,
-        // d'où le `null` sentinelle résolu ici.
-        $this->fakeNebulaGraph()->always($reponse ?? response()->json(['code' => -1005], 500));
+        // d'où le `null` sentinelle résolu ici, par le `grapheMuet()` du `TestCase`.
+        $this->fakeNebulaGraph()->always($reponse ?? $this->grapheMuet());
 
         [$alice, $mallory] = $this->makeStrangers();
 

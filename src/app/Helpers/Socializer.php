@@ -4,6 +4,7 @@ use Dauvray\Socializer\app\Helpers\ContentFormater;
 use Illuminate\Support\Facades\Auth;
 use \Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Broadcast;
+use Illuminate\Support\Facades\Log;
 
 if (!function_exists('formatTextToContent')) {
     function formatTextToContent($text) {
@@ -252,15 +253,25 @@ if(!function_exists('setGroupHasParentRelation')) {
             ";
             $result = $nebula->execute($query);
 
+            // `execute()` ne lève pas : sur panne il rend un `JsonResponse`, et un `foreach`
+            // dessus fait zéro tour en silence — le détachement du parent passait donc pour
+            // effectué.
+            if (!is_array($result)) {
+                Log::warning('setGroupHasParentRelation : parent non détaché, le graphe n\'a pas répondu', [
+                    'group_vertexid' => getVertexId($group),
+                ]);
+
+                return;
+            }
+
             foreach ($result as $row) {
-                $src = $row['src'];
-                $dst = $row['dst'];
-
-                $deleteQuery = "
-                    DELETE EDGE registered_in '$src' -> '$dst';
-                ";
-
-                $nebula->execute($deleteQuery);
+                // Passe par la méthode DML plutôt que par un `DELETE EDGE` en nGQL brut :
+                // `getEdgeDirection` régénère exactement la même requête, et le site devient
+                // levant comme les autres écritures. C'était le seul du paquet à ne pas l'être.
+                $nebula->deleteEdge(
+                    config('socializer.nebulagraph.edges.registered_in.name'),
+                    [$row['src'].'->'.$row['dst']]
+                );
             }
         }
     } 

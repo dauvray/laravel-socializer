@@ -3,6 +3,7 @@
 namespace Dauvray\Socializer\app\Services;
 
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 use Dauvray\Socializer\app\Models\Post;
 use Dauvray\Socializer\app\Http\Resources\PostCollection;
 use Dauvray\Socializer\app\Http\Resources\Post as PostResource; 
@@ -277,8 +278,20 @@ class Feed
         $feed_followers = $this->nebula->execute("MATCH (p:post)-[:published_in]->(f:feed) WHERE id(p) == '$vid' RETURN f");
 
         // delete post comments
+        //
+        // Le cas « post sans commentaire » est couvert par la couture : une liste vide n'émet
+        // aucune requête. Reste la LECTURE ci-dessus, qui ne lève pas et rend un `JsonResponse`
+        // sur panne — `deleteVertex` le recevrait alors sur un paramètre typé `array`, donc un
+        // `TypeError`. Un graphe muet ne doit pas empêcher la suppression du post lui-même.
         $comments = app('nebulaGraph')->execute("GO 1 TO 25 STEPS FROM '$vid' OVER reply_of REVERSELY YIELD src(edge)");
-        app('nebulaGraph')->deleteVertex($comments, true);
+
+        if(is_array($comments)) {
+            app('nebulaGraph')->deleteVertex($comments, true);
+        } else {
+            Log::warning('deleteFeedPost : commentaires non supprimés, le graphe n\'a pas répondu', [
+                'post_vertexid' => $vid,
+            ]);
+        }
 
         // delete post in Nebula
         $this->nebula->deleteVertex([$vid], true);

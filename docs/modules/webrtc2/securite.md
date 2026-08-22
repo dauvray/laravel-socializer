@@ -302,14 +302,47 @@ trois faiblesses des gardes de canal que le correctif du 21/08/2026 n'a pas ferm
 > trou **accorde** au lieu de refuser, donc personne ne s'en plaint et il dérive d'autant plus que le
 > temps passe. Le follow y reste lu : c'est la seule donnée dont le graphe est bien le maître.
 
-> **Corollaire refermé le 21/08/2026 : un graphe qui ne répond pas vaut un refus.** `execute()` ne
-> lève jamais — sur erreur nGQL il rend un `JsonResponse`, un objet donc *truthy*. Les quatre gardes
-> du trait recopient donc le refus par défaut de `followsMutually` : réponse inexploitable ⇒ refus
-> et `Log::warning` (`ChannelGuardTest`). Ce n'est pas une ceinture ajoutée à côté du correctif de
-> `canJoinchatRoom`, c'en **est** le correctif : sa requête employait un `OPTIONAL MATCH` porteur
-> d'un `WHERE`, que NebulaGraph refuse en `SyntaxError`, et le `if($result)` d'alors faisait de cette
-> erreur permanente une autorisation permanente. Motif à reprendre pour tout nouveau garde qui lit
-> le graphe, pas à réinventer.
+> **Corollaire refermé le 21/08/2026 : un graphe qui ne répond pas vaut un refus.** En LECTURE,
+> `execute()` ne lève pas — sur erreur nGQL il rend un `JsonResponse`, un objet donc *truthy*. Les
+> quatre gardes du trait recopient donc le refus par défaut de `followsMutually` : réponse
+> inexploitable ⇒ refus et `Log::warning` (`ChannelGuardTest`). Ce n'est pas une ceinture ajoutée à
+> côté du correctif de `canJoinchatRoom`, c'en **est** le correctif : sa requête employait un
+> `OPTIONAL MATCH` porteur d'un `WHERE`, que NebulaGraph refuse en `SyntaxError`, et le `if($result)`
+> d'alors faisait de cette erreur permanente une autorisation permanente. Motif à reprendre pour tout
+> nouveau garde qui lit le graphe, pas à réinventer.
+
+> **Corollaire symétrique, refermé le 22/08/2026 : une écriture qui échoue ne se tait plus.** Le même
+> `responseJson()` traitait lectures et écritures à l'identique — il rendait l'erreur, sans jamais
+> lever ni journaliser. Or **~80 des ~95 sites d'écriture du paquet ignorent la valeur de retour** :
+> un échec d'écriture était donc parfaitement muet. Pas d'arête, pas de log, pas d'exception, et une
+> interface qui affiche « ✅ ». `insertVertex` allait plus loin et le masquait activement : succès
+> (`[]`) et échec (un objet) retombaient tous deux sur `$items`, la chaîne construite *localement*
+> avant l'envoi — dont les appelants extrayaient un vid qu'ils écrivaient en MySQL/Mongo, pointant
+> vers un sommet inexistant.
+>
+> **Le principe, en une phrase : une lecture ratée doit se dégrader en refus, une écriture ratée ne
+> doit pas se dégrader du tout.** D'où trois régimes, et deux arbitrages datés plutôt que des
+> oublis :
+>
+> | Chemin | Journalise | Lève | Pourquoi |
+> |---|---|---|---|
+> | lectures | ✅ | ❌ | faire lever rendrait inatteignables les branches ci-dessus : 500 au lieu de 403 |
+> | écritures DML | ✅ | ✅ | une valeur de retour, ça s'ignore — c'est précisément le bug |
+> | DDL | ✅ | ❌ | schéma asynchrone, `IF NOT EXISTS`, la migration doit rester rejouable |
+>
+> Second arbitrage, sur les onze listeners : **un échec d'écriture de réplica ne fait pas échouer
+> l'opération hôte.** Aucun n'est `ShouldQueue`, ils tournent dans la requête HTTP du socle ; faire
+> échouer l'attachement d'un utilisateur à un groupe parce qu'une *copie* n'a pas pu être écrite
+> inverserait le rapport entre la source de vérité et son réplica. Ils rattrapent et journalisent
+> (`ToleratesGraphFailure`, `ReplicaFailureListenerTest`) — la dérive qui en résulte est le sujet
+> d'E4.2, que ce lot débloque.
+>
+> Deux leçons de méthode au passage. **Faire lever révèle des erreurs nGQL préexistantes** : un post
+> sans commentaire émettait `DELETE VERTEX  WITH EDGE`, invalide et absorbé depuis toujours — d'où le
+> garde « liste vide ⇒ aucune requête », posé dans la couture et non chez les appelants. Et le
+> contrat de retour d'`insertVertex` était **une valeur locale que succès et échec partageaient** :
+> aucun appelant, si consciencieux fût-il, ne pouvait les distinguer — il n'y avait rien à
+> distinguer. Les onze `if(!is_array($vertex))` qui prétendaient le faire ont été retirés.
 
 ### 403 uniforme, et ce que le journal garde
 

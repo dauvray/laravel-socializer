@@ -67,12 +67,21 @@ perdre une demi-journée — le détail et le pourquoi vivent dans le docblock d
    NebulaGraph : injouables sur sqlite. Le harnais crée à la main les tables dont il a besoin —
    `users`, et `group_user` pour le garde de relation, dont la migration vit qui plus est dans un
    **autre** package (estarter). Il n'utilise **pas** `RefreshDatabase`.
-3. **NebulaGraph remplacé au conteneur.** Le package n'atteint le graphe que par
-   `app('nebulaGraph')` — couture unique, d'où `fakeNebulaGraph()`. C'est ce qui rend les gardes de
-   relation testables. ⚠️ **Sa limite** : `FakeNebulaGraph` fait du `str_contains` sur le nGQL, il ne
-   le **parse** pas. Un test vert sur une jambe qui interroge le graphe prouve le câblage, jamais la
-   requête — une requête syntaxiquement invalide passe au vert. Ces requêtes se contre-vérifient
-   contre un vrai NebulaGraph.
+3. **NebulaGraph se double à DEUX niveaux, et le choix n'est pas indifférent.**
+   - **`fakeNebulaGraph()`** remplace la connexion entière au conteneur — le package n'atteint le
+     graphe que par `app('nebulaGraph')`. C'est le bon outil pour le **câblage** d'un garde : quelle
+     requête part, dans quel ordre, quel verdict en sort. ⚠️ **Sa limite** : elle fait du
+     `str_contains` sur le nGQL, elle ne le **parse** pas. Un test vert sur une jambe qui interroge
+     le graphe prouve le câblage, jamais la requête — une requête syntaxiquement invalide passe au
+     vert. Ces requêtes se contre-vérifient contre un vrai NebulaGraph.
+   - **`fakeNebulaGraphConnection()`** (E7) fait l'inverse : elle instancie la **vraie**
+     `NebulaGraphConnection` et ne double que le client Thrift (`FakeThriftClient`, injecté par le
+     2ᵉ argument du constructeur — sans lui la classe ouvre un socket et reste intestable). C'est le
+     seul outil pour la **couture** : que le décodage distingue une erreur nGQL d'un résultat vide,
+     que les écritures DML lèvent, que les lectures **ne** lèvent pas (tout le refus par défaut des
+     gardes en dépend), et quel nGQL est réellement construit. ⚠️ Ses charges JSON sont **écrites à
+     la main**, pas capturées : la limite se déplace d'un cran, elle ne disparaît pas. Les remplacer
+     par des captures datées dès qu'un accès au cluster est disponible.
 4. **Les broadcasts s'observent par `Event::fake()`.** Il n'existe **pas** de `Broadcast::fake()`
    dans Laravel 13. `Broadcast::private(…)->sendNow()` construit un `AnonymousEvent` que
    `PendingBroadcast::__destruct` remet au dispatcher : c'est là qu'on l'intercepte. Helpers :
@@ -88,6 +97,10 @@ perdre une demi-journée — le détail et le pourquoi vivent dans le docblock d
    jour : `FakeOnlineUsers::isOnlineUser`, que `PresenceUser` lit pour le champ `connected`, scripté
    par `pretendOnline()` et couvert par `PresencePayloadTest`. Toute autre forme d'appel de cette
    même méthode continue de lever.
+   ⚠️ La règle vise les doublures de **comportement**. Les doublures d'**événements**
+   (`tests/Stubs/Estarter/app/Events/`, ajoutées par E7 pour les listeners de réplica) ne lèvent
+   pas : un événement ne porte aucun comportement, c'est un porteur de données, et le reproduire à
+   l'identique ne peut mentir sur rien.
 
 Deux doublures sont là uniquement parce que `ServiceProvider::boot` fait un `require_once` de **tous**
 les `src/app/Helpers/*.php` : sans elles, l'application de test ne démarre pas.

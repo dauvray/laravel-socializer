@@ -21,7 +21,7 @@ C3 ──> C4 ──> C2 ──┬─> E3     (tous sur UserController — à s�
                    └─> C5     (front : le bouton d'appel)
 B3, C1                        (indépendants)
 D1 ──> D2
-E7 ──> E4.2
+E7 ──> E4.2                   (E7 ✅ 22/08 — E4.2 n'attend plus qu'un arbitrage)
 E1, E2, E5, E6, E8, E9        (indépendants)
 F1                            (dernier)
 ```
@@ -32,11 +32,12 @@ intercaler librement. **E8 était la seule à toucher la charge utile `users`** 
 
 Les lots A, B et C sont **terminés**, ainsi que **C5** (le bouton d'appel), **E5** (le libellé du
 refus) — 15 et 16/08 —, **E4.1** le 21/08 : la plus grave des tâches ouvertes est fermée, puis le
-22/08 **E8** (la présence ne diffuse plus le bloc privé de personne) et **E9** dans la foulée (les
-charges utiles d'auteur de message passent en liste blanche, diffusion **et** historique HTTP).
+22/08 **E8** (la présence ne diffuse plus le bloc privé de personne), **E9** dans la foulée (les
+charges utiles d'auteur de message passent en liste blanche, diffusion **et** historique HTTP), et
+**E7** le même jour — les écritures de graphe lèvent et se journalisent, ce qui **débloque E4.2**.
 Restent : **D** (TURN, requiert une modif d'infra coturn), **E1**, **E2**, la part `getUsersList`
-d'**E3**, **E4.2** (dérive du réplica, arbitrage à produire), **E6** (périmètre estarter), **E7**
-(extraite d'E4 : les écritures d'arête échouent en silence) et **F1** en clôture.
+d'**E3**, **E4.2** (dérive du réplica, arbitrage à produire), **E6** (périmètre estarter) et **F1**
+en clôture.
 
 ---
 
@@ -1240,9 +1241,11 @@ canaux — `questionnaire` y était annoncé « présence » et est **privé** a
 
 #### E4.2 — Le réplica graphe dérive dans le sens qui accorde `[M]` 🟡
 
-- [ ] **Dépend de :** un arbitrage produit, et de **E7** — arbitrer la re-synchronisation d'un
-  réplica dont les écritures peuvent échouer en silence n'a pas de sens. **Reste ouvert après le
-  21/08/2026.**
+- [ ] **Dépend de :** un arbitrage produit. **E7 est levée depuis le 22/08/2026** : les écritures
+  d'arête lèvent et se journalisent, la dépendance technique est donc satisfaite. Ce qui reste est
+  l'arbitrage lui-même. ⚠️ E7 rend désormais la dérive **observable mais non réparée** : les 11
+  listeners journalisent `Réplica NebulaGraph désynchronisé` sans resynchroniser — relever ces
+  entrées est la première mesure du problème, et elle n'existait pas avant.
 [La migration](../../../innovation/laravel-estarter/src/database/migrations/3019_10_31_000025_create_user_group_table.php)
 pose `onDelete('cascade')` sur les deux clés étrangères de `group_user` : supprimer un groupe ou
 un compte retire les lignes **en SQL, sans événement Eloquent**, et l'arête `registered_in`
@@ -1277,33 +1280,70 @@ retire le sujet au lieu de le maintenir.
 
 ### E7 — Les écritures dans le graphe échouent en silence `[M]` 🟠
 
-- [ ] **Dépend de :** rien. **Extraite d'E4 le 21/08/2026** : E4.1 a fermé la moitié *lecture* de
-  la famille (`execute()` truthy ⇒ refus). La moitié *écriture* n'a aucun appelant qui la regarde.
+- [x] **Dépend de :** rien. **Extraite d'E4 le 21/08/2026.** — ✅ **fait le 22/08/2026.**
 
-Trois chemins, une seule cause — `NebulaGraphConnection` ne lève jamais :
+**La correction, en deux couches qui partageaient le même code par accident.** Le principe :
+*une lecture ratée doit se dégrader en refus, une écriture ratée ne doit pas se dégrader du tout.*
 
-1. `GroupUserCreatedListener` / `GroupUserDeletedListener` **ignorent la valeur de retour** de
-   `insertEdge` / `deleteEdge`. Un échec d'écriture est totalement muet : pas d'arête, pas de log,
-   pas d'exception. C'est *ce* chemin qui produit le faux négatif que E4 attribuait le 16/08 au
-   listener commenté.
-2. `Chat::checkRegistration` : traité **en lecture** par E4.1 (un graphe muet n'inscrit plus et le
-   journalise), mais le motif reste à généraliser — l'écriture qui suit, elle, n'est toujours pas
-   vérifiée.
-3. Généralisation : tout appelant d'`app('nebulaGraph')` qui écrit et ne teste rien —
-   `insertEdge`, `deleteEdge`, `insertVertex`, `setRegisteredRelation` et consorts. À inventorier.
+| Chemin | Journalise | Lève |
+|---|---|---|
+| lectures | ✅ | ❌ — contrat E4.1 intact, **aucun test à réécrire** |
+| écritures DML (6 méthodes) | ✅ | ✅ `NebulaGraphException` |
+| DDL | ✅ | ❌ — schéma asynchrone, migration rejouable |
 
-**Périmètre.** Ce n'est pas un trou d'autorisation, c'est un trou d'**observabilité** sur le
-réplica — et il **précède E4.2**. Voie la plus courte : faire lever `NebulaGraphConnection` sur
-erreur nGQL (une seule couture, celle que `fakeNebulaGraph()` double déjà) et voir ce qui casse ;
-les lectures étant désormais protégées par E4.1, le risque de régression est borné aux écritures.
+La journalisation au point de couture (`errorIn`) est ce qui ferme réellement le trou : les ~80
+sites d'écriture muets deviennent visibles d'un coup, sans qu'un seul change. La levée
+(`executeWrite`) est ce qui donne un contrat aux appelants — une valeur de retour, ça s'ignore,
+c'était tout le bug.
 
-⚠️ E4.1 a montré au passage que cette couture unique **cache aussi les erreurs de syntaxe** : la
-requête de `canJoinchatRoom` était invalide depuis toujours et personne ne l'a su. Faire lever
-rendrait visible cette classe de bugs, pas seulement les pannes d'infrastructure.
+**Quatre choses que le plan n'avait pas vues, et qui valaient chacune le détour.**
 
-**Tests :** un `insertEdge` en échec ne passe pas silencieusement · une requête syntaxiquement
-invalide ne se confond pas avec une réponse vide.
+1. **`insertVertex` masquait activement.** `return is_array($result) && count($result) ? $result :
+   $items` retombait sur `$items` en SUCCÈS (un INSERT ne rend aucune ligne) **comme** en échec.
+   Succès et échec rendaient la même valeur : les 11 `if(!is_array($vertex))` des appelants
+   n'étaient pas seulement morts, ils étaient **inatteignables par construction**. Retirés.
+2. **Faire lever révèle des erreurs nGQL préexistantes.** `Feed::deleteFeedPost` appelle
+   `deleteVertex($comments)` sans garder la liste, alors que la ligne d'à côté garde bien son
+   `count($share_ids)` : un post **sans commentaire** émettait `DELETE VERTEX  WITH EDGE` — invalide,
+   absorbé depuis toujours, et qui serait devenu un 500 systématique. D'où le garde « liste vide ⇒
+   aucune requête », posé **dans la couture** (4 méthodes d'un coup) et non chez l'appelant.
+3. **Onze listeners, pas huit.** `UserCreatedListener`, `GroupCreatedListener` et
+   `GroupDeletedListener` atteignent le DML *indirectement*, par les services. Et le `try` de
+   `GroupUpdatedListener` devait couvrir **deux** lignes : `setGroupHasParentRelation` finit par
+   `insertEdge`.
+4. **Une réponse illisible passait pour un succès vide.** `json_decode` rendant `null`,
+   `null->errors[0]->code` cascadait en warnings puis concluait `code == 0`. Couvert par `errorIn`.
+
+**Arbitrages datés, à ne pas relire comme des oublis** — DDL non-levant (schéma asynchrone,
+`IF NOT EXISTS`, pas de rollback exploitable) · les 11 listeners rattrapent au lieu de laisser
+remonter (aucun n'est `ShouldQueue`, MySQL est la source de vérité) · `OnlineUsersService` rattrape
+**en silence** (la couture a déjà journalisé, et c'est le battement de présence) · ni le nGQL ni le
+message du graphe dans `getMessage()` (leçon C3 : il porte du contenu utilisateur, et aucun
+contrôleur hors `UserController` n'a de `try/catch`).
+
+**Tests :** `tests/Feature/Graph/NebulaGraphSeamTest.php` (25 cas) et `ReplicaFailureListenerTest`,
+plus 4 cas greffés sur `ChatRegistrationTest` et `FollowVerdictTest`. **20 rouges vus avant le
+correctif.** Nouveau harnais : `FakeThriftClient` double le client Thrift pour exercer la **vraie**
+`NebulaGraphConnection` — la première fois que le décodage, la levée et la NON-levée sont
+démontrables ; `fakeNebulaGraphConnection()` et `grapheMuet()` remontés dans `TestCase` (3
+duplications supprimées) ; `throwsOn()` sur `FakeNebulaGraph`.
+**Contrôles de harnais :** 4 neutralisations rejouées (le `throw`, le `Log::error`, le `catch` du
+trait, le garde de liste vide) — toutes rougissent. Et le contrôle qui compte le plus : **les 139
+tests antérieurs sont restés verts de bout en bout**, ce qui prouve qu'E4.1 n'a pas été inversée.
+**Doc :** `securite.md` (corollaire symétrique daté) · `signalisation.md` (tableau des trois
+régimes) · `tests.md` (décision 3 réécrite : deux niveaux de doublure, et lequel prouve quoi) ·
+`Socializable.php` (en-tête qualifié) · `ChannelGuardTest` (ce que sa frontière garde désormais).
+`core.blade.php` : zéro occurrence, donc **pas de `boost:update`**.
 **Commit :** `fix(socializer): une écriture de graphe qui échoue ne se tait plus`
+
+⚠️ **Avant de livrer en production — le relevé qui manque.** Le pari d'E7 est qu'un échec nGQL est
+rare et anormal. Si une famille de requêtes échoue en permanence — hypothèse crédible,
+`canJoinchatRoom` était un `SyntaxError` depuis toujours —, la levée transforme un bug muet en panne
+visible immédiate. **Poser la couture seule en dev et lire le journal 24 h** avant d'aller plus loin.
+Et cinq formes à contre-vérifier contre le cluster, listées au bas de `NebulaGraphSeamTest` : d'abord
+que `DELETE VERTEX` / `DELETE EDGE` à liste vide sont bien une erreur (le postulat du garde), et que
+`INSERT EDGE x () VALUES "a" -> "b":()` — la forme de tous les `props => []` de la config — passe,
+faute de quoi **tout** le paquet lèverait.
 
 ---
 

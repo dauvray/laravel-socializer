@@ -36,10 +36,6 @@ class Page
             ], $new_content)
         );
 
-        if(!is_array($vertex)) {
-            return false;
-        } 
-
         $vid = getVertexIdFromInsert($vertex);
 
         if(!$vid) {

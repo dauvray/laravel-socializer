@@ -6,6 +6,7 @@ use Illuminate\Support\Arr;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Auth;
+use Dauvray\Socializer\app\Exceptions\NebulaGraphException;
 use Dauvray\Socializer\app\Jobs\SendMessageToBot;
 use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Facades\Storage;
@@ -81,8 +82,19 @@ class Chat
             return false;
         }
 
-        // user / chat relation
-        setRegisteredRelation($this->user->vertexid, $room_id);
+        // L'ÉCRITURE, elle aussi, peut échouer (E7) — et une inscription ratée annoncée réussie
+        // rouvre exactement le trou que les branches ci-dessus viennent de fermer : l'appelant
+        // conclut « inscrit », le message suivant se voit refuser le canal, et rien ne l'explique.
+        try {
+            setRegisteredRelation($this->user->vertexid, $room_id);
+        } catch (NebulaGraphException $e) {
+            Log::warning('checkRegistration : l\'inscription a été refusée par le graphe', $e->context() + [
+                'chat_vertexid' => $room_id,
+                'user_vertexid' => $this->user->vertexid,
+            ]);
+
+            return false;
+        }
 
         return true;
     }
@@ -108,7 +120,18 @@ class Chat
             return false;
         }
 
-        setRegisteredRelation($this->user->vertexid, $chat_vid);
+        // Cf. `checkRegistration` : le garde décide, mais c'est l'écriture qui inscrit.
+        try {
+            setRegisteredRelation($this->user->vertexid, $chat_vid);
+        } catch (NebulaGraphException $e) {
+            Log::warning('registerInRoomChat : l\'inscription a été refusée par le graphe', $e->context() + [
+                'chat_vertexid' => $chat_vid,
+                'room_vertexid' => $room_id,
+                'user_vertexid' => $this->user->vertexid,
+            ]);
+
+            return false;
+        }
 
         return true;
     }
@@ -517,10 +540,6 @@ class Chat
                 'name' => isset($values['name']) ? $values['name'] : null
             ]
         );
-
-        if(!is_array($vertex)) {
-            return response()->json($vertex, 500);
-        } 
 
         $vid = getVertexIdFromInsert($vertex);
 

@@ -4,11 +4,14 @@ namespace Dauvray\Socializer\Tests;
 
 use App\Models\User as HostUser;
 use Cviebrock\EloquentSluggable\ServiceProvider as SluggableServiceProvider;
+use Dauvray\Socializer\app\Helpers\NebulaGraphConnection;
 use Dauvray\Socializer\ServiceProvider as SocializerServiceProvider;
 use Dauvray\Socializer\Tests\Stubs\FakeNebulaGraph;
 use Dauvray\Socializer\Tests\Stubs\FakeOnlineUsers;
+use Dauvray\Socializer\Tests\Stubs\FakeThriftClient;
 use Dauvray\Socializer\Tests\Stubs\User;
 use Illuminate\Broadcasting\AnonymousEvent;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\DB;
@@ -178,6 +181,56 @@ abstract class TestCase extends BaseTestCase
         $this->app->instance('nebulaGraph', $fake);
 
         return $fake;
+    }
+
+    /**
+     * Substitue la VRAIE `NebulaGraphConnection`, branchée sur un client Thrift doublé.
+     *
+     * À utiliser quand ce qui est testé est la couture elle-même — le décodage de la réponse, la
+     * levée sur écriture, la NON-levée sur lecture, le nGQL construit. `fakeNebulaGraph()`
+     * remplace la connexion entière et ne peut donc rien en prouver : cf. le docblock de
+     * `FakeThriftClient`.
+     *
+     * Le journal du client est vidé après construction : le constructeur émet un `USE <space>`
+     * que le test n'a pas demandé, et sans cet oubli chaque assertion d'index serait décalée.
+     */
+    protected function fakeNebulaGraphConnection(?FakeThriftClient $client = null): NebulaGraphConnection
+    {
+        $client ??= new FakeThriftClient;
+
+        $connection = new NebulaGraphConnection([
+            'host' => '127.0.0.1',
+            'port' => 9669,
+            'username' => 'root',
+            'password' => 'nebula',
+            'space' => 'harnais',
+            'partition' => 5,
+            'replica_factor' => 3,
+            'options' => [],
+        ], $client);
+
+        $client->forgetStatements();
+
+        $this->app->instance('nebulaGraph', $connection);
+
+        return $connection;
+    }
+
+    /**
+     * Ce que `execute()` rend VRAIMENT sur erreur nGQL, sur le chemin LECTURE : un `JsonResponse`,
+     * pas une exception. Un objet, donc *truthy* — c'est toute la raison d'être du refus par
+     * défaut d'E4.1.
+     *
+     * Non résolu dans un fournisseur de données statique parce que `response()` a besoin de
+     * l'application.
+     *
+     * ⚠️ Ne vaut que pour les LECTURES. Depuis E7, les 6 méthodes d'écriture DML lèvent une
+     * `NebulaGraphException` — scripter `always($this->grapheMuet())` sur un chemin d'écriture
+     * décrirait un contrat qui n'existe plus.
+     */
+    protected function grapheMuet(int $code = -1005, string $message = 'SemanticError'): JsonResponse
+    {
+        return response()->json(['code' => $code, 'message' => $message], 500);
     }
 
     /**

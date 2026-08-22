@@ -100,13 +100,16 @@ trait Socializable
     | Consommés par src/routes/socializer/channels.php. Deux règles, load-bearing toutes
     | les deux :
     |
-    | 1. `execute()` ne lève JAMAIS : sur erreur nGQL il rend un JsonResponse — un OBJET,
-    |    donc truthy (cf. NebulaGraphConnection::responseJson). Un `if($result) return true`
-    |    transforme donc une panne de graphe en autorisation, et un `count($result)` sur ce
-    |    même objet lève un TypeError, soit un 500 à la place d'un refus. D'où le verdict
-    |    commun de `_checkCanJoin` / `_checkIsOwner` : ce qui n'est pas une réponse
-    |    exploitable est un refus. Même motif que `followsMutually` plus bas, écrit là en
-    |    premier.
+    | 1. En LECTURE, `execute()` ne lève JAMAIS : sur erreur nGQL il rend un JsonResponse —
+    |    un OBJET, donc truthy (cf. NebulaGraphConnection::responseJson). Un
+    |    `if($result) return true` transforme donc une panne de graphe en autorisation, et un
+    |    `count($result)` sur ce même objet lève un TypeError, soit un 500 à la place d'un
+    |    refus. D'où le verdict commun de `_checkCanJoin` / `_checkIsOwner` : ce qui n'est
+    |    pas une réponse exploitable est un refus. Même motif que `followsMutually` plus bas,
+    |    écrit là en premier.
+    |    ⚠️ Vrai du chemin LECTURE seulement. Les 6 méthodes d'écriture DML, elles, LÈVENT une
+    |    `NebulaGraphException` depuis E7 (22/08/2026) — asymétrie délibérée : faire lever les
+    |    lectures rendrait ces branches inatteignables, donc un 500 à la place d'un 403.
     | 2. `canJoinRoom` / `canJoinServer` ne sont PAS des prédicats d'appartenance : sur
     |    `privacy == 0` la clause est vraie pour n'importe quel couple. Constat assumé, hors
     |    périmètre du correctif du 21/08/2026 — docs/modules/webrtc2/securite.md, piège 1.

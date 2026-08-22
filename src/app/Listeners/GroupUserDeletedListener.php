@@ -3,8 +3,11 @@
 namespace Dauvray\Socializer\app\Listeners;
 
 use Dauvray\Estarter\app\Events\GroupUserDeleted;
+use Dauvray\Socializer\app\Listeners\Concerns\ToleratesGraphFailure;
 
 class GroupUserDeletedListener {
+
+    use ToleratesGraphFailure;
 
     /**
     * Create the event listener.
@@ -23,10 +26,14 @@ class GroupUserDeletedListener {
     */
     public function handle(GroupUserDeleted $event) {
        // \Log::info("Le groupe_user {$event->group_user->id} a été supprimé avec le group_id {$event->group_user->group_id} et le user_id {$event->group_user->user_id}");
-        app('nebulaGraph')->deleteEdge(
-            config('socializer.nebulagraph.edges.registered_in.name'), 
+        $this->syncToGraph(fn () => app('nebulaGraph')->deleteEdge(
+            config('socializer.nebulagraph.edges.registered_in.name'),
             [
                 config('socializer.nebulagraph.tags.user.name').$event->group_user->user_id.'->'.config('socializer.nebulagraph.tags.group.name').$event->group_user->group_id
-            ]);
+            ]
+        ), [
+            'user_id' => $event->group_user->user_id,
+            'group_id' => $event->group_user->group_id,
+        ]);
     }
 }

@@ -7,7 +7,6 @@ use Dauvray\Socializer\Tests\Stubs\FakeNebulaGraph;
 use Dauvray\Socializer\Tests\Stubs\FakeOnlineUsers;
 use Dauvray\Socializer\Tests\Stubs\User;
 use Dauvray\Socializer\Tests\TestCase;
-use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Log;
 use PHPUnit\Framework\Attributes\Test;
 
@@ -56,11 +55,6 @@ class ChatRegistrationTest extends TestCase
         $this->actingAs($user);
 
         return [$user, new ChatService];
-    }
-
-    private function grapheMuet(): JsonResponse
-    {
-        return response()->json(['code' => -1005, 'message' => 'SemanticError'], 500);
     }
 
     /**
@@ -173,6 +167,40 @@ class ChatRegistrationTest extends TestCase
             ->once();
     }
 
+    /**
+     * E7 — l'autre moitié, celle qu'E4.1 n'avait pas fermée.
+     *
+     * E4.1 a durci la LECTURE : un graphe muet n'inscrit plus. Mais l'ÉCRITURE qui suit —
+     * `setRegisteredRelation`, donc `insertEdge` — voyait sa valeur de retour jetée, et la méthode
+     * rendait `true` quoi qu'il arrive. L'appelant concluait « inscrit », `canJoinchatRoom`
+     * répondait non au message suivant, et rien nulle part n'expliquait pourquoi.
+     *
+     * ⚠️ Deux mécanismes tiennent désormais la même propriété — le garde de lecture d'E4.1
+     * (`Chat.php:62`) et le `catch` d'écriture d'E7. Le contrôle de harnais demande donc de
+     * neutraliser LES DEUX : retirer l'un laisse l'autre porter le test.
+     */
+    #[Test]
+    public function une_inscription_refusee_par_le_graphe_ne_se_declare_pas_reussie(): void
+    {
+        $this->fakeNebulaGraph()
+            ->when('OVER registered_in', [])        // pas encore inscrit
+            ->when('c.chat.privacy', ['userzoe'])   // le chat est public, le garde dit oui
+            ->throwsOn('INSERT EDGE');              // …mais l'écriture est refusée
+
+        [, $service] = $this->actingUserAndService();
+
+        Log::spy();
+
+        $this->assertFalse(
+            $service->checkRegistration('chat42'),
+            'L\'inscription a échoué et la méthode l\'annonce réussie.'
+        );
+
+        Log::shouldHaveReceived('warning')
+            ->withArgs(fn (string $message, array $context) => ($context['chat_vertexid'] ?? null) === 'chat42')
+            ->once();
+    }
+
     /*
     |--------------------------------------------------------------------------
     | 2. `registerInRoomChat` — le chat hérite de la décision du salon
@@ -208,5 +236,24 @@ class ChatRegistrationTest extends TestCase
         $this->assertFalse($service->registerInRoomChat('room42', 'chat42'));
 
         $this->assertSame([], $this->inscriptions($graph));
+    }
+
+    /** Le pendant E7 du chemin nominal : le salon admet, mais l'écriture est refusée. */
+    #[Test]
+    public function une_inscription_de_salon_refusee_par_le_graphe_ne_se_declare_pas_reussie(): void
+    {
+        $this->fakeNebulaGraph()
+            ->when('r.room.privacy', ['useralice'])
+            ->throwsOn('INSERT EDGE');
+
+        [, $service] = $this->actingUserAndService();
+
+        Log::spy();
+
+        $this->assertFalse($service->registerInRoomChat('room42', 'chat42'));
+
+        Log::shouldHaveReceived('warning')
+            ->withArgs(fn (string $message, array $context) => ($context['chat_vertexid'] ?? null) === 'chat42')
+            ->once();
     }
 }

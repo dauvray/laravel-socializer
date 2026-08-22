@@ -7,6 +7,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Log;
 use Dauvray\Socializer\app\Events\PostCreatedEvent;
 use Dauvray\Socializer\app\Helpers\NebulaGraphConnection;
 
@@ -60,6 +61,16 @@ class SendPostToFollowers implements ShouldQueue
                 }
 
             } catch (\Exception $e) {
+                // Le `continue;` seul rendait invisible un éventail systématiquement en échec :
+                // aucun abonné ne recevait le post, et rien nulle part ne le disait. La levée
+                // d'E7 (`NebulaGraphException extends RuntimeException`) tombe déjà dans ce
+                // `catch` — il ne manquait que la trace.
+                Log::warning('SendPostToFollowers : publication non propagée à un abonné', [
+                    'feed_destination' => $feed_destination ?? null,
+                    'feed_id' => $this->feed_id,
+                    'raison' => $e->getMessage(),
+                ]);
+
                 continue; // skip if conversion fails
             }
         }

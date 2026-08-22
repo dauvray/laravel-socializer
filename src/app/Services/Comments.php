@@ -2,10 +2,12 @@
 
 namespace Dauvray\Socializer\app\Services;
 
+use Dauvray\Socializer\app\Exceptions\NebulaGraphException;
 use Dauvray\Socializer\app\Jobs\SendCommentToUsers;
 use Dauvray\Socializer\app\Events\CommentDeleted;
 use Dauvray\Socializer\app\Events\CommentCalculated;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 use Dauvray\Socializer\app\Http\Resources\CommentCollection;
 
 class Comments
@@ -79,10 +81,6 @@ class Comments
             )
         );
 
-        if(!is_array($res)) {
-            return response()->json($res, 500);
-        }  
-        
         /*
             Comments are only saved in nebulagraph.
             so we have to get the inserted ids to create relations
@@ -156,18 +154,28 @@ class Comments
             return response()->json('Opération impossible', 401);
         }
 
-        // delete children
-        foreach($children as $vertex_id) {
-            $child = $this->nebula->execute('MATCH ()<-[e2:reply_of]-(c)-[e:has_creator]->(u) WHERE id(c) == "'. $vertex_id .'" RETURN u, e, e2;');
-            $this->_internalDeleteComment($vertex_id, $child);
+        // Les enfants ET le parent sont dans le même `try` : supprimer les réponses puis échouer
+        // sur le commentaire lui-même laisserait un fil amputé de ses réponses mais toujours
+        // affiché. Avant E7 la boucle sur les enfants ne regardait même pas son résultat.
+        try {
+            // delete children
+            foreach($children as $vertex_id) {
+                $child = $this->nebula->execute('MATCH ()<-[e2:reply_of]-(c)-[e:has_creator]->(u) WHERE id(c) == "'. $vertex_id .'" RETURN u, e, e2;');
+                $this->_internalDeleteComment($vertex_id, $child);
+            }
+
+            // delete comment
+            $this->_internalDeleteComment($comment_id, $comment);
+        } catch (NebulaGraphException $e) {
+            Log::warning('deleteComment : le graphe a refusé la suppression', $e->context() + [
+                'comment_vertexid' => $comment_id,
+            ]);
+
+            // ⚠️ Corps FIXE. Le `response()->json($res, 500)` d'avant E7 sérialisait la réponse
+            // d'erreur du graphe telle quelle — donc le message nGQL, donc un fragment de la
+            // requête, donc du contenu de commentaire. C'est le bug C3, ici sur un autre chemin.
+            return response()->json('Opération impossible', 500);
         }
-
-        // delete comment
-        $res =  $this->_internalDeleteComment($comment_id, $comment);
-
-        if(!is_array($res)) {
-            return response()->json($res, 500);
-        } 
 
         // todo faire un job comme pour created
         CommentDeleted::dispatch($comment_id, $vertexid);

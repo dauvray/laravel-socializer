@@ -25,10 +25,6 @@ class ApplicationIA
             $new_content
         );
 
-        if(!is_array($vertex)) {
-            return false;
-        } 
-
         $new_vid = getVertexIdFromInsert($vertex);
 
         if(!$new_vid) {
@@ -85,10 +81,6 @@ class ApplicationIA
             config('socializer.nebulagraph.tags.page.name'),
             $new_content
         );
-
-        if(!is_array($vertex)) {
-            return false;
-        } 
 
         $page_vid = getVertexIdFromInsert($vertex);
 

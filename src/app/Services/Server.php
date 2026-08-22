@@ -10,6 +10,8 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Broadcast;
+use Illuminate\Support\Facades\Log;
+use Dauvray\Socializer\app\Exceptions\NebulaGraphException;
 use Dauvray\Socializer\app\Services\Chat;
 use Dauvray\Socializer\app\Services\Page;
 use Dauvray\Socializer\app\Services\ApplicationIA;
@@ -113,10 +115,6 @@ class Server
             ]
         );
 
-        if(!is_array($vertex)) {
-            return response()->json($vertex, 500);
-        } 
-
         $vid = getVertexIdFromInsert($vertex);
 
         if(!$vid) {
@@ -188,16 +186,24 @@ class Server
 
         $model['image'] = json_encode($model['image']);
 
-        $update = $this->nebula->updateVertex(
-            config('socializer.nebulagraph.tags.server.name'), 
-            $vertexid,
-            $this->nebula->populatePropsFromPattern(
-                (object)$model, 
-                config('socializer.nebulagraph.vertices.server')
-            )
-        );
+        // Le `if(count($update))` d'avant E7 était doublement faux : un UPDATE réussi rend `[]`,
+        // donc `count()` valait 0 et la branche n'était JAMAIS prise ; et sur un refus, `$update`
+        // valait un `JsonResponse`, sur lequel `count()` lève un `TypeError` — un 500 opaque au
+        // lieu du 404 déjà rédigé ici. Le `catch` ressuscite la branche.
+        try {
+            $this->nebula->updateVertex(
+                config('socializer.nebulagraph.tags.server.name'),
+                $vertexid,
+                $this->nebula->populatePropsFromPattern(
+                    (object)$model,
+                    config('socializer.nebulagraph.vertices.server')
+                )
+            );
+        } catch (NebulaGraphException $e) {
+            Log::warning('updateServer : le graphe a refusé la mise à jour', $e->context() + [
+                'server_vertexid' => $vertexid,
+            ]);
 
-        if(count($update)) {
             return response()->json(['message' => 'Enregistrement impossible'], 404);
         }
 
@@ -219,17 +225,23 @@ class Server
             return response()->json(['message' => 'Non autorisé'], 401);
         }
 
+        // Cf. `updateServer` pour le motif. On sort au PREMIER échec, comme avant : les salons
+        // déjà mis à jour le restent, c'est le comportement que le `return` d'origine décrivait.
         foreach($rooms as $room) {
-            $update = $this->nebula->updateVertex(
-                config('socializer.nebulagraph.tags.room.name'), 
-                $room['id'],
-                $this->nebula->populatePropsFromPattern(
-                    (object)$room, 
-                    config('socializer.nebulagraph.vertices.room')
-                )
-            );
-    
-            if(count($update)) {
+            try {
+                $this->nebula->updateVertex(
+                    config('socializer.nebulagraph.tags.room.name'),
+                    $room['id'],
+                    $this->nebula->populatePropsFromPattern(
+                        (object)$room,
+                        config('socializer.nebulagraph.vertices.room')
+                    )
+                );
+            } catch (NebulaGraphException $e) {
+                Log::warning('updateServerRooms : le graphe a refusé la mise à jour d\'un salon', $e->context() + [
+                    'room_vertexid' => $room['id'],
+                ]);
+
                 return response()->json(['message' => 'Enregistrement impossible'], 404);
             }
         }
@@ -512,10 +524,6 @@ class Server
             array_merge($values, ['position' => getNextPublishedPosition($server_id) ])
         );
 
-        if(!is_array($vertex)) {
-            return response()->json($vertex, 500);
-        } 
-
         $vid = getVertexIdFromInsert($vertex);
 
         if(!$vid) {
@@ -583,7 +591,37 @@ class Server
         ], 200);
     }
 
+    /**
+     * Entonnoir de création de contenu — et le seul endroit où l'échec de graphe se rattrape.
+     *
+     * Les six constructeurs de vertex qu'il aiguille rendaient `false` sur échec, via un
+     * `if(!is_array($vertex))` qui ne pouvait JAMAIS être vrai : avant E7, `insertVertex` rendait
+     * la même valeur en succès et en échec. Ces gardes ont donc été retirés, et la levée les
+     * remplace.
+     *
+     * Le rattrapage est ICI plutôt que dans chacun d'eux, pour deux raisons. D'abord un salon à
+     * moitié bâti est pire qu'un refus : mieux vaut échouer une fois, en haut, que laisser six
+     * chemins produire chacun un état partiel. Ensuite parce que c'est la frontière HTTP — hors
+     * `UserController`, aucun contrôleur du paquet n'a de `try/catch`, donc laisser remonter
+     * rendrait `{"message":"Server Error"}` : un toast anglais côté front, là où le corps 404
+     * ci-dessous est déjà rédigé et déjà affiché (leçon E5 — un refus se suit jusqu'au pixel).
+     */
     private function _createContent($new_content, $server_id, $room_id)
+    {
+        try {
+            return $this->_createContentVertex($new_content, $server_id, $room_id);
+        } catch (NebulaGraphException $e) {
+            Log::warning('_createContent : le graphe a refusé la création du contenu', $e->context() + [
+                'server_vertexid' => $server_id,
+                'room_vertexid' => $room_id,
+                'content_type' => $new_content['content_type'] ?? null,
+            ]);
+
+            return response()->json(['message' => "Création impossible"], 404);
+        }
+    }
+
+    private function _createContentVertex($new_content, $server_id, $room_id)
     {
         switch($new_content['content_type']) {
             case 'chat':
@@ -701,32 +739,38 @@ class Server
 
         $model['image'] = json_encode($model['image']);
 
-        $update = $this->nebula->updateVertex(
-            config('socializer.nebulagraph.tags.room.name'), 
-            $vertexid,
-            $this->nebula->populatePropsFromPattern(
-                (object)$model, 
-                config('socializer.nebulagraph.vertices.room')
-            )
-        );
+        // Cf. `updateServer` pour le motif du `count()` qui ne testait rien. Les DEUX mises à
+        // jour sont ici dans le même `try` : la seconde n'avait, elle, aucune garde du tout.
+        try {
+            $this->nebula->updateVertex(
+                config('socializer.nebulagraph.tags.room.name'),
+                $vertexid,
+                $this->nebula->populatePropsFromPattern(
+                    (object)$model,
+                    config('socializer.nebulagraph.vertices.room')
+                )
+            );
 
-        if(count($update)) {
-            return response()->json(['message' => 'Enregistrement impossible'], 404);
-        }
-
-        // update content
-        $content = $this->nebula->execute("MATCH (r:room)<-[:published_in]-(c) 
-            WHERE id(r) == '$vertexid' 
+            // update content
+            $content = $this->nebula->execute("MATCH (r:room)<-[:published_in]-(c)
+            WHERE id(r) == '$vertexid'
             RETURN c as content, tags(c)[0] as type");
 
-         $update = $this->nebula->updateVertex(
-                config('socializer.nebulagraph.tags.'.$content[0]['type'].'.name'), 
+            $this->nebula->updateVertex(
+                config('socializer.nebulagraph.tags.'.$content[0]['type'].'.name'),
                 $content[0]['content']['id'],
                 $this->nebula->populatePropsFromPattern(
-                    (object)$model, 
+                    (object)$model,
                     config('socializer.nebulagraph.vertices.'.$content[0]['type'])
                 )
             );
+        } catch (NebulaGraphException $e) {
+            Log::warning('updateRoomServer : le graphe a refusé la mise à jour', $e->context() + [
+                'room_vertexid' => $vertexid,
+            ]);
+
+            return response()->json(['message' => 'Enregistrement impossible'], 404);
+        }
 
         Broadcast::presence("server.$server_id")
         ->as('roomUpdated')
@@ -810,10 +854,6 @@ class Server
             ]
         );
 
-        if(!is_array($vertex)) {
-            return false;
-        } 
-
         $new_vid = getVertexIdFromInsert($vertex);
 
         if(!$new_vid) {
@@ -832,10 +872,6 @@ class Server
             config('socializer.nebulagraph.tags.classroom.name'),
             $new_content
         );
-
-        if(!is_array($vertex)) {
-            return false;
-        } 
 
         $new_vid = getVertexIdFromInsert($vertex);
 
@@ -863,10 +899,6 @@ class Server
             $new_content
         );
 
-        if(!is_array($vertex)) {
-            return false;
-        } 
-
         $new_vid = getVertexIdFromInsert($vertex);
 
         if(!$new_vid) {
@@ -889,10 +921,6 @@ class Server
             config('socializer.nebulagraph.tags.wall.name'),
             $new_content
         );
-
-        if(!is_array($vertex)) {
-            return false;
-        } 
 
         $new_vid = getVertexIdFromInsert($vertex);
 

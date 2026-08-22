@@ -102,11 +102,25 @@ La même règle vaut pour l'**auteur d'un message**, fermé le 22/08 par E9 : il
   vieillit mal.
 
 Les méthodes `canJoin*` viennent du trait `Socializable` (`src/app/Helpers/ModelTraits/`) et
-interrogent NebulaGraph. **Un graphe muet vaut un refus** : `execute()` rend un `JsonResponse`
-*truthy* sur erreur nGQL et ne lève jamais — les quatre gardes traitent donc toute réponse
-inexploitable comme une absence de droit (`ChannelGuardTest`). ⚠️ `canJoinRoom` / `canJoinServer`
-restent des gardes de canal et **non** des prédicats d'appartenance : sur `privacy == 0` ils
-répondent `true` à tout le monde
+interrogent NebulaGraph. **Un graphe muet vaut un refus** : en LECTURE, `execute()` rend un
+`JsonResponse` *truthy* sur erreur nGQL et ne lève pas — les quatre gardes traitent donc toute
+réponse inexploitable comme une absence de droit (`ChannelGuardTest`).
+
+**La couche graphe est asymétrique, et c'est délibéré** — *une lecture ratée doit se dégrader en
+refus, une écriture ratée ne doit pas se dégrader du tout* :
+
+| Chemin | Journalise | Lève |
+|---|---|---|
+| lectures (`execute()`) | ✅ | ❌ — contrat des quatre gardes ci-dessus |
+| **écritures DML** (`insertVertex`, `updateVertex`, `deleteVertex`, `insertEdge`, `updateEdge`, `deleteEdge`) | ✅ | ✅ `NebulaGraphException` |
+| DDL (`createTag`, `createEdge`, `*Index`…) | ✅ | ❌ — schéma asynchrone, migration rejouable |
+
+Faire lever les lectures rendrait les branches de refus inatteignables : une panne de graphe
+donnerait un **500 à la place d'un 403**. C'est le sens de l'asymétrie, pas un oubli — détail et
+conséquences dans [securite.md](../modules/webrtc2/securite.md).
+
+⚠️ `canJoinRoom` / `canJoinServer` restent des gardes de canal et **non** des prédicats
+d'appartenance : sur `privacy == 0` ils répondent `true` à tout le monde
 ([securite.md](../modules/webrtc2/securite.md)).
 
 ⚠️ Envoyer un message n'inscrit plus son auteur dans le chat : `Chat::checkRegistration` refuse

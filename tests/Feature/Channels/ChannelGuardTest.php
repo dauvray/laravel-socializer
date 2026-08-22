@@ -4,7 +4,6 @@ namespace Dauvray\Socializer\Tests\Feature\Channels;
 
 use Dauvray\Socializer\app\Http\Resources\PresenceUser;
 use Dauvray\Socializer\Tests\TestCase;
-use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Log;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -16,8 +15,8 @@ use PHPUnit\Framework\Attributes\Test;
  * Deux défauts qui n'en faisaient qu'un. `canJoinchatRoom` employait un `OPTIONAL MATCH` porteur
  * d'un `WHERE` — que NebulaGraph 3.8 **refuse** : « SyntaxError: Where clause in optional match is
  * not supported ». La requête ne s'exécutait donc JAMAIS. Et comme les trois `canJoin*` se
- * contentaient d'un `if($result)` alors qu'`execute()` ne lève jamais — sur erreur nGQL il rend un
- * `JsonResponse`, un objet donc truthy —, cette erreur permanente valait **autorisation
+ * contentaient d'un `if($result)` alors qu'`execute()` ne lève pas en LECTURE — sur erreur nGQL il
+ * rend un `JsonResponse`, un objet donc truthy —, cette erreur permanente valait **autorisation
  * permanente**. Le garde n'a jamais fonctionné : `channels.php` n'autorisant `chat.{chatId}` que
  * par lui, tout authentifié pouvait s'abonner à n'importe quelle conversation privée.
  *
@@ -36,6 +35,12 @@ use PHPUnit\Framework\Attributes\Test;
  * Ce que ce fichier prouve : le verdict (au moins une ligne ⇒ oui, zéro ligne ⇒ non, pas de
  * réponse ⇒ non ET journal), et le CÂBLAGE — que les callbacks de `channels.php` appellent bien
  * ces gardes, et qu'ils refusent au lieu de lever quand le graphe tombe.
+ *
+ * ⚠️ Ce dernier point est devenu load-bearing avec E7 (22/08/2026), qui fait LEVER les 6 méthodes
+ * d'écriture DML. Les lectures, elles, sont restées non-levantes exactement pour que ce fichier
+ * continue de décrire la production : l'étendre aux lectures rendrait les branches `is_array()`
+ * inatteignables et transformerait chaque refus en 500 — sans rougir ici, puisque la doublure
+ * scripte un `JsonResponse`. C'est `NebulaGraphSeamTest` qui garde cette frontière.
  */
 class ChannelGuardTest extends TestCase
 {
@@ -64,16 +69,6 @@ class ChannelGuardTest extends TestCase
             'room' => ['room.{roomId}'],
             'questionnaire' => ['questionnaire.{roomId}'],
         ];
-    }
-
-    /**
-     * Ce que `execute()` rend VRAIMENT sur erreur nGQL : un `JsonResponse`, pas une exception.
-     *
-     * Non résolu dans un fournisseur statique parce que `response()` a besoin de l'application.
-     */
-    private function grapheMuet(): JsonResponse
-    {
-        return response()->json(['code' => -1005, 'message' => 'SemanticError'], 500);
     }
 
     /*

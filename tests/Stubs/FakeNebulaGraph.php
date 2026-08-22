@@ -2,6 +2,8 @@
 
 namespace Dauvray\Socializer\Tests\Stubs;
 
+use Dauvray\Socializer\app\Exceptions\NebulaGraphException;
+
 /**
  * Doublure du binding `nebulaGraph`.
  *
@@ -45,12 +47,35 @@ class FakeNebulaGraph
         return $this;
     }
 
+    /**
+     * Les requêtes portant ce fragment LÈVENT, comme les 6 méthodes DML depuis E7.
+     *
+     * Scripter un `JsonResponse` sur un chemin d'écriture ne décrit plus la production : les
+     * écritures ne rendent plus l'erreur, elles la lèvent. Sans ce mode, un test de rattrapage
+     * resterait vert sans jamais exercer son `catch`.
+     *
+     * ⚠️ Réservé aux ÉCRITURES. Sur une lecture, la production rend toujours un `JsonResponse` —
+     * c'est `grapheMuet()` qu'il faut, et tout E4.1 en dépend.
+     */
+    public function throwsOn(string $fragment, int $code = -1004, string $message = 'SyntaxError'): static
+    {
+        return $this->when($fragment, NebulaGraphException::writeRefused(
+            'insertEdge', $code, $message, $fragment
+        ));
+    }
+
     public function execute(string $nGQL): mixed
     {
         $this->queries[] = $nGQL;
 
         foreach ($this->rules as $rule) {
             if (str_contains($nGQL, $rule['fragment'])) {
+                // La requête est journalisée AVANT la levée : `queries()` doit rester le seul
+                // point d'observation, y compris pour ce qui a échoué.
+                if ($rule['result'] instanceof \Throwable) {
+                    throw $rule['result'];
+                }
+
                 return $rule['result'];
             }
         }
@@ -76,6 +101,27 @@ class FakeNebulaGraph
     public function insertEdge(string $label = 'default', array $values = []): mixed
     {
         return $this->execute('INSERT EDGE '.$label.' VALUES "'.((string) array_key_first($values)).'"');
+    }
+
+    /**
+     * Même raison que `insertEdge` ci-dessus, pour les autres méthodes DML : en production elles
+     * finissent toutes par `return $this->execute($query)`, la doublure fait de même pour que
+     * `queries()` reste le seul point d'observation.
+     *
+     * Elles ne s'ajoutent qu'au fur et à mesure des tests qui les exigent — décision 5 du harnais.
+     * Celles-ci ont été ajoutées par E7, pour les listeners de réplica.
+     *
+     * @param  array<int, string>  $directions  au format `from->to`
+     */
+    public function deleteEdge(string $label = 'default', array $directions = []): mixed
+    {
+        return $this->execute('DELETE EDGE '.$label.' "'.implode('","', $directions).'"');
+    }
+
+    /** @param  array<string, mixed>  $values */
+    public function updateVertex(string $label = 'default', $vertex_id = null, array $values = []): mixed
+    {
+        return $this->execute('UPDATE VERTEX ON '.$label.' "'.((string) $vertex_id).'" SET '.implode(',', array_keys($values)));
     }
 
     /** @return array<int, string> */

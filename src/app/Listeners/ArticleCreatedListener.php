@@ -3,9 +3,12 @@
 namespace Dauvray\Socializer\app\Listeners;
 
 use Dauvray\Eblogger\app\Events\ArticleCreated;
+use Dauvray\Socializer\app\Listeners\Concerns\ToleratesGraphFailure;
 
 class ArticleCreatedListener
 {
+    use ToleratesGraphFailure;
+
     /**
      * Create the event listener.
      *
@@ -25,12 +28,13 @@ class ArticleCreatedListener
     public function handle(ArticleCreated $event)
     {
         $nebula = app('nebulaGraph');
-        $nebula->insertVertex(
-            config('socializer.nebulagraph.tags.article.name'), 
+
+        $this->syncToGraph(fn () => $nebula->insertVertex(
+            config('socializer.nebulagraph.tags.article.name'),
             $nebula->populatePropsFromPattern(
-                $event->article, 
+                $event->article,
                 config('socializer.nebulagraph.vertices.article')
             )
-        );
+        ), ['article_id' => $event->article->id]);
     }
 }

@@ -4,6 +4,8 @@ namespace Dauvray\Socializer\app\Services;
 
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
+use Dauvray\Socializer\app\Exceptions\NebulaGraphException;
 use Dauvray\Socializer\app\Http\Resources\UserCollection;
 
 class Users
@@ -96,39 +98,60 @@ class Users
         return new UserCollection($paginator);
     }
 
-    public function followUser($user_tofollow)
+    /**
+     * @return bool `false` si le graphe a refusé l'écriture — `UserController` en fait un 500.
+     *
+     * Le `if (count($result) === 0)` d'avant E7 ne testait rien d'utile : une écriture RÉUSSIE
+     * rend `[]`, donc `count()` valait 0 et la méthode rendait `true` ; la branche `return false`
+     * n'était jamais prise. Et sur un refus, `$result` valait un `JsonResponse` — `count()` sur un
+     * objet lève un `TypeError`, soit un 500 opaque au lieu d'un refus lisible.
+     */
+    public function followUser($user_tofollow): bool
     {
         $wall_id = $user_tofollow->wall();
 
-        $result = setFollowedByRelation($wall_id, $this->user->vertexid);
+        try {
+            setFollowedByRelation($wall_id, $this->user->vertexid);
+        } catch (NebulaGraphException $e) {
+            Log::warning('followUser : le graphe a refusé l\'arête de suivi', $e->context() + [
+                'wall_vertexid' => $wall_id,
+                'user_vertexid' => $this->user->vertexid,
+            ]);
 
+            return false;
+        }
+
+        // Seulement après une écriture confirmée : invalider un verdict que le graphe n'a pas
+        // changé ferait recalculer la même réponse au prix d'un aller-retour de plus.
         $this->forgetRelationVerdict($user_tofollow);
 
-        if (count($result) === 0) {
-            return true;
-       }
-
-       return false;
+        return true;
     }
 
-    public function unfollowUser($user_followed)
+    /** @return bool Cf. `followUser` pour le contrat. */
+    public function unfollowUser($user_followed): bool
     {
-       $wall_id = $user_followed->wall();
+        $wall_id = $user_followed->wall();
 
-        $result = $this->nebula->deleteEdge(
-            config('socializer.nebulagraph.edges.followed_by.name'),
-             [
-                $wall_id.'->'.$this->user->vertexid
-            ]
-        );
+        try {
+            $this->nebula->deleteEdge(
+                config('socializer.nebulagraph.edges.followed_by.name'),
+                [
+                    $wall_id.'->'.$this->user->vertexid
+                ]
+            );
+        } catch (NebulaGraphException $e) {
+            Log::warning('unfollowUser : le graphe a refusé le retrait de l\'arête de suivi', $e->context() + [
+                'wall_vertexid' => $wall_id,
+                'user_vertexid' => $this->user->vertexid,
+            ]);
+
+            return false;
+        }
 
         $this->forgetRelationVerdict($user_followed);
 
-        if (count($result) === 0) {
-            return true;
-       }
-
-       return false;
+        return true;
     }
 
     /**

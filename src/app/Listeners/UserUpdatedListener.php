@@ -3,9 +3,12 @@
 namespace Dauvray\Socializer\app\Listeners;
 
 use Dauvray\Estarter\app\Events\UserUpdated;
+use Dauvray\Socializer\app\Listeners\Concerns\ToleratesGraphFailure;
 
 class UserUpdatedListener
 {
+    use ToleratesGraphFailure;
+
     /**
      * Create the event listener.
      *
@@ -26,7 +29,7 @@ class UserUpdatedListener
     {
         $nebula = app('nebulaGraph');
 
-        $nebula->updateVertex(
+        $this->syncToGraph(fn () => $nebula->updateVertex(
             config('socializer.nebulagraph.tags.user.name'),
             $event->user->vertexid,
             array_merge(
@@ -38,6 +41,6 @@ class UserUpdatedListener
                 'active' => (int)$event->user->active,
                 ]
             )
-        );
+        ), ['user_vertexid' => $event->user->vertexid]);
     }
 }
