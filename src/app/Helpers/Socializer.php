@@ -155,9 +155,67 @@ if (!function_exists('getFeedFollowers')) {
     }
 }
 
+if (!function_exists('getUserNetworkVertexIds')) {
+    /**
+     * Les sommets `feed` et `wall` DÉJÀ projetés pour cet utilisateur.
+     *
+     * nGQL exige un `MATCH` avant tout `OPTIONAL MATCH`, d'où l'ancrage sur `(u:user)` : la requête
+     * ne rend donc rien tant que le sommet utilisateur n'existe pas — ce qui est le bon sens de
+     * lecture, `createUserAndNetwork` le posant en premier.
+     *
+     * Le mur et le feed d'un utilisateur sont uniques par construction (cf. `createUserAndNetwork`).
+     * Sur une base d'avant E9 qui en porterait plusieurs, la première ligne rendue par le graphe
+     * gagne : c'est ce qu'il faut pour que le rattrapage n'en crée pas un de plus.
+     *
+     * @return array{feed: ?string, wall: ?string} `null` pour ce qui reste à créer
+     */
+    function getUserNetworkVertexIds($user_vertex_id): array
+    {
+        $result = app('nebulaGraph')->execute("
+            MATCH (u:user) WHERE id(u) == '$user_vertex_id'
+            OPTIONAL MATCH (f:feed)-[:owned_by]->(u)
+            OPTIONAL MATCH (w:wall)-[:owned_by]->(u)
+            RETURN id(f) AS feed, id(w) AS wall
+        ");
+
+        return [
+            'feed' => $result[0]['feed'] ?? null,
+            'wall' => $result[0]['wall'] ?? null,
+        ];
+    }
+}
+
 if (!function_exists('createUserAndNetwork')) {
+    /**
+     * Projette l'utilisateur et son réseau (feed, mur, arêtes) dans le graphe.
+     *
+     * **Idempotente depuis E9 : un utilisateur a UN feed et UN mur, quel que soit le nombre
+     * d'appels.** Deux verrous, et il faut les deux :
+     *
+     *  1. le réseau déjà projeté est RELU et réutilisé. Seul verrou qui rattrape les sommets nés
+     *     avant E9, dont l'`uniqidReal()` n'est pas reconstituable ;
+     *  2. les sommets neufs portent un id DÉRIVÉ de l'utilisateur (`feed12`, `wall12`), donc
+     *     `INSERT VERTEX IF NOT EXISTS` refuse d'en poser un second — y compris quand deux appels
+     *     concurrents ont tous deux lu « pas de mur » avant que l'autre n'écrive, ce que le verrou
+     *     1, un lire-puis-écrire, ne peut pas garantir seul.
+     *
+     * Le verrou 2 SEUL serait pire que rien : il poserait `wall12` à côté du mur aléatoire existant.
+     *
+     * Les arêtes n'ont jamais eu besoin de garde : NebulaGraph les clefe sur
+     * (source, type, rang, destination), un second `INSERT EDGE` réécrit la même.
+     *
+     * CE QUE ÇA RÉPARE. `insertVertex('feed', [])` tirait un `uniqidReal()` neuf à chaque passage,
+     * donc les deux appelants qui projettent une base entière — la migration `create_nebula` et
+     * `socializer:nebula-populate`, dont le déroulé prévu est « installer puis rattraper » —
+     * donnaient 2 murs et 2 feeds par utilisateur. Un mur de trop n'est pas qu'un compteur faux
+     * (l'auto-abonnement ci-dessous est compté deux fois par le `COUNT(nbf)` de `Services\Users`,
+     * que le front corrige d'un `- 1` en dur) : c'est surtout `Socializable::wall()` qui rend
+     * `$wall[0]` sur deux lignes SANS `ORDER BY`, donc un follow, une publication et sa
+     * distribution qui peuvent atterrir sur deux murs du même utilisateur.
+     */
     function createUserAndNetwork($user) {
         $nebula = app('nebulaGraph');
+        $userVertexId = $user->vertexid;
 
         /*
         | VERTEX
@@ -165,10 +223,10 @@ if (!function_exists('createUserAndNetwork')) {
 
         // create user vertex
         $nebula->insertVertex(
-            config('socializer.nebulagraph.tags.user.name'), 
+            config('socializer.nebulagraph.tags.user.name'),
             array_merge(
                 $nebula->populatePropsFromPattern(
-                    $user, 
+                    $user,
                     config('socializer.nebulagraph.vertices.user')
                 ),
                 [
@@ -177,27 +235,28 @@ if (!function_exists('createUserAndNetwork')) {
             )
         );
 
+        $existing = getUserNetworkVertexIds($userVertexId);
+
         // create user feed vertex
-        $result = $nebula->insertVertex(
+        $feedVertexId = $existing['feed'] ?? getVertexIdFromInsert($nebula->insertVertex(
             config('socializer.nebulagraph.tags.feed.name'),
-            []
-        );
+            [
+                'id' => config('socializer.nebulagraph.tags.feed.name').$user->id,
+            ]
+        ));
 
         // create user wall vertex
-        $result2 = $nebula->insertVertex(
+        $wallVertexId = $existing['wall'] ?? getVertexIdFromInsert($nebula->insertVertex(
             config('socializer.nebulagraph.tags.wall.name'),
                 [
+                    'id' => config('socializer.nebulagraph.tags.wall.name').$user->id,
                     'questionnaire_id' => config('socializer.posts.classic_form'),
                 ]
-        );
+        ));
 
         /*
         | RELATIONSHIP
         */
-
-        $feedVertexId = getVertexIdFromInsert($result);
-        $wallVertexId = getVertexIdFromInsert($result2);
-        $userVertexId = $user->vertexid;
 
         // create user feed
         setOwnedByRelation($feedVertexId, $userVertexId);

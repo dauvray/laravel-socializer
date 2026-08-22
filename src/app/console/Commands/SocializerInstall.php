@@ -370,6 +370,11 @@ class SocializerInstall extends EstarterPrepare
             "is_bot" => "1",
         ]);
         $chatbot->assignRole('Agent AI');
+
+        // Deuxième projection VOLONTAIRE : le `static::created` d'`EstarterUser` a déjà déclenché
+        // `UserCreatedListener` au `create()` ci-dessus. Ce n'est pas un doublon à nettoyer — la
+        // projection est idempotente (cf. `createUserAndNetwork`), et le listener, lui, tolère
+        // l'échec sans rien réessayer : cet appel est le rattrapage.
         createUserAndNetwork($chatbot);
         $this->putInFile(base_path('.env'), "
             SOCIALIZER_CHATBOT_USER_ID=$chatbot->id\n

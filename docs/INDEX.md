@@ -15,6 +15,7 @@ Point d'entrée court : [`CLAUDE.md`](../CLAUDE.md) · Installation : [`README.m
 | **comprendre le package** en arrivant | [architecture/package.md](architecture/package.md) |
 | écrire du code qui ressemble au reste | [architecture/conventions.md](architecture/conventions.md) |
 | ajouter un événement temps réel, un canal Reverb | [architecture/signalisation.md](architecture/signalisation.md) |
+| **projeter des données dans NebulaGraph**, ou réparer un graphe qui a divergé | [architecture/projection-graphe.md](architecture/projection-graphe.md) |
 | lancer ou écrire des tests | [architecture/tests.md](architecture/tests.md) |
 | **brancher la visio / le chat data / la diffusion** | [modules/webrtc2/api.md](modules/webrtc2/api.md) |
 | comprendre pourquoi un flux WebRTC n'arrive pas | [modules/webrtc2/flux.md](modules/webrtc2/flux.md) |
@@ -39,6 +40,7 @@ docs/
 │   ├── package.md                  identité, tri-persistance, ServiceProvider, points d'extension
 │   ├── conventions.md              PHP · front · Pinia · SCSS · i18n
 │   ├── signalisation.md            Reverb/Echo, canaux, 5 events, file de signaux
+│   ├── projection-graphe.md        qui écrit le réplica NebulaGraph, l'invariant, la réparation
 │   └── tests.md                    infra Vitest (côté hôte), stratégie, hook pre-push
 ├── modules/
 │   ├── webrtc2/                    INDEX · architecture · flux · api · securite · tests

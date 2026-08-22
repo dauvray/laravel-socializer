@@ -33,7 +33,10 @@
       "App\\": "tests/Stubs/App/",
       "Dauvray\\Estarter\\": "tests/Stubs/Estarter/",
       "Innovation\\formdesigner\\": "tests/Stubs/Formdesigner/"
-    }
+    },
+    "files": [
+      "tests/Stubs/helpers.php"
+    ]
   },
   "minimum-stability": "dev",
   "prefer-stable": true,

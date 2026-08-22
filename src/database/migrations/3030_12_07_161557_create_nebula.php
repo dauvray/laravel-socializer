@@ -2,8 +2,7 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\Log;
-use Dauvray\Socializer\app\Exceptions\NebulaGraphException;
-use Dauvray\Socializer\app\Services\Server as ServerService;
+use Dauvray\Socializer\app\Services\GraphProjection;
 
 return new class extends Migration
 {
@@ -13,7 +12,6 @@ return new class extends Migration
     public function up(): void
     {
         $nebula = app('nebulaGraph');
-        $serverService = new ServerService();
 
         /*
         | SPACE
@@ -77,102 +75,35 @@ return new class extends Migration
 
         sleep(config('socializer.nebulagraph.sleeping_duration'));
 
-        // ── À partir d'ici, du DML : il LÈVE depuis E7 ────────────────────────────────────
+        // ── À partir d'ici, du DML, et il n'est plus ici ──────────────────────────────────
         //
         // Le DDL ci-dessus, lui, ne lève pas — décision assumée : le schéma NebulaGraph est
         // asynchrone (d'où les `sleep()`), une erreur transitoire y est normale, et les
         // `IF NOT EXISTS` rendent les relances idempotentes. Il journalise, sans plus.
         //
-        // Le DML, en revanche, est du PEUPLEMENT en boucle. Le rattraper PAR ITEM, plutôt que de
-        // laisser la première exception traverser `up()`, évite de perdre les 18 tags, 11 arêtes
-        // et 6 index déjà posés à cause d'un seul enregistrement bancal — typiquement
-        // `$article->author->id` sur un auteur supprimé. Le décompte final fait quand même
-        // échouer la migration : elle ne sera pas enregistrée, et `migrate` sortira en non-zéro.
+        // Le peuplement, en revanche, vit dans `Services\GraphProjection` : `nebula-populate` le
+        // rejoue à la demande, et en tenir une copie ici les faisait dériver. Cette migration ne
+        // garde que sa POLITIQUE D'ERREUR — journaliser chaque refus, puis lever pour n'être pas
+        // enregistrée — et l'étape des serveurs de groupes, la seule qui exige un utilisateur
+        // authentifié (cf. `GraphProjection::projectGroupServers`).
         //
-        // ⚠️ LA REPRISE N'EST PAS UNE RELANCE. `createUserAndNetwork` n'est pas idempotente —
-        // `insertVertex('feed', [])` tire un `uniqidReal()` neuf à chaque passage, donc rejouer
-        // `migrate` DUPLIQUERAIT les feeds et les walls. La reprise est `migrate:rollback` (qui
-        // fait `dropSpace`) puis `migrate`.
-        $echecs = 0;
+        // Une relance est désormais SANS DANGER : la projection est idempotente, un second passage
+        // relit le réseau existant au lieu d'en créer un second (`createUserAndNetwork`).
+        $projection = new GraphProjection();
 
-        $peupler = function (callable $ecriture, string $quoi) use (&$echecs): void {
-            try {
-                $ecriture();
-            } catch (NebulaGraphException $e) {
-                $echecs++;
-                Log::error("create_nebula : $quoi non projeté", $e->context());
-            }
-        };
+        $journaliser = fn (string $quoi, array $contexte) => Log::error(
+            "create_nebula : $quoi non projeté",
+            $contexte
+        );
 
-        /*
-        | GROUPS
-        */
-        foreach(config('estarter.models.group')::all() as $group) {
-            $peupler(fn () => $serverService->createGroupServer(
-                [
-                    'name' => $group->name,
-                    'privacy' => 1,
-                ],
-                getVertexId($group)
-            ), "serveur du groupe {$group->id}");
-        }
-
-        foreach(config('estarter.models.group')::all() as $group) {
-            $peupler(fn () => setGroupHasParentRelation($group), "parent du groupe {$group->id}");
-        }
-
-        /*
-        | USERS
-        */
-        foreach(config('estarter.models.user')::all() as $user) {
-            $peupler(fn () => createUserAndNetwork($user), "réseau de l'utilisateur {$user->id}");
-        }
-
-        /*
-        | VERTEX
-        */
-
-        foreach(config('eblogger.models.article')::all() as $article) {
-            $peupler(fn () => $nebula->insertVertex(
-                config('socializer.nebulagraph.tags.article.name'),
-                array_merge(
-                    $nebula->populatePropsFromPattern(
-                        $article,
-                        config('socializer.nebulagraph.vertices.article')
-                    ),
-                    [
-                        'identifier' => hideIdentifier($article)
-                    ]
-                )
-            ), "article {$article->id}");
-        }
-
-        $peupler(fn () => $nebula->insertVertex(
-            config('socializer.nebulagraph.tags.marketplace.name'),
-            ['id' => 'marketplace']
-        ), 'marketplace');
-
-
-        sleep(config('socializer.nebulagraph.sleeping_duration'));
-
-        /*
-        | RELATIONSHIP
-        */
-
-        foreach(config('eblogger.models.article')::all() as $article) {
-            // relie article et auteur
-            $peupler(fn () => setHasCreatorRelation(
-                config('socializer.nebulagraph.tags.article.name').$article->id,
-                config('socializer.nebulagraph.tags.user.name').$article->author->id
-            ), "auteur de l'article {$article->id}");
-        }
+        $echecs = $projection->projectGroupServers($journaliser)
+            + $projection->projectAll($journaliser);
 
         if($echecs > 0) {
             throw new RuntimeException(
                 "create_nebula : $echecs écriture(s) refusée(s) par le graphe. Le space est "
-                ."partiellement peuplé — reprendre par `migrate:rollback` puis `migrate`, JAMAIS "
-                ."par une simple relance (`createUserAndNetwork` n'est pas idempotente). Détail "
-                ."dans le journal."
+                ."partiellement peuplé — la projection étant idempotente, la reprise est une "
+                ."simple relance de `migrate` une fois la cause corrigée. Détail dans le journal."
             );
         }
     }

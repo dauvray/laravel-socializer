@@ -3,7 +3,7 @@
 namespace Dauvray\Socializer\app\Console\Commands;
 
 use Dauvray\Estarter\app\Console\Commands\EstarterPrepare;
-use Dauvray\Socializer\app\Exceptions\NebulaGraphException;
+use Dauvray\Socializer\app\Services\GraphProjection;
 
 
 class NebulaGraphPopulate extends EstarterPrepare
@@ -48,69 +48,27 @@ class NebulaGraphPopulate extends EstarterPrepare
                 \/  populate  \/        \/              \/    \/
         ');
 
-        // Le rattrapage est PAR ITEM, et le décompte final décide du code de sortie.
+        // Le peuplement lui-même vit dans `Services\GraphProjection`, partagé avec la migration
+        // `create_nebula` : en tenir une copie ici les faisait dériver — cette commande avait perdu
+        // le `marketplace` et les parents de groupes en route. Ne reste ici que la POLITIQUE
+        // D'ERREUR de la commande : rapporter chaque refus sur la sortie, et le décompte final qui
+        // décide du code de sortie.
         //
         // Le `try` unique qui enveloppait tout abandonnait la boucle au premier échec, et sortait
-        // en code 0 : le peuplement s'arrêtait à mi-chemin en annonçant « terminé ». Depuis E7
-        // les écritures lèvent, ce qui rend le défaut à la fois plus probable et enfin visible.
-        $echecs = 0;
-
+        // en code 0 : le peuplement s'arrêtait à mi-chemin en annonçant « terminé ». Depuis E7 les
+        // écritures lèvent, ce qui rend le défaut à la fois plus probable et enfin visible. Le
+        // rattrapage est donc PAR ITEM, dans la projection.
+        //
+        // ⚠️ Les serveurs de groupes ne sont PAS projetés ici : cette étape exige un utilisateur
+        // authentifié, cf. `GraphProjection::projectGroupServers`.
         try {
-            $nebula = app('nebulaGraph');
-
-            /*
-            | USERS
-            */
-            foreach(config('estarter.models.user')::all() as $user) {
-                try {
-                    createUserAndNetwork($user);
-                } catch (NebulaGraphException $e) {
-                    $echecs++;
-                    $this->error("Utilisateur {$user->id} non projeté : ".$e->getMessage());
-                }
-            }
-
-            /*
-            | ARTICLES
-            */
-
-            foreach(config('eblogger.models.article')::all() as $article) {
-                try {
-                    $nebula->insertVertex(
-                        config('socializer.nebulagraph.tags.article.name'),
-                        array_merge(
-                            $nebula->populatePropsFromPattern(
-                                $article,
-                                config('socializer.nebulagraph.vertices.article')
-                            ),
-                            [
-                                'identifier' => hideIdentifier($article)
-                            ]
-                        )
-                    );
-                } catch (NebulaGraphException $e) {
-                    $echecs++;
-                    $this->error("Article {$article->id} non projeté : ".$e->getMessage());
-                }
-            }
-
-            foreach(config('eblogger.models.article')::all() as $article) {
-                try {
-                    // relie article et auteur
-                    // Defini le sens de la relation et passe des parametres
-                    // e.g : Article2->User3 => []
-                    $nebula->insertEdge(
-                        config('socializer.nebulagraph.edges.has_creator.name'),
-                        [
-                            config('socializer.nebulagraph.tags.article.name').$article->id.'->'.config('socializer.nebulagraph.tags.user.name').$article->author->id => config('socializer.nebulagraph.edges.has_creator.props')
-                        ]
-                    );
-                } catch (NebulaGraphException $e) {
-                    $echecs++;
-                    $this->error("Auteur de l'article {$article->id} non relié : ".$e->getMessage());
-                }
-            }
-
+            // Le libellé reste pauvre à dessein : le message brut du graphe cite du contenu
+            // utilisateur (cf. règle 1 de `NebulaGraphException`), il sort par le journal.
+            $echecs = (new GraphProjection())->projectAll(
+                fn (string $quoi, array $contexte) => $this->error(
+                    "Non projeté — $quoi : {$contexte['operation']} refusé par NebulaGraph (code {$contexte['code']})."
+                )
+            );
         } catch (\Throwable $e) {
             // Le transport mort, ou un défaut hors NebulaGraph : rien à poursuivre.
             $this->error('Exception reçue : '.$e->getMessage());

@@ -124,6 +124,49 @@ class FakeNebulaGraph
         return $this->execute('UPDATE VERTEX ON '.$label.' "'.((string) $vertex_id).'" SET '.implode(',', array_keys($values)));
     }
 
+    /**
+     * Même raison que `insertEdge` ci-dessus, avec une exigence de plus.
+     *
+     * ⚠️ ELLE DOIT RENDRE LE CONTRAT DE RETOUR DE PRODUCTION, pas le résultat d'`execute()`.
+     * `NebulaGraphConnection::insertVertex` rend les fragments `"vid":(…)` qu'elle a construits, et
+     * c'est la SEULE source de `getVertexIdFromInsert()`. Une doublure qui rendrait `[]` ferait
+     * repartir `createUserAndNetwork` avec un vid vide, et ses arêtes pointeraient sur du néant —
+     * un test vert sur un bug complet.
+     *
+     * L'id de repli reproduit le comportement de production (`$values['id'] ?? uniqidReal()`) mais
+     * en restant lisible dans les assertions : ce qui compte est de distinguer « id fourni » de
+     * « id tiré au hasard ».
+     *
+     * @param  array<string, mixed>  $values
+     * @return array<int, string>
+     */
+    public function insertVertex(string $label = 'default', array $values = []): mixed
+    {
+        $vid = $values['id'] ?? 'vid-aleatoire-'.$label;
+
+        // Journalisée avant tout retour, y compris si une règle `throwsOn` la fait lever.
+        $this->execute('INSERT VERTEX IF NOT EXISTS '.$label.' VALUES "'.$vid.'":()');
+
+        return ['"'.$vid.'":()'];
+    }
+
+    /**
+     * Transformation PURE de la production — aucune requête, donc rien à journaliser.
+     *
+     * `NebulaGraphConnection::populatePropsFromPattern` remplit les propriétés depuis le modèle et,
+     * surtout, en tire l'`id` du sommet quand le modèle expose `vertexId` (accesseur des traits
+     * `Socializable` / `Commentable`). La doublure ne garde que cette sortie-là : c'est elle qui
+     * décide du vid, donc la seule dont un test dépend. Reproduire le remplissage complet ferait
+     * une seconde implémentation à maintenir, qui divergerait.
+     *
+     * @param  array<string, mixed>  $pattern
+     * @return array<string, mixed>
+     */
+    public function populatePropsFromPattern($object, array $pattern): array
+    {
+        return isset($object->vertexId) ? ['id' => $object->vertexId] : [];
+    }
+
     /** @return array<int, string> */
     public function queries(): array
     {

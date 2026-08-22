@@ -144,8 +144,32 @@ class Server
         return $vid;
     }
 
+    /**
+     * Le serveur d'un groupe, et sa relation d'appartenance au groupe.
+     *
+     * ⚠️ EXIGE UN UTILISATEUR AUTHENTIFIÉ, donc n'est pas jouable en console. La chaîne
+     * `createServer` → `Page::createPageVertice` lit `$this->user->id` et `get_class($this->user)` :
+     * sans acteur, c'est une `TypeError`, pas une panne de graphe — et `ToleratesGraphFailure`
+     * rappelle qu'une `TypeError` doit remonter. Le garde ci-dessous la remplace par un refus
+     * lisible, pour que la migration `create_nebula`, qui boucle sur les groupes, ne meure pas sur
+     * une base qui en a.
+     *
+     * Rendre cette projection jouable en console — propriétaire passé explicitement plutôt que lu
+     * dans `Auth::user()` — est un chantier à part : `work/README.md`.
+     *
+     * @return string|false le vertexid du serveur, ou `false` si rien n'a été tenté
+     */
     public function createGroupServer(array $server_data = [], $group_vid = null)
     {
+        if(!$this->user) {
+            Log::warning('createGroupServer : aucun utilisateur authentifié, serveur de groupe non projeté', [
+                'group_vertexid' => $group_vid,
+                'server_name' => $server_data['name'] ?? null,
+            ]);
+
+            return false;
+        }
+
         $vid = $this->createServer($server_data);
 
         // server / group relation

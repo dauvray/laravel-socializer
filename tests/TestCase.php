@@ -91,6 +91,11 @@ abstract class TestCase extends BaseTestCase
 
         $config->set('auth.providers.users.model', User::class);
         $config->set('broadcasting.default', 'null');
+
+        // `GraphProjection::projectAll()` marque une pause entre les sommets d'article et leurs
+        // arêtes, parce que le schéma NebulaGraph est asynchrone. Le défaut du paquet est 20 s :
+        // la garder bloquerait la suite pour rien, aucun graphe réel n'étant en jeu ici.
+        $config->set('socializer.nebulagraph.sleeping_duration', 0);
     }
 
     protected function defineDatabaseMigrations(): void
@@ -113,13 +118,22 @@ abstract class TestCase extends BaseTestCase
 
         // Pivot user ↔ group d'estarter, lu par `Socializable::mayReach`. Fabriqué à la main
         // pour la même raison que `users` : sa migration vit dans un AUTRE paquet, absent du
-        // harnais. La table `groups` elle-même n'est pas nécessaire — le prédicat retenu est
-        // « même group_id exactement », il ne remonte pas le nested set.
+        // harnais. Le prédicat retenu est « même group_id exactement », il ne remonte pas le
+        // nested set.
         Schema::create('group_user', function ($table) {
             $table->id();
             $table->unsignedBigInteger('user_id');
             $table->unsignedBigInteger('group_id');
             $table->unique(['user_id', 'group_id']);
+        });
+
+        // `groups` n'est pas nécessaire à `mayReach`, mais l'est à `User::groups()` — que
+        // `createUserAndNetwork()` parcourt — et au stub `Group`, cible de
+        // `config('estarter.models.group')` quand un test projette les groupes.
+        Schema::create('groups', function ($table) {
+            $table->id();
+            $table->string('name');
+            $table->unsignedBigInteger('parent_id')->nullable();
         });
     }
 

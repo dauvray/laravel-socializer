@@ -36,4 +36,16 @@ class User extends Authenticatable
     protected $fillable = ['name', 'slug', 'email', 'password', 'vertexid'];
 
     public $timestamps = true;
+
+    /**
+     * ⚠️ Nécessaire, pas décoratif : `createUserAndNetwork()` termine par
+     * `foreach ($user->groups as $group)`. Sans cette relation, Eloquent rend `null` et le
+     * `foreach` émet un warning — que `phpunit.xml` (`failOnWarning="true"`) transforme en échec.
+     *
+     * Le pivot est celui que `defineDatabaseMigrations()` fabrique déjà pour `mayReach`.
+     */
+    public function groups()
+    {
+        return $this->belongsToMany(Group::class, 'group_user', 'user_id', 'group_id');
+    }
 }
