@@ -22,20 +22,21 @@ C3 ──> C4 ──> C2 ──┬─> E3     (tous sur UserController — à s�
 B3, C1                        (indépendants)
 D1 ──> D2
 E7 ──> E4.2
-E1, E2, E5, E6, E8            (indépendants)
+E1, E2, E5, E6, E8, E9        (indépendants)
 F1                            (dernier)
 ```
 
-`A` est bloquant. `B3`, `C1`, `C3`, `E1`, `E2`, `E6`, `E7`, `E8` ne bloquent personne : à intercaler
-librement. **E8 est la seule à toucher la charge utile `users`** : ne pas la sérialiser avec le
-lot B, qui l'interprète.
+`A` est bloquant. `B3`, `C1`, `C3`, `E1`, `E2`, `E6`, `E7`, `E8`, `E9` ne bloquent personne : à
+intercaler librement. **E8 était la seule à toucher la charge utile `users`** : elle ne devait pas
+être menée en parallèle du lot B, qui l'interprète — contrainte levée depuis, les deux sont finis.
 
 Les lots A, B et C sont **terminés**, ainsi que **C5** (le bouton d'appel), **E5** (le libellé du
-refus) — 15 et 16/08 — et **E4.1** le 21/08 : la plus grave des tâches ouvertes est fermée. Restent :
+refus) — 15 et 16/08 —, **E4.1** le 21/08 : la plus grave des tâches ouvertes est fermée, et **E8**
+le 22/08 : la présence ne diffuse plus le bloc privé de personne. Restent :
 **D** (TURN, requiert une modif d'infra coturn), **E1**, **E2**, la part `getUsersList` d'**E3**,
 **E4.2** (dérive du réplica, arbitrage à produire), **E6** (périmètre estarter), **E7** (extraite
-d'E4 : les écritures d'arête échouent en silence), **E8** (ajoutée le 21/08 : la présence diffuse
-le bloc privé de chaque membre) et **F1** en clôture.
+d'E4 : les écritures d'arête échouent en silence), **E9** (née d'E8 : la liste noire des charges
+utiles d'auteur laisse passer `groups` et `unreadNotifications`) et **F1** en clôture.
 
 ---
 
@@ -1422,8 +1423,8 @@ corrige.
 
 ### E8 — La présence Reverb diffuse le bloc privé de chaque membre `[M]` 🟠 — ajoutée le 21/08/2026
 
-- [ ] **Dépend de :** rien. Mais elle modifie la charge utile `users` que consomme WebRTC2 :
-      **ne pas la mener en parallèle d'une tâche du lot B**.
+- [x] **Dépend de :** rien. Mais elle modifie la charge utile `users` que consomme WebRTC2 :
+      **ne pas la mener en parallèle d'une tâche du lot B**. — ✅ fait le 22/08/2026.
 
 Les trois canaux de présence — `server.{serverId}`, `room.{roomId}`, `chat.{chatId}` — renvoient
 `new UserResource($user)` depuis [`channels.php`](../src/routes/socializer/channels.php). Cette
@@ -1463,9 +1464,62 @@ légitimement) — c'est la présence, et elle seule, qui le retourne. Consigné
   `gravatar`. `slug` est le pivot de l'admission des pairs WebRTC2 : un champ retiré à l'aveugle
   casse une poignée de main, pas seulement un affichage.
 
-**Tests :** la charge utile de présence ne contient ni `email`, ni `roles`, ni `permissions`, ni
-`groups` · elle contient encore `slug`/`id`/`name`/`image` · `is_me` absent plutôt que trompeur.
+**Livré** : `Resources/PresenceUser` (liste blanche : `id`, `name`, `slug`, `image`, `function`,
+`connected`) sur les **quatre** canaux, épinglée par `tests/Feature/Channels/PresencePayloadTest`
+(17 cas).
+
+Quatre écarts par rapport au plan ci-dessus, tous mesurés en le livrant :
+
+1. **Quatre canaux, pas trois.** `questionnaire.{roomId}` renvoyait la même ressource — le
+   `DataProvider` du test le couvre, et c'est lui qui aurait rougi si on l'avait oublié.
+2. **Deux sources, pas une.** Le bloc privé venait d'estarter, mais `Resources\User` ajoutait
+   *aussi* son propre `groups` (avec `server_id`) **sans condition**. D'où le choix d'une **liste
+   blanche** : une liste noire aurait fermé la première, manqué la seconde, et n'aurait rien dit du
+   champ ajouté demain en amont. C'est la leçon d'E8 la plus réutilisable.
+3. **`connected` gardé**, contrairement à ce que « `slug`/`id`/`name`/`image` » laissait entendre :
+   `GravatarStatus` le lit dès qu'aucun listener `users-status.{slug}` n'existe, c'est-à-dire dans
+   le cas ordinaire. `function` gardé pour la même raison (`WallLink`, `ApplicationComponent`).
+   `gravatar` retiré en revanche — son seul lecteur est `AvatarCropper`, sur un profil HTTP, et
+   `Gravatar.vue` prend son icône de repli dans le store `me`.
+4. **Le harnais a dû s'ouvrir d'un cran** : `FakeOnlineUsers::isOnlineUser` ne lève plus, elle
+   répond sur un état déclaré par `pretendOnline()` — et les deux réponses sont assertées, pour ne
+   pas remplacer un service qui lève par un service qui rend 0 en silence.
+
+Effet visible assumé : le dropdown de `WallLink` ouvert depuis une liste de présence n'affiche plus
+la ligne e-mail (`v-if="user.email"`). C'est exactement la fuite qu'on ferme.
+
+> **La leçon d'E8** : le périmètre d'une ressource de **diffusion** se décide dans la ressource,
+> jamais dans l'identité de la requête qui l'a fabriquée. Corollaire de méthode, valable au-delà de
+> ce cas : sur un chemin de diffusion, **une liste blanche est le seul filtre qui vieillisse bien**.
+
 **Commit :** `secu(socializer): ressource de présence sans bloc privé`
+
+---
+
+### E9 — La liste noire des charges utiles d'auteur laisse passer deux champs `[S]` 🟡 — ajoutée le 22/08/2026
+
+- [ ] **Dépend de :** rien. **Trouvée en livrant E8**, même famille et autre vecteur.
+
+`filterSensibleDataUserRessource()` (`src/app/Helpers/Socializer.php`) retire `email`, `created_at`,
+`roles`, `permissions` et `channel` d'une `Resources\User` avant diffusion — mais **laisse `groups`
+(avec `server_id`) et `unreadNotifications`**. Deux appelants, tous deux sur des charges utiles
+d'auteur de message diffusées à tous les membres du chat : `Services/Chat.php:255` et `:364`.
+
+C'est le défaut qu'E8 a évité en choisissant une liste blanche : **une liste noire ferme les champs
+du jour où on l'écrit.** Ici elle a été écrite avant que `Resources\User` n'ajoute son `groups`.
+
+Deux voies, à trancher — et c'est pourquoi ce n'est pas dans E8 :
+
+- **la courte** : deux `unset()` de plus. Referme le trou connu, laisse la classe de défaut ouverte ;
+- **la bonne** : une ressource d'auteur en liste blanche, sur le patron de `PresenceUser`.
+
+**À faire avant de choisir** : l'inventaire des lectures de `author.*` côté chat. `ThumbnailWidget`
+lit bien `user.groups`, mais sur une charge utile de **mur** — reste à vérifier qu'aucun composant
+de message ne le fait.
+
+**Tests :** la charge utile d'un auteur de message ne contient ni `groups` ni
+`unreadNotifications` · elle contient encore ce que le fil de discussion affiche.
+**Commit :** `secu(socializer): charge utile d'auteur en liste blanche`
 
 ---
 
@@ -1503,11 +1557,13 @@ légitimement) — c'est la présence, et elle seule, qui le retourne. Consigné
 
 ## Vérification globale
 
-- `npx vitest run` après **chaque** tâche. Référence relue le 16/08/2026, après E5 :
-  **649 tests / 37 fichiers, ~3,8 s**.
+- `npx vitest run` après **chaque** tâche. Référence relue le 22/08/2026, après E8 :
+  **655 tests / 38 fichiers, ~3,8 s**.
 - **Backend** : `vendor/bin/phpunit` **depuis le paquet** (Orchestra Testbench, aucun serveur
   requis) — cf. [docs/architecture/tests.md](../docs/architecture/tests.md). Socle posé avec C3
-  le 15/08/2026, référence après E5 : **81 tests / 210 assertions, ~4,6 s**.
+  le 15/08/2026, référence après E8 : **121 tests / 311 assertions, ~6 s**. ⚠️ Le décompte qui
+  figurait ici (81/210, « après E5 ») n'avait pas été remis à jour par E4.1 : relire la référence,
+  ne pas la déduire d'un delta.
 - `hooks/pre-push` rejoue **les deux** suites. ⚠️ Il n'y a **pas** de CI : la mention d'un
   `.github/workflows/webrtc2-tests.yml` qui figurait ici était fausse — ce dépôt n'a pas de
   `.github/`, et l'activation du hook est une config locale, jamais versionnée.
