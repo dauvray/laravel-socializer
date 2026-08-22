@@ -26,6 +26,7 @@ Composable Vue 3 permettant de gérer simplement les canaux **Laravel Reverb / E
    - [Whispers (events client)](#whispers-events-client)
    - [Notifications Laravel](#notifications-laravel)
    - [Contrôle manuel du cycle de vie](#contrôle-manuel-du-cycle-de-vie)
+   - [Un canal partagé se libère au compteur](#un-canal-partagé-se-libère-au-compteur)
    - [Gestion d'erreurs](#gestion-derreurs)
    - [Accès au canal natif Echo](#accès-au-canal-natif-echo)
 8. [`useReverbPresence` — sucre syntaxique](#usereverbpresence--sucre-syntaxique)
@@ -123,7 +124,7 @@ useReverbChannel(channelName, options?)
 | `leave()`       | `() => void`                          | Quitte le canal. Appelé automatiquement au démontage. |
 | `listen(event, cb)` | `(string, Function) => void`      | Ajoute un listener dynamique. Persiste à travers les reconnexions. |
 | `stopListening(event)` | `(string) => void`             | Supprime tous les listeners dynamiques pour cet event. |
-| `whisper(event, payload)` | `(string, any) => void`     | Émet un *client event* (whisper). |
+| `whisper(event, payload)` | `(string, any) => boolean`  | Émet un *client event* (whisper). Rend `false` — **sans jamais lever** — si la souscription n'est plus vivante. |
 | `channel()`     | `() => EchoChannel \| null`           | Retourne l'instance Echo brute (échappatoire). |
 
 ---
@@ -525,6 +526,38 @@ const closeChat = () => {
 
 ---
 
+### Un canal partagé se libère au compteur
+
+**Echo mémoïse ses canaux par nom.** Deux `useReverbChannel('user.7', …)` dans deux composants
+différents partagent donc **un** objet canal et **une** souscription pusher — mais `Echo.leave()`,
+lui, la coupe pour tout le monde. Le cas n'est pas théorique : `Notifications.vue`, `Server.vue` et
+`Room.vue` souscrivent tous les trois au canal privé `me.channel`.
+
+Le composable tient donc un **compteur de consommateurs par nom de canal** : `leave()` retire les
+handlers du partant, et n'appelle `Echo.leave()` que si plus personne ne tient le canal. Deux
+conséquences à connaître :
+
+- **Un `leave()` peut ne rien fermer** — c'est voulu. Vérifier une fermeture effective se fait côté
+  Reverb (`GET /apps/{id}/channels/…`), pas en comptant les appels à `leave()`.
+- **La clé du compteur est le nom NU**, sans préfixe de type : `Echo.leave(name)` détruit `name`,
+  `private-name` **et** `presence-name` d'un seul geste. Son rayon d'action est celui du nom.
+
+Ce que ça a corrigé : naviguer d'une room vers une autre page affichait la **nouvelle URL sur
+l'ancien écran**. `Server.vue` (parent) libérait `me.channel` en se démontant, puis `Room.vue`
+(enfant, démonté juste après) y whisperait `leave-room` — `PusherPrivateChannel.whisper()`
+déréférence `pusher.channels.channels[name]` sans garde, donc `TypeError` dans un hook de
+démontage, que Vue relance **au milieu du flush du scheduler** : le patch avorte, la vue ne change
+jamais. Le même `Echo.leave()` intempestif privait aussi `Notifications.vue`, resté monté, de ses
+notifications temps réel jusqu'au rechargement de la page.
+
+D'où le second garde-fou, indépendant : **`whisper()` ne lève jamais** et rend `false` quand le
+whisper n'est pas parti. Un client event perdu est un incident bénin ; il ne doit pas coûter une
+navigation.
+
+Épinglé par `components/System/composables/__tests__/useReverbChannel.test.js`.
+
+---
+
 ### Gestion d'erreurs
 
 ```vue
@@ -604,6 +637,8 @@ const { users, isConnected } = useReverbPresence('room.lobby', {
 | « 2 présents alors que je suis seul »        | Le plus souvent **vrai** : la présence compte les onglets. Un onglet d'arrière-plan sur la même page est « présent » ; être connecté ailleurs dans l'app ne compte pas | Interroger Reverb : `GET /apps/{id}/channels/presence-{canal}/users` avant de soupçonner le front |
 | Un champ attendu absent de `users`          | La présence porte une `PresenceUser` : six champs en liste blanche, pas la ressource HTTP | Lire le champ sur l'endpoint HTTP concerné ; sur `is_me`, comparer avec le store `me` |
 | Whisper ignoré                              | Canal public utilisé                                    | Les whispers nécessitent private / presence / encrypted |
+| L'URL change, l'écran reste sur la page précédente | Une exception levée dans un `onBeforeUnmount` avorte le flush de Vue — typiquement un `whisper` sur une souscription déjà libérée | Le composable ne lève plus (`whisper` rend `false`) ; si le symptôme revient, chercher l'exception dans les autres hooks de démontage de la route quittée |
+| Notifications temps réel muettes après avoir quitté une page | Un composant a libéré un canal **partagé** avec un autre encore monté | Souscrire via le composable (compteur de consommateurs), jamais par un `Echo.leave()` écrit à la main |
 | Listeners perdus après changement de canal  | Listener ajouté manuellement via `channel().listen()`    | Utiliser `listen()` du composable (persistant) |
 | `Echo is not defined`                       | Echo non exposé globalement                             | Vérifier que l'hôte fait bien `window.Echo = new Echo(...)` — le paquet ne l'initialise pas |
 | Double abonnement                           | `join()` appelé deux fois sans `leave()`                | Le composable filtre déjà si `currentName === newName` ; vérifier le code applicatif |

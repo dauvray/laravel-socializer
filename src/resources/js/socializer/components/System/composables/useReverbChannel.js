@@ -9,6 +9,37 @@ const CHANNEL_FACTORIES = {
 }
 
 /**
+ * Nombre de consommateurs vivants, par nom de canal.
+ *
+ * Echo mémoïse ses canaux : deux `useReverbChannel('user.7', …)` partagent UN objet canal et UNE
+ * souscription pusher, mais `Echo.leave()` la coupe pour TOUT LE MONDE. Sans compteur, le premier
+ * composant démonté emportait le canal des autres — c'est exactement ce qui cassait la navigation
+ * « room → feed » : `Server.vue` libérait le canal privé `me.channel` en se démontant, puis
+ * `Room.vue` (son enfant, démonté juste après) whisperait `leave-room` dans le vide.
+ *
+ * La clé est le nom NU, sans préfixe de type : `Echo.leave(name)` détruit `name`, `private-name`
+ * ET `presence-name` d'un seul geste — son rayon d'action est celui du nom, pas celui du type.
+ */
+const consumersByChannel = new Map()
+
+const retainChannel = (name) => {
+    consumersByChannel.set(name, (consumersByChannel.get(name) ?? 0) + 1)
+}
+
+/** @returns {boolean} `true` si l'appelant était le dernier consommateur — à lui d'éteindre. */
+const releaseChannel = (name) => {
+    const remaining = (consumersByChannel.get(name) ?? 1) - 1
+
+    if (remaining > 0) {
+        consumersByChannel.set(name, remaining)
+        return false
+    }
+
+    consumersByChannel.delete(name)
+    return true
+}
+
+/**
  * Composable générique pour gérer un canal Reverb/Echo.
  *
  * @param {string|Ref<string>} channelName
@@ -43,29 +74,62 @@ export function useReverbChannel(channelName, options = {}) {
     let currentChannel = null
     let currentName = null
 
+    /**
+     * Jeton de vie de la souscription courante. Chaque handler posé sur le canal capture le sien
+     * et redevient inerte dès que ce jeton est révoqué — seul moyen de neutraliser ceux qu'Echo
+     * ne sait pas défaire (`here`/`joining`/`leaving`/`error`/`notification`) quand le canal
+     * survit à ce consommateur parce qu'un autre le tient encore.
+     */
+    let subscriptionToken = { active: false }
+
+    /** Désabonnements de CETTE souscription, à rejouer si le canal survit. */
+    let unbinders = []
+
     // listeners ajoutés dynamiquement après le join via la méthode `listen()`
     const dynamicListeners = new Map()
-    const dynamicWhispers = new Map() 
+    const dynamicWhispers = new Map()
 
     // --- Lifecycle ---------------------------------------------------------
 
+    /** Rend un handler inerte dès que la souscription qui l'a posé est libérée. */
+    const guard = (handler) => {
+        const own = subscriptionToken
+
+        return (...args) => {
+            if (!own.active) return
+            handler?.(...args)
+        }
+    }
+
     const leave = () => {
-        if (currentName) {
-            Echo.leave(currentName)
-            currentChannel = null
-            currentName = null
-            isConnected.value = false
-            users.value = []
+        if (!currentName) return
+
+        const name = currentName
+        const channel = currentChannel
+
+        // Révoquer d'abord : un événement qui arriverait pendant le désabonnement ne doit plus
+        // toucher à l'état d'un composant en train de mourir.
+        subscriptionToken.active = false
+        unbinders.forEach(undo => undo(channel))
+        unbinders = []
+
+        currentChannel = null
+        currentName = null
+        isConnected.value = false
+        users.value = []
+
+        if (releaseChannel(name)) {
+            Echo.leave(name)
         }
     }
 
     const applyPresenceHandlers = (ch) => {
-        ch.here((presentUsers) => {
+        ch.here(guard((presentUsers) => {
                 users.value = presentUsers
                 isConnected.value = true
                 onHere?.(presentUsers)
-            })
-            .joining((user) => {
+            }))
+            .joining(guard((user) => {
                 // ⚠️ pusher-js ne dédoublonne PAS l'événement : son `addMember()` protège son
                 // propre hash (`if (this.get(user_id) === null) this.count++`) mais émet
                 // `pusher:member_added` dans tous les cas. Sans la garde ci-dessous, un
@@ -84,46 +148,59 @@ export function useReverbChannel(channelName, options = {}) {
                     users.value = [...users.value, user]
                 }
                 onJoining?.(user)
-            })
-            .leaving((user) => {
+            }))
+            .leaving(guard((user) => {
                 users.value = users.value.filter(u => u.id !== user.id)
                 onLeaving?.(user)
-            })
+            }))
+    }
+
+    /** Pose un listener et note comment le retirer si le canal survit à ce consommateur. */
+    const bindListener = (ch, event, handler) => {
+        const wrapped = guard(handler)
+        ch.listen(event, wrapped)
+        unbinders.push(channel => channel?.stopListening?.(event, wrapped))
+    }
+
+    const bindWhisperListener = (ch, event, handler) => {
+        const wrapped = guard(handler)
+        ch.listenForWhisper?.(event, wrapped)
+        unbinders.push(channel => channel?.stopListeningForWhisper?.(event, wrapped))
     }
 
     const applyCommonHandlers = (ch) => {
         // Erreurs (dispo sur presence/private)
         if (typeof ch.error === 'function') {
-            ch.error((err) => {
+            ch.error(guard((err) => {
                 error.value = err
                 onError?.(err)
                 console.error('[useReverbChannel]', err)
-            })
+            }))
         }
 
         // Notifications Laravel (private/presence)
         if (onNotification && typeof ch.notification === 'function') {
-            ch.notification(onNotification)
+            ch.notification(guard(onNotification))
         }
 
         // Listeners passés en options
         Object.entries(listeners).forEach(([event, handler]) => {
-            ch.listen(event, handler)
+            bindListener(ch, event, handler)
         })
 
         // Whispers (client events: typing, etc.)
         Object.entries(whispers).forEach(([event, handler]) => {
-            ch.listenForWhisper(event, handler)
+            bindWhisperListener(ch, event, handler)
         })
 
         // Listeners ajoutés dynamiquement avant un reconnect
         for (const [event, handlers] of dynamicListeners.entries()) {
-            handlers.forEach(h => ch.listen(event, h))
+            handlers.forEach(h => bindListener(ch, event, h))
         }
 
         // Whispers dynamiques (client events) ← NOUVEAU
         for (const [event, handlers] of dynamicWhispers.entries()) {
-            handlers.forEach(h => ch.listenForWhisper(event, h))
+            handlers.forEach(h => bindWhisperListener(ch, event, h))
         }
     }
 
@@ -132,13 +209,16 @@ export function useReverbChannel(channelName, options = {}) {
         if (!name || currentName === name) return
 
         leave()
-        currentName = name
 
         const factory = CHANNEL_FACTORIES[type]
         if (!factory) {
             console.error(`[useReverbChannel] Type "${type}" inconnu`)
             return
         }
+
+        currentName = name
+        subscriptionToken = { active: true }
+        retainChannel(name)
 
         currentChannel = factory(name)
 
@@ -156,7 +236,10 @@ export function useReverbChannel(channelName, options = {}) {
     const listen = (event, callback) => {
         if (!dynamicListeners.has(event)) dynamicListeners.set(event, [])
         dynamicListeners.get(event).push(callback)
-        currentChannel?.listen(event, callback)
+
+        if (currentChannel) {
+            bindListener(currentChannel, event, callback)
+        }
     }
 
     const stopListening = (event) => {
@@ -164,16 +247,39 @@ export function useReverbChannel(channelName, options = {}) {
         dynamicListeners.delete(event)
     }
 
-    /** Émet un client event (whisper) sur le canal — utile pour les indicateurs de frappe, etc. */
+    /**
+     * Émet un client event (whisper) sur le canal — indicateur de frappe, `leave-room`, etc.
+     *
+     * ⚠️ **Ne lève jamais, par contrat.** `PusherPrivateChannel.whisper()` déréférence
+     * `pusher.channels.channels[name]` sans garde : souscription disparue ⇒ `TypeError`. Levée
+     * depuis un `onBeforeUnmount`, Vue la relance en dev **au milieu du flush du scheduler** — le
+     * patch avorte, et l'utilisateur voit l'URL de la nouvelle route avec l'écran de l'ancienne.
+     * Un whisper perdu est un incident bénin ; il ne doit pas coûter la navigation.
+     *
+     * @returns {boolean} `true` si le whisper est bien parti.
+     */
     const whisper = (event, payload) => {
-        currentChannel?.whisper?.(event, payload)
+        if (!subscriptionToken.active || typeof currentChannel?.whisper !== 'function') {
+            return false
+        }
+
+        try {
+            currentChannel.whisper(event, payload)
+            return true
+        } catch (err) {
+            console.warn(`[useReverbChannel] whisper "${event}" perdu sur "${currentName}"`, err)
+            return false
+        }
     }
 
     /** Ajoute dynamiquement un whisper listener (persiste à travers les reconnexions). */
     const listenForWhisper = (event, callback) => {
         if (!dynamicWhispers.has(event)) dynamicWhispers.set(event, [])
         dynamicWhispers.get(event).push(callback)
-        currentChannel?.listenForWhisper?.(event, callback)
+
+        if (currentChannel) {
+            bindWhisperListener(currentChannel, event, callback)
+        }
     }
 
     const stopListeningForWhisper = (event) => {

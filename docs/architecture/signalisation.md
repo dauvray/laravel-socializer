@@ -22,6 +22,14 @@ TURN coturn).
 | `server.{serverId}` | présence | `canJoinServer()` | liste des membres d'un serveur |
 | `questionnaire.{roomId}` | **privé** | `canJoinRoom()` ou `isCreator()` | questionnaires |
 
+⚠️ **`App.Models.User.{userId}` — le `me.channel` du store — est souscrit par trois composants à la
+fois** (`System/Notifications.vue`, `Server/Server.vue`, `Server/Room.vue`), dont un qui ne se
+démonte jamais. Echo mémoïse ses canaux, donc c'est **une** souscription pour les trois, et
+`Echo.leave()` la coupe pour tout le monde : elle n'est libérée qu'au compteur, par
+`useReverbChannel`
+([le pourquoi, et le gel de navigation que ça a coûté](../reference/use-reverb-channel.md#un-canal-partagé-se-libère-au-compteur)).
+Ne jamais écrire `Echo.leave()` à la main sur un canal partagé.
+
 Les canaux de présence retournent une `PresenceUser` — c'est elle qui alimente la prop `users` des
 composants, et son périmètre est délibérément restreint (§ suivant). ⚠️ `questionnaire.{roomId}` en
 retourne une aussi mais est consommé en `Echo.private()` (`Data/QuestionnaireComponent.vue`, et son
@@ -36,7 +44,10 @@ personnes actives. Trois conséquences à ne pas confondre quand un compteur « 
 
 - **« connecté à l'app » ne suffit pas à être compté.** `Server.vue` est le seul à souscrire à
   `server.{serverId}` ; le feed, la liste des domaines, un mur n'y touchent pas. Quitter la page
-  serveur par une navigation SPA libère bien le canal (`Echo.leave('server.…')` — vérifié).
+  serveur par une navigation SPA libère bien le canal (`Echo.leave('server.…')` — vérifié) : il n'a
+  qu'un consommateur, donc le compteur de `useReverbChannel` tombe à zéro. Un canal partagé, lui,
+  survit au démontage d'un seul de ses consommateurs — c'est voulu, et un `leave()` peut donc ne
+  rien fermer.
 - **Un onglet d'arrière-plan compte.** Une fenêtre oubliée sur la page serveur est « présente ».
   Distinguer présence et activité demanderait un mécanisme en plus (`visibilitychange` + whisper) —
   c'est une fonctionnalité, pas un correctif : [`work/serveur-todo.md`](../../work/serveur-todo.md).
