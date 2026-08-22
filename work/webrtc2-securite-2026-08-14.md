@@ -31,12 +31,12 @@ intercaler librement. **E8 était la seule à toucher la charge utile `users`** 
 être menée en parallèle du lot B, qui l'interprète — contrainte levée depuis, les deux sont finis.
 
 Les lots A, B et C sont **terminés**, ainsi que **C5** (le bouton d'appel), **E5** (le libellé du
-refus) — 15 et 16/08 —, **E4.1** le 21/08 : la plus grave des tâches ouvertes est fermée, et **E8**
-le 22/08 : la présence ne diffuse plus le bloc privé de personne. Restent :
-**D** (TURN, requiert une modif d'infra coturn), **E1**, **E2**, la part `getUsersList` d'**E3**,
-**E4.2** (dérive du réplica, arbitrage à produire), **E6** (périmètre estarter), **E7** (extraite
-d'E4 : les écritures d'arête échouent en silence), **E9** (née d'E8 : la liste noire des charges
-utiles d'auteur laisse passer `groups` et `unreadNotifications`) et **F1** en clôture.
+refus) — 15 et 16/08 —, **E4.1** le 21/08 : la plus grave des tâches ouvertes est fermée, puis le
+22/08 **E8** (la présence ne diffuse plus le bloc privé de personne) et **E9** dans la foulée (les
+charges utiles d'auteur de message passent en liste blanche, diffusion **et** historique HTTP).
+Restent : **D** (TURN, requiert une modif d'infra coturn), **E1**, **E2**, la part `getUsersList`
+d'**E3**, **E4.2** (dérive du réplica, arbitrage à produire), **E6** (périmètre estarter), **E7**
+(extraite d'E4 : les écritures d'arête échouent en silence) et **F1** en clôture.
 
 ---
 
@@ -1498,28 +1498,53 @@ la ligne e-mail (`v-if="user.email"`). C'est exactement la fuite qu'on ferme.
 
 ### E9 — La liste noire des charges utiles d'auteur laisse passer deux champs `[S]` 🟡 — ajoutée le 22/08/2026
 
-- [ ] **Dépend de :** rien. **Trouvée en livrant E8**, même famille et autre vecteur.
+- [x] **Dépend de :** rien. **Trouvée en livrant E8**, même famille et autre vecteur.
+      — ✅ fait le 22/08/2026.
 
-`filterSensibleDataUserRessource()` (`src/app/Helpers/Socializer.php`) retire `email`, `created_at`,
-`roles`, `permissions` et `channel` d'une `Resources\User` avant diffusion — mais **laisse `groups`
-(avec `server_id`) et `unreadNotifications`**. Deux appelants, tous deux sur des charges utiles
-d'auteur de message diffusées à tous les membres du chat : `Services/Chat.php:255` et `:364`.
+`filterSensibleDataUserRessource()` (`src/app/Helpers/Socializer.php`) retirait `email`,
+`created_at`, `roles`, `permissions` et `channel` d'une `Resources\User` avant diffusion — mais
+**laissait `groups` (avec `server_id`) et `unreadNotifications`**, vers tous les membres du chat.
 
 C'est le défaut qu'E8 a évité en choisissant une liste blanche : **une liste noire ferme les champs
 du jour où on l'écrit.** Ici elle a été écrite avant que `Resources\User` n'ajoute son `groups`.
 
-Deux voies, à trancher — et c'est pourquoi ce n'est pas dans E8 :
+**Livré** : `Resources/MessageAuthor` (liste blanche : `id`, `name`, `slug`, `image`, `function`,
+`connected`), câblée sur **trois** sites, `filterSensibleDataUserRessource()` supprimée. Épinglée
+par `tests/Feature/Chat/AuthorPayloadTest` (18 cas).
 
-- **la courte** : deux `unset()` de plus. Referme le trou connu, laisse la classe de défaut ouverte ;
-- **la bonne** : une ressource d'auteur en liste blanche, sur le patron de `PresenceUser`.
+Trois écarts par rapport au plan ci-dessus, tous mesurés en le livrant :
 
-**À faire avant de choisir** : l'inventaire des lectures de `author.*` côté chat. `ThumbnailWidget`
-lit bien `user.groups`, mais sur une charge utile de **mur** — reste à vérifier qu'aucun composant
-de message ne le fait.
+1. **Trois sites, pas deux.** L'inventaire a trouvé la même fuite sur l'**historique HTTP** :
+   `Resources/Message.php:23` renvoyait `Resources\User` **sans aucun filtre**, donc `groups` avec
+   son `server_id` sortait à chaque `load-conversation`. Le front rend l'historique et le temps réel
+   par les mêmes bindings (`item.author`) : ne resserrer que la diffusion aurait laissé la surface
+   la plus permissive faire foi. Les deux sites de diffusion (`Chat.php:255`, `:364`) fanent
+   d'ailleurs sur **trois** canaux, `NewChatMessageNotification` compris.
+2. **Le relevé du 21/08 sur `ThumbnailWidget` était inexact** : il lit bien `user.groups`, mais sur
+   la charge utile de `POST /get-user-list` (liste des membres), pas sur un mur. Le mur passe par
+   `Cover.vue`, qui ne lit jamais `groups`. Conclusion inchangée — **aucun** composant atteignable
+   depuis un auteur de message ne lit `groups` ni `unreadNotifications` — mais par un autre chemin.
+3. **La voie courte n'était pas seulement moins bonne, elle était intestable.** Deux `unset()` de
+   plus auraient laissé le test traverser `EstarterUserResource` : il aurait fallu doubler la
+   ressource d'un autre paquet, `revealIdentifier`/`hideIdentifier` et une table `groups` — un mock
+   qui ment, ce que `docs/architecture/tests.md` interdit. La liste blanche se teste sans Mongo,
+   sans graphe et sans `fakeBroadcasts()`.
 
-**Tests :** la charge utile d'un auteur de message ne contient ni `groups` ni
-`unreadNotifications` · elle contient encore ce que le fil de discussion affiche.
+Deux limites assumées, écrites dans le docblock du test : il n'atteste pas le câblage des **deux
+sites de diffusion** (`createAndDispatchMessage` est privée, `updateMessage` exige Mongo + graphe +
+Redis — même mur que pour `getOrcreateChatVertice` dans `ChatRegistrationTest`), et il ne
+**démontre pas** l'ancienne fuite : écrit contre l'ancien helper, il aurait planté en
+`Class … not found` au lieu d'échouer, exactement comme E8. La démonstration est le relevé, pas un
+rouge. Seul le troisième site, l'historique HTTP, est épinglé bout en bout.
+
+*Gain incident :* `Resources\User` chargeait `$current_user->groups` — une requête — à **chaque**
+message diffusé.
+
 **Commit :** `secu(socializer): charge utile d'auteur en liste blanche`
+
+> **La leçon d'E9**, en une phrase de plus qu'E8 : une liste noire ne ferme pas les champs, elle
+> ferme les **sources qu'on connaissait le jour où on l'a écrite**. Ce n'est pas le champ oublié qui
+> coûte, c'est celui qu'un paquet en amont ajoutera sans le dire.
 
 ---
 
@@ -1561,7 +1586,7 @@ de message ne le fait.
   **655 tests / 38 fichiers, ~3,8 s**.
 - **Backend** : `vendor/bin/phpunit` **depuis le paquet** (Orchestra Testbench, aucun serveur
   requis) — cf. [docs/architecture/tests.md](../docs/architecture/tests.md). Socle posé avec C3
-  le 15/08/2026, référence après E8 : **121 tests / 311 assertions, ~6 s**. ⚠️ Le décompte qui
+  le 15/08/2026, référence après E9 : **139 tests / 335 assertions, ~7 s**. ⚠️ Le décompte qui
   figurait ici (81/210, « après E5 ») n'avait pas été remis à jour par E4.1 : relire la référence,
   ne pas la déduire d'un delta.
 - `hooks/pre-push` rejoue **les deux** suites. ⚠️ Il n'y a **pas** de CI : la mention d'un

@@ -2,15 +2,15 @@
 
 namespace Dauvray\Socializer\app\Http\Resources;
 
+use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
-use Dauvray\Socializer\app\Http\Resources\User as UserResource;
 
 class Message extends JsonResource
 {
     /**
      * Transform the resource into an array.
      *
-     * @param  \Illuminate\Http\Request  $request
+     * @param  Request  $request
      * @return array
      */
     public function toArray($request)
@@ -20,7 +20,10 @@ class Message extends JsonResource
         return [
             'message' => $this->message,
             'created_at' => $this->created_at,
-            'author' => new UserResource($author),
+            // Même ressource que la diffusion : le front rend l'historique et le temps réel par
+            // les mêmes bindings (`item.author`). Deux formes divergentes rendraient vraie la plus
+            // permissive des deux.
+            'author' => new MessageAuthor($author),
             'id' => $this->vertexid,
             'extras' => $this->extras,
         ];

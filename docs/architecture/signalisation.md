@@ -78,9 +78,17 @@ La leçon réutilisable, jumelle de celle de C2 sur le graphe : **un garde qui d
 la donnée.** Le périmètre d'une ressource de diffusion se décide dans la ressource, pas dans
 l'identité de la requête qui l'a fabriquée.
 
-⚠️ Reste ouvert, même famille et autre vecteur : `filterSensibleDataUserRessource()`, la **liste
-noire** qui filtre les charges utiles d'auteur de message
-([`work/webrtc2-securite-2026-08-14.md`](../../work/webrtc2-securite-2026-08-14.md), tâche **E9**).
+La même règle vaut pour l'**auteur d'un message**, fermé le 22/08 par E9 : il passe par
+`MessageAuthor`, même liste blanche de six champs, sur les **trois** surfaces — `receivedMsg`,
+`updatedMsg` et l'historique HTTP (`Resources\Message`), que le front rend par les mêmes bindings
+`item.author`. Deux formes divergentes rendraient vraie la plus permissive des deux. Épinglé par
+`tests/Feature/Chat/AuthorPayloadTest.php`.
+
+- **Ce qui rendait la liste noire fausse mérite d'être retenu**, parce que rien ne l'annonçait : le
+  bloc privé d'estarter n'est pas la seule source, `Resources\User` ajoute *aussi* son propre
+  `groups` — avec `server_id` — **sans condition**. `filterSensibleDataUserRessource()` avait été
+  écrite avant cet ajout, et ne pouvait donc pas le connaître. C'est la définition d'un filtre qui
+  vieillit mal.
 
 Les méthodes `canJoin*` viennent du trait `Socializable` (`src/app/Helpers/ModelTraits/`) et
 interrogent NebulaGraph. **Un graphe muet vaut un refus** : `execute()` rend un `JsonResponse`

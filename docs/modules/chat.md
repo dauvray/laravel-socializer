@@ -21,6 +21,10 @@ a été retirée une fois terminée — c'est le modèle à suivre, cf. [ecrire-
 - Hooks `onBeforeUnmount` (whisper `leave-chat`) et `onUnmounted` (`resetConversation`)
   restent dans le composant.
 - `useReverbPresence` est déjà un composable partagé : **ne pas y toucher** depuis ici.
+- **`item.author` est une liste blanche de six champs** (`MessageAuthor`) : `id`, `name`, `slug`,
+  `image`, `function`, `connected` — identique en diffusion et sur l'historique HTTP. Un composant
+  du fil qui aurait besoin d'autre chose ne l'ajoute pas ici sans refaire le relevé des lectures :
+  [signalisation.md](../architecture/signalisation.md).
 
 ## La visio n'appartient pas au chat
 

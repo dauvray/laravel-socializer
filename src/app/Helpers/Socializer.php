@@ -2,7 +2,6 @@
 
 use Dauvray\Socializer\app\Helpers\ContentFormater;
 use Illuminate\Support\Facades\Auth;
-use Dauvray\Socializer\app\Http\Resources\User as UserResource;
 use \Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Broadcast;
 
@@ -20,21 +19,12 @@ if (!function_exists('formatTextToContent')) {
     }
 }
 
-if (!function_exists('filterSensibleDataUserRessource')) {
-    function filterSensibleDataUserRessource($user)  {
-        
-        $result = collect(new UserResource($user))->toArray();
-
-        // Remove sensitive data
-        unset($result['email']);
-        unset($result['created_at']);
-        unset($result['roles']);
-        unset($result['permissions']);
-        unset($result['channel']);
-
-        return $result;
-    }
-}
+/*
+ * `filterSensibleDataUserRessource()` a vécu ici jusqu'à E9 (22/08/2026). C'était une LISTE NOIRE
+ * sur `Resources\User`, et elle laissait passer `groups` (avec `server_id`) et
+ * `unreadNotifications` vers tous les membres d'un chat. Les charges utiles d'auteur passent
+ * désormais par `Resources\MessageAuthor`, une liste blanche.
+ */
 
 if (!function_exists('broadcastEventbusNotification')) {
     function broadcastEventbusNotification($user_id, $payload = []) {

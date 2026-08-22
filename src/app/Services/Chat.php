@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\Response;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Log;
 use Dauvray\Estarter\app\Helpers\ModelTraits\Thumbnails;
+use Dauvray\Socializer\app\Http\Resources\MessageAuthor;
 use Dauvray\Socializer\app\Http\Resources\MessageCollection;
 
 class Chat
@@ -252,7 +253,7 @@ class Chat
             'message' => $message->message,
             'id' => $message->vertexid,
             'created_at' => $message->created_at,
-            'author' => filterSensibleDataUserRessource($author),
+            'author' => (new MessageAuthor($author))->resolve(),
             "extras" => $message->extras,
             'chat_id' => $data['chat_id'],
             'is_bot_answer' => $data['extras']['is_bot_answer'] ?? false,
@@ -361,7 +362,7 @@ class Chat
             'message' => $message->message,
             'id' => $message->vertexid,
             'created_at' => $message->created_at,
-            'author' => filterSensibleDataUserRessource($this->user),
+            'author' => (new MessageAuthor($this->user))->resolve(),
             "extras" => $message->extras
         ])
         ->sendNow();
