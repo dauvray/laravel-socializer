@@ -38,9 +38,15 @@ Les **arêtes** n'ont jamais eu besoin de garde : NebulaGraph les clefe sur
 `NebulaGraphConnection::insertVertex` fait `$vid = $values['id'] ?? uniqidReal()`. **Tout sommet
 créé sans `id` explicite est donc dupliqué à chaque passage.** L'`id` peut venir de
 `populatePropsFromPattern`, mais uniquement si le modèle expose `vertexId` — l'accesseur des traits
-`Socializable` / `Commentable`. Un modèle sans ces traits (`Article` d'eblogger) exige que l'appelant
-pose l'`id` lui-même. Avant de projeter un nouveau type de sommet, répondre à : *quel est son id
-stable ?*
+`Socializable` / `Commentable`. Un modèle sans ces traits, comme l'`Article` d'eblogger, exige que
+**chacun** de ses écrivains pose l'`id` lui-même : les trois le font — `ArticleCreatedListener`,
+`ArticleDeletedListener`, `projectArticles()` —, et `ArticleVertexTest` épingle qu'ils visent bien le
+même sommet. Avant de projeter un nouveau type de sommet, répondre à : *quel est son id stable ?*
+
+Un id dérivé n'est pas qu'une garantie d'unicité : c'est **la seule adresse qu'un autre écrivain
+puisse recalculer**. Un sommet né sous `uniqidReal()` ne peut plus être ni mis à jour ni supprimé par
+un chemin qui ne l'a pas vu naître, et la suppression manquée est silencieuse — un `DELETE VERTEX`
+qui ne trouve rien n'est pas une erreur pour NebulaGraph.
 
 ## Qui écrit le réplica
 

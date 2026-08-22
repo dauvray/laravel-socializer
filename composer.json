@@ -32,6 +32,7 @@
       "Dauvray\\Socializer\\Tests\\": "tests/",
       "App\\": "tests/Stubs/App/",
       "Dauvray\\Estarter\\": "tests/Stubs/Estarter/",
+      "Dauvray\\Eblogger\\": "tests/Stubs/Eblogger/",
       "Innovation\\formdesigner\\": "tests/Stubs/Formdesigner/"
     },
     "files": [

@@ -22,7 +22,14 @@ class ArticleCreatedListener
     /**
      * Handle the event.
      *
-     * @param  Verified  $event
+     * ⚠️ L'`id` est posé ICI, exactement comme dans `GraphProjection::projectArticles()`.
+     * `populatePropsFromPattern` ne le fournit que si le modèle expose `vertexId` — l'accesseur des
+     * traits `Socializable` / `Commentable` —, et l'`Article` d'eblogger n'a ni l'un ni l'autre :
+     * sans cette ligne, `insertVertex` retombe sur `uniqidReal()`. Le sommet était donc dupliqué à
+     * chaque passage, introuvable pour la suppression, et l'arête d'auteur de
+     * `projectArticleAuthors` — qui vise `article<id>` depuis toujours — pendait dans le vide.
+     * Épinglé par `ArticleVertexTest`.
+     *
      * @return void
      */
     public function handle(ArticleCreated $event)
@@ -31,9 +38,15 @@ class ArticleCreatedListener
 
         $this->syncToGraph(fn () => $nebula->insertVertex(
             config('socializer.nebulagraph.tags.article.name'),
-            $nebula->populatePropsFromPattern(
-                $event->article,
-                config('socializer.nebulagraph.vertices.article')
+            array_merge(
+                $nebula->populatePropsFromPattern(
+                    $event->article,
+                    config('socializer.nebulagraph.vertices.article')
+                ),
+                [
+                    'id' => config('socializer.nebulagraph.tags.article.name').$event->article->id,
+                    'identifier' => hideIdentifier($event->article),
+                ]
             )
         ), ['article_id' => $event->article->id]);
     }

@@ -22,7 +22,11 @@ class ArticleDeletedListener
     /**
      * Handle the event.
      *
-     * @param  Verified  $event
+     * ⚠️ Le vid se construit sur `tags.article.name`, comme à la création et dans
+     * `GraphProjection`. Il a longtemps été bâti sur `vertices.article.id` — une clé qui n'existe
+     * pas : l'expression valait `''.$id`, donc `"1"`, et la suppression ne touchait rien en
+     * silence. Épinglé par `ArticleVertexTest`.
+     *
      * @return void
      */
     public function handle(ArticleDeleted $event)
@@ -30,7 +34,7 @@ class ArticleDeletedListener
         $nebula = app('nebulaGraph');
 
         $this->syncToGraph(
-            fn () => $nebula->deleteVertex([ config('socializer.nebulagraph.vertices.article.id').$event->article->id ], true),
+            fn () => $nebula->deleteVertex([config('socializer.nebulagraph.tags.article.name').$event->article->id], true),
             ['article_id' => $event->article->id]
         );
     }

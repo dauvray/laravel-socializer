@@ -118,6 +118,23 @@ class FakeNebulaGraph
         return $this->execute('DELETE EDGE '.$label.' "'.implode('","', $directions).'"');
     }
 
+    /**
+     * Même raison que `deleteEdge` ci-dessus, et la requête reconstruite est ici FIDÈLE : la
+     * production émet exactement `DELETE VERTEX "<vid>"[ WITH EDGE]` (`stringFormatArray` pose les
+     * guillemets). Un test peut donc asserter le vid visé au caractère près — c'est tout l'objet
+     * d'`ArticleVertexTest`, la clé de config fautive donnant `"1"` au lieu de `"article1"`.
+     *
+     * ⚠️ Elle ne reproduit PAS le garde « liste vide » de la production (`$vids === []` ⇒ aucune
+     * requête). Ce contrat-là s'épingle contre la vraie couture, pas contre une doublure qui en
+     * ferait une seconde implémentation : `NebulaGraphSeamTest::supprimer_aucun_sommet_n_emet_aucune_requete`.
+     *
+     * @param  array<int, string>  $vids
+     */
+    public function deleteVertex(array $vids = [], bool $with_edge = false): mixed
+    {
+        return $this->execute('DELETE VERTEX "'.implode('","', $vids).'"'.($with_edge ? ' WITH EDGE' : ''));
+    }
+
     /** @param  array<string, mixed>  $values */
     public function updateVertex(string $label = 'default', $vertex_id = null, array $values = []): mixed
     {

@@ -43,18 +43,26 @@ Le correctif empêche de créer un doublon ; il n'en supprime aucun. Le dev a é
 - [ ] Si oui : refuser de tourner sur un mur qui porte du contenu, et rapporter au lieu de
       supprimer par défaut (`--dry-run` comme mode normal)
 
-## 3. `ArticleDeletedListener` supprime le mauvais sommet 🔴
+## 3. `ArticleDeletedListener` supprimait le mauvais sommet ✅ 22/08
 
-```php
-$nebula->deleteVertex([ config('socializer.nebulagraph.vertices.article.id').$event->article->id ], true)
-```
+- [x] Clé corrigée (`tags.article.name`). Le balayage du motif `vertices.*.id` sur tout `src/` ne
+      rendait que cette occurrence.
+- [x] `ArticleCreatedListener` pose l'`id` dérivé et l'`identifier`, comme `projectArticles()`.
 
-`vertices.article` ne contient qu'`identifier` : la clé `.id` **n'existe pas**, donc l'expression
-vaut `''.$article->id`, soit `"1"` au lieu de `"article1"`. La suppression ne touche rien, en
-silence. Le sommet attendu est `config('...tags.article.name').$article->id` — c'est la forme
-qu'utilisent `projectArticles()` et `projectArticleAuthors()`.
+`vertices.article` ne contient qu'`identifier` : la clé `.id` n'existait pas, l'expression valait
+`''.$article->id`, soit `"1"` au lieu de `"article1"`, et la suppression ne touchait rien en silence.
 
-- [ ] Corriger la clé, et chercher les autres usages de `vertices.*.id` (motif suspect par nature)
+**Ce qui n'était pas au plan, et sans quoi corriger la clé n'aurait rien corrigé** : la création
+souffrait du défaut symétrique. `ArticleCreatedListener` appelait `insertVertex()` sans `id`
+explicite, et `Article` n'a ni `Socializable` ni `Commentable` — donc pas de `vertexId` à tirer de
+`populatePropsFromPattern`. Le sommet naissait sous `uniqidReal()`. Une suppression corrigée aurait
+atteint les sommets nés d'une projection et serait restée sans effet sur tout article créé en ligne.
+D'où la forme du test central de `tests/Feature/Graph/ArticleVertexTest.php` : la suppression vise
+**ce que la création a posé** — aucune des deux moitiés du défaut ne peut satisfaire cette assertion
+seule. Le durable est remonté dans
+[`docs/architecture/projection-graphe.md`](../docs/architecture/projection-graphe.md).
+
+Reste dehors, et relève du §2 : les sommets d'article déjà nés sous un id aléatoire en dev.
 
 ## 4. Deux traces d'installation à nettoyer 🟢
 
@@ -86,3 +94,20 @@ plus** (probablement un `dropSpace` du 28/05), et le graphe compte 0 sommet `pos
 C'est le sujet **E4.2** de [webrtc2-securite-2026-08-14.md](webrtc2-securite-2026-08-14.md) —
 arbitrer la re-synchronisation d'un réplica —, dont ce correctif est une brique : une projection
 idempotente est ce qui rend une re-synchronisation rejouable. À traiter là-bas, pas ici.
+
+## 7. Restaurer un article ne recrée pas son sommet 🟠
+
+Ouvert le 22/08 **en fermant le §3** : c'est ce correctif qui rend le trou conséquent.
+
+`ArticleDeleted` part sur `static::deleting` (`Article::booted`, eblogger), donc sur un **soft
+delete**. Tant que la suppression était un no-op, restaurer un article était sans conséquence par
+accident ; maintenant le sommet part vraiment. Or `ArticleRestored` est bien émis
+(`static::restored`) et **aucun listener de socializer ne l'écoute** : l'article revient en base,
+son sommet non — et avec lui son arête d'auteur.
+
+- [ ] Trancher : un `ArticleRestoredListener` qui rejoue l'`insertVertex` de la création — corps
+      identique, et l'id dérivé le rend idempotent —, ou assumer qu'une restauration exige un
+      `socializer:nebula-populate`
+- [ ] Au passage, `ArticleUpdated` n'a pas de listener non plus. Sans conséquence tant que le sommet
+      ne porte qu'`identifier`, qui ne change jamais — à rouvrir si le patron `vertices.article`
+      s'enrichit
