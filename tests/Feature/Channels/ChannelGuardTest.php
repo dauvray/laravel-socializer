@@ -2,8 +2,7 @@
 
 namespace Dauvray\Socializer\Tests\Feature\Channels;
 
-use App\Models\User;
-use Dauvray\Socializer\app\Http\Resources\User as UserResource;
+use Dauvray\Socializer\app\Http\Resources\PresenceUser;
 use Dauvray\Socializer\Tests\TestCase;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Broadcast;
@@ -65,49 +64,6 @@ class ChannelGuardTest extends TestCase
             'room' => ['room.{roomId}'],
             'questionnaire' => ['questionnaire.{roomId}'],
         ];
-    }
-
-    /**
-     * ⚠️ `App\Models\User` et non `makeUser()` : les closures de `channels.php` sont typées sur
-     * la classe de l'app hôte, en dur. Un `Tests\Stubs\User` ne satisfait pas la signature.
-     *
-     * Pas de `joinGroup` ici : aucun garde de ce fichier ne lit l'appartenance MariaDB.
-     */
-    private function makeChannelUser(string $name): User
-    {
-        return User::create([
-            'name' => $name,
-            'email' => $name.'@example.test',
-            'vertexid' => 'user'.$name,
-        ]);
-    }
-
-    /**
-     * Invoque le callback d'un canal tel que `channels.php` l'a enregistré.
-     *
-     * `Broadcast::getChannels()` est publique et documentée sur la façade, servie par
-     * `Broadcaster::getChannels()` : une Collection indexée par MOTIF. Les callbacks atterrissent
-     * dans l'unique driver mémorisé — `broadcasting.default` vaut `null` dans le harnais, et
-     * `NullBroadcaster` hérite du stockage des canaux de la classe de base.
-     *
-     * ⚠️ Le callback est appelé DIRECTEMENT, et non par `Broadcaster::auth()` : `auth()` est un
-     * no-op sur les drivers `null` et `log`, et les seuls qui descendent dans
-     * `verifyUserCanAccessChannel` (Pusher/Redis/Ably) terminent par un `json_encode` du
-     * résultat — donc SÉRIALISENT le `UserResource`, ce qui explose faute des dépendances
-     * estarter. Cf. l'avertissement du test d'admission plus bas.
-     */
-    private function joinChannel(string $pattern, User $user, string ...$parameters): mixed
-    {
-        $callback = Broadcast::getChannels()->get($pattern);
-
-        // Sans cette garde, un motif renommé rendrait `null` et TOUS les tests de refus de ce
-        // fichier passeraient au vert sans avoir rien exercé.
-        $this->assertIsCallable(
-            $callback,
-            "Le canal `$pattern` n'est plus enregistré par src/routes/socializer/channels.php."
-        );
-
-        return $callback($user, ...$parameters);
     }
 
     /**
@@ -293,19 +249,22 @@ class ChannelGuardTest extends TestCase
     }
 
     /**
-     * ⚠️ NE JAMAIS SÉRIALISER ce retour. `UserResource::toArray()` construit la ressource
-     * d'estarter et appelle le helper `revealIdentifier()` — ni l'une ni l'autre n'existe dans
-     * le harnais. La construction seule est inoffensive, et `assertInstanceOf` ne déclenche
-     * aucune sérialisation. Pas de `assertJson`, pas de `toArray()`, pas de `dd()` ici.
+     * Ce fichier garde le VERDICT ; la charge utile de l'admission est gardée par
+     * `PresencePayloadTest` — qui, lui, la sérialise (E8).
+     *
+     * ⚠️ C'est `UserResource` qui ne pouvait pas être sérialisée ici : elle construit la
+     * ressource d'estarter et appelle le helper `revealIdentifier()`, ni l'une ni l'autre
+     * présente dans le harnais. `PresenceUser` ne fait ni l'un ni l'autre — c'est même sa raison
+     * d'être. Ne pas revenir à `UserResource` sur un canal de présence.
      */
     #[Test]
-    public function le_canal_de_chat_admet_un_membre_sans_serialiser_la_ressource(): void
+    public function le_canal_de_chat_admet_un_membre_d_un_chat_prive(): void
     {
         $this->fakeNebulaGraph()->when('c.chat.privacy', ['useridris']);
 
         $admission = $this->joinChannel('chat.{chatId}', $this->makeChannelUser('idris'), 'chat42');
 
-        $this->assertInstanceOf(UserResource::class, $admission);
+        $this->assertInstanceOf(PresenceUser::class, $admission);
     }
 
     #[Test]

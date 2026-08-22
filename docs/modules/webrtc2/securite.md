@@ -370,9 +370,13 @@ d'absence de relation sur `[]` revient à tester une panne.
   du hub.
 - **Backend** — fermés depuis l'audit : le `throttle` des 5 routes, la validation des payloads
   relayés, le `catch (\Exception $ex) { return $ex; }` qui renvoyait chemins de fichiers et trace au
-  client indépendamment d'`APP_DEBUG`, le contrôle de relation émetteur ↔ destinataire, et
-  l'énumération par `firstOrFail()` sur ces cinq routes. **Reste ouvert** : la même énumération sur
-  `getUsersList`, qui liste tous les utilisateurs actifs sans contrôle.
+  client indépendamment d'`APP_DEBUG`, le contrôle de relation émetteur ↔ destinataire,
+  l'énumération par `firstOrFail()` sur ces cinq routes, et le bloc privé de chaque membre
+  (`email`, `roles`, `permissions`, `groups`) que les quatre canaux de présence diffusaient à toute
+  la room — désormais une liste blanche de six champs
+  ([signalisation.md](../../architecture/signalisation.md#une-charge-utile-de-présence-est-fabriquée-par-son-propre-sujet)).
+  **Reste ouvert** : la même énumération sur `getUsersList`, qui liste tous les utilisateurs actifs
+  sans contrôle.
 - **TURN** : `VITE_COTURN_USERNAME` / `VITE_COTURN_CREDENTIAL` sont compilés dans le bundle servi à
   tous — identifiants longue durée, partagés → relais ouvert, bande passante imputable au serveur.
 

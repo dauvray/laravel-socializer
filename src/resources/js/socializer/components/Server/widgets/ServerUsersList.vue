@@ -31,9 +31,10 @@
             /**
              * Membres actuellement souscrits au canal de présence du serveur — le `users` de
              * `useReverbChannel`, pas la liste des membres inscrits. Chaque entrée est une
-             * `UserResource` produite par `channels.php`.
+             * `PresenceUser` produite par `channels.php` : six champs, et rien d'autre
+             * (`id`, `name`, `slug`, `image`, `function`, `connected`).
              *
-             * @type {import('vue').PropType<Array<{id: number, name: string, slug: string}>>}
+             * @type {import('vue').PropType<Array<{id: number, name: string, slug: string, image: ?Object, function: ?string, connected: number}>>}
              */
             users: {
                 type: Array,
@@ -47,11 +48,11 @@
         },
         methods: {
             /**
-             * ⚠️ Ne JAMAIS se fier à `user.is_me` sur une charge utile de présence : il vaut
-             * `true` pour TOUT LE MONDE. Chaque `user_info` est construite pendant la requête
-             * `/broadcasting/auth` de SON propre membre, donc `Auth::user()` y est toujours ce
-             * membre-là, et `EstarterUserResource` conclut « c'est moi ». Le seul juge fiable de
-             * « moi » côté client est le store `me`.
+             * Le seul juge fiable de « moi » sur une charge utile de présence est le store `me` :
+             * `is_me` n'y est plus (E8). Il y valait `true` pour TOUT LE MONDE — chaque
+             * `user_info` est construite pendant la requête `/broadcasting/auth` de SON propre
+             * membre, donc `Auth::user()` y est toujours ce membre-là. `PresenceUser` ne le
+             * renvoie plus du tout, absent valant mieux que trompeur : ne pas le réintroduire.
              *
              * @param {{id: number}} user
              * @return {boolean}

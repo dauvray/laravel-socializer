@@ -95,7 +95,7 @@
              * cardinal : un nombre nu et non auditable a déjà fait passer une information
              * correcte pour un bug.
              *
-             * @type {import('vue').PropType<Array<{id: number, name: string}>>}
+             * @type {import('vue').PropType<Array<{id: number, name: string, slug: string}>>}
              */
             serverUsers: {
                 type: Array,
@@ -117,8 +117,9 @@
                 return this.serverUsers.length
             },
             /**
-             * `is_me` de la charge utile de présence est inutilisable — il vaut `true` pour tout
-             * le monde (voir `ServerUsersList.isMe`). C'est le store `me` qui tranche.
+             * C'est le store `me` qui tranche : la charge utile de présence ne porte plus de
+             * `is_me` (E8), et quand elle en portait il valait `true` pour tout le monde
+             * (voir `ServerUsersList.isMe`).
              *
              * @return {boolean}
              */

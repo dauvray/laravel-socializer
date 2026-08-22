@@ -354,8 +354,10 @@ c'est volontaire :
 
 Épinglé par `components/System/composables/__tests__/useReverbChannel.test.js`.
 
-Corollaire côté affichage : `users` porte des `UserResource` dont **`is_me` vaut `true` pour toutes
-les entrées** — voir
+Corollaire côté affichage : `users` porte des `PresenceUser`, **six champs et rien d'autre**
+(`id`, `name`, `slug`, `image`, `function`, `connected`). Pas de `is_me` — le store `me` est le seul
+juge de « moi » ici —, et rien de ce qu'une charge utile HTTP porte en plus (`identifier`,
+`may_reach`, `groups`). Le pourquoi :
 [architecture/signalisation.md](../architecture/signalisation.md#une-charge-utile-de-présence-est-fabriquée-par-son-propre-sujet).
 
 ---
@@ -600,7 +602,7 @@ const { users, isConnected } = useReverbPresence('room.lobby', {
 | `users` reste vide                          | Le type n'est pas `presence`                            | Passer `type: 'presence'` |
 | Un membre compté deux fois                  | Un `member_added` en double — pusher-js ne les dédoublonne pas | Déjà gardé par le composable ; si le doublon revient, chercher un `id` absent de la charge utile du canal |
 | « 2 présents alors que je suis seul »        | Le plus souvent **vrai** : la présence compte les onglets. Un onglet d'arrière-plan sur la même page est « présent » ; être connecté ailleurs dans l'app ne compte pas | Interroger Reverb : `GET /apps/{id}/channels/presence-{canal}/users` avant de soupçonner le front |
-| `is_me` vrai pour tout le monde             | Charge utile de présence fabriquée par son propre sujet | Comparer avec le store `me`, jamais `user.is_me` |
+| Un champ attendu absent de `users`          | La présence porte une `PresenceUser` : six champs en liste blanche, pas la ressource HTTP | Lire le champ sur l'endpoint HTTP concerné ; sur `is_me`, comparer avec le store `me` |
 | Whisper ignoré                              | Canal public utilisé                                    | Les whispers nécessitent private / presence / encrypted |
 | Listeners perdus après changement de canal  | Listener ajouté manuellement via `channel().listen()`    | Utiliser `listen()` du composable (persistant) |
 | `Echo is not defined`                       | Echo non exposé globalement                             | Vérifier que l'hôte fait bien `window.Echo = new Echo(...)` — le paquet ne l'initialise pas |

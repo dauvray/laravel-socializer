@@ -22,10 +22,12 @@ TURN coturn).
 | `server.{serverId}` | présence | `canJoinServer()` | liste des membres d'un serveur |
 | `questionnaire.{roomId}` | **privé** | `canJoinRoom()` ou `isCreator()` | questionnaires |
 
-Les canaux de présence retournent une `UserResource` — c'est elle qui alimente la prop `users` des
-composants. ⚠️ `questionnaire.{roomId}` en retourne une aussi mais est consommé en `Echo.private()`
-(`Data/QuestionnaireComponent.vue`, et son émetteur `Events/QuestionnaireAnswered.php` rend un
-`PrivateChannel`) : seule la véracité du retour compte, la ressource est construite pour rien.
+Les canaux de présence retournent une `PresenceUser` — c'est elle qui alimente la prop `users` des
+composants, et son périmètre est délibérément restreint (§ suivant). ⚠️ `questionnaire.{roomId}` en
+retourne une aussi mais est consommé en `Echo.private()` (`Data/QuestionnaireComponent.vue`, et son
+émetteur `Events/QuestionnaireAnswered.php` rend un `PrivateChannel`) : seule la véracité du retour
+compte, la ressource est construite pour rien. Elle reste alignée sur les trois autres — un canal
+consommé demain en `Echo.join()` ne doit pas rouvrir la fuite que le § suivant décrit.
 
 ### Ce que la présence mesure : un onglet ouvert
 
@@ -54,20 +56,31 @@ décrit** — jamais pendant celle du membre qui la lira. Donc `Auth::user()` y 
 sujet de la donnée. Reverb stocke le résultat par connexion, puis le diffuse aux autres membres
 via `here` et `member_added`.
 
-- ⚠️ **`is_me` vaut `true` sur TOUTES les entrées d'une liste de présence.** Un front qui s'en sert
-  pour distinguer « moi » se trompe sur chaque ligne. Le seul juge fiable côté client est le store
+D'où la règle : **les quatre canaux de présence renvoient `PresenceUser`, jamais `Resources\User`.**
+Son périmètre est une **liste blanche** de six champs — `id`, `name`, `slug`, `image`, `function`,
+`connected` — et elle ne consulte aucune identité de requête. La liste blanche n'est pas un détail
+de style : le bloc privé d'`EstarterUserResource` n'était pas la seule source, `Resources\User`
+ajoutait *aussi* son propre `groups` sans condition. Une liste noire aurait fermé la première,
+manqué la seconde, et n'aurait rien dit du champ ajouté demain en amont.
+Épinglé par `tests/Feature/Channels/PresencePayloadTest.php`.
+
+- **`is_me` n'est pas dans cette liste, et ce n'est pas un oubli** : absent vaut mieux que
+  trompeur. Il valait `true` sur TOUTES les entrées d'une liste de présence — un front qui s'en
+  servait pour distinguer « moi » se trompait sur chaque ligne. Le juge côté client est le store
   `me` (`ServerUsersList.isMe` en donne le patron). Le champ reste juste sur une charge utile
-  **HTTP** — `ThumbnailWidget`, `Cover` s'en servent légitimement : c'est la présence, et elle
-  seule, qui le retourne faux.
-- 🔴 **`EstarterUserResource` livre donc son bloc privé à tous les autres membres** — `email`,
-  `roles`, `permissions`, `groups`, `unreadNotifications`. Son garde
-  `if ($this->id === Auth::user()?->id)` n'est pas faux ; le contexte le désarme. Ouvert :
-  [`work/webrtc2-securite-2026-08-14.md`](../../work/webrtc2-securite-2026-08-14.md), tâche **E8**.
+  **HTTP**, où `ThumbnailWidget` et `Cover` s'en servent légitimement.
+- **Ne pas confondre les deux ressources.** `PresenceUser` ne convient pas à un mur ni à un
+  profil : `identifier`, `may_reach`, `groups`, `nb_followers` y sont lus, et c'est
+  `Resources\User` qui les porte.
 
 La leçon réutilisable, jumelle de celle de C2 sur le graphe : **un garde qui dépend de
 `Auth::user()` ne veut plus rien dire dans un contexte où `Auth::user()` est toujours le sujet de
 la donnée.** Le périmètre d'une ressource de diffusion se décide dans la ressource, pas dans
 l'identité de la requête qui l'a fabriquée.
+
+⚠️ Reste ouvert, même famille et autre vecteur : `filterSensibleDataUserRessource()`, la **liste
+noire** qui filtre les charges utiles d'auteur de message
+([`work/webrtc2-securite-2026-08-14.md`](../../work/webrtc2-securite-2026-08-14.md), tâche **E9**).
 
 Les méthodes `canJoin*` viennent du trait `Socializable` (`src/app/Helpers/ModelTraits/`) et
 interrogent NebulaGraph. **Un graphe muet vaut un refus** : `execute()` rend un `JsonResponse`

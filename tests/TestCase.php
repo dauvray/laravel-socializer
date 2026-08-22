@@ -2,10 +2,15 @@
 
 namespace Dauvray\Socializer\Tests;
 
+use App\Models\User as HostUser;
+use Cviebrock\EloquentSluggable\ServiceProvider as SluggableServiceProvider;
 use Dauvray\Socializer\ServiceProvider as SocializerServiceProvider;
 use Dauvray\Socializer\Tests\Stubs\FakeNebulaGraph;
+use Dauvray\Socializer\Tests\Stubs\FakeOnlineUsers;
 use Dauvray\Socializer\Tests\Stubs\User;
 use Illuminate\Broadcasting\AnonymousEvent;
+use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Schema;
@@ -48,7 +53,7 @@ abstract class TestCase extends BaseTestCase
     {
         return [
             // Requis par le trait `Socializable` du paquet (Sluggable).
-            \Cviebrock\EloquentSluggable\ServiceProvider::class,
+            SluggableServiceProvider::class,
             SocializerServiceProvider::class,
         ];
     }
@@ -168,11 +173,74 @@ abstract class TestCase extends BaseTestCase
      */
     protected function fakeNebulaGraph(): FakeNebulaGraph
     {
-        $fake = new FakeNebulaGraph();
+        $fake = new FakeNebulaGraph;
 
         $this->app->instance('nebulaGraph', $fake);
 
         return $fake;
+    }
+
+    /**
+     * Substitue la doublure du service de présence et la renvoie pour la scripter.
+     *
+     * Le binding `onlineUsers` est posé par le provider d'estarter, absent du harnais : sans
+     * cette substitution, tout chemin qui le résout lève une `BindingResolutionException`.
+     */
+    protected function fakeOnlineUsers(): FakeOnlineUsers
+    {
+        $fake = new FakeOnlineUsers;
+
+        $this->app->instance('onlineUsers', $fake);
+
+        return $fake;
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Canaux de diffusion
+    |--------------------------------------------------------------------------
+    */
+
+    /**
+     * ⚠️ `App\Models\User` et non `makeUser()` : les closures de `channels.php` sont typées sur
+     * la classe de l'app hôte, en dur. Un `Tests\Stubs\User` ne satisfait pas la signature.
+     *
+     * Pas de `joinGroup` ici : aucun garde de canal ne lit l'appartenance MariaDB.
+     */
+    protected function makeChannelUser(string $name): HostUser
+    {
+        return HostUser::create([
+            'name' => $name,
+            'email' => $name.'@example.test',
+            'vertexid' => 'user'.$name,
+        ]);
+    }
+
+    /**
+     * Invoque le callback d'un canal tel que `channels.php` l'a enregistré.
+     *
+     * `Broadcast::getChannels()` est publique et documentée sur la façade, servie par
+     * `Broadcaster::getChannels()` : une Collection indexée par MOTIF. Les callbacks atterrissent
+     * dans l'unique driver mémorisé — `broadcasting.default` vaut `null` dans le harnais, et
+     * `NullBroadcaster` hérite du stockage des canaux de la classe de base.
+     *
+     * ⚠️ Le callback est appelé DIRECTEMENT, et non par `Broadcaster::auth()` : `auth()` est un
+     * no-op sur les drivers `null` et `log`, et les seuls qui descendent dans
+     * `verifyUserCanAccessChannel` (Pusher/Redis/Ably) terminent par un `json_encode` du
+     * résultat.
+     */
+    protected function joinChannel(string $pattern, HostUser $user, string ...$parameters): mixed
+    {
+        $callback = Broadcast::getChannels()->get($pattern);
+
+        // Sans cette garde, un motif renommé rendrait `null` et TOUS les tests de refus de canal
+        // passeraient au vert sans avoir rien exercé.
+        $this->assertIsCallable(
+            $callback,
+            "Le canal `$pattern` n'est plus enregistré par src/routes/socializer/channels.php."
+        );
+
+        return $callback($user, ...$parameters);
     }
 
     /**
@@ -196,7 +264,7 @@ abstract class TestCase extends BaseTestCase
                     return false;
                 }
 
-                $channels = collect(\Illuminate\Support\Arr::wrap($event->broadcastOn()))
+                $channels = collect(Arr::wrap($event->broadcastOn()))
                     ->map(fn ($channel) => (string) $channel);
 
                 if (! $channels->contains('private-App.Models.User.'.$to->id)) {

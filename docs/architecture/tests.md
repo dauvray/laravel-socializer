@@ -81,9 +81,13 @@ perdre une demi-journée — le détail et le pourquoi vivent dans le docblock d
    implicites vers `Dauvray\Estarter\*` et `Innovation\formdesigner\*`
    ([package.md](package.md#dépendances-implicites)), qui vivent dans un GitLab **privé** ; les
    déclarer mettrait une URL interne dans le manifeste d'un package publié sur GitHub public.
-   `tests/Stubs/` en porte donc des doublures, mappées par `autoload-dev`. ⚠️ **Elles lèvent toutes**
-   plutôt que de renvoyer `null` : une doublure silencieuse ferait passer au vert un test qui
-   croirait exercer le vrai comportement. Elles ne s'étoffent que quand un test l'exige.
+   `tests/Stubs/` en porte donc des doublures, mappées par `autoload-dev`. ⚠️ **Elles lèvent par
+   défaut** plutôt que de renvoyer `null` : une doublure silencieuse ferait passer au vert un test
+   qui croirait exercer le vrai comportement. Elles ne s'étoffent que quand un test l'exige — et
+   alors **explicitement**, sur un état déclaré et asserté dans les deux sens. Le seul cas à ce
+   jour : `FakeOnlineUsers::isOnlineUser`, que `PresenceUser` lit pour le champ `connected`, scripté
+   par `pretendOnline()` et couvert par `PresencePayloadTest`. Toute autre forme d'appel de cette
+   même méthode continue de lever.
 
 Deux doublures sont là uniquement parce que `ServiceProvider::boot` fait un `require_once` de **tous**
 les `src/app/Helpers/*.php` : sans elles, l'application de test ne démarre pas.
