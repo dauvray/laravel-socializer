@@ -99,8 +99,9 @@ projet consommateur n'a rien à câbler à la main.
   `tests/Feature/Signaling/` et `tests/Feature/Profile/`.
   **Restent ouverts** : l'usurpation intra-room par un membre qui se présente avec un peerId neuf
   sous le slug d'un autre — les deux chemins ont la même signature locale, ce n'est pas fermable
-  côté client —, les credentials TURN compilés dans le bundle, et l'énumération via
-  `getUsersList`. Voir [docs/modules/webrtc2/securite.md](docs/modules/webrtc2/securite.md).
+  côté client —, et l'énumération via `getUsersList`. Les credentials TURN sont **sortis du bundle**
+  (`GET /get-ice-servers`) mais restent statiques et partagés : un authentifié peut encore abuser du
+  relais. Voir [docs/modules/webrtc2/securite.md](docs/modules/webrtc2/securite.md).
 - **La suite PHP couvre la signalisation WebRTC et les gardes d'autorisation de `Socializable`** —
   un socle, pas un filet.
   Ses cinq décisions de harnais (pile de middlewares réduite, aucune migration du paquet, doublures

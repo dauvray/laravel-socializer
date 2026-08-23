@@ -36,6 +36,7 @@ import { getPayloadSizeBytes, isPayloadWithinLimit } from './utils/payloadSize.j
 import { sanitizeMetadataType } from './utils/sanitizeMetadata.js'
 import { createRateLimiter } from './utils/createRateLimiter.js'
 import { isAuthorizedPeer } from './utils/isAuthorizedPeer.js'
+import { fetchIceServers } from './utils/fetchIceServers.js'
 
 // -----------------------------------------------------------------------------
 // Registre global des contextes WebRTC actifs
@@ -378,9 +379,7 @@ export function usePeerTransport(ctx) {
         // Init EN VOL : le Peer existe déjà, mais son `'open'` n'est pas encore arrivé.
         //
         // ⚠️ Ce garde porte sur l'INSTANCE, et il est indispensable : les deux gardes
-        // voisines laissent une fenêtre de plusieurs centaines de ms grande ouverte. Le
-        // corps de `_doInit` ne contient aucun `await`, donc `peerInitPromise` est résolue —
-        // et remise à `null` par son `finally` — ~3 microtâches après l'appel, alors que
+        // voisines laissent une fenêtre de plusieurs centaines de ms grande ouverte, alors que
         // `localPeerReady` attend un aller-retour réseau (`retrieveId` HTTP + WebSocket).
         // Or la production monte précisément deux consommateurs dans cet intervalle :
         // `Notifications.vue` crée le contexte permanent `data-app` au tick 0, et le
@@ -395,25 +394,62 @@ export function usePeerTransport(ctx) {
         // Guard contre la race condition : 2 composants peuvent passer simultanément
         // (ex: DataRoom + StreamRoom au montage). Le premier crée la promesse d'init,
         // le second attend la même plutôt que de créer un second Peer.
+        //
+        // ⚠️ Depuis que `_doInit` commence par un aller-retour réseau, C'EST CE GARDE-CI qui
+        // tient le DÉBUT de la fenêtre : le garde d'instance ci-dessus ne peut rien voir tant
+        // que le `Peer` n'existe pas. Les deux ne sont plus redondants, ils se relaient.
         if (peerStore.peerInitPromise) return peerStore.peerInitPromise
 
         const _doInit = async () => {
+            // ⚠️ LE SEUL `await` avant `new Peer`, et il est ICI — jamais en tête de
+            // `setLocalPeer`. Tout ce qui précède (`registerContext`, `addPeerConsumer`,
+            // `clearPeerDestroyTimer`, les trois gardes) doit rester SYNCHRONE : deux contextes
+            // montés dans le même tick s'appuient dessus, et c'est `setLocalPeer` qui enregistre
+            // le contexte au registre.
+            //
+            // `fetchIceServers` ne jette JAMAIS et rend toujours un tableau non vide (repli STUN
+            // seul, avec timeout) : le Peer est donc créé même si `/get-ice-servers` est mort.
+            const iceServers = await fetchIceServers(ctx.AjaxService)
+
+            // ── Garde d'annulation ────────────────────────────────────────────────────────
+            //
+            // Pendant l'aller-retour ci-dessus, le store est dans un état qui n'existait pas
+            // avant : `localPeer === null` ALORS QUE `peerInitPromise` est posée. Si le timer de
+            // `_schedulePeerDestroy` se déclenche dans cette fenêtre, `_destroyPeerSingleton`
+            // prend sa branche « peer déjà absent » → `resetPeerState({keepConsumerCount:true})`,
+            // qui remet `peerInitPromise` à `null`. Sans ce garde, le `new Peer` ci-dessous
+            // naîtrait ORPHELIN : dans un store à 0 consommateur dont le timer a déjà été
+            // consommé, donc hors d'atteinte de toute destruction future. C'est la famille du
+            // « peerId fantôme » décrite plus haut, par un chemin neuf.
+            //
+            // Le prédicat discrimine exactement les trois évolutions possibles :
+            //   • le dernier consommateur démonte (timer armé) → `peerInitPromise` INTACTE, on
+            //     continue : le Peer sera créé, publié, et le timer le détruira proprement ;
+            //   • le timer se déclenche → `peerInitPromise` nullée par le reset → on abandonne ;
+            //   • une init plus récente a pris la main → identité différente → on abandonne, et
+            //     le `.finally` ci-dessous ne nullera pas la promesse de la plus récente.
+            // `peerConsumerCount === 0` serait un mauvais prédicat : il est vrai dans le premier
+            // cas, où il faut continuer.
+            //
+            // ⚠️ Ne JAMAIS déplacer ce garde avant l'`await` (`initPromise` est alors en zone
+            // morte temporelle), ni insérer un `await` entre l'appel de `_doInit()` et le
+            // `setPeerInitPromise(initPromise)` qui le suit : c'est le fait que ce segment soit
+            // intégralement synchrone qui rend `initPromise` lisible ici.
+            //
+            // Sortie par un `return` nu, pas un `throw` : une annulation n'est pas un échec, et
+            // le `.catch` en ferait un `console.error`.
+            if (peerStore.peerInitPromise !== initPromise) {
+                console.info('[WebRTC2] Init du Peer abandonnée : le singleton a été détruit, ou une init plus récente a pris la main, pendant la récupération de la configuration ICE.')
+                return
+            }
+
             const peer = markRaw(new Peer({
                 host: import.meta.env.VITE_PEERS_SERVER_HOST,
                 port: import.meta.env.VITE_PEERS_SERVER_PORT,
                 path: import.meta.env.VITE_PEERS_SERVER_PATH,
                 key: import.meta.env.VITE_PEERS_SERVER_KEY,
                 secure: true,
-                config: {
-                    iceServers: [
-                        { urls: 'stun:stun.l.google.com:19302' },
-                        {
-                            urls: `turn:${import.meta.env.VITE_PEERS_SERVER_HOST}:3478`,
-                            username: import.meta.env.VITE_COTURN_USERNAME,
-                            credential: import.meta.env.VITE_COTURN_CREDENTIAL
-                        }
-                    ]
-                }
+                config: { iceServers }
             }))
             peerStore.localPeer = peer
 

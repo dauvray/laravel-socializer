@@ -76,7 +76,7 @@ pour substituer les classes.
 laravel-socializer/
 ├── CLAUDE.md · README.md · docs/ · work/
 ├── hooks/pre-push            refuse de pousser une suite rouge (voir tests.md)
-├── socializer.conf           modèle Nginx : SSL, proxy WebSocket Reverb, stream TURN
+├── socializer.conf           modèle Nginx : SSL, proxy WebSocket Reverb, proxy /peers
 └── src/
     ├── ServiceProvider.php   point d'entrée unique
     ├── app/
@@ -169,7 +169,14 @@ Le package fait partie d'une **famille** — `innovation/laravel-estarter`, `lar
 modèles et de commandes, plugins GrapesJS et champs de formulaire custom.
 
 **Infra au-delà de Laravel** : Redis, MongoDB, NebulaGraph, Reverb (WebSocket, proxifié — voir
-`socializer.conf`) et un serveur TURN (proxy stream Nginx sur 3478).
+`socializer.conf`), un serveur PeerJS et un relais TURN (coturn, 3478).
+
+> ⚠️ `socializer.conf` ne contient **aucun bloc TURN** — la mention d'un « stream TURN » qui figurait
+> ici et dans l'arborescence ci-dessus était fausse. Le proxy stream Nginx sur 3478 est décrit dans
+> le `README.md` du paquet, et il ne concerne que le canal de contrôle TCP. La configuration de
+> coturn elle-même (utilisateur, plage de ports relais, realm) vit dans le `docker-compose` du
+> projet hôte. Les identifiants que le navigateur reçoit, eux, sont servis par
+> `GET /get-ice-servers` — jamais compilés dans le bundle.
 
 ---
 

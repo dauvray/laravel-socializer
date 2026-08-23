@@ -32,7 +32,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createMockContext } from './helpers/createMockContext.js'
 import { withSetup } from './helpers/withSetup.js'
 import { usePeer2Store } from '~socializer/stores/peers2.js'
-import { PEER_DESTROY_DELAY_MS } from '~socializer/components/WebRTC2/webrtc2.config.js'
+import { ENDPOINTS, PEER_DESTROY_DELAY_MS, STUN_ONLY_ICE_SERVERS } from '~socializer/components/WebRTC2/webrtc2.config.js'
 
 const ROOM = 'live'
 
@@ -52,7 +52,17 @@ const loadTransportCopy = async () => {
 
     peerMock.resetPeerMock()
 
-    return { usePeerTransport, lastPeer: peerMock.getLastPeerInstance }
+    // `peerCount` et non seulement `lastPeer` : depuis que la création du Peer est précédée d'un
+    // aller-retour ICE, `lastPeer()` vaut `null` pendant toute la fenêtre d'init, et une
+    // assertion `toBe(premierPeer)` y serait verte pour rien (`null === null`). Le compteur
+    // mesure l'invariant « un seul Peer par onglet » directement — et il est aussi strictement
+    // plus fort : deux constructions écraseraient `_lastInstance` ET `peerStore.localPeer`, donc
+    // aucune comparaison d'identité ne peut les distinguer.
+    return {
+        usePeerTransport,
+        lastPeer: peerMock.getLastPeerInstance,
+        peerCount: peerMock.getPeerConstructionCount,
+    }
 }
 
 describe('usePeerTransport — Peer singleton (garde d\'init, ref-counting, destruction différée)', () => {
@@ -115,7 +125,7 @@ describe('usePeerTransport — Peer singleton (garde d\'init, ref-counting, dest
     })
 
     it('deux contextes qui montent ensemble partagent la même init — un seul Peer', async () => {
-        const { usePeerTransport, lastPeer } = await loadTransportCopy()
+        const { usePeerTransport, lastPeer, peerCount } = await loadTransportCopy()
         const ctxA = makeCtx('stream-a')
         const ctxB = makeCtx('data-app', ctxA.peerStore)
         const [apiA] = mount(usePeerTransport, ctxA)
@@ -124,24 +134,29 @@ describe('usePeerTransport — Peer singleton (garde d\'init, ref-counting, dest
         // Aucun `await` entre les deux appels : c'est la fenêtre de race réelle
         // (DataRoom + StreamRoom montés dans le même tick).
         const initA = apiA.setLocalPeer()
-        const created = lastPeer()
-        const initB = apiB.setLocalPeer()
 
-        expect(created).not.toBeNull()
-        expect(lastPeer()).toBe(created)
+        // À cet instant le Peer n'existe pas encore — `_doInit` attend la configuration ICE. La
+        // garde qui tient n'est donc plus l'instance, mais `peerInitPromise`, posée
+        // synchroniquement par le premier appelant.
+        expect(ctxA.peerStore.peerInitPromise).not.toBeNull()
+
+        const initB = apiB.setLocalPeer()
 
         await Promise.all([initA, initB])
 
+        const created = lastPeer()
+        expect(created).not.toBeNull()
+        expect(peerCount()).toBe(1)
         expect(ctxA.peerStore.localPeer).toBe(created)
     })
 
     it('ne crée pas un second Peer pendant que le premier attend son `open`', async () => {
         // 🔥 Régression du 2026-08-14 (« A diffuse, B reste sur le spinner »).
         //
-        // La garde `peerInitPromise` ne couvre que la fenêtre SYNCHRONE : le corps de
-        // `_doInit` n'a aucun `await`, donc la promesse est résolue ~3 microtâches après
-        // l'appel. Or `localPeerReady` n'est vrai qu'à la réception de `'open'`, un
-        // aller-retour réseau plus tard. Entre les deux, les deux gardes laissent passer.
+        // La garde `peerInitPromise` retombe dès que `_doInit` est résolue — c'est-à-dire dès
+        // que la configuration ICE est arrivée et le `Peer` construit. Or `localPeerReady` n'est
+        // vrai qu'à la réception de `'open'`, un aller-retour réseau plus tard. Entre les deux,
+        // seule la garde d'INSTANCE couvre la fenêtre.
         //
         // C'est la situation NOMINALE en production : `Notifications.vue` monte le contexte
         // permanent `data-app` au tick 0, et le contexte `stream-<room>` monte après la
@@ -198,10 +213,10 @@ describe('usePeerTransport — Peer singleton (garde d\'init, ref-counting, dest
     //
     // Les tests ci-dessus couvrent chacun UNE fenêtre de montage ; celui-ci énonce la règle
     // dont ils sont des cas particuliers : **un onglet n'a jamais deux instances de `Peer`**,
-    // quel que soit le moment où un second contexte se monte. Trois gardes concourent à le
-    // tenir (`localPeerReady`, l'instance, `peerInitPromise`) — c'est ici, et non dans
-    // chacune de leurs implémentations, qu'il faut venir vérifier qu'ils tiennent encore
-    // après un remaniement.
+    // quel que soit le moment où un second contexte se monte. Quatre gardes concourent à le
+    // tenir (`localPeerReady`, l'instance, `peerInitPromise`, et la garde d'annulation
+    // post-récupération ICE) — c'est ici, et non dans chacune de leurs implémentations, qu'il
+    // faut venir vérifier qu'ils tiennent encore après un remaniement.
 
     describe('invariant : une seule instance de Peer par onglet', () => {
         const FENÊTRES = [
@@ -210,39 +225,55 @@ describe('usePeerTransport — Peer singleton (garde d\'init, ref-counting, dest
                 ouvrir: async () => {},
             },
             {
+                // Fenêtre ouverte le 2026-08-23 par le passage des credentials TURN côté
+                // serveur : `_doInit` attend désormais `/get-ice-servers` avant de construire le
+                // `Peer`. Pendant ce vol, `localPeer` est `null` et SEULE `peerInitPromise`
+                // garde l'invariant.
+                label: 'récupération ICE en vol — le Peer n\'existe pas encore',
+                ouvrir: async () => { await Promise.resolve() },
+            },
+            {
                 label: 'init résolue mais `open` pas encore reçu (le cas de production)',
                 ouvrir: async (initA) => { await initA },
             },
             {
                 label: '`open` déjà reçu',
-                ouvrir: async (initA, peer) => {
+                ouvrir: async (initA, lastPeer) => {
                     await initA
-                    peer._triggerEvent('open', 'peer-alice')
+                    lastPeer()._triggerEvent('open', 'peer-alice')
                 },
             },
         ]
 
         it.each(FENÊTRES)('un seul Peer — $label', async ({ ouvrir }) => {
-            const { usePeerTransport, lastPeer } = await loadTransportCopy()
+            const { usePeerTransport, lastPeer, peerCount } = await loadTransportCopy()
             const ctxA = makeCtx('data-app')
             const [apiA] = mount(usePeerTransport, ctxA)
 
             const initA = apiA.setLocalPeer()
-            const premierPeer = lastPeer()
-            expect(premierPeer).not.toBeNull()
 
-            await ouvrir(initA, premierPeer)
+            // Le `Peer` n'existe pas encore à cet instant (récupération ICE en vol) : la garde
+            // qui tient est `peerInitPromise`, posée synchroniquement.
+            expect(ctxA.peerStore.peerInitPromise).not.toBeNull()
+
+            await ouvrir(initA, lastPeer)
 
             const ctxB = makeCtx('stream-live', ctxA.peerStore)
             const [apiB] = mount(usePeerTransport, ctxB)
             await apiB.setLocalPeer()
             await initA
 
-            expect(lastPeer()).toBe(premierPeer)
-            expect(ctxA.peerStore.localPeer).toBe(premierPeer)
+            const peerUnique = lastPeer()
+
+            // ⚠️ Le compteur, et pas seulement l'identité : une seconde construction écraserait
+            // `_lastInstance` ET `peerStore.localPeer`, donc `toBe(premierPeer)` ne peut pas la
+            // détecter. C'est l'assertion qui porte réellement l'invariant.
+            expect(peerCount()).toBe(1)
+            expect(peerUnique).not.toBeNull()
+            expect(ctxA.peerStore.localPeer).toBe(peerUnique)
             // Un peer supplanté serait débranché de ses listeners tout en restant
             // enregistré côté serveur PeerJS, et hors d'atteinte de `_destroyPeerSingleton`.
-            expect(premierPeer.off).not.toHaveBeenCalled()
+            expect(peerUnique.off).not.toHaveBeenCalled()
         })
     })
 
@@ -547,8 +578,12 @@ describe('usePeerTransport — Peer singleton (garde d\'init, ref-counting, dest
         })
 
         it('ne crée qu\'un seul Peer quand une init est en vol au moment du rechargement', async () => {
-            // Les deux copies sont chargées d'avance : la fenêtre « init en vol » ne dure
-            // que quelques microtâches, un `await import()` la refermerait.
+            // Les deux copies sont chargées d'avance : la fenêtre « init en vol » se referme
+            // toute seule, un `await import()` au mauvais moment la manquerait.
+            //
+            // ⚠️ `copy1` et `copy2` ont chacune LEUR copie du mock (deux `vi.resetModules()`),
+            // donc deux `_lastInstance` et deux compteurs distincts. On asserte séparément, on
+            // ne somme jamais.
             const copy1 = await loadTransportCopy()
             const copy2 = await loadTransportCopy()
 
@@ -558,17 +593,150 @@ describe('usePeerTransport — Peer singleton (garde d\'init, ref-counting, dest
             const [apiB] = mount(copy2.usePeerTransport, ctxB)
 
             const inFlight = apiA.setLocalPeer()   // `open` volontairement non déclenché
-            const created = copy1.lastPeer()
-            expect(created).not.toBeNull()
+
+            // L'init est en vol AVANT même que le Peer existe — c'est l'état que le HMR doit
+            // traverser, et il dure désormais un aller-retour réseau au lieu de trois
+            // microtâches. La fenêtre couverte par ce test est donc plus longue qu'avant.
+            expect(ctxA.peerStore.peerInitPromise).not.toBeNull()
+            expect(copy1.lastPeer()).toBeNull()
 
             apiB.setLocalPeer()
 
             // Un second Peer ici, c'est l'ancien qui fuit avec un peerId fantôme encore
             // enregistré côté serveur PeerJS — la famille de bugs « peerId périmé collant ».
             expect(copy2.lastPeer()).toBeNull()
-            expect(ctxA.peerStore.localPeer).toBe(created)
 
             await inFlight
+
+            // Et après résolution : la copie neuve n'a toujours rien construit, l'ancienne a
+            // construit exactement un Peer, et c'est lui que le store partagé publie.
+            expect(copy2.lastPeer()).toBeNull()
+            expect(copy1.peerCount()).toBe(1)
+            expect(ctxA.peerStore.localPeer).toBe(copy1.lastPeer())
+        })
+    })
+
+    // ── Configuration ICE servie par le serveur ──────────────────────────────────
+    //
+    // Les identifiants TURN étaient lus dans `import.meta.env.VITE_COTURN_*`, donc inlinés par
+    // Vite dans le bundle public : le mot de passe du conteneur coturn était lisible en ouvrant
+    // le JS. `_doInit` les récupère désormais auprès de `/get-ice-servers`.
+    //
+    // Contrôle de harnais : neutraliser la garde d'annulation de `_doInit` (le
+    // `if (peerStore.peerInitPromise !== initPromise) return`) doit faire rougir les deux
+    // derniers tests de ce bloc, et EUX SEULS. Vérifié le 2026-08-23.
+
+    describe('configuration ICE', () => {
+        const ICE = [
+            { urls: 'stun:stun.example:19302' },
+            { urls: 'turn:turn.example:3478', username: 'u-42', credential: 'c-42' },
+        ]
+
+        it('injecte dans `new Peer` les iceServers renvoyés par la route', async () => {
+            const { usePeerTransport, lastPeer } = await loadTransportCopy()
+            const ctx = makeCtx('data-app')
+            ctx.AjaxService.load.mockResolvedValue({ iceServers: ICE })
+            const [api] = mount(usePeerTransport, ctx)
+
+            await api.setLocalPeer()
+
+            expect(ctx.AjaxService.load).toHaveBeenCalledWith(ENDPOINTS.ICE_SERVERS, 'get')
+            expect(lastPeer().options.config.iceServers).toEqual(ICE)
+        })
+
+        it('crée quand même le Peer, en STUN seul, quand la route échoue', async () => {
+            const { usePeerTransport, lastPeer } = await loadTransportCopy()
+            const ctx = makeCtx('data-app')
+            ctx.AjaxService.load.mockRejectedValue(new Error('500'))
+            const [api] = mount(usePeerTransport, ctx)
+
+            await api.setLocalPeer()
+
+            const peer = lastPeer()
+            expect(peer).not.toBeNull()
+            expect(peer.options.config.iceServers).toEqual(STUN_ONLY_ICE_SERVERS)
+
+            // Le fait métier, pas seulement l'absence d'exception : la session est réellement
+            // utilisable. Sans relais TURN, mais utilisable.
+            peer._triggerEvent('open', 'peer-alice')
+            expect(ctx.peerStore.localPeerReady).toBe(true)
+        })
+
+        it('n\'instancie aucun Peer si le singleton a été détruit pendant la récupération ICE', async () => {
+            // 🔥 Le défaut que l'aller-retour ICE a introduit, et que la garde d'annulation ferme.
+            //
+            // Pendant le vol, `localPeer` est `null` alors que `peerInitPromise` est posée : si le
+            // timer de destruction se déclenche là, `_destroyPeerSingleton` prend sa branche
+            // « peer déjà absent » et consomme le timer. Sans garde, le `new Peer` qui suit naît
+            // dans un store à 0 consommateur — orphelin, jamais détruit, peerId fantôme côté
+            // serveur PeerJS.
+            const { usePeerTransport, lastPeer, peerCount } = await loadTransportCopy()
+            const ctx = makeCtx('stream-a')
+
+            let releaseIce
+            ctx.AjaxService.load.mockReturnValue(
+                new Promise((resolve) => { releaseIce = () => resolve({ iceServers: ICE }) }),
+            )
+
+            const [api, app] = mount(usePeerTransport, ctx)
+            const init = api.setLocalPeer()
+
+            expect(lastPeer()).toBeNull()
+            expect(ctx.peerStore.peerInitPromise).not.toBeNull()
+
+            // ⚠️ `useFakeTimers` APRÈS le lancement : le `setTimeout` de `fetchIceServers` a été
+            // armé avec les VRAIS timers, donc `advanceTimersByTime` ne peut pas le déclencher et
+            // faire sortir la récupération en repli avant la destruction. Sinon ce test ne
+            // mesurerait plus rien.
+            vi.useFakeTimers()
+            app.unmount()
+            vi.advanceTimersByTime(PEER_DESTROY_DELAY_MS)
+
+            // `resetPeerState` a nullé la promesse : c'est le signal que lit la garde.
+            expect(ctx.peerStore.peerInitPromise).toBeNull()
+
+            releaseIce()
+            await init
+
+            expect(peerCount()).toBe(0)
+            expect(ctx.peerStore.localPeer).toBeNull()
+            expect(ctx.peerStore.localPeerReady).toBe(false)
+        })
+
+        it('n\'instancie qu\'un Peer quand une init plus récente supplante celle qui attend l\'ICE', async () => {
+            const { usePeerTransport, lastPeer, peerCount } = await loadTransportCopy()
+            const ctxA = makeCtx('stream-a')
+
+            let releaseIce
+            ctxA.AjaxService.load.mockReturnValue(
+                new Promise((resolve) => { releaseIce = () => resolve({ iceServers: ICE }) }),
+            )
+
+            const [apiA, appA] = mount(usePeerTransport, ctxA)
+            const initA = apiA.setLocalPeer()
+            expect(lastPeer()).toBeNull()
+
+            // Le cycle « destruction pendant le vol, puis remontage » : la garde d'entrée voit
+            // `peerInitPromise` à `null` et laisse passer une seconde init, qui aboutit d'abord.
+            vi.useFakeTimers()
+            appA.unmount()
+            vi.advanceTimersByTime(PEER_DESTROY_DELAY_MS)
+            vi.useRealTimers()
+
+            const ctxB = makeCtx('data-app', ctxA.peerStore)
+            const [apiB] = mount(usePeerTransport, ctxB)
+            await apiB.setLocalPeer()
+
+            const peerB = lastPeer()
+            expect(peerB).not.toBeNull()
+
+            // L'init périmée se réveille APRÈS : elle ne doit rien construire, et surtout pas
+            // écraser le Peer courant dans le store.
+            releaseIce()
+            await initA
+
+            expect(peerCount()).toBe(1)
+            expect(ctxA.peerStore.localPeer).toBe(peerB)
         })
     })
 })

@@ -28,14 +28,25 @@ export default {
             path: import.meta.env.VITE_PEERS_SERVER_PATH,
             key: import.meta.env.VITE_PEERS_SERVER_KEY,
             secure: true,
+            // ⚠️ STUN SEUL, PAS DE TURN — et ce n'est pas un oubli.
+            //
+            // Ce chemin appartient à la v1 morte (cf. piège n°1 du CLAUDE.md) : `createLocalPeer`
+            // n'est appelée que par `setLocalDataPeer` / `setLocalVideoPeer`, elles-mêmes
+            // atteintes uniquement depuis `components/WebRTC/` (sans le 2) et un
+            // `__AudioComponent copy.vue`. Injoignable en production.
+            //
+            // Mais elle lisait `import.meta.env.VITE_COTURN_USERNAME` / `_CREDENTIAL`, et Vite
+            // inline ces valeurs AU BUILD : le secret se retrouvait en clair dans le chunk
+            // `peers-*.js` du bundle public, indépendamment du fait que le code soit atteignable.
+            // Corriger WebRTC2 seul l'y aurait laissé intégralement lisible.
+            //
+            // On ne fait donc pas évoluer ce chemin, on retire seulement ce qui fuit. Le relais
+            // TURN vit désormais dans WebRTC2 (`Composables/utils/fetchIceServers.js`), servi à
+            // l'exécution par `GET /get-ice-servers`. Un test balai
+            // (`__tests__/noInlinedTurnSecret.test.js`) interdit le retour de `VITE_COTURN`.
             config: {
                 iceServers: [
-                    { urls: 'stun:stun.l.google.com:19302' },
-                    {
-                        urls: `turn:${import.meta.env.VITE_PEERS_SERVER_HOST}:3478`,
-                        username: import.meta.env.VITE_COTURN_USERNAME,
-                        credential: import.meta.env.VITE_COTURN_CREDENTIAL
-                    }
+                    { urls: 'stun:stun.l.google.com:19302' }
                 ]
             }
         })

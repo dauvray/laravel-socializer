@@ -258,7 +258,37 @@ export const ENDPOINTS = {
 
     /** Notifier un peer de la fermeture de la connexion */
     CLOSE_CONNECTION_TO_PEER_ID: '/close-connection-to-peer-id',
+
+    /**
+     * Configuration ICE (STUN/TURN) calculée par le serveur.
+     *
+     * Seule route du catalogue qui n'est PAS de la signalisation : elle ne relaie rien vers un
+     * autre utilisateur. Elle est publique et rend toujours 200 — STUN seul pour un invité,
+     * STUN + TURN pour une session authentifiée (`WebRTCController::getIceServers`).
+     */
+    ICE_SERVERS: '/get-ice-servers',
 }
+
+/**
+ * Repli lorsque `/get-ice-servers` est injoignable ou illisible.
+ *
+ * Exactement ce qui était en dur dans le bundle avant que la config passe par le serveur : la
+ * dégradation est « plus de relais TURN », jamais « plus de WebRTC ». Un pair derrière un NAT
+ * permissif se connecte encore ; seul le NAT symétrique perd sa session.
+ */
+export const STUN_ONLY_ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }]
+
+/**
+ * Délai au-delà duquel on renonce à la configuration ICE du serveur et on prend
+ * `STUN_ONLY_ICE_SERVERS`.
+ *
+ * ⚠️ Ce n'est pas une précaution décorative : `AjaxService.load` d'estarter a DEUX chemins qui ne
+ * résolvent NI ne rejettent jamais — 401/419 (`document.location.reload()` sans `reject`) et 302
+ * (`window.location.href` sans `reject`). Comme l'appel est désormais `await`é avant `new Peer`,
+ * une requête qui pend voudrait dire « plus jamais de Peer dans cet onglet ». Le timeout
+ * transforme cette panne totale en dégradation en STUN.
+ */
+export const ICE_FETCH_TIMEOUT_MS = 3000
 
 // ─── Provide/inject (MediaBroadcastProvider) ────────────────────────────────────
 export const WEBRTC_API_KEY = Symbol('webrtcApi')

@@ -35,9 +35,12 @@ refus) — 15 et 16/08 —, **E4.1** le 21/08 : la plus grave des tâches ouvert
 22/08 **E8** (la présence ne diffuse plus le bloc privé de personne), **E9** dans la foulée (les
 charges utiles d'auteur de message passent en liste blanche, diffusion **et** historique HTTP), et
 **E7** le même jour — les écritures de graphe lèvent et se journalisent, ce qui **débloque E4.2**.
-Restent : **D** (TURN, requiert une modif d'infra coturn), **E1**, **E2**, la part `getUsersList`
-d'**E3**, **E4.2** (dérive du réplica, arbitrage à produire), **E6** (périmètre estarter) et **F1**
-en clôture.
+Puis **E1** et **E2** le 23/08, et **D0** le même jour — la moitié de D1/D2 qui ne demandait aucune
+décision d'infra : les identifiants TURN sortent du bundle public (2 occurrences → 0), servis par
+`GET /get-ice-servers`.
+Restent : **D1** (rendre les credentials éphémères — requiert une bascule coturn **et la rotation
+du secret, qui est compromis**), la part `getUsersList` d'**E3**, **E4.2** (dérive du réplica,
+arbitrage à produire), **E6** (périmètre estarter) et **F1** en clôture.
 
 ---
 
@@ -1029,14 +1032,84 @@ se contre-vérifie dans l'application.
 
 # LOT D — Identifiants TURN éphémères 🟠
 
+### D0 — Sortir les identifiants TURN du bundle `[M]` ✅ 23/08/2026
+
+- [x] **Dépend de :** rien. **Extraite de D1/D2 le 23/08/2026** — la moitié qui ne demandait
+      aucune décision d'infra, donc aucune raison d'attendre l'arbitrage TURN REST.
+
+**Ce que D1/D2 mélangeaient, et qu'il fallait séparer.** Le plan d'origine liait « sortir le secret
+du bundle » à « le rendre éphémère ». Or seule la seconde exige une bascule coturn et une rotation
+de secret ; la première est un déplacement de la lecture du `.env`, de Vite vers PHP. Faite seule,
+elle règle la fuite et **rend vraie** la promesse d'installation du paquet — voir plus bas.
+
+- [x] `config/socializer.php` → `signaling.ice` : `stun_urls`, `turn.{host,port,username,password}`.
+      **Aucune variable nouvelle obligatoire** : `username`/`password` lisent `COTURN_USER` /
+      `COTURN_PASS`, celles-là mêmes que le `docker-compose` passe au conteneur. Deux couples pour
+      un seul compte, c'est la panne muette le jour où l'on n'en tourne qu'un.
+- [x] `WebRTCController::getIceServers` + `GET /get-ice-servers`, groupe **public**, **toujours
+      200** : STUN seul pour un invité, STUN + TURN pour un authentifié. Liste blanche de trois
+      clés, jamais un splat de la config. `Cache-Control: no-store`.
+- [x] `Composables/utils/fetchIceServers.js` : ne jette jamais, rend toujours un tableau non vide,
+      timeout par `Promise.race`. `_doInit` l'`await`e avant `new Peer`.
+- [x] Le **second site** : `stores/peers/actions.js` (v1 morte) lisait les mêmes variables.
+- [x] `.env`, `.env.app`, `.env.docker` nettoyés ; bundle reconstruit.
+- [x] Tests : `IceServersTest` (9 cas), `fetchIceServers.test.js` (12), `describe('configuration
+      ICE')` (4), `noInlinedTurnSecret.test.js` (4). Contre-épreuves faites sur les quatre.
+
+#### Trois choses apprises, dont deux qui n'étaient pas au plan
+
+**1. `import.meta.env.VITE_*` n'est pas de la configuration, c'est du code source.** Vite remplace
+l'expression par sa valeur **au build**. Conséquences en chaîne : le secret était en clair dans
+`public/build/assets/js/*.js` ; il y était **deux fois**, le second site appartenant à la v1 morte
+(Vite ne se soucie pas de l'atteignabilité) ; et « il n'y a qu'à adapter le `.env` » était **faux**,
+puisqu'il fallait aussi un `npm run build` que rien ne documente. La correction rend cette phrase
+vraie. Preuve empirique, la seule qui compte : `credential:"…"` passait de **2 occurrences à 0** dans
+le bundle reconstruit — un `grep` sur les sources ne l'aurait pas montré.
+
+**2. La route DOIT être publique et rendre 200.** La coquille SPA `/app/{any}` est publique
+(`vue_router_auth_protect` n'est définie nulle part), `Notifications.vue` monte le contexte
+`data-app` avant tout login, et `AjaxService.load` fait `document.location.reload()` sur un 401 :
+un garde par middleware aurait produit une **boucle de rechargement sur la page de login**. La garde
+est donc `Auth::check()`, dans le contrôleur. Même famille que C5 et E5 — un garde n'est fini que
+lorsqu'on a suivi son refus jusqu'au pixel.
+
+**3. ⚠️ L'`await` ouvre une fenêtre inédite, et la note de D2 ne suffisait pas.** Elle disait
+« l'appel réseau doit rester à l'intérieur de `peerInitPromise` » : nécessaire, **pas suffisant**.
+Pendant le vol, le store est dans un état qui n'existait pas — `localPeer === null` ALORS QUE
+`peerInitPromise` est posée. Si le timer de destruction différée se déclenche là,
+`_destroyPeerSingleton` prend sa branche « peer déjà absent », consomme le timer, et le `new Peer`
+qui suit naît **orphelin** : store à 0 consommateur, hors d'atteinte de toute destruction. C'est le
+« peerId fantôme » du 14/08 par un chemin neuf. D'où une **garde d'annulation** après l'`await`
+(`peerStore.peerInitPromise !== initPromise`), qui discrimine les trois évolutions possibles là où
+un `peerConsumerCount === 0` se serait trompé sur la première. La leçon générale : **insérer un
+`await` dans une séquence jusque-là synchrone crée un état intermédiaire observable, et tout ce qui
+lit cet état pendant la fenêtre doit être réexaminé** — pas seulement ce qui l'écrit.
+
+Côté tests, trois assertions mesuraient l'invariant « un seul Peer par onglet » **indirectement**,
+en comparant `lastPeer()` avant et après. Sous le nouveau code elles seraient devenues vertes pour
+rien (`null === null`). Remplacées par un compteur de constructions dans le mock — strictement plus
+fort : deux constructions écrasent `_lastInstance` **et** `peerStore.localPeer`, donc aucune
+comparaison d'identité ne peut les distinguer.
+
+**Commit :** `secu(socializer): servir la configuration ICE depuis le serveur`
+
+---
+
 ### D1 — Endpoint de credentials TURN signés `[M]`
 
-- [ ] **Dépend de :** rien (mais requiert une modification d'infra coturn).
+- [ ] **Dépend de :** rien (mais requiert une modification d'infra coturn). **Périmètre réduit
+      par D0 (23/08)** : la route, la config et la consommation côté client existent déjà. Ce qui
+      reste est le mécanisme de signature, et lui seul.
 
-`VITE_COTURN_USERNAME` / `VITE_COTURN_CREDENTIAL` sont **compilés dans le bundle JS** servi
-à tous (`usePeerTransport.js`, config `iceServers` de `new Peer`). Identifiants longue
-durée, partagés, lisibles par quiconque ouvre le fichier → **relais ouvert** : bande
-passante gratuite, imputable au serveur.
+**Ce qui reste après D0.** Les identifiants ne sont plus dans le bundle, mais ils restent
+**statiques, longue durée et partagés** : un utilisateur authentifié peut toujours abuser du relais,
+et rien ne l'y rattache. D1 ne change donc plus le chemin, seulement la valeur servie —
+`WebRTCController::turnServer()` est le seul point à modifier, la forme de la réponse et le client
+ne bougent pas.
+
+⚠️ Le secret actuel **est compromis** et D0 ne le répare pas : il a été servi dans le bundle
+public pendant des mois, il est dans l'historique git (`.env.app` et `.env.docker` sont versionnés),
+et dans les caches navigateur. Le tourner fait partie de D1, pas de D0.
 
 - Basculer coturn sur `use-auth-secret` / `static-auth-secret` (`socializer.conf`).
 - Route authentifiée renvoyant
@@ -1052,19 +1125,17 @@ passante gratuite, imputable au serveur.
 
 - [ ] **Dépend de :** D1.
 
-- `usePeerTransport._doInit` : récupérer les credentials avant `new Peer(...)` au lieu de
-  lire `import.meta.env`. Prévoir l'échec (repli sur STUN seul + `console.warn`) — un TURN
-  indisponible ne doit pas empêcher la création du Peer.
-- Retirer `VITE_COTURN_USERNAME` / `VITE_COTURN_CREDENTIAL` de `.env`, `.env.example` et du
-  bundle. **Considérer le secret actuel comme compromis : le tourner.**
+**✅ Intégralement livrée par D0 le 23/08/2026.** `_doInit` récupère la configuration ICE avant
+`new Peer(...)`, avec repli STUN et timeout ; les variables `VITE_COTURN_*` ont disparu des trois
+`.env` et du bundle (vérifié : 2 occurrences → 0 après reconstruction).
 
-> ⚠️ `_doInit` est déjà encadré par `_peerInitPromise` (garde de race contre deux contextes
-> qui montent en même temps). L'appel réseau ajouté doit rester **à l'intérieur** de cette
-> promesse, sinon deux contextes créeront deux `Peer` distincts.
+> ⚠️ **La note d'origine de cette tâche était insuffisante, et c'est le principal enseignement du
+> lot.** Elle disait : « l'appel réseau doit rester à l'intérieur de `peerInitPromise`, sinon deux
+> contextes créeront deux `Peer` ». Vrai, mais il manquait la **garde d'annulation** : voir le point
+> 3 de D0. Ne pas retirer ce paragraphe en croyant qu'il fait doublon.
 
-**Tests :** credentials injectés dans `iceServers` · échec de récupération ⇒ le Peer se crée
-quand même avec STUN.
-**Commit :** `secu(webrtc2): consommer les credentials TURN éphémères`
+Ne reste de D2 que ce qui accompagnera D1 : reconsommer les credentials horodatés, ce qui ne
+demandera **aucun changement côté client** — la forme de la réponse est déjà la bonne.
 
 ---
 

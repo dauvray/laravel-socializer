@@ -56,12 +56,33 @@ import { vi } from 'vitest'
 // Référence vers la dernière instance créée (utile pour les assertions)
 let _lastInstance = null
 
+// Toutes les instances construites depuis le dernier reset.
+//
+// ⚠️ `getLastPeerInstance()` NE SUFFIT PAS à prouver l'invariant « un seul Peer par onglet » :
+// une deuxième construction écrase `_lastInstance` ET `peerStore.localPeer`, donc
+// `expect(peerStore.localPeer).toBe(lastPeer())` reste vrai avec deux Peers. Depuis que la
+// création est précédée d'un aller-retour ICE, `lastPeer()` peut aussi valoir `null` au moment où
+// l'ancienne formulation l'interrogeait — elle serait alors verte pour rien. Seul un COMPTEUR
+// mesure l'invariant directement.
+let _instances = []
+
 export function getLastPeerInstance() {
     return _lastInstance
 }
 
+/** Toutes les instances construites depuis le dernier `resetPeerMock()`. */
+export function getPeerInstances() {
+    return [..._instances]
+}
+
+/** Nombre de `new Peer(...)` depuis le dernier `resetPeerMock()`. */
+export function getPeerConstructionCount() {
+    return _instances.length
+}
+
 export function resetPeerMock() {
     _lastInstance = null
+    _instances = []
 }
 
 // ─── Bus in-memory (opt-in) ───────────────────────────────────────────────────
@@ -125,7 +146,17 @@ const _emitPeerUnavailable = (peer, peerId) => {
 export class Peer {
     constructor(id, options) {
         this.id = id || _randomId('mock-peer')
-        this.options = options
+
+        // PeerJS accepte `new Peer(options)` : le vrai constructeur bascule le 1er argument en
+        // options quand c'est un objet nu, et c'est la forme qu'utilise la production
+        // (`usePeerTransport._doInit`). On expose donc les options RÉELLEMENT reçues, quelle que
+        // soit l'arité — seul angle sous lequel `config.iceServers` est observable en test.
+        //
+        // ⚠️ `this.id` n'est délibérément PAS corrigé : il continue de porter cet objet jusqu'à
+        // l'`open`. `_registerOnBus` s'en protège déjà par son `typeof === 'string'` (voir son
+        // commentaire), et « corriger » `id` inscrirait le Peer au bus sous une clé aléatoire
+        // avant l'`open`, ce qui changerait le routage de tous les tests de scénario.
+        this.options = (id !== null && typeof id === 'object') ? id : (options ?? null)
         this.open = false
         this.destroyed = false
         this.disconnected = false
@@ -249,6 +280,7 @@ export class Peer {
         this.reconnect = vi.fn()
 
         _lastInstance = this
+        _instances.push(this)
         this._registerOnBus()
     }
 

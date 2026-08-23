@@ -14,7 +14,7 @@
 | **Entrant** (`peer.on('connection')`, `peer.on('call')`) | durci **côté client**, borné côté serveur — audits du 20/05 et du 14/08/2026 | garde `_isAuthorizedIncomingPeer`, anti-usurpation inconditionnelle, gardes de taille, sanitisation. Reste aveugle au membre de room qui se présente avec un peerId neuf sous le slug d'un autre ; le garde de relation serveur borne désormais qui peut tenter |
 | **Sortant** (`connectToPeer`, `responseRemotePeerConnection`) | durci **côté client**, garde autoritatif posé côté serveur | prédicat unique `utils/isAuthorizedPeer.js` : membre de la room **ou** interlocuteur d'appel marqué. Son jumeau serveur `Socializable::mayReach` tranche ce que le navigateur ne peut pas voir |
 | **Backend** (`UserController`, routes) | durci | `fromUserSlug` authentifié, liste blanche de champs, `throttle` par utilisateur (deux buckets), `validate()` sur les 5 payloads, et **contrôle de relation** émetteur ↔ destinataire en 403 uniforme |
-| **Credentials TURN** | 🟠 compilés dans le bundle | identifiants longue durée lisibles par quiconque ouvre le JS |
+| **Credentials TURN** | servis par le serveur, **statiques** | `GET /get-ice-servers` : STUN seul pour un invité, STUN + TURN pour une session authentifiée. Ils ne sont plus dans le bundle ; ils restent longue durée et partagés entre utilisateurs |
 
 **La leçon réutilisable, et la seule qui compte : un garde d'admission ne sécurise qu'une
 direction.** Tout chemin qui *ouvre* une connexion doit porter le sien.
@@ -455,8 +455,20 @@ d'absence de relation sur `[]` revient à tester une panne.
   ([signalisation.md](../../architecture/signalisation.md#une-charge-utile-de-présence-est-fabriquée-par-son-propre-sujet)).
   **Reste ouvert** : la même énumération sur `getUsersList`, qui liste tous les utilisateurs actifs
   sans contrôle.
-- **TURN** : `VITE_COTURN_USERNAME` / `VITE_COTURN_CREDENTIAL` sont compilés dans le bundle servi à
-  tous — identifiants longue durée, partagés → relais ouvert, bande passante imputable au serveur.
+- **TURN** : les identifiants ne sont plus dans le bundle (`GET /get-ice-servers`), mais ils restent
+  **statiques, longue durée et partagés**. Un utilisateur authentifié peut donc encore abuser du
+  relais, et rien ne le rattache à lui. Le niveau 2 — coturn en `use-auth-secret`, credential
+  `HMAC-SHA1(secret, "<expiry>:<userId>")` à TTL court — remplacera `username`/`password` sans
+  toucher ni à la route ni à la forme de la réponse.
+
+> **La leçon qui se réutilise ailleurs : `import.meta.env.VITE_*` n'est pas de la configuration,
+> c'est du code source.** Vite remplace l'expression par sa valeur **au build** ; la clé finit en
+> clair dans `public/build/assets/js/*.js`, servi à tout visiteur. Le credential coturn y était
+> présent **deux fois** — parce que deux fichiers le lisaient, dont un appartenant à la v1 morte :
+> Vite ne se soucie pas de savoir si le code est atteignable. Corollaire de méthode : **ne jamais
+> conclure « le secret est sorti » depuis le seul code source** — la preuve est un `grep` sur le
+> bundle reconstruit. Épinglé par `__tests__/noInlinedTurnSecret.test.js`, qui scanne exactement ce
+> que Vite compile (tests et commentaires exclus, puisqu'ils ne sont pas bundlés).
 
 Détail, ordre et critères de complétion :
 [`work/webrtc2-securite-2026-08-14.md`](../../../work/webrtc2-securite-2026-08-14.md).

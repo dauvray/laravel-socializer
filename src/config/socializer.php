@@ -141,6 +141,17 @@ return [
         */
 
         'store' => $prefix_front.'\StoreController',
+
+        /*
+        |--------------------------------------------------------------------------
+        | WebRTC FrontController
+        |--------------------------------------------------------------------------
+        |
+        | Sert la configuration ICE (`signaling.ice` plus bas) au navigateur.
+        |
+        */
+
+        'webrtc' => $prefix_front.'\WebRTCController',
     ],
 
     /*
@@ -620,6 +631,88 @@ return [
              * relation vit dans un paquet que le harnais de tests double par un stub.
              */
             'group_user_table' => env('SOCIALIZER_RELATION_GROUP_USER_TABLE', 'group_user'),
+        ],
+
+        /*
+        |--------------------------------------------------------------------------
+        | Serveurs ICE (STUN / TURN)
+        |--------------------------------------------------------------------------
+        |
+        | Ce que le navigateur reçoit dans `config.iceServers` de `new Peer(...)`. Servi par
+        | `/get-ice-servers`, et NON PLUS compilé dans le bundle : `VITE_COTURN_USERNAME` /
+        | `VITE_COTURN_CREDENTIAL` étaient inlinés par Vite au build, donc lisibles par
+        | quiconque ouvrait le JS — relais TURN ouvert, bande passante imputable au serveur.
+        |
+        | Effet de bord voulu : une clé `VITE_*` n'a d'effet qu'après un `npm run build`, une
+        | clé lue par PHP prend effet au redémarrage. Changer de TURN redevient une édition
+        | de `.env`.
+        |
+        | ⚠️ NIVEAU 1 : les identifiants restent STATIQUES, longue durée et partagés. Ce qui
+        | change est le seul fait qu'il faut désormais une session authentifiée pour les
+        | obtenir. Le niveau 2 (coturn en `use-auth-secret` + credential HMAC horodaté, lot D
+        | de `work/webrtc2-securite-2026-08-14.md`) remplacera `username`/`password` par un
+        | secret, sans toucher ni à la route ni à la forme de la réponse.
+        |
+        */
+
+        'ice' => [
+
+            /*
+             * STUN — servi à TOUT LE MONDE, invité compris : il ne porte aucun identifiant, et
+             * sans lui un pair derrière NAT n'obtient même pas de candidat `srflx`.
+             *
+             * Liste séparée par des virgules, pour que la variable `.env` reste scalaire comme
+             * partout ailleurs dans ce fichier. Le défaut est EXACTEMENT ce qui était en dur
+             * dans le bundle : déplacer le secret ne doit rien changer au chemin ICE.
+             *
+             * ⚠️ Un réseau fermé sans sortie Internet doit la vider (`SOCIALIZER_STUN_URLS=`) :
+             * un STUN injoignable ne casse pas la négociation, il l'allonge de son timeout.
+             */
+            'stun_urls' => array_values(array_filter(array_map('trim', explode(
+                ',',
+                (string) env('SOCIALIZER_STUN_URLS', 'stun:stun.l.google.com:19302')
+            )))),
+
+            'turn' => [
+
+                /*
+                 * Hôte du relais coturn, SANS schéma ni port. UNE seule variable nouvelle, et
+                 * elle est facultative : à défaut on dérive l'hôte d'`APP_URL`, ce que le
+                 * bundle faisait déjà par un autre chemin (`turn:${VITE_PEERS_SERVER_HOST}`).
+                 * Ne PAS relire `VITE_PEERS_SERVER_HOST` ici : les `VITE_*` décrivent ce qui
+                 * part dans le bundle, et c'est précisément ce dont on sort ; cette
+                 * variable-là reste, mais pour le serveur PeerJS seul.
+                 *
+                 * La renseigner dès que coturn cesse de répondre sur le nom de l'application.
+                 *
+                 * Le `?: null` final n'est pas décoratif : `parse_url()` rend `false` sur une
+                 * URL malformée, et `'turn:'.false.':3478'` donnerait `turn::3478` — une URL
+                 * d'apparence valide que l'agent ICE tenterait.
+                 */
+                'host' => env('SOCIALIZER_TURN_HOST')
+                    ?: (parse_url((string) env('APP_URL'), PHP_URL_HOST) ?: null),
+
+                /*
+                 * Port d'écoute. 3478 est celui que le `docker-compose` publie en TCP ET UDP ;
+                 * pas de 5349, le conteneur tourne en `--no-tls --no-dtls`.
+                 */
+                'port' => (int) env('SOCIALIZER_TURN_PORT', 3478),
+
+                /*
+                 * ⚠️ `COTURN_USER` / `COTURN_PASS`, et surtout PAS de nouvelles clés : ce sont
+                 * exactement celles que le `docker-compose` passe au conteneur
+                 * (`--user ${COTURN_USER}:${COTURN_PASS}`). Deux couples de variables pour un
+                 * seul compte, c'est la panne muette garantie le jour où l'on tourne le mot de
+                 * passe d'un seul côté.
+                 *
+                 * Vides = déploiement SANS relais : le contrôleur n'émet alors AUCUNE entrée
+                 * TURN. Surtout pas une entrée aux identifiants nuls — l'agent ICE la
+                 * traiterait comme un serveur à interroger et attendrait son échec
+                 * d'authentification avant de conclure.
+                 */
+                'username' => env('COTURN_USER'),
+                'password' => env('COTURN_PASS'),
+            ],
         ],
     ],
 ];

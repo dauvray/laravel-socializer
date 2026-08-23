@@ -89,8 +89,11 @@ Ils sont implicites et cassent **silencieusement**.
 - **Pinia actif**, avec `useMeStore().getMe.slug` renseigné, et **Echo/Reverb** global.
 - **Un conteneur vidéo** : `<div id="videoContainer">` (téléporté sur `body` par
   `System/Notifications.vue`), ou un `options.videoContainer` custom.
-- **Variables Vite** : `VITE_PEERS_SERVER_HOST` / `_PORT` / `_PATH` / `_KEY`,
-  `VITE_COTURN_USERNAME` / `_CREDENTIAL`.
+- **Variables Vite** : `VITE_PEERS_SERVER_HOST` / `_PORT` / `_PATH` / `_KEY`. Les identifiants
+  TURN n'en font **plus** partie : ils sont servis à l'exécution par `GET /get-ice-servers`
+  (`WebRTCController`), depuis `COTURN_USER` / `COTURN_PASS` — des variables lues par PHP, donc
+  modifiables sans rebuild. Une clé `VITE_*` est inlinée dans le bundle public au `npm run build` ;
+  un identifiant n'y a jamais sa place.
 - **Une source de présence** pour `users` — `useReverbPresence(channel)`, voir
   [use-reverb-channel.md](../../reference/use-reverb-channel.md).
 - `window.AWN` pour certains widgets.
