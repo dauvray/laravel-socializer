@@ -1,5 +1,11 @@
 <?php
 
+use Dauvray\Socializer\app\Models\Alert;
+use Dauvray\Socializer\app\Models\Application;
+use Dauvray\Socializer\app\Models\Message;
+use Dauvray\Socializer\app\Models\Page;
+use Dauvray\Socializer\app\Models\Post;
+
 $prefix_back = '\Dauvray\Socializer\app\Http\Controllers\Admin';
 $prefix_front = '\Dauvray\Socializer\app\Http\Controllers\Front';
 
@@ -111,7 +117,6 @@ return [
 
         'whiteboard' => $prefix_front.'\WhiteBoardController',
 
-        
         /*
         |--------------------------------------------------------------------------
         | ApplicationIA FrontController
@@ -162,15 +167,15 @@ return [
 
     'models' => [
 
-        'post' => Dauvray\Socializer\app\Models\Post::class,
+        'post' => Post::class,
 
-        'message' => Dauvray\Socializer\app\Models\Message::class,
+        'message' => Message::class,
 
-        'page' => Dauvray\Socializer\app\Models\Page::class,
+        'page' => Page::class,
 
-        'alert' => Dauvray\Socializer\app\Models\Alert::class,
+        'alert' => Alert::class,
 
-        'application' => Dauvray\Socializer\app\Models\Application::class,
+        'application' => Application::class,
     ],
 
     /*
@@ -180,7 +185,6 @@ return [
     */
 
     'table_names' => [
-
 
     ],
 
@@ -194,8 +198,8 @@ return [
         'front' => [
             'profile' => '/mon-profil',
             'networks' => '/networks',
-            'feed' => '/feed'
-        ]
+            'feed' => '/feed',
+        ],
     ],
 
     /*
@@ -205,13 +209,13 @@ return [
     */
 
     'posts' => [
-        'classic_form' => (int)env('SOCIALIZER_POST_FORM_ID'), // post form
+        'classic_form' => (int) env('SOCIALIZER_POST_FORM_ID'), // post form
     ],
     'system_forms' => [
-        'create_server_room' => (int)env('SOCIALIZER_CREATE_ROOM_FORM_ID'), //new server room
-        'create_server' => (int)env('SOCIALIZER_CREATE_SERVER_FORM_ID'), // server form params
-        'create_server_room_module' => (int)env('SOCIALIZER_ADD_ROOM_MODULE_ID'), // new server room module
-        'ai_application_details' => (int)env('SOCIALIZER_APP_AI_DETAILS'), // ai application details
+        'create_server_room' => (int) env('SOCIALIZER_CREATE_ROOM_FORM_ID'), // new server room
+        'create_server' => (int) env('SOCIALIZER_CREATE_SERVER_FORM_ID'), // server form params
+        'create_server_room_module' => (int) env('SOCIALIZER_ADD_ROOM_MODULE_ID'), // new server room module
+        'ai_application_details' => (int) env('SOCIALIZER_APP_AI_DETAILS'), // ai application details
     ],
 
     /*
@@ -219,7 +223,6 @@ return [
     | Nebulagraph items
     |--------------------------------------------------------------------------
     */
-
 
     // created_at is automaticaly added with elements
     // don't define this prop
@@ -238,55 +241,55 @@ return [
                     'identifier string NULL',
                     'slug string NULL',
                     'is_bot int NULL',
-                ]
+                ],
             ],
             'group' => [
                 'name' => 'group',
                 'props' => [
                     'name string NOT NULL',
                     'identifier string NULL',
-                ]
+                ],
             ],
             'comment' => [
                 'name' => 'comment',
                 'props' => [
-                    'content string NULL', 
-                ]
+                    'content string NULL',
+                ],
             ],
             'post' => [
                 'name' => 'post',
                 'props' => [
                     'mongoid string NULL',
                     'identifier string NULL',
-                ]
+                ],
             ],
             'share' => [
                 'name' => 'share',
-                'props' => []
+                'props' => [],
             ],
             'article' => [
                 'name' => 'article',
                 'props' => [
                     'identifier string NULL',
-                ]
+                ],
             ],
             'feed' => [
                 'name' => 'feed',
-                'props' => []
+                'props' => [],
             ],
             'wall' => [
                 'name' => 'wall',
                 'props' => [
                     'questionnaire_id int NULL',
                     'content_type string NULL',
-                ]
+                ],
             ],
             'message' => [
                 'name' => 'message',
                 'props' => [
                     'mongoid string NULL',
                     'identifier string NULL',
-                ]
+                ],
             ],
             'server' => [
                 'name' => 'server',
@@ -295,7 +298,7 @@ return [
                     'image string NULL',
                     'privacy int NULL',
                     'description string NULL',
-                ]
+                ],
             ],
             'room' => [
                 'name' => 'room',
@@ -305,7 +308,7 @@ return [
                     'privacy int NULL',
                     'position int NULL',
                     'module_id int NULL',
-                ]
+                ],
             ],
             'data' => [
                 'name' => 'data',
@@ -315,7 +318,7 @@ return [
                     'content_type string NULL',
                     'questionnaire_id int NULL',
                     'position int NULL',
-                ]
+                ],
             ],
             'chat' => [
                 'name' => 'chat',
@@ -327,7 +330,7 @@ return [
                     'position int NULL',
                     'is_bot int NULL',
                     'bot_id int NULL',
-                ]
+                ],
             ],
             'whiteboard' => [
                 'name' => 'whiteboard',
@@ -336,7 +339,7 @@ return [
                     'content_type string NULL',
                     'position int NULL',
                     'save_board int NULL',
-                ]
+                ],
             ],
             'classroom' => [
                 'name' => 'classroom',
@@ -344,7 +347,7 @@ return [
                     'name string NULL',
                     'content_type string NULL',
                     'position int NULL',
-                ]
+                ],
             ],
             'page' => [
                 'name' => 'page',
@@ -355,11 +358,11 @@ return [
                     'position int NULL',
                     'image string NULL',
                     'description string NULL',
-                ]
+                ],
             ],
             'marketplace' => [
                 'name' => 'marketplace',
-                'props' => []
+                'props' => [],
             ],
             'application' => [
                 'name' => 'application',
@@ -369,150 +372,150 @@ return [
                     'position int NULL',
                     'image string NULL',
                     'description string NULL',
-                ]
+                ],
             ],
         ],
         'vertices' => [
             'user' => [
-                "name" => null,
-                "image" => null,
-                "cover" => null,
-                "active" => null,
-                "connected" => null,
-                "function" => null,
-                "identifier" => null,
-                "slug" => null,
-                "is_bot" => 0,
+                'name' => null,
+                'image' => null,
+                'cover' => null,
+                'active' => null,
+                'connected' => null,
+                'function' => null,
+                'identifier' => null,
+                'slug' => null,
+                'is_bot' => 0,
             ],
             'group' => [
-                "name" => null,
-                "identifier" => null,
+                'name' => null,
+                'identifier' => null,
             ],
             'comment' => [
                 'content' => null,
             ],
             'post' => [
                 'mongoid' => null,
-                "identifier" => null,
+                'identifier' => null,
             ],
             'share' => [],
             'article' => [
-                "identifier" => null,
+                'identifier' => null,
             ],
             'feed' => [],
             'wall' => [
-                "questionnaire_id" => null,
-                "content_type" => 'wall',
+                'questionnaire_id' => null,
+                'content_type' => 'wall',
             ],
             'message' => [
                 'mongoid' => null,
-                "identifier" => null,
+                'identifier' => null,
             ],
             'server' => [
-                "name" => null,
-                "image" => null,
-                "privacy" => null,
-                "description" => null,
+                'name' => null,
+                'image' => null,
+                'privacy' => null,
+                'description' => null,
             ],
             'room' => [
-                "name" => null,
-                "image" => null,
-                "privacy" => null,
-                "position" => null,
-                "module_id" => null,
+                'name' => null,
+                'image' => null,
+                'privacy' => null,
+                'position' => null,
+                'module_id' => null,
             ],
             'chat' => [
-                "name" => null,
-                "image" => null,
-                "content_type" => 'chat',
-                "privacy" => null,
-                "position" => null,
-                "is_bot" => null,
-                "bot_id" => null,
+                'name' => null,
+                'image' => null,
+                'content_type' => 'chat',
+                'privacy' => null,
+                'position' => null,
+                'is_bot' => null,
+                'bot_id' => null,
             ],
             'data' => [
-                "name" => null,
-                "image" => null,
-                "content_type" => 'data',
-                "questionnaire_id" => null,
-                "position" => null,
+                'name' => null,
+                'image' => null,
+                'content_type' => 'data',
+                'questionnaire_id' => null,
+                'position' => null,
             ],
             'whiteboard' => [
-                "name" => null,
-                "content_type" => 'whiteboard',
-                "position" => null,
-                "save_board" => null,
+                'name' => null,
+                'content_type' => 'whiteboard',
+                'position' => null,
+                'save_board' => null,
             ],
             'classroom' => [
-                "name" => null,
-                "content_type" => 'classroom',
-                "position" => null,
+                'name' => null,
+                'content_type' => 'classroom',
+                'position' => null,
             ],
             'page' => [
-                "name" => null,
-                "page_id" => null,
-                "content_type" => 'page',
-                "position" => null,
-                "image" => null,
-                "description" => null,
+                'name' => null,
+                'page_id' => null,
+                'content_type' => 'page',
+                'position' => null,
+                'image' => null,
+                'description' => null,
             ],
             'marketplace' => [],
             'application' => [
-                "name" => null,
-                "content_type" => 'application',
-                "position" => null,
-                "image" => null,
-                "description" => null,
+                'name' => null,
+                'content_type' => 'application',
+                'position' => null,
+                'image' => null,
+                'description' => null,
             ],
         ],
         'edges' => [
             'has_creator' => [
                 'name' => 'has_creator',
-                'props' => []
+                'props' => [],
             ],
             'published_in' => [  // principal
                 'name' => 'published_in',
-                'props' => []
+                'props' => [],
             ],
             'sub_published_in' => [ // secondaire
                 'name' => 'sub_published_in',
-                'props' => []
+                'props' => [],
             ],
             'reply_of' => [ // comments ...
                 'name' => 'reply_of',
-                'props' => []
+                'props' => [],
             ],
             'liked_by' => [ // likes ...
                 'name' => 'liked_by',
-                'props' => []
+                'props' => [],
             ],
             'disliked_by' => [ // likes ...
                 'name' => 'disliked_by',
-                'props' => []
+                'props' => [],
             ],
-            'followed_by' => [ 
+            'followed_by' => [
                 'name' => 'followed_by',
-                'props' => []
+                'props' => [],
             ],
-            'owned_by' => [ 
+            'owned_by' => [
                 'name' => 'owned_by',
-                'props' => []
+                'props' => [],
             ],
-            'shared_by' => [ 
+            'shared_by' => [
                 'name' => 'shared_by',
-                'props' => []
+                'props' => [],
             ],
-            'shared_in' => [ 
+            'shared_in' => [
                 'name' => 'shared_in',
-                'props' => []
+                'props' => [],
             ],
-            'sharing_of' => [ 
+            'sharing_of' => [
                 'name' => 'sharing_of',
-                'props' => []
+                'props' => [],
             ],
-            'registered_in' => [ 
+            'registered_in' => [
                 'name' => 'registered_in',
-                'props' => []
+                'props' => [],
             ],
         ],
     ],
@@ -546,7 +549,7 @@ return [
         // pour l'instant on garde comme ca
         'copywriter' => [
             'user_id' => env('SOCIALIZER_COPYWRITER_USER_ID', null),
-        ]
+        ],
     ],
 
     /*
