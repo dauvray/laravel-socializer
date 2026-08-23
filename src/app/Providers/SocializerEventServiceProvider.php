@@ -73,6 +73,11 @@ class SocializerEventServiceProvider extends ServiceProvider
             $this->listen['Dauvray\Eblogger\app\Events\ArticleDeleted'] = [
                 'Dauvray\Socializer\app\Listeners\ArticleDeletedListener',
             ];
+            // `ArticleDeleted` part sur un SOFT delete : sans cet abonnement, un article restauré
+            // revient en base et son sommet non.
+            $this->listen['Dauvray\Eblogger\app\Events\ArticleRestored'] = [
+                'Dauvray\Socializer\app\Listeners\ArticleRestoredListener',
+            ];
         }
 
         parent::__construct($app);

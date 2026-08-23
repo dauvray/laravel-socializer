@@ -95,19 +95,68 @@ C'est le sujet **E4.2** de [webrtc2-securite-2026-08-14.md](webrtc2-securite-202
 arbitrer la re-synchronisation d'un réplica —, dont ce correctif est une brique : une projection
 idempotente est ce qui rend une re-synchronisation rejouable. À traiter là-bas, pas ici.
 
-## 7. Restaurer un article ne recrée pas son sommet 🟠
+## 7. Restaurer un article ne recrée pas son sommet ✅ 23/08
 
 Ouvert le 22/08 **en fermant le §3** : c'est ce correctif qui rend le trou conséquent.
 
 `ArticleDeleted` part sur `static::deleting` (`Article::booted`, eblogger), donc sur un **soft
 delete**. Tant que la suppression était un no-op, restaurer un article était sans conséquence par
 accident ; maintenant le sommet part vraiment. Or `ArticleRestored` est bien émis
-(`static::restored`) et **aucun listener de socializer ne l'écoute** : l'article revient en base,
-son sommet non — et avec lui son arête d'auteur.
+(`static::restored`) et **aucun listener de socializer ne l'écoutait** — celui d'eblogger est un
+`handle()` vide (`// task to do`) : l'article revenait en base, son sommet non.
 
-- [ ] Trancher : un `ArticleRestoredListener` qui rejoue l'`insertVertex` de la création — corps
-      identique, et l'id dérivé le rend idempotent —, ou assumer qu'une restauration exige un
-      `socializer:nebula-populate`
-- [ ] Au passage, `ArticleUpdated` n'a pas de listener non plus. Sans conséquence tant que le sommet
-      ne porte qu'`identifier`, qui ne change jamais — à rouvrir si le patron `vertices.article`
-      s'enrichit
+- [x] `ArticleRestoredListener` rejoue l'insertion de la création. Le rejeu est inoffensif sur un
+      sommet encore présent (`INSERT VERTEX IF NOT EXISTS`), donc aucune garde de plus n'est
+      nécessaire.
+- [x] `ArticleUpdated` : **pas de listener**, décision datée du 23/08 dans
+      [`docs/architecture/projection-graphe.md`](../docs/architecture/projection-graphe.md).
+      `identifier` ne dépend que de la classe et de l'`id` — rien qu'une mise à jour puisse changer.
+      À rouvrir si `vertices.article` s'enrichit d'une propriété mutable.
+
+**Ce qui n'était pas au plan.** Le corps « poser le sommet d'un article » existait en deux copies
+(listener de création, `projectArticles()`) et la restauration en aurait fait une troisième — dans un
+fichier dont le §3 vient de montrer ce que coûtent deux copies qui dérivent. Les valeurs vivent
+désormais dans `Helpers\GraphTraits\BuildsArticleVertexValues`, partagé par les trois écrivains :
+c'est ce partage que le nouveau test asserte, en comparant la requête **entière** de la restauration
+à celle de la création, et pas seulement leur vid.
+
+Deux sujets en sont sortis, ci-dessous : §8 (l'arête d'auteur) et §9 (le trou de couverture).
+
+## 8. La création en ligne d'un article ne pose pas son arête d'auteur 🟢
+
+Vu le 23/08 en fermant le §7, et **délibérément laissé ouvert** : `has_creator` n'est écrit que par
+`GraphProjection::projectArticleAuthors()`. Un article créé dans l'application n'a donc pas d'arête
+d'auteur jusqu'à la prochaine projection, alors que la suppression, elle, l'emporte (`WITH EDGE`).
+
+La restauration ne la repose pas non plus — **parité stricte avec la création**, décidée le 23/08 : la
+combler côté restauration seule ferait diverger deux chemins d'écriture, le motif même du §3.
+
+Priorité basse, et c'est mesuré : **personne ne lit cette arête**. Aucun `MATCH` ni `GO FROM` sur le
+sommet `article` dans socializer ni dans eblogger — la projection de l'article est aujourd'hui en
+écriture seule.
+
+- [ ] Trancher : les listeners posent `has_creator` (création **et** restauration, avec une garde sur
+      `$article->author` — `author_id` est nullable et l'auteur peut être supprimé), ou l'arête
+      d'auteur d'article est assumée comme une donnée de projection seulement
+- [ ] Si on la pose : vérifier d'abord la réserve technique. `projectAll()` intercale un
+      `sleep(config('…sleeping_duration'))` — 20 s par défaut — **entre** les sommets d'article et
+      leurs arêtes, en jugeant le schéma NebulaGraph asynchrone. Un listener qui pose les deux dans
+      la même requête HTTP n'a pas cette latence : soit la pause est du folklore, soit l'arête peut
+      échouer, et c'est à savoir avant, pas après
+
+## 9. `projectArticles()` n'est exercé par aucun test 🟢
+
+`GraphProjectionTest` n'en couvre que le cas « eblogger absent » (aucune requête `article` ne part).
+L'étape est sautée dans le harnais faute de `config('eblogger.models.article')`, donc son nGQL n'est
+épinglé par rien — les listeners, eux, le sont au caractère près.
+
+Depuis le trait partagé (§7), ce qui est vérifié du chemin listener vaut pour la projection **par
+construction** : c'est le même code qui construit les valeurs. Ce qui reste non couvert est
+l'assemblage — la boucle, le garde de config, l'arête d'auteur.
+
+- [ ] Ce que ça coûterait : un modèle stub exposant un `all()` statique et un `author` (le code ne
+      fait que `$model::all()` et `$article->author->id`, aucun Eloquent requis), puis
+      `config()->set('eblogger.models.article', …)` sur le modèle de
+      `les_parents_de_groupes_sont_projetes_quand_le_modele_est_declare`. ⚠️ Ne pas donner de
+      `vertexId` à ce stub : `tests/Stubs/Eblogger/app/Models/Article.php` explique pourquoi ça
+      masquerait le défaut que le fichier épingle

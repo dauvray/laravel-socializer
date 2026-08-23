@@ -4,15 +4,17 @@ namespace Dauvray\Socializer\Tests\Feature\Graph;
 
 use Dauvray\Eblogger\app\Events\ArticleCreated;
 use Dauvray\Eblogger\app\Events\ArticleDeleted;
+use Dauvray\Eblogger\app\Events\ArticleRestored;
 use Dauvray\Eblogger\app\Models\Article;
 use Dauvray\Socializer\app\Listeners\ArticleCreatedListener;
 use Dauvray\Socializer\app\Listeners\ArticleDeletedListener;
+use Dauvray\Socializer\app\Listeners\ArticleRestoredListener;
 use Dauvray\Socializer\Tests\TestCase;
 use Illuminate\Support\Facades\Log;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * Les trois écrivains du sommet `article` s'accordent sur un vid dérivé du modèle.
+ * Les quatre écrivains du sommet `article` s'accordent sur un vid dérivé du modèle.
  *
  * LE DÉFAUT. `ArticleDeletedListener` visait
  * `config('socializer.nebulagraph.vertices.article.id')` — une clé qui N'EXISTE PAS,
@@ -33,12 +35,26 @@ use PHPUnit\Framework\Attributes\Test;
  * suppression vise CE QUE LA CRÉATION A POSÉ. C'est la seule formulation qu'aucune des deux
  * moitiés du défaut ne peut satisfaire seule.
  *
- * ⚠️ CE QUE CE FICHIER NE PROUVE PAS. `FakeNebulaGraph::insertVertex` ne rend que le vid dans le
- * nGQL qu'elle journalise (`"article12":()`), jamais les propriétés : l'alignement de
- * l'`identifier` sur celui de la projection (`hideIdentifier($article)`, là où le sommet créé en
- * ligne portait `NULL`) n'est donc pas observable ici. Il voyage dans le même `array_merge` que
- * l'`id`, qui l'est. Sa contre-épreuve est manuelle : lire l'`identifier` d'un sommet `article`
- * créé par l'application.
+ * LE QUATRIÈME ÉCRIVAIN, ajouté ensuite. Rendre la suppression effective a rendu conséquent un trou
+ * qui ne l'était pas : `ArticleDeleted` part sur `static::deleting`, donc sur un SOFT delete, et
+ * rien n'écoutait `ArticleRestored`. L'article revenait en base, son sommet non. La restauration
+ * rejoue donc l'insertion de la création — même valeurs, même vid, et `INSERT VERTEX IF NOT EXISTS`
+ * rend le rejeu inoffensif sur un sommet encore présent. Elle ne repose PAS l'arête d'auteur : la
+ * création en ligne ne l'a jamais posée non plus (seul `projectArticleAuthors()` le fait), et deux
+ * chemins d'écriture qui divergent sont exactement ce que ce fichier existe pour empêcher.
+ *
+ * ⚠️ CE QUE CE FICHIER NE PROUVE PAS.
+ * 1. `FakeNebulaGraph::insertVertex` ne rend que le vid dans le nGQL qu'elle journalise
+ *    (`"article12":()`), jamais les propriétés : l'alignement de l'`identifier` sur celui de la
+ *    projection (`hideIdentifier($article)`, là où le sommet créé en ligne portait `NULL`) n'est
+ *    donc pas observable ici. Il voyage dans le même tableau que l'`id`, qui l'est, et
+ *    `BuildsArticleVertexValues` est le seul endroit où ce tableau se construit. Sa contre-épreuve
+ *    est manuelle : lire l'`identifier` d'un sommet `article` créé par l'application.
+ * 2. L'écrivain batch, `GraphProjection::projectArticles()`, n'est exercé par AUCUN test — son
+ *    étape est sautée faute de `config('eblogger.models.article')` dans le harnais (c'est ce que
+ *    `GraphProjectionTest` épingle). Depuis que les valeurs du sommet vivent dans
+ *    `BuildsArticleVertexValues`, ce qui est vérifié ici du chemin listener vaut pour lui par
+ *    construction — mais son nGQL, lui, reste non épinglé. Cf. `work/projection-graphe-todo.md`.
  */
 class ArticleVertexTest extends TestCase
 {
@@ -112,7 +128,50 @@ class ArticleVertexTest extends TestCase
 
     /*
     |--------------------------------------------------------------------------
-    | 2. Le rattrapage d'E7 est bien câblé sur ce listener aussi
+    | 2. La restauration, pendant du soft delete
+    |--------------------------------------------------------------------------
+    */
+
+    /**
+     * Le cycle complet, dans la même forme relationnelle que le test central : ce n'est pas « le
+     * restore émet telle chaîne », c'est « le restore repose CE QUE la suppression a retiré ».
+     */
+    #[Test]
+    public function la_restauration_repose_le_sommet_que_la_suppression_a_retire(): void
+    {
+        $graphe = $this->fakeNebulaGraph()->always([]);
+
+        $article = new Article(12);
+
+        (new ArticleCreatedListener)->handle(new ArticleCreated($article));
+        (new ArticleDeletedListener)->handle(new ArticleDeleted($article));
+        (new ArticleRestoredListener)->handle(new ArticleRestored($article));
+
+        $requetes = $graphe->queries();
+
+        $this->assertCount(3, $requetes, 'Une création, une suppression, une restauration.');
+
+        $this->assertSame(
+            1,
+            preg_match('/VALUES "([^"]+)"/', $requetes[0], $pose),
+            'Le vid posé à la création est illisible : la doublure a changé de forme.'
+        );
+
+        $this->assertSame('DELETE VERTEX "'.$pose[1].'" WITH EDGE', $requetes[1]);
+
+        // `assertSame` sur la requête ENTIÈRE, et pas seulement sur le vid : la restauration doit
+        // reposer le même sommet ET les mêmes propriétés que la création. C'est ce que garantit le
+        // trait partagé — un jour où les deux corps divergeraient, ce test rougirait.
+        $this->assertSame(
+            $requetes[0],
+            $requetes[2],
+            'La restauration doit rejouer exactement l\'insertion de la création.'
+        );
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | 3. Le rattrapage d'E7 est bien câblé sur ces listeners aussi
     |--------------------------------------------------------------------------
     */
 
@@ -129,6 +188,29 @@ class ArticleVertexTest extends TestCase
 
         Log::shouldHaveReceived('error')
             ->withArgs(fn (string $message, array $context) => ($context['listener'] ?? null) === ArticleDeletedListener::class
+                && ($context['article_id'] ?? null) === 12
+                && ($context['code'] ?? null) === -1004)
+            ->once();
+    }
+
+    /**
+     * Le même contrat pour la restauration : MySQL a déjà rendu l'article, une panne du réplica ne
+     * doit pas faire échouer la requête qui vient de le restaurer.
+     *
+     * Le `listener` du contexte est ce qui distingue les trois chemins dans le journal — c'est par
+     * ces entrées que la dérive du réplica se mesure (E4.2).
+     */
+    #[Test]
+    public function un_refus_du_graphe_a_la_restauration_est_journalise_et_ne_leve_pas(): void
+    {
+        $this->fakeNebulaGraph()->throwsOn('INSERT VERTEX');
+
+        Log::spy();
+
+        (new ArticleRestoredListener)->handle(new ArticleRestored(new Article(12)));
+
+        Log::shouldHaveReceived('error')
+            ->withArgs(fn (string $message, array $context) => ($context['listener'] ?? null) === ArticleRestoredListener::class
                 && ($context['article_id'] ?? null) === 12
                 && ($context['code'] ?? null) === -1004)
             ->once();

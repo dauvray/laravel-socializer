@@ -39,9 +39,12 @@ Les **arêtes** n'ont jamais eu besoin de garde : NebulaGraph les clefe sur
 créé sans `id` explicite est donc dupliqué à chaque passage.** L'`id` peut venir de
 `populatePropsFromPattern`, mais uniquement si le modèle expose `vertexId` — l'accesseur des traits
 `Socializable` / `Commentable`. Un modèle sans ces traits, comme l'`Article` d'eblogger, exige que
-**chacun** de ses écrivains pose l'`id` lui-même : les trois le font — `ArticleCreatedListener`,
-`ArticleDeletedListener`, `projectArticles()` —, et `ArticleVertexTest` épingle qu'ils visent bien le
-même sommet. Avant de projeter un nouveau type de sommet, répondre à : *quel est son id stable ?*
+**chacun** de ses écrivains pose l'`id` lui-même. Ils sont quatre — `ArticleCreatedListener`,
+`ArticleRestoredListener`, `ArticleDeletedListener`, `projectArticles()` — et l'`id` ne se construit
+plus qu'à **un** endroit, le trait `Helpers\GraphTraits\BuildsArticleVertexValues` : c'est la
+divergence de deux copies qui avait fait viser `"1"` à la suppression là où les autres visaient
+`"article1"`. `ArticleVertexTest` épingle qu'ils visent bien le même sommet.
+Avant de projeter un nouveau type de sommet, répondre à : *quel est son id stable ?*
 
 Un id dérivé n'est pas qu'une garantie d'unicité : c'est **la seule adresse qu'un autre écrivain
 puisse recalculer**. Un sommet né sous `uniqidReal()` ne peut plus être ni mis à jour ni supprimé par
@@ -58,6 +61,39 @@ qui ne trouve rien n'est pas une erreur pour NebulaGraph.
 Les listeners **tolèrent l'échec** (`ToleratesGraphFailure`) : MySQL ne doit pas échouer parce
 qu'une copie n'a pas pu être écrite. Le réplica peut donc dériver — et c'est `GraphProjection` qui
 le rattrape.
+
+### Un événement de suppression peut être réversible — l'article l'est
+
+`Article::booted` (eblogger) dispatche `ArticleDeleted` sur **`static::deleting`**, et le modèle
+utilise `SoftDeletes` : ce que le listener traite comme une suppression est une mise à la corbeille,
+que `restore()` défait. **Le sens de l'événement se lit sur le hook Eloquent, pas sur son nom.**
+
+Le sommet est donc **reposé** à la restauration, par un listener dont le corps est celui de la
+création — et c'est le trait partagé qui garantit cette identité au lieu de l'espérer. Le rejeu est
+inoffensif : `insertVertex` émet un `INSERT VERTEX IF NOT EXISTS`, qui laisse intact un sommet encore
+présent, `created_at` compris.
+
+Une nuance sans conséquence, mais qui surprend à la lecture : `hideIdentifier()` chiffre
+`{model, id}`, et le chiffré varie d'un appel à l'autre. Un sommet reposé après une vraie suppression
+porte donc un `identifier` **différent de l'original, qui désigne le même enregistrement** — la
+propriété n'est pas une clé, l'`id` du sommet l'est.
+
+⚠️ La restauration ne repose **pas** l'arête d'auteur, que la suppression a pourtant emportée
+(`DELETE VERTEX … WITH EDGE`). C'est voulu : la création en ligne ne l'a jamais posée non plus, seul
+`projectArticleAuthors()` l'écrit. Le trou est celui de la **création** ; le combler côté restauration
+seule ferait diverger deux chemins d'écriture, exactement le motif que ce document raconte.
+Cf. [`work/projection-graphe-todo.md`](../../work/projection-graphe-todo.md).
+
+⚠️ **Les trois événements d'article ont deux abonnés homonymes**, un par paquet : eblogger enregistre
+`ArticleCreatedListener`, `ArticleDeletedListener` et `ArticleRestoredListener` dont les `handle()`
+sont **vides** (`// task to do`), et socializer les siens, de même nom, qui écrivent le graphe. Un
+`grep` sur l'un de ces noms rend donc deux classes, dont une inerte : le câblage se lit avec
+`artisan event:list`, jamais sur le premier fichier trouvé. Même piège que les deux
+`GroupUserCreatedListener` — cf. [securite.md](../modules/webrtc2/securite.md).
+
+**Décision du 23/08/2026 — pas de listener sur `ArticleUpdated`.** Le sommet ne porte qu'`identifier`,
+dérivé de la classe et de l'`id` : rien qu'une mise à jour puisse changer. À rouvrir si le patron
+`vertices.article` s'enrichit d'une propriété mutable — le titre, par exemple.
 
 ### `GraphProjection`, un propriétaire pour deux entrées
 

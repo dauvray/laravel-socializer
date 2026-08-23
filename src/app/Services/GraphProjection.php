@@ -3,6 +3,7 @@
 namespace Dauvray\Socializer\app\Services;
 
 use Dauvray\Socializer\app\Exceptions\NebulaGraphException;
+use Dauvray\Socializer\app\Helpers\GraphTraits\BuildsArticleVertexValues;
 use Dauvray\Socializer\app\Services\Server as ServerService;
 
 /**
@@ -29,6 +30,8 @@ use Dauvray\Socializer\app\Services\Server as ServerService;
  */
 class GraphProjection
 {
+    use BuildsArticleVertexValues;
+
     public $nebula = null;
 
     public function __construct()
@@ -151,11 +154,10 @@ class GraphProjection
      * OPTIONNEL. Sans lui, `config('eblogger.models.article')` rend `null` et l'appel statique
      * `null::all()` est un fatal — ce que les deux copies de ce DML faisaient sans condition.
      *
-     * ⚠️ L'`id` est posé ICI et pas ailleurs. `populatePropsFromPattern` ne le fournit que si le
-     * modèle expose `vertexId` (accesseur des traits `Socializable` / `Commentable`), et le modèle
-     * `Article` d'eblogger n'a ni l'un ni l'autre : sans cette ligne, `insertVertex` retombe sur
-     * `uniqidReal()`, donc chaque passage créait un article de plus — et l'arête d'auteur, qui vise
-     * `article<id>` depuis toujours (`projectArticleAuthors`), pendait dans le vide.
+     * Les valeurs du sommet — dont l'`id`, que ce modèle ne peut pas fournir seul — viennent de
+     * `BuildsArticleVertexValues`, partagé avec les listeners de création et de restauration : le
+     * pourquoi y est écrit une fois. C'est ce partage qui rend impossible la divergence dont ce
+     * sommet a déjà été victime.
      */
     private function projectArticles(callable $tenter): void
     {
@@ -168,16 +170,7 @@ class GraphProjection
         foreach($model::all() as $article) {
             $tenter(fn () => $this->nebula->insertVertex(
                 config('socializer.nebulagraph.tags.article.name'),
-                array_merge(
-                    $this->nebula->populatePropsFromPattern(
-                        $article,
-                        config('socializer.nebulagraph.vertices.article')
-                    ),
-                    [
-                        'id' => config('socializer.nebulagraph.tags.article.name').$article->id,
-                        'identifier' => hideIdentifier($article)
-                    ]
-                )
+                $this->articleVertexValues($this->nebula, $article)
             ), "article {$article->id}");
         }
     }
