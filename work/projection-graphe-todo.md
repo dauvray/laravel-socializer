@@ -4,6 +4,17 @@ Ouvert le 22/08/2026, en sortant du correctif « un utilisateur = un mur + un fe
 dans [`docs/architecture/projection-graphe.md`](../docs/architecture/projection-graphe.md) ; ici, ce
 qui a été **vu et laissé de côté**, avec de quoi le reprendre.
 
+> ## ⏸️ Chantier suspendu le 23/08/2026 — il ne passe pas devant WebRTC2
+>
+> Ce fichier est né d'un **effet de bord d'E7** : rendre les écritures de graphe bruyantes a fait
+> remonter des défauts de projection, et les suivre a coûté deux jours hors du chantier sécurité,
+> qui était la demande. **§3, §7 et §1 sont livrés** — ce travail-là compte. Ce qui reste est 🟢/🟠,
+> **ne bloque rien**, et ne se prend qu'**au besoin** : quand un chantier prioritaire le croise, ou
+> sur demande explicite. L'ordre du paquet est dans [`README.md`](README.md).
+>
+> Le piège à ne pas retomber dedans : chaque item d'ici *paraît* petit et adjacent au précédent.
+> C'est exactement comme la dérive s'est produite.
+
 Contexte du correctif, pour situer : `insertVertex` retombe sur `uniqidReal()` quand aucun `id`
 n'est passé, et les deux entrées qui projettent une base entière — la migration `create_nebula` et
 `socializer:nebula-populate` — jouaient ce DML en double copie. Résultat en dev : 2 murs et 2 feeds
@@ -181,13 +192,35 @@ sommet `article` dans socializer ni dans eblogger — la projection de l'article
 écriture seule.
 
 - [ ] Trancher : les listeners posent `has_creator` (création **et** restauration, avec une garde sur
-      `$article->author` — `author_id` est nullable et l'auteur peut être supprimé), ou l'arête
-      d'auteur d'article est assumée comme une donnée de projection seulement
-- [ ] Si on la pose : vérifier d'abord la réserve technique. `projectAll()` intercale un
-      `sleep(config('…sleeping_duration'))` — 20 s par défaut — **entre** les sommets d'article et
-      leurs arêtes, en jugeant le schéma NebulaGraph asynchrone. Un listener qui pose les deux dans
-      la même requête HTTP n'a pas cette latence : soit la pause est du folklore, soit l'arête peut
-      échouer, et c'est à savoir avant, pas après
+      `$article->author` — voir le ⚠️ ci-dessous), ou l'arête d'auteur d'article est assumée comme
+      une donnée de projection seulement
+
+**Exploration faite le 23/08 avant de suspendre — quatre faits vérifiés, à ne pas re-chercher :**
+
+- **Personne ne lit cette arête, et c'est mesuré** : `has_creator` a **20 sites de lecture** dans le
+  paquet, aucun ne traverse `(a:article)-[:has_creator]->(u:user)`. Le seul lecteur qui l'accepterait
+  techniquement, `Socializable::isCreator` (source non typée), ne reçoit que des vids de **salon** de
+  ses trois appelants. Le sommet `article` n'a qu'un autre voisin : `reply_of`, depuis les
+  commentaires — son rôle est d'être l'ancre d'un fil, rien de plus.
+- **La réserve technique du `sleep` est levée : c'est du folklore.** « Sommet puis arête dans la même
+  requête » est déjà le motif de **12 sites de production**, dont 8 avec `has_creator`, et
+  `createUserAndNetwork()` le fait **à l'intérieur de la projection batch** (`projectUsers`). Les
+  deux `sleep()` de `create_nebula` encadrent du **DDL**, dont l'asynchronie est réelle ; celui de
+  `projectAll():68` sépare deux DML, et le docblock de la méthode dit lui-même que « les arêtes
+  tolèrent que leur cible arrive après elles ». Les 20 s sont donc à retirer, que l'arbitrage aille
+  dans un sens ou dans l'autre.
+- **L'auteur est déjà atteignable sans arête** : le sommet porte `identifier`, et
+  `revealIdentifier(…)->author` est le motif que `Comments::notifyCommentReplyOfAuthor` emploie déjà.
+- ⚠️ **`author_id` n'est PAS nullable** — `create_articles_table.php:19`, `integer unsigned` sans
+  NULL, `'author_id' => 'required'` en validation. La ligne ci-dessus se trompait. La garde reste
+  nécessaire, pour une **autre** raison : pas de clé étrangère, et `EstarterUser` est en
+  `SoftDeletes`, donc `$article->author` rend `null` dès que l'auteur est en corbeille (rien ne
+  nettoie ces `author_id` orphelins — `UserDeletedListener` d'eblogger est intégralement commenté).
+  **C'est un défaut actif**, indépendant de l'arbitrage : `projectArticleAuthors()` déréférence
+  `$article->author->id` sans garde, et l'`Error` n'est pas rattrapée par `tentative()`, qui ne capte
+  que `NebulaGraphException` — **un seul auteur en corbeille fait donc échouer `migrate` et
+  `nebula-populate` en entier**, alors que le docblock de la classe cite précisément ce cas comme
+  exemple de ce que le rattrapage par item protège.
 
 ## 9. `projectArticles()` n'est exercé par aucun test 🟢
 
