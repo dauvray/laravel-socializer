@@ -32,6 +32,19 @@ use Orchestra\Testbench\TestCase as BaseTestCase;
  *     que teste le lot C. ⚠️ Delta assumé — la pile de test n'est pas celle de production
  *     (qui vaut `['web','auth','routeProtect','verified','restrictedMode']`).
  *
+ *     Le groupe PUBLIC subit le même traitement, réduit à `[]` (production :
+ *     `['web','routeProtect','restrictedMode']`). N'y remettre NI `routeProtect` NI
+ *     `restrictedMode` : ce sont des alias posés par les providers d'estarter et de
+ *     formdesigner, absents du harnais, et le conteneur lèverait
+ *     `Target class [routeProtect] does not exist` sur TOUTE la suite.
+ *     Ce que le harnais ne peut donc pas prouver, et qui se vérifie une fois à la main
+ *     (voir la bannière de `routes/socializer/routes.public.php`) : que `routeProtect`
+ *     laisse passer un invité sur une URL sans `MenuItem`, et que `restrictedMode` exige
+ *     l'en-tête `X-Requested-With`.
+ *     Ce que le harnais prouve quand même : `Auth::check()` rend `false` sans lever sur un
+ *     store de session jamais démarré, donc la branche invité est réellement exercée
+ *     (`Feature/Signaling/IceServersTest`).
+ *
  *  2. AUCUNE MIGRATION DU PAQUET. `ServiceProvider::boot` enregistre `src/database/migrations`,
  *     qui contient du MongoDB et du NebulaGraph : les jouer sur sqlite casse immédiatement.
  *     D'où les tables fabriquées à la main ci-dessous, et l'absence de `RefreshDatabase`.

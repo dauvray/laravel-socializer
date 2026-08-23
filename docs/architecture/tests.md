@@ -63,6 +63,12 @@ perdre une demi-journée — le détail et le pourquoi vivent dans le docblock d
    `Dauvray\Estarter\...\UserActivity` dans le groupe `web`. `defineEnvironment` réduit donc
    `estarter.routes_middlewares.classic.private` à `['auth']`. ⚠️ **Delta assumé** : la pile de test
    n'est pas celle de production (`['web','auth','routeProtect','verified','restrictedMode']`).
+   Le groupe **public** est réduit à `[]` (production : `['web','routeProtect','restrictedMode']`).
+   **Ne jamais l'étoffer** : `routeProtect` et `restrictedMode` sont des alias posés par les
+   providers d'estarter et de formdesigner, absents du harnais — le conteneur lèverait
+   `Target class [routeProtect] does not exist` sur *toute* la suite. Corollaire : une route
+   publique se teste ici pour sa **logique** (le garde `Auth::check()` du contrôleur), jamais pour
+   sa traversée de la pile ; celle-là se vérifie en curl sur le dev.
 2. **Aucune migration du package.** Celles qu'il enregistre contiennent du MongoDB et du
    NebulaGraph : injouables sur sqlite. Le harnais crée à la main les tables dont il a besoin —
    `users`, et `group_user` pour le garde de relation, dont la migration vit qui plus est dans un
