@@ -1070,22 +1070,46 @@ quand même avec STUN.
 
 # LOT E — Bornes résiduelles 🟡
 
-### E1 — Borner l'amplification du hub star `[S]`
+### E1 — Borner l'amplification du hub star `[S]` ✅ 23/08/2026
 
-- [ ] **Dépend de :** rien.
+- [x] **Dépend de :** rien.
 
 Les gardes du hub sont par émetteur (`HUB_MAX_MESSAGES_PER_WINDOW` = 20/s) et par message
 (`MAX_PAYLOAD_BYTES` = 64 Ko), mais **leur produit par le fan-out ne l'est pas** :
 `20 × 64 Ko × N destinataires`. Or star est justement la topologie des grandes rooms — à
 100 membres, un client d'apparence honnête fait sortir ~128 Mo/s du hub.
 
-- Budget agrégé d'octets retransmis par fenêtre dans `forwardStarMessage`, constante
-  `HUB_MAX_BYTES_PER_WINDOW` dans [`webrtc2.config.js`](../src/resources/js/socializer/components/WebRTC2/webrtc2.config.js), documentée
-  comme les autres.
-- Réutiliser `utils/createRateLimiter.js` si la mécanique s'y prête, sinon l'étendre —
-  **pas de Map de timestamps ad hoc** (convention « un seul système »).
+- [x] Budget agrégé d'octets retransmis par fenêtre dans `forwardStarMessage`, constante
+  `HUB_MAX_BYTES_PER_WINDOW` = 1 Mio dans [`webrtc2.config.js`](../src/resources/js/socializer/components/WebRTC2/webrtc2.config.js), documentée
+  comme les autres. Posé **après le calcul de `targets`** — le seul endroit où le fan-out est connu —
+  et le coût plafonné est `payloadSize.bytes × targets.length`.
+- [x] `utils/createRateLimiter.js` **étendu** plutôt que doublé : `isLimited(key, weight = 1)`, le
+  plafond portant sur la somme des poids. Compter des appels devient le cas particulier « tous les
+  poids valent 1 », donc les deux consommateurs existants et leurs 9 tests sont inchangés.
 
-**Tests :** le budget coupe la retransmission · un trafic nominal ne le déclenche pas.
+**La sémantique valait la moitié de la tâche.** Le contrôle porte sur le total **déjà dépensé**,
+jamais sur `total + poids du message courant`. Un fan-out isolé dont le coût dépasse à lui seul le
+budget passe donc, et consomme sa fenêtre. L'autre écriture — refuser d'emblée — aurait rejeté le
+**premier** message d'une grande room (64 Ko × 100 membres = 6,4 Mio) au lieu du centième : elle
+transformait un garde anti-abus en plafond de taille de room. C'est l'amplification *soutenue* qui
+est le risque, et c'est elle seule qui est coupée. Épinglé par
+`laisse passer un premier fan-out dont le coût dépasse à lui seul le budget`.
+
+Deux points relevés en passant :
+
+- Le budget est **par émetteur**, pas global au hub. Un budget partagé fermerait la somme des N mais
+  créerait une famine : le premier à dépenser prive les autres, soit un déni de service sur les pairs
+  honnêtes. La somme de N émetteurs reste donc une borne connue — réécrite comme telle dans
+  « Bornes non fermées » de [securite.md](../docs/modules/webrtc2/securite.md).
+- Le docblock de `MAX_PAYLOAD_BYTES` ne décrivait qu'un seul de ses **trois** points d'application
+  (« un payload retransmis par le hub »), alors que `securite.md` en documente trois depuis C3.
+  Corrigé dans la config.
+
+**Tests :** 13 ajoutés (8 sur le limiteur pondéré, 5 sur le budget du hub). Contrôle de harnais fait
+dans les deux sens — poids forcé à 1 dans le limiteur, garde court-circuité dans `forwardStarMessage`
+— les 8 tests visés rougissent, les autres non. ⚠️ Les limiteurs sont **module-level** : reprendre le
+`SENDER_PEER_ID` unique par test (`_peerSeq++`) déjà en place dans le fichier, sans quoi l'état d'un
+test fuit dans le suivant.
 **Commit :** `secu(webrtc2): borner le débit agrégé retransmis par le hub star`
 
 ---

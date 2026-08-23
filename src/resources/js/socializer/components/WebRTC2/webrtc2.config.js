@@ -48,9 +48,32 @@ export const HUB_RATE_WINDOW_MS = 1000
 export const HUB_MAX_MESSAGES_PER_WINDOW = 20
 
 /**
- * Taille maximale (octets) d'un payload retransmis par le hub en topologie star.
- * Concerne les payloads JSON et binaires (Blob/File/ArrayBuffer/TypedArray).
- * Au-dela, le message est rejete pour limiter les risques d'amplification DoS.
+ * Budget d'octets RETRANSMIS par le hub, par expéditeur et par fenêtre.
+ *
+ * ⚠️ Ce n'est pas une taille de message, c'est le coût réel d'une retransmission :
+ * `octets du payload × nombre de destinataires`. Les deux plafonds ci-dessus sont
+ * par expéditeur et par message ; leur PRODUIT par le fan-out n'était borné par
+ * rien, et star est justement la topologie des grandes rooms — à 100 membres,
+ * 20 msg/s × 64 Ko faisait sortir ~128 Mo/s d'un hub qui est un onglet navigateur.
+ *
+ * Dimensionnement : 1 Mio/s ≈ 8 Mbit/s d'émission soutenue, soit déjà l'ordre de
+ * grandeur d'un lien montant résidentiel. Le trafic star légitime (chat, présence,
+ * traits de tableau blanc) est deux ordres de grandeur en dessous.
+ *
+ * ⚠️ Le plafond est PAR EXPÉDITEUR, pas global au hub : un budget partagé serait un
+ * déni de service sur les pairs honnêtes (le premier à dépenser prive les autres).
+ * La somme de N expéditeurs reste donc une borne connue — cf. `securite.md`.
+ */
+export const HUB_MAX_BYTES_PER_WINDOW = 1024 * 1024
+
+/**
+ * Taille maximale (octets) d'un payload de données, mesurée en octets UTF-8 de sa
+ * sérialisation JSON (ou en taille brute pour Blob/File/ArrayBuffer/TypedArray).
+ *
+ * Trois points d'application, une seule mécanique (`utils/payloadSize.js`) : émission
+ * mesh (`sendData`), retransmission hub (`forwardStarMessage`) et réception
+ * (`handleData`). Le contrôle en réception n'est pas redondant — les deux premiers
+ * sont contournables par un pair qui retire le check de son propre client.
  */
 export const MAX_PAYLOAD_BYTES = 64 * 1024
 

@@ -138,4 +138,96 @@ describe('createRateLimiter', () => {
 
         expect(other.isLimited('alice')).toBe(false)
     })
+
+    /*
+    |--------------------------------------------------------------------------
+    | Mode pondéré — le même limiteur compte des octets (budget agrégé du hub)
+    |--------------------------------------------------------------------------
+    |
+    | Le hub star a besoin de plafonner `octets × destinataires`, pas un nombre
+    | d'appels. C'est le MÊME mécanisme avec un poids : sans poids explicite, la
+    | somme des poids est le nombre d'appels, d'où la rétrocompatibilité des
+    | tests ci-dessus.
+    */
+
+    describe('poids explicite', () => {
+        it('un appel de poids N consomme N jetons', () => {
+            // MAX = 3 : un seul appel de poids 3 remplit la fenêtre entière.
+            expect(limiter.isLimited('alice', MAX)).toBe(false)
+            expect(limiter.isLimited('alice', 1)).toBe(true)
+        })
+
+        it('additionne les poids hétérogènes jusqu\'au plafond', () => {
+            expect(limiter.isLimited('alice', 1)).toBe(false)  // total 1
+            expect(limiter.isLimited('alice', 1)).toBe(false)  // total 2
+            expect(limiter.isLimited('alice', 1)).toBe(false)  // total 3 = MAX
+            expect(limiter.isLimited('alice', 1)).toBe(true)
+        })
+
+        /**
+         * LA sémantique du budget, et elle est délibérée : le contrôle porte sur le
+         * total DÉJÀ posé, jamais sur « total + poids du nouvel appel ». Un unique
+         * message dont le coût dépasse à lui seul le budget passe donc — c'est ce qui
+         * autorise un gros fan-out isolé (64 Ko × 100 membres) tout en coupant
+         * l'amplification soutenue, qui est le vrai risque.
+         */
+        it('laisse passer un appel dont le poids dépasse à lui seul le plafond, puis bloque', () => {
+            expect(limiter.isLimited('alice', MAX * 1000)).toBe(false)
+            expect(limiter.isLimited('alice', 1)).toBe(true)
+        })
+
+        it('un appel bloqué ne consomme pas son poids (pas de bannissement définitif)', () => {
+            limiter.isLimited('alice', MAX)
+
+            // Boucle serrée de gros appels rejetés : aucun ne doit repousser la date de
+            // sortie du jeton initial, sinon le plafond deviendrait permanent.
+            for (let t = 0; t < 900; t += 50) {
+                vi.advanceTimersByTime(50)
+                expect(limiter.isLimited('alice', MAX * 100)).toBe(true)
+            }
+
+            vi.advanceTimersByTime(200)
+            expect(limiter.isLimited('alice', 1)).toBe(false)
+        })
+
+        it('libère le poids par la fenêtre glissante, appel par appel', () => {
+            // 2 jetons à t=0 (poids 1 + 1), le 3ᵉ à t=600.
+            limiter.isLimited('alice', 1)
+            limiter.isLimited('alice', 1)
+            vi.advanceTimersByTime(600)
+            limiter.isLimited('alice', 1)
+            expect(limiter.isLimited('alice', 1)).toBe(true)
+
+            // t=1001 : les deux poids de t=0 sont sortis, celui de t=600 reste.
+            vi.advanceTimersByTime(401)
+            expect(limiter.isLimited('alice', 2)).toBe(false)
+            expect(limiter.isLimited('alice', 1)).toBe(true)
+        })
+
+        it('les clés restent indépendantes en mode pondéré', () => {
+            expect(limiter.isLimited('alice', MAX)).toBe(false)
+            expect(limiter.isLimited('alice', 1)).toBe(true)
+
+            expect(limiter.isLimited('bob', 1)).toBe(false)
+        })
+
+        it('un poids nul ne consomme rien et ne bloque jamais', () => {
+            // Cas dégénéré volontairement autorisé : un fan-out vide n'a pas de coût.
+            for (let i = 0; i < 10; i++) {
+                expect(limiter.isLimited('alice', 0)).toBe(false)
+            }
+            expect(limiter.isLimited('alice', MAX)).toBe(false)
+        })
+
+        it('purge les clés pondérées devenues inactives (anti-fuite mémoire)', () => {
+            limiter.isLimited('alice', MAX * 10)
+            limiter.isLimited('bob', 1)
+            expect(limiter.size()).toBe(2)
+
+            vi.advanceTimersByTime(WINDOW_MS + 1)
+            limiter.isLimited('carol', 1)
+
+            expect(limiter.size()).toBe(1)
+        })
+    })
 })

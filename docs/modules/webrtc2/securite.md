@@ -204,6 +204,22 @@ Logique mutualisée dans `Composables/utils/payloadSize.js` (`getPayloadSizeByte
 `isPayloadWithinLimit`) — source de vérité unique pour les trois points. `envelope.to` est filtré
 par `isValidSlug` **et** croisé avec les membres réels de la room avant retransmission.
 
+### Le hub porte deux plafonds, et le second est celui qui compte
+
+Un plafond par message et un plafond par émetteur ne bornent pas leur **produit**. Le coût réel
+d'une retransmission star est `octets × destinataires` : à 100 membres, 20 msg/s de 64 Ko font
+sortir ~128 Mo/s d'un onglet navigateur, et chaque message pris isolément est parfaitement légal.
+D'où `HUB_MAX_BYTES_PER_WINDOW`, plafond du **coût agrégé**, sur la même clé que le plafond de
+messages (identité PeerJS entrante réelle).
+
+**La sémantique est celle du total déjà dépensé, pas du total + le message courant** : un fan-out
+isolé dont le coût dépasse à lui seul le budget passe, et consomme sa fenêtre. Sans quoi le premier
+message d'une grande room serait refusé au lieu du centième — c'est l'amplification *soutenue* qui
+est le risque, pas un gros envoi.
+
+La règle générale, valable au-delà de ce chemin : **un garde par unité ne borne jamais un produit.**
+Deux plafonds justes sur deux facteurs différents laissent leur multiplication libre.
+
 ### `contextRegistry` : last-write-wins volontaire
 
 Si deux contextes partagent le même `contextId` (même `type` + même `room`), le second écrase le
@@ -235,8 +251,10 @@ mais dégradation de mise en page et pollution des logs possibles. Traitement pr
 
 Les fenêtres de rate-limiting purgent leur clé quand elle devient vide (sinon la Map grossit
 indéfiniment au fil des rotations de room). La mécanique — fenêtre glissante + balayage throttlé —
-vit dans `Composables/utils/createRateLimiter.js` : **un seul système** pour le hub star et pour
-`/ask-to-peer-id`, avec des clés délibérément différentes.
+vit dans `Composables/utils/createRateLimiter.js` : **un seul système** pour les deux plafonds du hub
+star et pour `/ask-to-peer-id`, avec des clés délibérément différentes. Le budget d'octets n'y ajoute
+pas un second mécanisme : il passe un **poids** à `isLimited(key, weight)`, dont le comptage d'appels
+est le cas particulier (poids 1).
 
 ---
 
@@ -397,10 +415,11 @@ d'absence de relation sur `[]` revient à tester une panne.
 
 ## Bornes non fermées, connues
 
-- **Amplification du hub star** : les gardes sont par émetteur (`HUB_MAX_MESSAGES_PER_WINDOW`) et par
-  message (`MAX_PAYLOAD_BYTES`), mais **leur produit par le fan-out ne l'est pas**. Or star est la
-  topologie des grandes rooms : à 100 membres, un client d'apparence honnête fait sortir ~128 Mo/s
-  du hub.
+- **Amplification du hub star, par la somme des émetteurs.** Le produit `octets × fan-out` est
+  désormais plafonné (`HUB_MAX_BYTES_PER_WINDOW`), mais **par émetteur** : N émetteurs honnêtes
+  peuvent encore additionner leurs budgets. Un budget global du hub fermerait ce cas et en ouvrirait
+  un pire — le premier à dépenser priverait les autres, soit un déni de service sur les pairs
+  légitimes. Arbitrage assumé.
 - **Backend** — fermés depuis l'audit : le `throttle` des 5 routes, la validation des payloads
   relayés, le `catch (\Exception $ex) { return $ex; }` qui renvoyait chemins de fichiers et trace au
   client indépendamment d'`APP_DEBUG`, le contrôle de relation émetteur ↔ destinataire,

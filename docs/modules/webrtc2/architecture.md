@@ -316,11 +316,15 @@ scénarios) et `_hubRateLimiter` (arbitrage « verbe `.reset()` plutôt que Pini
 - **PeerId local** : `ctx.peerStore.getLocalPeerId` — jamais le triple fallback historique
   `localPeer?.id || localPeer?._id || lastLocalPeerId`
 - **Retry peer** : un seul système, `utils/usePeerRetry` — pas de Map `inviteRetries` parallèle
-- **Rate limiting** : un seul système, `utils/createRateLimiter`. Deux instances module-level, avec
-  des clés délibérément différentes — le hub star porte sur l'**identité PeerJS entrante réelle**
-  (jamais `envelope.from`), `/ask-to-peer-id` sur `slug|room|connectionType`. Portée **module** et
-  non closure de composable : c'est ce qui les fait survivre à un mount/unmount, sans quoi ils ne
-  plafonnent rien
+- **Rate limiting** : un seul système, `utils/createRateLimiter`. Trois instances module-level, avec
+  des clés délibérément différentes — les deux du hub star portent sur l'**identité PeerJS entrante
+  réelle** (jamais `envelope.from`), `/ask-to-peer-id` sur `slug|room|connectionType`. Portée
+  **module** et non closure de composable : c'est ce qui les fait survivre à un mount/unmount, sans
+  quoi ils ne plafonnent rien.
+  Le hub en a **deux, sur la même clé** : un plafond de **messages**, et un budget d'**octets
+  retransmis** qui passe un poids à `isLimited(key, weight)` — compter des appels est le cas
+  particulier où tous les poids valent 1. Un second mécanisme à côté (Map de timestamps ad hoc)
+  serait la faute ; le mode pondéré est ce qui l'évite
 - **Clé `remoteStreamsMap`** : `slug+type` canonique, passe unique (la double-passe historique
   venait d'une clé non fiable)
 - **Identité du pair d'une entrée de `remoteStreamsMap`** : `entry.remoteSlug` — **jamais**

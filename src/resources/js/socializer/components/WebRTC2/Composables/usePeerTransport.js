@@ -22,9 +22,10 @@ import { Peer } from "peerjs"
 import { markRaw, onUnmounted, watch } from 'vue'
 import { 
     MAX_RECONNECT_ATTEMPTS, 
-    HUB_RATE_WINDOW_MS, 
-    HUB_MAX_MESSAGES_PER_WINDOW, 
-    MAX_PAYLOAD_BYTES, 
+    HUB_RATE_WINDOW_MS,
+    HUB_MAX_MESSAGES_PER_WINDOW,
+    HUB_MAX_BYTES_PER_WINDOW,
+    MAX_PAYLOAD_BYTES,
     PEER_DESTROY_DELAY_MS, 
     RECONNECT_BASE_DELAY_MS, 
     RECONNECT_MAX_DELAY_MS, 
@@ -125,6 +126,15 @@ function _destroyPeerSingleton(peerStore) {
 const _hubRateLimiter = createRateLimiter({
     windowMs: HUB_RATE_WINDOW_MS,
     max: HUB_MAX_MESSAGES_PER_WINDOW,
+})
+
+// Second plafond, MÊME CLÉ, même mécanique en mode pondéré : celui-ci compte les
+// octets réellement retransmis (`payload × destinataires`) et non les messages.
+// Deux instances plutôt qu'un plafond composite, parce que les deux fenêtres se
+// vident indépendamment — et parce qu'un refus doit pouvoir dire lequel a mordu.
+const _hubByteLimiter = createRateLimiter({
+    windowMs: HUB_RATE_WINDOW_MS,
+    max: HUB_MAX_BYTES_PER_WINDOW,
 })
 
 // Validation de slug côté hub : rejette les destinataires forgés avant retransmission
@@ -876,6 +886,36 @@ export function usePeerTransport(ctx) {
             targets = [...roomMembers]
         }
         targets = targets.filter(slug => slug !== senderSlug)
+
+        // Rien à retransmettre : ne pas consommer de budget pour un fan-out vide.
+        if (targets.length === 0) {
+            return
+        }
+
+        // ── Budget d'octets agrégé (anti-amplification) ──────────────────────────
+        // Les deux gardes ci-dessus sont par expéditeur et par message ; leur PRODUIT
+        // par le fan-out ne l'était pas — à 100 membres, 20 msg/s × 64 Ko font sortir
+        // ~128 Mo/s d'un onglet navigateur. Le coût réel d'une retransmission est
+        // `octets × destinataires`, et c'est ce coût qui est plafonné, sur la même clé.
+        //
+        // ⚠️ Un message coupé ici a déjà consommé un jeton du plafond de messages : la
+        // tentative est réelle, elle compte. Et le contrôle porte sur le total déjà
+        // dépensé (cf. `createRateLimiter`), donc un premier fan-out coûteux passe et
+        // consomme sa fenêtre — c'est l'amplification soutenue qui est visée.
+        const fanoutCost = payloadSize.bytes * targets.length
+
+        if (_hubByteLimiter.isLimited(senderIdentity, fanoutCost)) {
+            console.warn(
+                `[Hub] Budget d'octets dépassé (${HUB_MAX_BYTES_PER_WINDOW} o/${HUB_RATE_WINDOW_MS}ms)` +
+                ` — message de '${senderSlug}' (${senderIdentity}) abandonné`,
+                {
+                    payloadBytes: payloadSize.bytes,
+                    targets: targets.length,
+                    fanoutCost,
+                }
+            )
+            return
+        }
 
         targets.forEach(userSlug => {
             const conn = _getOpenDataConnection(room, userSlug, type)
