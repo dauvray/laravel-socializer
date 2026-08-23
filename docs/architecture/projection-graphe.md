@@ -11,6 +11,7 @@ réplica, quel invariant il respecte, et pourquoi rejouer une projection est san
 ## L'invariant
 
 > **Un utilisateur = un sommet `user`, un sommet `feed`, un sommet `wall`.**
+> **Un groupe = un sommet `group`, un serveur, une page.**
 > Quel que soit le nombre de projections.
 
 Le mur porte une arête `followed_by` vers son propre propriétaire — **c'est voulu** : la
@@ -23,16 +24,34 @@ publication et sa distribution peuvent atterrir sur des sommets différents du m
 
 ## Comment l'invariant tient
 
-`createUserAndNetwork()` (`app/Helpers/Socializer.php`) est **idempotente**, par deux verrous dont
-aucun ne suffit seul :
+`createUserAndNetwork()` (`app/Helpers/Socializer.php`) et `Server::createGroupServer()` sont
+**idempotentes**, par deux verrous dont aucun ne suffit seul :
 
 | Verrou | Ce qu'il couvre | Ce qu'il ne couvre pas |
 |---|---|---|
-| **relecture** du réseau existant avant création | les sommets nés avant E9, dont l'`uniqidReal()` n'est pas reconstituable | deux appels concurrents qui ont tous deux lu « pas de mur » |
-| **id dérivé** du modèle (`feed12`, `wall12`) + `INSERT VERTEX IF NOT EXISTS` | la concurrence, au niveau de la base | un mur déjà là sous un id aléatoire — il en poserait un second |
+| **relecture** de ce qui est déjà projeté | les sommets nés sous `uniqidReal()`, dont l'id n'est pas reconstituable | deux appels concurrents qui ont tous deux lu « pas de mur » |
+| **id dérivé** du modèle (`feed12`, `wall12`, `server12`) + `INSERT VERTEX IF NOT EXISTS` | la concurrence, au niveau de la base ; et la **panne de relecture**, qui conclut « rien » | un mur déjà là sous un id aléatoire — il en poserait un second |
 
 Les **arêtes** n'ont jamais eu besoin de garde : NebulaGraph les clefe sur
-(source, type, rang, destination), un second `INSERT EDGE` réécrit la même.
+(source, type, rang, destination), un second `INSERT EDGE` réécrit la même. Elles sont donc reposées
+**sans condition**, y compris sur des sommets retrouvés par relecture : c'est ce qui rattrape une
+projection interrompue entre un sommet et son arête.
+
+Les adresses stables, toutes recalculables depuis MySQL :
+
+| Sommet | id dérivé | Relecture |
+|---|---|---|
+| `user` | l'accesseur `vertexId` de `Socializable` | — |
+| `feed`, `wall` | `feed{user_id}`, `wall{user_id}` | `getUserNetworkVertexIds()` |
+| `group` | `group{id}` | inutile : l'id suffit |
+| `server` d'un groupe | `server{group_id}` | `(s:server)-[:owned_by]->(g:group)` |
+| `page` d'un serveur | `page{server_vid}` — l'espace de noms est le serveur, les salons ont aussi des pages | `(p:page)-[:published_in]-(s:server)` |
+
+⚠️ **Une relecture ne dit jamais « déjà projeté » quand elle échoue.** `execute()` ne lève pas sur une
+erreur de lecture : il rend un `JsonResponse`, un objet — et `$result[0]['x'] ?? null` sur un objet est
+une **`Error` fatale**, le `??` ne couvrant que l'index absent. Toute relecture porte donc un garde
+`is_array`, journalise, et conclut « rien de projeté ». Le repli est sûr **parce que** l'id est
+dérivé : le graphe refuse le doublon lui-même.
 
 ⚠️ **Le piège général, dont ceci n'est qu'un cas.**
 `NebulaGraphConnection::insertVertex` fait `$vid = $values['id'] ?? uniqidReal()`. **Tout sommet
@@ -107,13 +126,17 @@ besoins distincts — et n'apportent plus que leur **politique d'erreur** :
 
 ```
 migration create_nebula          DDL (space, 18 tags, 11 arêtes, 6 index)
-                                 + projectGroupServers()  ─┐
-                                 + projectAll()           ─┴─→ journalise, puis LÈVE
+                                 + projectAll()           ───→ journalise, puis LÈVE
                                                                 (donc n'est pas enregistrée)
 
 socializer:nebula-populate       projectAll()             ───→ écrit sur la sortie,
                                                                 puis code de sortie non nul
 ```
+
+`projectAll()` porte **toutes** les étapes, et l'ordre ne compte qu'à un endroit : **les groupes avant
+leurs serveurs.** Une arête vers un sommet jamais posé ne fait pas exister ce sommet — dans
+NebulaGraph un sommet n'existe que s'il porte un tag —, donc `owned_by` pendrait dans le vide. Le
+reste est insensible à l'ordre : une arête tolère que sa cible arrive après elle.
 
 `projectAll()` compte les écritures refusées et rapporte chacune par un `callable` ; **il ne décide
 pas**. Le rattrapage est **par item** : une seule ligne bancale ne doit pas emporter tout ce qui a
@@ -123,19 +146,33 @@ projection, pas une panne de réplica, elle doit remonter.
 Une **relance est désormais sans danger**, y compris celle de `migrate` : c'est ce que la migration
 interdisait explicitement avant E9.
 
-### La seule étape qui n'est pas dans `projectAll()`
+### Qui possède ce qu'une projection écrit
 
-`projectGroupServers()` — parce que `Server::createGroupServer` **exige un utilisateur
-authentifié** : sa chaîne descend jusqu'à `Page::createPageVertice`, qui lit `Auth::user()`. En
-console il n'y en a pas.
+Deux écritures exigent un acteur, et `Auth::user()` rend `null` en console : le `model_id` /
+`model_type` du document Mongo de la **page** d'un serveur, et l'arête `has_creator` du **groupe** —
+celle que `Socializable::isServerOwner` traverse pour dire qui administre le serveur.
 
-Appelée sans acteur, elle **se refuse, journalise, et ne compte pas comme un échec** : une étape qui
-*ne peut pas* tourner là où elle est appelée n'est pas une écriture refusée par le graphe, et la
-compter comme telle ferait échouer `migrate` sur toute base ayant des groupes. Elle n'est donc pas
-non plus idempotente — le sommet `server` et sa page naissent sous un `uniqidReal()`.
+**La projection résout donc le propriétaire depuis MySQL : le leader du groupe
+(`group_user.is_leader`), sinon son membre attaché le plus tôt.** C'est la seule réponse que MySQL
+sache donner sans rien inventer. Les services concernés prennent un `$owner` nullable **en queue de
+signature**, replié sur `Auth::user()` — la forme d'`OnlineUsersService`, la seule du paquet.
 
-La rendre jouable en console (propriétaire passé explicitement) est un chantier ouvert :
-[`work/README.md`](../../work/README.md).
+Un groupe **sans aucun membre** n'a pas de propriétaire résoluble. Son sommet et son rattachement au
+parent sont posés quand même — les arêtes `registered_in` des utilisateurs le visent déjà —, mais ni
+son `has_creator` ni son serveur : **refus journalisé, qui ne compte pas comme un échec.** Une étape
+qui *ne peut pas* s'exécuter n'est pas une écriture refusée par le graphe, et la compter comme telle
+ferait échouer `migrate` sur toute base ayant un groupe vide.
+
+### `extras['socializer_server_vid']` : écrit, jamais relu
+
+C'est la poignée par laquelle le front entre dans le serveur d'un groupe (`Resources\User`) et par
+laquelle `GroupDeletedListener` le supprime. **La projection l'écrit** — sans quoi ce qu'elle crée est
+un orphelin invisible —, et l'écrit **dans le rattrapage**, comme `GroupCreatedListener` met son
+`save()` dans `syncToGraph` : mémoriser un vid dont l'écriture graphe a échoué donnerait au front
+l'adresse d'un sommet inexistant.
+
+Elle ne le **relit** jamais : `extras` peut désigner un sommet supprimé, le graphe non. La relecture
+d'idempotence interroge donc le graphe (voir le tableau des adresses stables plus haut).
 
 ## Réparer un réplica qui a divergé
 

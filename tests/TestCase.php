@@ -120,20 +120,38 @@ abstract class TestCase extends BaseTestCase
         // pour la même raison que `users` : sa migration vit dans un AUTRE paquet, absent du
         // harnais. Le prédicat retenu est « même group_id exactement », il ne remonte pas le
         // nested set.
+        //
+        // `is_leader` est une colonne réelle du pivot d'estarter, et c'est par elle que la
+        // projection résout le propriétaire d'un serveur de groupe en console.
         Schema::create('group_user', function ($table) {
             $table->id();
             $table->unsignedBigInteger('user_id');
             $table->unsignedBigInteger('group_id');
+            $table->boolean('is_leader')->default(false);
             $table->unique(['user_id', 'group_id']);
         });
 
         // `groups` n'est pas nécessaire à `mayReach`, mais l'est à `User::groups()` — que
         // `createUserAndNetwork()` parcourt — et au stub `Group`, cible de
         // `config('estarter.models.group')` quand un test projette les groupes.
+        // `extras` porte `socializer_server_vid` : la poignée du front vers le serveur du groupe,
+        // que la projection doit mémoriser comme le fait `GroupCreatedListener`.
         Schema::create('groups', function ($table) {
             $table->id();
             $table->string('name');
             $table->unsignedBigInteger('parent_id')->nullable();
+            $table->json('extras')->nullable();
+        });
+
+        // Doublure de la collection Mongo `pages` — cf. `tests/Stubs/Page.php` pour la raison.
+        Schema::create('pages', function ($table) {
+            $table->id();
+            $table->unsignedBigInteger('model_id')->nullable();
+            $table->string('model_type')->nullable();
+            $table->string('server_id')->nullable();
+            $table->string('room_id')->nullable();
+            $table->text('content')->nullable();
+            $table->string('vertexid')->nullable();
         });
     }
 
@@ -176,12 +194,16 @@ abstract class TestCase extends BaseTestCase
 
     /**
      * Inscrit un utilisateur dans un groupe — la jambe « contexte partagé » de `mayReach`.
+     *
+     * `$leader` positionne le `is_leader` du pivot : c'est ce que lit la projection pour désigner
+     * le propriétaire du serveur d'un groupe quand aucun utilisateur n'est authentifié.
      */
-    protected function joinGroup(User $user, int $groupId): void
+    protected function joinGroup(User $user, int $groupId, bool $leader = false): void
     {
         DB::table('group_user')->insert([
             'user_id' => $user->id,
             'group_id' => $groupId,
+            'is_leader' => $leader,
         ]);
     }
 

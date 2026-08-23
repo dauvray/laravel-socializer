@@ -5,6 +5,8 @@ namespace Dauvray\Socializer\app\Services;
 use Dauvray\Socializer\app\Exceptions\NebulaGraphException;
 use Dauvray\Socializer\app\Helpers\GraphTraits\BuildsArticleVertexValues;
 use Dauvray\Socializer\app\Services\Server as ServerService;
+use Dauvray\Socializer\app\Services\Users as UsersService;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Projection de MySQL vers le réplica NebulaGraph — LE seul endroit où vit ce DML.
@@ -40,7 +42,12 @@ class GraphProjection
     }
 
     /**
-     * Les étapes jouables partout, y compris en console.
+     * Toutes les étapes, et elles sont toutes jouables en console.
+     *
+     * L'ORDRE COMPTE À UN ENDROIT : les groupes avant leurs serveurs. L'arête `owned_by` d'un
+     * serveur vise le sommet du groupe, et un sommet NebulaGraph n'existe que s'il porte un tag —
+     * une arête vers un sommet jamais posé ne fait pas exister ce sommet, elle pend. Le reste est
+     * insensible à l'ordre : les arêtes tolèrent que leur cible arrive après elles.
      *
      * @param  callable(string, array<string, mixed>):void|null  $onFailure  quoi, contexte
      * @return int  nombre d'écritures refusées par le graphe
@@ -50,8 +57,9 @@ class GraphProjection
         $echecs = 0;
         $tenter = $this->tentative($onFailure, $echecs);
 
-        $this->projectGroupParents($tenter);
+        $this->projectGroups($tenter);
         $this->projectUsers($tenter);
+        $this->projectGroupServers($tenter);
         $this->projectArticles($tenter);
         $this->projectMarketplace($tenter);
 
@@ -65,41 +73,90 @@ class GraphProjection
     }
 
     /**
-     * Les serveurs de groupes — hors de `projectAll`, et ce n'est pas un oubli.
+     * Les serveurs de groupes, leur page, et le vid mémorisé côté MySQL.
      *
-     * `Server::createGroupServer` EXIGE un utilisateur authentifié (sa chaîne descend jusqu'à
-     * `Page::createPageVertice`, qui lit `Auth::user()`). L'étape n'est donc pas jouable depuis une
-     * commande : appelée sans acteur elle se refuse, journalise, et ne compte pas comme une écriture
-     * refusée par le graphe — sinon un `migrate` échouerait sur toute base ayant des groupes.
+     * ⚠️ LE `save()` EST DANS LA TENTATIVE, comme dans `GroupCreatedListener` : `extras`
+     * `socializer_server_vid` est la poignée par laquelle le front entre dans le serveur
+     * (`Resources\User`) et par laquelle `GroupDeletedListener` le supprime. Mémoriser un vid dont
+     * l'écriture graphe a échoué donnerait au front l'adresse d'un sommet inexistant. Jusqu'ici
+     * cette étape JETAIT le vid : un serveur projeté était un orphelin, invisible et non
+     * supprimable.
      *
-     * Seule la migration l'appelle. La rendre jouable en console est un chantier à part,
-     * cf. `work/README.md`.
+     * `extras` est écrit, jamais relu : la relecture d'idempotence interroge le graphe, seule source
+     * qui ne peut pas désigner un sommet supprimé.
      *
-     * @param  callable(string, array<string, mixed>):void|null  $onFailure
+     * Le groupe sans membre, lui, n'est pas projeté : `createGroupServer` s'y refuse et journalise.
+     * Une étape qui ne PEUT pas s'exécuter n'est pas une écriture refusée par le graphe.
+     *
+     * ⚠️ Étape PRIVÉE depuis qu'elle est jouable en console : elle était publique et portait son
+     * propre compteur, parce que seule la migration l'appelait, à côté de `projectAll()`. Deux
+     * compteurs pour une même projection étaient une addition à la main dans l'appelant — et la
+     * source d'un `$onFailure` reçu à la place d'un `$tenter`.
      */
-    public function projectGroupServers(?callable $onFailure = null): int
+    private function projectGroupServers(callable $tenter): void
     {
-        $echecs = 0;
-        $tenter = $this->tentative($onFailure, $echecs);
         $model = config('estarter.models.group');
 
         if(!$model) {
-            return $echecs;
+            return;
         }
 
         $serverService = new ServerService();
 
         foreach($model::all() as $group) {
-            $tenter(fn () => $serverService->createGroupServer(
-                [
-                    'name' => $group->name,
-                    'privacy' => 1,
-                ],
-                getVertexId($group)
-            ), "serveur du groupe {$group->id}");
+            $tenter(function () use ($serverService, $group) {
+                $vid = $serverService->createGroupServer(
+                    [
+                        'name' => $group->name,
+                        'privacy' => 1,
+                    ],
+                    getVertexId($group),
+                    $this->resolveGroupOwner($group)
+                );
+
+                if (!$vid) {
+                    return;
+                }
+
+                $extras = $group->extras ?? [];
+                $extras['socializer_server_vid'] = $vid;
+                $group->extras = $extras;
+                $group->save();
+            }, "serveur du groupe {$group->id}");
+        }
+    }
+
+    /**
+     * Qui possède ce qu'une projection écrit pour un groupe : son leader, sinon son plus ancien
+     * membre.
+     *
+     * En console `Auth::user()` rend `null`, et deux écritures ont pourtant besoin d'un acteur : le
+     * `model_id` / `model_type` du document Mongo de la page du serveur, et l'arête `has_creator` du
+     * groupe — celle que `Socializable::isServerOwner` traverse pour dire qui administre le serveur.
+     * Le leader du groupe est la seule réponse que MySQL sache donner sans rien inventer.
+     *
+     * ⚠️ Requête directe sur le pivot, et non `$group->users()` : même raison que
+     * `Socializable::sharesGroupWith` — cette relation vit sur `EstarterUser`, d'un paquet que le
+     * harnais de tests remplace par un stub qui lève. Même clé de config pour le nom de table.
+     *
+     * @param  mixed  $group
+     * @return mixed|null le modèle utilisateur, ou `null` si le groupe n'a aucun membre
+     */
+    private function resolveGroupOwner($group)
+    {
+        $table = config('socializer.signaling.relation.group_user_table', 'group_user');
+
+        $userId = DB::table($table)
+            ->where('group_id', $group->id)
+            ->orderByDesc('is_leader')
+            ->orderBy('id')
+            ->value('user_id');
+
+        if (!$userId) {
+            return null;
         }
 
-        return $echecs;
+        return config('estarter.models.user')::find($userId);
     }
 
     /**
@@ -123,7 +180,20 @@ class GraphProjection
         };
     }
 
-    private function projectGroupParents(callable $tenter): void
+    /**
+     * Les groupes : leur sommet, leur rattachement à leur parent, leur créateur.
+     *
+     * ⚠️ CETTE ÉTAPE NE POSAIT QUE L'ARÊTE PARENT, et personne ne l'avait vu : le sommet `group`
+     * lui-même n'était créé QUE par le chemin événementiel (`Users::createGroup`). Sur une base
+     * projetée, `owned_by` et `registered_in` visaient donc un sommet sans tag — invisible d'un
+     * `MATCH (g:group)`, donc `isServerOwner` faux pour tout le monde. Déléguer à `createGroup`
+     * corrige ça et supprime au passage la double pose de l'arête parent, que `createGroup` fait
+     * déjà.
+     *
+     * Le sommet porte un id dérivé, donc aucun verrou de relecture n'est nécessaire ici : le
+     * reposer rafraîchit ses propriétés.
+     */
+    private function projectGroups(callable $tenter): void
     {
         $model = config('estarter.models.group');
 
@@ -131,8 +201,13 @@ class GraphProjection
             return;
         }
 
+        $usersService = new UsersService();
+
         foreach($model::all() as $group) {
-            $tenter(fn () => setGroupHasParentRelation($group), "parent du groupe {$group->id}");
+            $tenter(
+                fn () => $usersService->createGroup($group, $this->resolveGroupOwner($group)),
+                "groupe {$group->id}"
+            );
         }
     }
 

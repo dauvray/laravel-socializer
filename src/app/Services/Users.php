@@ -168,15 +168,37 @@ class Users
         );
     }
 
-    public function createGroup($group) 
+    /**
+     * Le sommet d'un groupe, son rattachement à son parent, et son créateur.
+     *
+     * Le sommet porte un id DÉRIVÉ (`group12`), donc `INSERT VERTEX IF NOT EXISTS` rend l'appel
+     * idempotent : le reposer rafraîchit ses propriétés sans jamais en créer un second. Les arêtes
+     * le sont aussi, NebulaGraph les clefant sur (source, type, rang, destination).
+     *
+     * ⚠️ `$owner` est nullable pour que la PROJECTION puisse jouer cette étape en console, où
+     * `Auth::user()` rend `null` — le propriétaire y est résolu depuis MySQL
+     * (`GraphProjection::resolveGroupOwner`). Sans propriétaire, le sommet et le rattachement au
+     * parent sont posés quand même et seul `has_creator` est sauté : les arêtes `registered_in` des
+     * utilisateurs visent déjà ce sommet, ne pas le poser coûterait plus que de le laisser sans
+     * créateur. Le refus est journalisé, jamais silencieux.
+     *
+     * @param  mixed  $group  le modèle de `config('estarter.models.group')`
+     * @param  mixed|null  $owner  à défaut, l'utilisateur authentifié
+     * @return string le vertexid du groupe
+     */
+    public function createGroup($group, $owner = null)
     {
+        if (!$owner) {
+            $owner = $this->user;
+        }
+
         $group_id = getVertexId($group);
 
         $this->nebula->insertVertex(
-            config('socializer.nebulagraph.tags.group.name'), 
+            config('socializer.nebulagraph.tags.group.name'),
             array_merge(
                 $this->nebula->populatePropsFromPattern(
-                    $group, 
+                    $group,
                     config('socializer.nebulagraph.vertices.group')
                 ),
                 [
@@ -190,7 +212,14 @@ class Users
         setGroupHasParentRelation($group);
 
         // groupe / creator relation
-        setHasCreatorRelation($group_id, $this->user->vertexid);
+        if ($owner) {
+            setHasCreatorRelation($group_id, $owner->vertexid);
+        } else {
+            Log::warning('createGroup : aucun propriétaire résolu, groupe projeté sans créateur', [
+                'group_id' => $group->id,
+                'group_vertexid' => $group_id,
+            ]);
+        }
 
         return $group_id;
     }

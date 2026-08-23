@@ -101,6 +101,13 @@ perdre une demi-journée — le détail et le pourquoi vivent dans le docblock d
    (`tests/Stubs/Estarter/app/Events/`, ajoutées par E7 pour les listeners de réplica) ne lèvent
    pas : un événement ne porte aucun comportement, c'est un porteur de données, et le reproduire à
    l'identique ne peut mentir sur rien.
+   ⚠️ **Un modèle d'une AUTRE base est un troisième cas** : `tests/Stubs/Page.php` double par un
+   Eloquent sqlite un modèle Mongo, parce que `mongodb/laravel-mongodb` n'est pas installé ici — sans
+   lui, toucher `app\Models\Page` lève `Class "MongoDB\Laravel\Eloquent\Model" not found`, avant
+   toute question de connexion. C'est jouable **parce que** le paquet n'atteint jamais ces modèles
+   autrement que par `config('socializer.models.*')`, et la fidélité s'arrête aux trois opérations
+   que le code demande (`create()`, `->id`, `->vertexid = …; save()`). Tout ce qui dépend vraiment de
+   Mongo reste hors de portée du harnais et se vérifie sur le dev.
 
 Deux doublures sont là uniquement parce que `ServiceProvider::boot` fait un `require_once` de **tous**
 les `src/app/Helpers/*.php` : sans elles, l'application de test ne démarre pas.
@@ -215,8 +222,12 @@ testable directement, et ça se voit.
   d'autorisation de `Socializable` : gardes de canal de broadcast et garde de relation. Le lot
   backend qui s'appuie dessus est suivi dans
   [`work/webrtc2-securite-2026-08-14.md`](../../work/webrtc2-securite-2026-08-14.md).
-- **Rien** pour Feed, Comment, Server, User, System, Application, Page, Whiteboard, les stores Pinia
-  hors `peers2`, ni les services PHP au-delà de l'inscription au chat.
+- **La projection MySQL → NebulaGraph** — le contrat de `GraphProjection` (elle compte et rapporte,
+  elle ne décide pas), l'idempotence du réseau d'un utilisateur, du sommet d'un article, et du
+  serveur d'un groupe avec son propriétaire résolu sans acteur authentifié :
+  `tests/Feature/Graph/`. Ce que ces fichiers ne prouvent pas est écrit en tête de chacun.
+- **Rien** pour Feed, Comment, User, System, Application, Whiteboard, les stores Pinia hors
+  `peers2`, ni les services PHP au-delà de l'inscription au chat et de la projection.
 
 Les invariants d'une doc de module (`docs/modules/*`) sont des **points de test**, pas des choses à
 contourner : quand une doc dit « ne pas optimiser ceci », le test correspondant est ce qui l'épingle.

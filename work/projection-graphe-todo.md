@@ -13,25 +13,70 @@ par utilisateur (12 utilisateurs, deux salves à 47 s d'écart le 28/05/2026).
 
 ---
 
-## 1. Les serveurs de groupes ne sont pas projetables en console 🔴
+## 1. Les serveurs de groupes ne sont pas projetables en console ✅ 23/08
 
 `Server::createGroupServer` → `createServer` → `Page::createPageVertice`, qui lit `$this->user->id`
 et `get_class($this->user)`. Sans utilisateur authentifié : `TypeError`. La migration boucle
 pourtant sur tous les groupes.
 
 - [x] Garde posé : sans acteur, l'étape se refuse et journalise, elle ne lève plus (22/08)
-- [ ] Passer le propriétaire **explicitement** à `createServer` / `createPageVertice`, défaut
-      `Auth::user()`, pour que l'étape redevienne jouable depuis une commande
-- [ ] La rendre **idempotente** au passage : le sommet `server` et sa page naissent sous un
-      `uniqidReal()`, donc deux projections d'un même groupe donnent deux serveurs — exactement le
-      défaut qu'on vient de corriger pour les murs, un étage plus haut
-- [ ] Puis la remettre dans `projectAll()` et couvrir `projectGroupServers()` par un test : il
-      n'est pas couvert aujourd'hui, le constructeur de `Services\Server` tirant `app('onlineUsers')`,
-      `Chat`, `Page`, `ApplicationIA` et `Feed`, absents du harnais
+- [x] Propriétaire passé **explicitement**, paramètre nullable en queue de signature replié sur
+      `Auth::user()` (forme d'`OnlineUsersService`, la seule du paquet) : `createGroupServer`,
+      `createServer`, `createPageVertice`, `Users::createGroup`. En projection il est **résolu depuis
+      MySQL** — le leader du groupe (`group_user.is_leader`), sinon son membre attaché le plus tôt.
+- [x] Idempotente, par les deux verrous de `createUserAndNetwork` : relecture du graphe, puis id
+      dérivé (`server{group_id}`, `page{server_vid}`).
+- [x] Remise dans `projectAll()` — et devenue **privée** : elle était publique avec son propre
+      compteur, ce que la migration additionnait à la main.
+- [x] Couverte par `tests/Feature/Graph/GroupServerProjectionTest.php`.
 
-**Sur quelle base ça se voit :** aucune pour l'instant. Le seul sommet `server` du dev vient de
-l'application, pas d'une projection — la migration a tourné le 28/05 alors que la table `groups`
-était vide.
+**Ce que l'avertissement « pas testable » cachait.** Il attribuait le trou au constructeur de
+`Services\Server` (« `Chat`, `Page`, `ApplicationIA`, `Feed`, des services d'estarter absents du
+harnais »). C'était faux sur les deux points : ces quatre services sont ceux de **ce** paquet et
+n'ajoutent aucune dépendance — l'ensemble transitif de `new Server()` se réduit à `nebulaGraph`,
+`onlineUsers` et `Auth::user()`, tous doublés depuis longtemps. Le seul vrai blocage était **Mongo**
+(`mongodb/laravel-mongodb` n'est pas installé dans le paquet), contourné par `tests/Stubs/Page.php`.
+Une raison plausible de ne pas tester se vérifie comme le reste.
+
+### Deux défauts trouvés en chemin, et corrigés ici
+
+- **Aucune étape ne créait le sommet `group`.** `projectGroupParents()` ne posait que l'arête
+  parent ; le seul `insertVertex('group')` était sur le chemin événementiel. Sur une base projetée,
+  `owned_by` et `registered_in` visaient donc un sommet **sans tag** — invisible d'un
+  `MATCH (g:group)`, donc `isServerOwner` faux pour tout le monde. L'étape s'appelle désormais
+  `projectGroups()` et délègue à `Users::createGroup()`, ce qui supprime au passage la double pose
+  de l'arête parent.
+- **Le vid du serveur était jeté.** `extras['socializer_server_vid']` est la poignée du front
+  (`Resources\User`) et de `GroupDeletedListener` : un serveur projeté était invisible et non
+  supprimable. La projection l'écrit maintenant, **dans le rattrapage** — jamais mémoriser un vid
+  dont l'écriture graphe a échoué.
+
+Plus un bug latent fermé : `createGroupServer` passait le `false` d'un `insertVertex` refusé à
+`setOwnedByRelation`, qui émettait `INSERT EDGE owned_by VALUES "->group12"` en silence.
+
+### La leçon, et elle a coûté un serveur en trop sur le dev
+
+**Une requête nGQL à UNE colonne rend une liste PLATE de valeurs**, pas des lignes associatives :
+`formatValues` effondre une ligne d'une seule colonne sur sa valeur. La relecture lisait
+`$result[0]['server']` — un accès par clé sur une chaîne, silencieux sous `??` — donc `null`, donc un
+second serveur à chaque projection. **La suite était verte** : `FakeNebulaGraph` rend la forme qu'on
+lui script, et j'avais scripté des lignes associatives. C'est la contre-épreuve sur le dev qui l'a
+vu. Consigné dans le docblock de la doublure et dans celui de la relecture.
+
+Corollaire, corrigé dans la foulée : `getUserNetworkVertexIds` affirmait encaisser une panne de
+lecture par `?? null`. Faux — `execute()` rend un `JsonResponse` et un accès tableau sur un objet est
+une `Error` fatale que `??` ne rattrape pas. Garde `is_array` posé, et un test qui script
+`grapheMuet()` l'épingle.
+
+**Sur quelle base ça se voit :** le dev n'avait qu'un serveur, né de l'application. Il en a porté
+deux le temps de la contre-épreuve — le surnuméraire (`server1`) et sa page Mongo ont été supprimés,
+et `extras` pointe de nouveau sur le serveur applicatif. Trois passages de `nebula-populate`
+d'affilée n'ajoutent plus rien.
+
+> ⚠️ Un de ces passages est sorti en code 1 : `insertEdge` refusé pour
+> `Session not existed!` — expiration de session Thrift pendant les arêtes d'auteur, pas un défaut de
+> projection. Le rattrapage par item a journalisé et compté ; la relance a suffi. À savoir avant de
+> soupçonner le code sur un échec isolé.
 
 ## 2. Aucune commande ne dédoublonne une base déjà divergente 🟠
 
@@ -160,3 +205,34 @@ l'assemblage — la boucle, le garde de config, l'arête d'auteur.
       `les_parents_de_groupes_sont_projetes_quand_le_modele_est_declare`. ⚠️ Ne pas donner de
       `vertexId` à ce stub : `tests/Stubs/Eblogger/app/Models/Article.php` explique pourquoi ça
       masquerait le défaut que le fichier épingle
+
+Le §1 a montré le chemin : `tests/Stubs/Page.php` double un modèle Mongo par un Eloquent sqlite, et
+c'est ce qui a débloqué la couverture des serveurs de groupes. Le même motif s'applique ici.
+
+## 10. Les contenus de salon ne sont pas idempotents 🟠
+
+Ouvert le 23/08 en fermant le §1, qui n'a rendu idempotents que le groupe, son serveur et sa page.
+Un étage plus bas, **six `insertVertex` ne posent aucun `id`** — donc autant de sommets nés sous
+`uniqidReal()`, indupliquables sans doublon et invisibles pour qui les cherche par une adresse
+recalculée :
+
+| Site | Sommet |
+|---|---|
+| `Server::createRoomServer` | `room` |
+| `Server::_createContentVertex` | le contenu d'un salon |
+| `Server::createDataVertice` | `data` |
+| `Server::createClassroomVertice` | `classroom` |
+| `Server::createBoardVertice` | `board` |
+| `Server::createFeedWallVertice` | le mur/feed d'un salon |
+
+Sans conséquence **aujourd'hui**, parce qu'aucune projection ne les rejoue : ils ne naissent que du
+chemin applicatif, une fois. Le jour où l'on voudra projeter les salons — la suite logique du §1 —
+c'est cette liste qu'il faudra traiter, et la question à répondre pour chacun est celle de la doc :
+*quel est son id stable, recalculable depuis MySQL ?* Pour un salon, MySQL n'en a peut-être aucun :
+c'est à trancher avant d'écrire le code.
+
+- [ ] Trancher, sommet par sommet, s'il existe une adresse dérivable — sinon assumer que ces contenus
+      ne sont pas projetables et l'écrire
+- [ ] Au passage, retirer le `setGroupHasParentRelation($event->group)` de
+      `GroupCreatedListener:39` : `Users::createGroup()` le fait déjà, l'arête est posée deux fois
+      (inoffensif, les arêtes sont clefées — mais c'est une copie de plus)

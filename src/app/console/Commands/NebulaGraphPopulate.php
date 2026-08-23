@@ -59,8 +59,11 @@ class NebulaGraphPopulate extends EstarterPrepare
         // écritures lèvent, ce qui rend le défaut à la fois plus probable et enfin visible. Le
         // rattrapage est donc PAR ITEM, dans la projection.
         //
-        // ⚠️ Les serveurs de groupes ne sont PAS projetés ici : cette étape exige un utilisateur
-        // authentifié, cf. `GraphProjection::projectGroupServers`.
+        // Les serveurs de groupes SONT projetés ici depuis qu'ils n'exigent plus d'utilisateur
+        // authentifié : leur propriétaire est résolu depuis MySQL (le leader du groupe), et un groupe
+        // sans membre est refusé avec un avertissement au journal, pas compté comme un échec du
+        // graphe. Un groupe muet ne fait donc pas sortir cette commande en erreur — c'est le journal
+        // qu'il faut lire, cf. `docs/architecture/projection-graphe.md`.
         try {
             // Le libellé reste pauvre à dessein : le message brut du graphe cite du contenu
             // utilisateur (cf. règle 1 de `NebulaGraphException`), il sort par le journal.

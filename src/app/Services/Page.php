@@ -16,12 +16,33 @@ class Page
         $this->nebula = app('nebulaGraph');
     }
 
-    public function createPageVertice($server_id = null, $room_id = null, $new_content = [])
+    /**
+     * La page d'un serveur ou d'un salon : un document Mongo, puis son sommet.
+     *
+     * ⚠️ `$owner` est nullable pour que la PROJECTION puisse jouer cette chaîne en console. C'est
+     * ICI que se trouvait la seule lecture qui la rendait injouable : `$this->user->id` et
+     * `get_class($this->user)` sur un `Auth::user()` nul sont une `TypeError`, pas une panne de
+     * graphe — et `ToleratesGraphFailure` rappelle qu'une `TypeError` doit remonter.
+     *
+     * ⚠️ Passer un `'id'` dans `$new_content` est la façon de donner au sommet une adresse stable :
+     * la clé survit au filtre de propriétés d'`insertVertex`. Sans elle, le sommet naît sous
+     * `uniqidReal()` et un second passage en pose un de plus — cf.
+     * `docs/architecture/projection-graphe.md`. Les appelants de projection dérivent cet id du
+     * serveur (`page` + son vid).
+     *
+     * @param  mixed|null  $owner  à défaut, l'utilisateur authentifié
+     * @return string|false le vertexid de la page
+     */
+    public function createPageVertice($server_id = null, $room_id = null, $new_content = [], $owner = null)
     {
+        if (!$owner) {
+            $owner = $this->user;
+        }
+
         // create mongodb page
         $page = config('socializer.models.page')::create([
-            "model_id" => $this->user->id,
-            "model_type" => get_class($this->user),
+            "model_id" => $owner->id,
+            "model_type" => get_class($owner),
             "server_id" => $server_id,
             "room_id" => $room_id,
             "content" => '',

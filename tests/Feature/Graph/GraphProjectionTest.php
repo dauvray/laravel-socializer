@@ -20,12 +20,16 @@ use PHPUnit\Framework\Attributes\Test;
  * elle ne décide pas. Chaque appelant garde sa politique — la migration lève, la commande sort en
  * code d'erreur.
  *
- * ⚠️ `projectGroupServers()` n'est pas couvert ici. Il instancie `Services\Server`, dont le
- * constructeur tire `app('onlineUsers')`, `Chat`, `Page`, `ApplicationIA` et `Feed` — des bindings
- * et des services d'estarter absents du harnais, pour la même raison que la décision 1 du
- * `TestCase` évite le groupe de middlewares `web`. Son garde est un `if(!$this->user)` dans
- * `Server::createGroupServer`, lisible sur place, et le chantier qui rendra cette étape jouable en
- * console la rendra aussi testable.
+ * Les serveurs de groupes ont leur propre fichier — `GroupServerProjectionTest` —, parce qu'ils
+ * portent une autre question : l'idempotence et le propriétaire résolu sans acteur authentifié.
+ *
+ * ⚠️ L'avertissement qui figurait ici était FAUX, et il a servi d'excuse à un trou de couverture :
+ * « `projectGroupServers()` n'est pas testable, son constructeur tire `Chat`, `Page`,
+ * `ApplicationIA` et `Feed`, des services d'estarter absents du harnais ». Ces quatre services sont
+ * ceux de CE paquet, et n'ajoutent aucune dépendance : l'ensemble transitif de `new Server()` se
+ * réduit à `nebulaGraph`, `onlineUsers` et `Auth::user()`, dont les deux premiers ont une doublure
+ * depuis toujours. Le seul vrai blocage était Mongo, contourné par un stub de modèle. Une raison
+ * plausible de ne pas tester se vérifie comme le reste.
  */
 class GraphProjectionTest extends TestCase
 {
@@ -110,6 +114,10 @@ class GraphProjectionTest extends TestCase
     {
         // Étape que la commande avait perdue en route : elle n'existait que dans la migration.
         config()->set('estarter.models.group', Group::class);
+
+        // Depuis que l'étape pose aussi le SOMMET du groupe, elle passe par `Services\Users`, dont
+        // le constructeur résout `app('onlineUsers')` — binding d'estarter, absent du harnais.
+        $this->fakeOnlineUsers();
 
         $graphe = $this->fakeNebulaGraph()->always([]);
 

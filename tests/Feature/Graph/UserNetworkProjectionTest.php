@@ -125,6 +125,36 @@ class UserNetworkProjectionTest extends TestCase
         );
     }
 
+    /**
+     * Une relecture muette ne doit ni tuer la projection, ni conclure « déjà projeté ».
+     *
+     * ⚠️ Le `?? null` de `getUserNetworkVertexIds` ne suffisait PAS, contrairement à ce que son
+     * docblock affirmait : sur une erreur nGQL, `execute()` ne lève pas, il rend un `JsonResponse`,
+     * et `$result[0]['feed']` sur un objet est une `Error` fatale — que `??` ne rattrape pas, il ne
+     * couvre que les index absents. Une panne de lecture faisait donc échouer `migrate` sur un
+     * chemin qui se croyait tolérant.
+     *
+     * Le bon comportement est de conclure « rien de projeté » et de repasser derrière : c'est
+     * l'`INSERT VERTEX IF NOT EXISTS` sur un id dérivé qui empêche le doublon, pas la relecture.
+     */
+    #[Test]
+    public function une_relecture_muette_ne_duplique_pas_le_reseau(): void
+    {
+        // Ce que `execute()` rend VRAIMENT sur erreur de LECTURE : un JsonResponse, donc truthy.
+        $graphe = $this->fakeNebulaGraph()->always($this->grapheMuet());
+
+        $alice = $this->makeUser('alice');
+
+        createUserAndNetwork($alice);
+
+        $requetes = $graphe->queries();
+
+        // Le réseau est reposé sur ses ids dérivés : le graphe refusera le doublon lui-même.
+        $this->assertContains('INSERT VERTEX IF NOT EXISTS feed VALUES "feed'.$alice->id.'":()', $requetes);
+        $this->assertContains('INSERT VERTEX IF NOT EXISTS wall VALUES "wall'.$alice->id.'":()', $requetes);
+        $this->assertSame([], preg_grep('/idaleatoire/', $requetes));
+    }
+
     #[Test]
     public function le_sommet_utilisateur_reste_pose_a_chaque_passage(): void
     {

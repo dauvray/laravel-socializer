@@ -105,14 +105,36 @@ class Server
         return true;
     }
 
-    public function createServer(array $server_data = [])
+    /**
+     * Un serveur et sa page.
+     *
+     * ⚠️ `$vertex_id` est la façon de donner au serveur une ADRESSE STABLE. Sans lui, `insertVertex`
+     * retombe sur `uniqidReal()` : un serveur de plus à chaque projection, qu'aucun autre écrivain
+     * ne peut plus viser. Le chemin applicatif ne le passe pas — un serveur créé à la main n'a pas
+     * d'id recalculable depuis MySQL —, la projection le dérive du groupe.
+     *
+     * @param  mixed|null  $owner  à défaut, l'utilisateur authentifié
+     * @param  string|null  $vertex_id  l'id dérivé, quand l'appelant en connaît un
+     * @return string|false le vertexid du serveur
+     */
+    public function createServer(array $server_data = [], $owner = null, ?string $vertex_id = null)
     {
+        if (!$owner) {
+            $owner = $this->user;
+        }
+
+        $values = [
+            'name' => $server_data['name'],
+            'privacy' => (int)$server_data['privacy'],
+        ];
+
+        if ($vertex_id) {
+            $values['id'] = $vertex_id;
+        }
+
         $vertex = $this->nebula->insertVertex(
             config('socializer.nebulagraph.tags.server.name'),
-            [
-                'name' => $server_data['name'],
-                'privacy' => (int)$server_data['privacy'],
-            ]
+            $values
         );
 
         $vid = getVertexIdFromInsert($vertex);
@@ -121,13 +143,38 @@ class Server
             return false;
         }
 
-         // server page
-        $page_vid = $this->servicePage->createPageVertice($vid);
-
-        // page / server relation
-        setPublishedInRelation($page_vid, $vid);
+        // server page, et son arête vers le serveur
+        $this->ensureServerPage($vid, $owner);
 
         return $vid;
+    }
+
+    /**
+     * La page d'un serveur : créée seulement si elle manque, son arête reposée dans tous les cas.
+     *
+     * Le « seulement si elle manque » n'est pas une optimisation. La page est d'abord un document
+     * Mongo : la recréer en poserait un second, orphelin, que rien ne rattacherait. Et l'arête est
+     * reposée sans condition parce que NebulaGraph la clefe sur (source, type, rang, destination) —
+     * c'est ce qui rattrape une projection interrompue entre le sommet et son arête.
+     *
+     * @param  mixed|null  $owner  propriétaire du document Mongo de la page
+     */
+    private function ensureServerPage(string $server_vid, $owner = null): void
+    {
+        $page_vid = $this->findServerPageVertexId($server_vid)
+            ?? $this->servicePage->createPageVertice(
+                $server_vid,
+                null,
+                ['id' => config('socializer.nebulagraph.tags.page.name').$server_vid],
+                $owner
+            );
+
+        if (!$page_vid) {
+            return;
+        }
+
+        // page / server relation
+        setPublishedInRelation($page_vid, $server_vid);
     }
 
     // cette notion a été abandonnée au profit de serveurs liés à des groupes
@@ -145,24 +192,35 @@ class Server
     }
 
     /**
-     * Le serveur d'un groupe, et sa relation d'appartenance au groupe.
+     * Le serveur d'un groupe, et sa relation d'appartenance au groupe. Idempotent.
      *
-     * ⚠️ EXIGE UN UTILISATEUR AUTHENTIFIÉ, donc n'est pas jouable en console. La chaîne
-     * `createServer` → `Page::createPageVertice` lit `$this->user->id` et `get_class($this->user)` :
-     * sans acteur, c'est une `TypeError`, pas une panne de graphe — et `ToleratesGraphFailure`
-     * rappelle qu'une `TypeError` doit remonter. Le garde ci-dessous la remplace par un refus
-     * lisible, pour que la migration `create_nebula`, qui boucle sur les groupes, ne meure pas sur
-     * une base qui en a.
+     * DEUX VERROUS, et il faut les deux — même raisonnement que `createUserAndNetwork` :
+     *  1. le serveur déjà projeté est RELU et réutilisé. Seul verrou qui rattrape les serveurs nés
+     *     sous `uniqidReal()`, dont l'id n'est pas reconstituable ;
+     *  2. un serveur neuf porte un id DÉRIVÉ du groupe (`server12`), donc
+     *     `INSERT VERTEX IF NOT EXISTS` refuse d'en poser un second — y compris quand deux appels
+     *     concurrents ont tous deux relu « pas de serveur ». C'est aussi lui qui rend inoffensive
+     *     une panne de relecture : la relecture muette conclut « rien », et le graphe refuse le
+     *     doublon.
      *
-     * Rendre cette projection jouable en console — propriétaire passé explicitement plutôt que lu
-     * dans `Auth::user()` — est un chantier à part : `work/README.md`.
+     * ⚠️ `$owner` nullable est ce qui rend l'étape jouable EN CONSOLE : la chaîne descend jusqu'à
+     * `Page::createPageVertice`, qui écrit `model_id` / `model_type` sur le document Mongo de la
+     * page. En projection, le propriétaire est résolu depuis MySQL — le leader du groupe, sinon son
+     * plus ancien membre (`GraphProjection::resolveGroupOwner`). Sans propriétaire résoluble, refus
+     * journalisé : ce n'est pas une écriture refusée par le graphe, et la compter comme telle ferait
+     * échouer `migrate` sur toute base ayant un groupe vide.
      *
+     * @param  mixed|null  $owner  à défaut, l'utilisateur authentifié
      * @return string|false le vertexid du serveur, ou `false` si rien n'a été tenté
      */
-    public function createGroupServer(array $server_data = [], $group_vid = null)
+    public function createGroupServer(array $server_data = [], $group_vid = null, $owner = null)
     {
-        if(!$this->user) {
-            Log::warning('createGroupServer : aucun utilisateur authentifié, serveur de groupe non projeté', [
+        if (!$owner) {
+            $owner = $this->user;
+        }
+
+        if(!$owner) {
+            Log::warning('createGroupServer : aucun propriétaire résolu, serveur de groupe non projeté', [
                 'group_vertexid' => $group_vid,
                 'server_name' => $server_data['name'] ?? null,
             ]);
@@ -170,12 +228,123 @@ class Server
             return false;
         }
 
-        $vid = $this->createServer($server_data);
+        $vid = $this->findGroupServerVertexId($group_vid);
 
-        // server / group relation
+        if ($vid) {
+            // Le serveur a survécu à un passage précédent — sa page, elle, a pu ne pas survivre.
+            $this->ensureServerPage($vid, $owner);
+        } else {
+            $vid = $this->createServer($server_data, $owner, $this->deriveServerVertexId($group_vid));
+
+            // Sans ce garde, le `false` d'un `insertVertex` refusé partait dans l'arête ci-dessous,
+            // qui émettait un `INSERT EDGE owned_by VALUES "->group12"` en silence.
+            if (!$vid) {
+                return false;
+            }
+        }
+
+        // server / group relation — reposée dans tous les cas, idempotente par sa clé
         setOwnedByRelation($vid, $group_vid);
 
         return $vid;
+    }
+
+    /**
+     * L'adresse stable du serveur d'un groupe : `server` + l'id MySQL du groupe.
+     *
+     * Elle se dérive du vid du groupe et non du modèle, parce que c'est tout ce que cette méthode
+     * reçoit — `getRealIdFromVertexId` fait le chemin inverse de `getVertexId`.
+     */
+    private function deriveServerVertexId($group_vid): ?string
+    {
+        $group_id = getRealIdFromVertexId($group_vid, 'group');
+
+        if (!$group_id) {
+            return null;
+        }
+
+        return config('socializer.nebulagraph.tags.server.name').$group_id;
+    }
+
+    /**
+     * Le serveur déjà rattaché à ce groupe, s'il y en a un — le verrou 1.
+     *
+     * ⚠️ **UNE requête à UNE colonne rend une liste PLATE de valeurs**, pas des lignes associatives :
+     * `NebulaGraphConnection::formatValues` effondre une ligne d'une seule colonne sur sa valeur
+     * (`count($result) == 1` ⇒ `$result[$cle]`). Lire `$result[0]['server']` ici rendait donc `null`
+     * en production — un accès par clé sur une chaîne, silencieux sous `??` — et la projection
+     * créait un second serveur à chaque passage. Le harnais ne pouvait pas le voir : `FakeNebulaGraph`
+     * rend la forme qu'on lui script.
+     *
+     * ⚠️ Le garde `is_array` n'est pas décoratif non plus : sur une erreur nGQL, `execute()` ne lève
+     * pas, il rend un `JsonResponse`, et un accès tableau sur un objet est une `Error` FATALE que le
+     * `??` ne rattrape pas. Une relecture muette doit conclure « aucun serveur », pas tuer la
+     * projection : le verrou 2 empêche le doublon que cette conclusion pourrait causer.
+     *
+     * Sur une base déjà divergente (deux serveurs pour un groupe), la première ligne gagne — même
+     * choix que `getUserNetworkVertexIds`, pour que le rattrapage n'en crée pas un de plus.
+     */
+    private function findGroupServerVertexId($group_vid): ?string
+    {
+        if (!$group_vid) {
+            return null;
+        }
+
+        $result = $this->nebula->execute("
+            MATCH (s:server)-[:owned_by]->(g:group)
+            WHERE id(g) == '$group_vid'
+            RETURN id(s) AS server
+        ");
+
+        if (!is_array($result)) {
+            Log::warning('findGroupServerVertexId : le graphe n\'a pas répondu, relecture réputée vide', [
+                'group_vertexid' => $group_vid,
+            ]);
+
+            return null;
+        }
+
+        return $this->firstVertexIdOf($result);
+    }
+
+    /**
+     * La page déjà publiée dans ce serveur, s'il y en a une. Mêmes gardes que ci-dessus.
+     *
+     * La requête est celle de `deleteServer`, réduite à ce qui nous intéresse.
+     */
+    private function findServerPageVertexId($server_vid): ?string
+    {
+        $result = $this->nebula->execute("
+            MATCH (p:page)-[:published_in]-(s:server)
+            WHERE id(s) == '$server_vid'
+            RETURN id(p) AS page
+        ");
+
+        if (!is_array($result)) {
+            Log::warning('findServerPageVertexId : le graphe n\'a pas répondu, relecture réputée vide', [
+                'server_vertexid' => $server_vid,
+            ]);
+
+            return null;
+        }
+
+        return $this->firstVertexIdOf($result);
+    }
+
+    /**
+     * Le premier vertexid d'une relecture à UNE colonne, ou `null`.
+     *
+     * Le `is_string` est ce qui rend le contrat de forme explicite plutôt que supposé : le jour où
+     * l'une de ces requêtes gagnera une seconde colonne, ses lignes redeviendront associatives et ce
+     * repli rendra `null` — « rien de projeté ». C'est le sens sûr : le verrou 2 refuse le doublon.
+     *
+     * @param  array<int, mixed>  $result
+     */
+    private function firstVertexIdOf(array $result): ?string
+    {
+        $vid = $result[0] ?? null;
+
+        return is_string($vid) && $vid !== '' ? $vid : null;
     }
 
     public function updateServer(Request $request)

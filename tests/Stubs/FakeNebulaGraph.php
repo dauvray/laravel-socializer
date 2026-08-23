@@ -20,6 +20,14 @@ use Dauvray\Socializer\app\Exceptions\NebulaGraphException;
  * suffisant tant que les tests visent une requête identifiable (« MATCH (r:room) »), et ça
  * évite d'écrire un moteur de graphe de test — qui mentirait bien plus qu'il n'aiderait.
  *
+ * ⚠️ **LA FORME DU RÉSULTAT SCRIPTÉ DÉPEND DU NOMBRE DE COLONNES, et cette doublure ne le vérifie
+ * pas.** En production, `NebulaGraphConnection::formatValues` effondre une ligne d'une SEULE colonne
+ * sur sa valeur : `RETURN id(s) AS server` rend `['server1', 'server2']`, une liste plate, tandis que
+ * `RETURN id(s) AS server, id(g) AS grp` rend `[['server' => …, 'grp' => …]]`. Scripter des lignes
+ * associatives pour une requête à une colonne fait donc passer au vert un code qui lit `null` en
+ * production — vécu : la relecture d'idempotence du serveur d'un groupe créait un second serveur à
+ * chaque projection, suite verte. Seule la contre-épreuve sur un vrai graphe l'a vu.
+ *
  * `queries()` expose ce qui a été exécuté : un test peut ainsi asserter qu'AUCUNE requête
  * n'a été émise (garde qui refuse avant de toucher au graphe).
  */

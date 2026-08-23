@@ -167,6 +167,13 @@ if (!function_exists('getUserNetworkVertexIds')) {
      * Sur une base d'avant E9 qui en porterait plusieurs, la première ligne rendue par le graphe
      * gagne : c'est ce qu'il faut pour que le rattrapage n'en crée pas un de plus.
      *
+     * ⚠️ LE GARDE `is_array` N'EST PAS DÉCORATIF, et le `?? null` seul ne suffisait pas : sur une
+     * erreur nGQL, `execute()` ne lève pas, il rend un `JsonResponse`, et `$result[0]['feed']` sur un
+     * objet est une `Error` FATALE — `??` ne couvre que l'index absent, jamais l'accès tableau sur un
+     * objet. Une panne de lecture faisait donc échouer toute la projection depuis un chemin qui se
+     * croyait tolérant. Conclure « rien de projeté » est le bon repli : c'est l'id dérivé, avec
+     * `INSERT VERTEX IF NOT EXISTS`, qui empêche le doublon — pas la relecture.
+     *
      * @return array{feed: ?string, wall: ?string} `null` pour ce qui reste à créer
      */
     function getUserNetworkVertexIds($user_vertex_id): array
@@ -177,6 +184,14 @@ if (!function_exists('getUserNetworkVertexIds')) {
             OPTIONAL MATCH (w:wall)-[:owned_by]->(u)
             RETURN id(f) AS feed, id(w) AS wall
         ");
+
+        if (!is_array($result)) {
+            Log::warning('getUserNetworkVertexIds : le graphe n\'a pas répondu, relecture réputée vide', [
+                'user_vertexid' => $user_vertex_id,
+            ]);
+
+            return ['feed' => null, 'wall' => null];
+        }
 
         return [
             'feed' => $result[0]['feed'] ?? null,

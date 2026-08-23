@@ -84,11 +84,15 @@ return new class extends Migration
         // Le peuplement, en revanche, vit dans `Services\GraphProjection` : `nebula-populate` le
         // rejoue à la demande, et en tenir une copie ici les faisait dériver. Cette migration ne
         // garde que sa POLITIQUE D'ERREUR — journaliser chaque refus, puis lever pour n'être pas
-        // enregistrée — et l'étape des serveurs de groupes, la seule qui exige un utilisateur
-        // authentifié (cf. `GraphProjection::projectGroupServers`).
+        // enregistrée.
         //
-        // Une relance est désormais SANS DANGER : la projection est idempotente, un second passage
-        // relit le réseau existant au lieu d'en créer un second (`createUserAndNetwork`).
+        // `projectAll()` porte désormais TOUTES les étapes, serveurs de groupes compris : elles sont
+        // toutes jouables sans utilisateur authentifié, le propriétaire d'un serveur de groupe étant
+        // résolu depuis MySQL (son leader). Cette migration n'a donc plus d'étape à part, et plus de
+        // compteurs à additionner.
+        //
+        // Une relance est SANS DANGER : la projection est idempotente, un second passage relit ce
+        // qui existe au lieu d'en créer un second (`createUserAndNetwork`, `createGroupServer`).
         $projection = new GraphProjection();
 
         $journaliser = fn (string $quoi, array $contexte) => Log::error(
@@ -96,8 +100,7 @@ return new class extends Migration
             $contexte
         );
 
-        $echecs = $projection->projectGroupServers($journaliser)
-            + $projection->projectAll($journaliser);
+        $echecs = $projection->projectAll($journaliser);
 
         if($echecs > 0) {
             throw new RuntimeException(
