@@ -14,7 +14,7 @@
 | **Entrant** (`peer.on('connection')`, `peer.on('call')`) | durci **côté client**, borné côté serveur — audits du 20/05 et du 14/08/2026 | garde `_isAuthorizedIncomingPeer`, anti-usurpation inconditionnelle, gardes de taille, sanitisation. Reste aveugle au membre de room qui se présente avec un peerId neuf sous le slug d'un autre ; le garde de relation serveur borne désormais qui peut tenter |
 | **Sortant** (`connectToPeer`, `responseRemotePeerConnection`) | durci **côté client**, garde autoritatif posé côté serveur | prédicat unique `utils/isAuthorizedPeer.js` : membre de la room **ou** interlocuteur d'appel marqué. Son jumeau serveur `Socializable::mayReach` tranche ce que le navigateur ne peut pas voir |
 | **Backend** (`UserController`, routes) | durci | `fromUserSlug` authentifié, liste blanche de champs, `throttle` par utilisateur (deux buckets), `validate()` sur les 5 payloads, et **contrôle de relation** émetteur ↔ destinataire en 403 uniforme |
-| **Credentials TURN** | servis par le serveur, **statiques** | `GET /get-ice-servers` : STUN seul pour un invité, STUN + TURN pour une session authentifiée. Ils ne sont plus dans le bundle ; ils restent longue durée et partagés entre utilisateurs |
+| **Credentials TURN** | servis par le serveur, **éphémères et signés par utilisateur** | `GET /get-ice-servers` : STUN seul pour un invité, STUN + TURN pour une session authentifiée. TURN REST API — `username = "<expiry>:<userId>"`, `credential = base64(HMAC-SHA1(secret, username))`, TTL 24 h. Un abus est donc attribuable, plafonnable par personne et révocable en bloc. Le mode statique partagé reste servi si aucun secret n'est configuré, pour ne pas casser un coturn encore en `--user` |
 
 **La leçon réutilisable, et la seule qui compte : un garde d'admission ne sécurise qu'une
 direction.** Tout chemin qui *ouvre* une connexion doit porter le sien.
@@ -455,11 +455,26 @@ d'absence de relation sur `[]` revient à tester une panne.
   ([signalisation.md](../../architecture/signalisation.md#une-charge-utile-de-présence-est-fabriquée-par-son-propre-sujet)).
   **Reste ouvert** : la même énumération sur `getUsersList`, qui liste tous les utilisateurs actifs
   sans contrôle.
-- **TURN** : les identifiants ne sont plus dans le bundle (`GET /get-ice-servers`), mais ils restent
-  **statiques, longue durée et partagés**. Un utilisateur authentifié peut donc encore abuser du
-  relais, et rien ne le rattache à lui. Le niveau 2 — coturn en `use-auth-secret`, credential
-  `HMAC-SHA1(secret, "<expiry>:<userId>")` à TTL court — remplacera `username`/`password` sans
-  toucher ni à la route ni à la forme de la réponse.
+- **TURN, la durée de vie du credential** : il est désormais éphémère et signé par utilisateur, mais
+  le navigateur ne récupère la configuration ICE **qu'une fois par cycle de vie du `Peer`** —
+  lequel est un singleton d'onglet, monté au tick 0 par le contexte permanent `data-app`, jamais
+  détruit tant que la coquille SPA vit, et dont `peer.reconnect()` réutilise le même
+  `_options.config`. Un onglet resté ouvert au-delà de 24 h garde donc un credential expiré :
+  l'appel en cours n'est pas coupé, mais **toute nouvelle allocation échoue**, et le symptôme est
+  « la visio ne passe plus, un F5 la répare ». D'où le TTL de 24 h plutôt que l'heure du plan
+  d'origine. Le rafraîchissement est possible sans chirurgie — PeerJS relit `options.config` à
+  chaque connexion, et `options` est un getter vivant sur `_options` — mais il dépend d'un interne
+  non contractuel et demande de choisir un déclencheur : ouvert en D3.
+- **TURN, le secret de signature** : il est unique et partagé par tous les utilisateurs. Le
+  compromettre ne vaut pas un relais ouvert mais **la capacité de forger le credential de
+  n'importe qui**, donc la perte de la non-répudiation que ce mode achète. Ce qui l'arrête est une
+  liste blanche de trois clés dans `WebRTCController::turnServer()`, et non une liste noire —
+  épinglée par `IceServersTest::la_charge_utile_ne_relaie_que_les_trois_cles_attendues`, dont la
+  contre-épreuve est un splat de `config('socializer.signaling.ice.turn')`.
+- **TURN, ce qui n'appartient pas à ce paquet** : le durcissement de coturn lui-même — gardes de
+  pair (`--denied-peer-ip`, `--no-tcp-relay`), quotas, publication de la plage de ports de relais —
+  vit dans le `docker-compose` du projet hôte. Ces gardes tiennent **même si le credential fuite**,
+  ce qui les rend complémentaires et non redondants avec ce qui précède.
 
 > **La leçon qui se réutilise ailleurs : `import.meta.env.VITE_*` n'est pas de la configuration,
 > c'est du code source.** Vite remplace l'expression par sa valeur **au build** ; la clé finit en

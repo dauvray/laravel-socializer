@@ -27,8 +27,9 @@ use Illuminate\Support\Facades\Auth;
  *
  * ⚠️ LISTE BLANCHE, JAMAIS LISTE NOIRE — la doctrine de `Resources/PresenceUser.php` s'applique
  * telle quelle, et c'est ici qu'elle compte le plus. Ne JAMAIS rendre
- * `config('socializer.signaling.ice')` tel quel : le niveau 2 posera un secret HMAC dans ce même
- * bloc, et un splat le publierait à tout visiteur. Trois clés sortent d'ici, nommées une par une.
+ * `config('socializer.signaling.ice')` tel quel : ce bloc porte le secret de signature HMAC, et un
+ * splat ne fuiterait pas un mot de passe de relais mais **de quoi forger le credential de
+ * n'importe quel utilisateur**. Trois clés sortent d'ici, nommées une par une.
  * `IceServersTest::la_charge_utile_ne_relaie_que_les_trois_cles_attendues` l'épingle.
  *
  * ⚠️ Les défauts sont répétés en 2ᵉ argument de `config()` pour la raison écrite dans le docblock
@@ -64,9 +65,36 @@ class WebRTCController extends Controller
     /**
      * L'entrée TURN, ou `null` — jamais une entrée à moitié remplie.
      *
-     * Cast en `string` plutôt que `blank()` : `blank(false)` rend **false**, et
-     * `config(...turn.host)` peut valoir `false` si `parse_url()` a échoué. `(string) false` et
-     * `(string) null` valent tous deux `''`, ce qui couvre les trois absences d'un coup.
+     * DEUX MODES, et c'est la PRÉSENCE du secret qui commute, jamais une clé de mode :
+     *
+     *  - `static_auth_secret` posé ⇒ TURN REST API. coturn tourne en `--use-auth-secret
+     *    --static-auth-secret <même valeur>`, le credential est signé ici et expire seul.
+     *  - secret vide ⇒ le couple statique d'origine, inchangé. C'est un chemin de
+     *    COMPATIBILITÉ, et il n'est pas décoratif : un hôte dont le coturn tourne encore en
+     *    `--user` ne doit pas perdre son relais sur un `composer update`. Un refus sec ici
+     *    serait une panne muette offerte à toute installation existante.
+     *
+     * Secret ET couple présents : le secret gagne, sans avertissement. Ce n'est pas une erreur
+     * mais l'état normal d'une machine qui n'a pas encore nettoyé son `.env` — et un couple
+     * statique servi à un coturn passé en `--use-auth-secret` serait refusé de toute façon.
+     *
+     * `Auth::check()` reste la PREMIÈRE instruction et la lecture du secret vient après, de sorte
+     * qu'une requête d'invité ne touche jamais le secret — utile le jour où quelqu'un ajoute un
+     * `Log::debug()` en tête de méthode.
+     *
+     * ⚠️ Mais AUCUN TEST N'ÉPINGLE CET ORDRE, et c'est une limite, pas un oubli : une fuite par
+     * journal n'est pas observable dans un corps de réponse. Déplacer le garde plus bas laisse la
+     * suite entière verte — vérifié. Ce que les tests épinglent est plus étroit : que le secret
+     * n'atteigne jamais la réponse. Sur le chemin authentifié par
+     * `la_charge_utile_ne_relaie_que_les_trois_cles_attendues` (contre-épreuve : un splat de
+     * `config('...turn')` la fait rougir en montrant le secret dans le corps), sur le chemin
+     * invité par l'`assertDontSee` du premier test. L'ordre, lui, est une convention à tenir à la
+     * relecture.
+     *
+     * Cast en `string` plutôt que `blank()` : `blank(false)` rend **false**,
+     * `config(...turn.host)` peut valoir `false` si `parse_url()` a échoué, et un
+     * `COTURN_STATIC_AUTH_SECRET=false` serait rendu en BOOLÉEN par `env()`. `(string) false` et
+     * `(string) null` valent tous deux `''`, ce qui couvre ces absences d'un coup.
      *
      * @return array{urls: string, username: string, credential: string}|null
      */
@@ -77,18 +105,61 @@ class WebRTCController extends Controller
         }
 
         $host = (string) config('socializer.signaling.ice.turn.host');
+
+        if ($host === '') {
+            return null;
+        }
+
+        // Une seule URL, sans `?transport=`, comme le bundle l'écrivait. Ajouter la variante TCP
+        // serait une vraie amélioration — et un changement du chemin ICE, à mesurer à part.
+        $urls = 'turn:'.$host.':'.(int) config('socializer.signaling.ice.turn.port', 3478);
+
+        $secret = (string) config('socializer.signaling.ice.turn.static_auth_secret');
+
+        if ($secret !== '') {
+            // `<expiration epoch>:<identifiant>`, dans CET ORDRE. Vérifié contre le binaire en
+            // place et non contre un souvenir : `turnutils_uclient` porte la chaîne de format
+            // `%lu%c%s`, soit <horodatage><séparateur><utilisateur>, le séparateur étant
+            // `--rest-api-separator` (`:` par défaut). L'ordre inverse ne lèverait rien — il
+            // donnerait `strtol("<identifiant>") == 0`, donc un credential expiré depuis 1970,
+            // refusé sans autre symptôme que « ça ne relaie pas ». Le HMAC porte sur la chaîne
+            // ENTIÈRE, séparateur et identifiant compris.
+            //
+            // `now()` et non `time()` : `Carbon::setTestNow()` n'intercepte que le premier, ce qui
+            // rend l'expiration assertable AU SECONDE PRÈS. Un test à fenêtre
+            // (`assertGreaterThan(time(), ...)`) resterait vert sur un TTL faux d'un facteur 60.
+            $expiresAt = now()
+                ->addSeconds((int) config('socializer.signaling.ice.turn.credential_ttl', 86400))
+                ->getTimestamp();
+
+            // `Auth::id()` et non le slug : c'est ce que coturn journalise et ce sur quoi portent
+            // `--user-quota` / `--total-quota`, donc la seule chose qui rattache une allocation à
+            // quelqu'un. Un identifiant contenant le séparateur ne casse rien (coturn coupe au
+            // premier `:` et le HMAC couvre la chaîne entière) ; en revanche un hôte dont
+            // `getAuthIdentifierName()` serait `email` ferait entrer des adresses dans les
+            // journaux du conteneur coturn — le correctif, ce jour-là, est une liste blanche de
+            // caractères, comme partout ici.
+            $username = $expiresAt.':'.Auth::id();
+
+            return [
+                'urls' => $urls,
+                'username' => $username,
+                // HMAC-SHA1 BRUT (4ᵉ argument `true`) puis base64. `hash_hmac(..., false)`
+                // rendrait l'hexadécimal, que coturn base64-erait différemment : credential
+                // refusé, sans autre symptôme que « la visio ne relaie pas ».
+                'credential' => base64_encode(hash_hmac('sha1', $username, $secret, true)),
+            ];
+        }
+
         $username = (string) config('socializer.signaling.ice.turn.username');
         $password = (string) config('socializer.signaling.ice.turn.password');
 
-        if ($host === '' || $username === '' || $password === '') {
+        if ($username === '' || $password === '') {
             return null;
         }
 
         return [
-            // Une seule URL, sans `?transport=`, comme le bundle l'écrivait. Ajouter la variante
-            // TCP serait une vraie amélioration — et un changement du chemin ICE, à mesurer à
-            // part : ce chantier ne déplace que le secret.
-            'urls' => 'turn:'.$host.':'.(int) config('socializer.signaling.ice.turn.port', 3478),
+            'urls' => $urls,
             'username' => $username,
             'credential' => $password,
         ];

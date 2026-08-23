@@ -174,9 +174,17 @@ modèles et de commandes, plugins GrapesJS et champs de formulaire custom.
 > ⚠️ `socializer.conf` ne contient **aucun bloc TURN** — la mention d'un « stream TURN » qui figurait
 > ici et dans l'arborescence ci-dessus était fausse. Le proxy stream Nginx sur 3478 est décrit dans
 > le `README.md` du paquet, et il ne concerne que le canal de contrôle TCP. La configuration de
-> coturn elle-même (utilisateur, plage de ports relais, realm) vit dans le `docker-compose` du
-> projet hôte. Les identifiants que le navigateur reçoit, eux, sont servis par
+> coturn elle-même (mode d'authentification, plage de ports relais, realm, gardes de pair) vit dans
+> le `docker-compose` du projet hôte, **entièrement en drapeaux CLI** : il n'y a aucun
+> `turnserver.conf` à chercher. Les identifiants que le navigateur reçoit, eux, sont servis par
 > `GET /get-ice-servers` — jamais compilés dans le bundle.
+>
+> **Le mode d'authentification est un contrat partagé entre les deux dépôts.** Le paquet signe le
+> credential, le `docker-compose` de l'hôte doit vérifier la même signature : coturn en
+> `--use-auth-secret --static-auth-secret ${COTURN_STATIC_AUTH_SECRET}`, et PHP lisant la même
+> variable. **Une seule variable, lue des deux côtés** — deux variables pour un seul secret, et la
+> panne serait silencieuse des deux côtés (coturn refuse chaque allocation, le navigateur se
+> rabat sur STUN, et le symptôme est « la visio ne passe que sur le réseau local »).
 
 ---
 

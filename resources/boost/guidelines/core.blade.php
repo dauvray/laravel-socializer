@@ -32,6 +32,9 @@ puis suivre sa table de routage vers `docs/INDEX.md`. Ne pas explorer le code au
   `docs/architecture/projection-graphe.md`.
 - **Le SCSS du paquet est copié dans l'hôte, et c'est la copie qui est compilée** : retoucher
   `src/resources/sass/` seul ne change rien à l'écran. Modifier les deux — `docs/architecture/conventions.md#scss`.
+- **`config('socializer.signaling.ice.turn')` porte le secret de signature HMAC de TOUS les
+  utilisateurs.** Ne jamais rendre ce bloc tel quel à un client : `WebRTCController::turnServer()`
+  nomme trois clés une par une, liste blanche et jamais liste noire.
 - Contribution documentaire : **`docs/` = définitif, `work/` = chantier**. Une case à cocher ou un
   décompte de tests ⇒ le fichier appartient à `work/`. Détail dans `docs/ecrire-la-doc.md`.
 - Installation / mise à jour dans une app hôte : `{{ $assist->artisanCommand('socializer:build') }}`.

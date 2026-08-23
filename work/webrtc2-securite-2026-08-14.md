@@ -1095,47 +1095,133 @@ comparaison d'identité ne peut les distinguer.
 
 ---
 
-### D1 — Endpoint de credentials TURN signés `[M]`
+### D1 — Endpoint de credentials TURN signés `[M]` ✅ 23/08/2026
 
-- [ ] **Dépend de :** rien (mais requiert une modification d'infra coturn). **Périmètre réduit
-      par D0 (23/08)** : la route, la config et la consommation côté client existent déjà. Ce qui
-      reste est le mécanisme de signature, et lui seul.
+- [x] **Dépend de :** rien. **Périmètre réduit par D0 (23/08)** : la route, la config et la
+      consommation côté client existaient déjà. Ne restait que le mécanisme de signature.
 
-**Ce qui reste après D0.** Les identifiants ne sont plus dans le bundle, mais ils restent
-**statiques, longue durée et partagés** : un utilisateur authentifié peut toujours abuser du relais,
-et rien ne l'y rattache. D1 ne change donc plus le chemin, seulement la valeur servie —
-`WebRTCController::turnServer()` est le seul point à modifier, la forme de la réponse et le client
-ne bougent pas.
+- [x] `config/socializer.php` → `signaling.ice.turn` : `static_auth_secret`
+      (`COTURN_STATIC_AUTH_SECRET`) et `credential_ttl` (`COTURN_CREDENTIAL_TTL`, 86400).
+      **Une seule variable, lue des deux côtés** — le `docker-compose` de l'hôte l'interpole dans
+      `--static-auth-secret`. C'est la règle qui imposait déjà `COTURN_USER`/`COTURN_PASS`, et elle
+      compte plus encore ici : la panne d'un secret désaccordé est silencieuse **des deux côtés**.
+- [x] `WebRTCController::turnServer()` : deux modes, commutés par la **présence** du secret et non
+      par une clé de mode. Le couple statique reste servi à défaut — chemin de compatibilité, pas
+      décoration : un tiers dont le coturn tourne encore en `--user` ne doit pas perdre son relais
+      sur un `composer update`.
+- [x] Tests : 14 cas (5 neufs, 2 réécrits, 1 renommé), **8 contre-épreuves par mutation**.
+- [x] Hôte : `docker-compose.yml` basculé, `.env`/`.env.app`/`.env.docker`/`.env.example`.
+- [x] Rotation du secret compromis : **la bascule en `--use-auth-secret` EST la rotation** — le
+      couple `COTURN_USER:COTURN_PASS` cesse d'authentifier quoi que ce soit.
 
-⚠️ Le secret actuel **est compromis** et D0 ne le répare pas : il a été servi dans le bundle
-public pendant des mois, il est dans l'historique git (`.env.app` et `.env.docker` sont versionnés),
-et dans les caches navigateur. Le tourner fait partie de D1, pas de D0.
+**Décision datée du 23/08 — aucune réécriture de l'historique git.** Le secret était réputé
+compromis (servi dans le bundle public, versionné dans `.env.app`/`.env.docker`). Vérification faite
+plutôt que supposée : `git log -p --all -S 'COTURN_PASS'` montre que **la seule valeur que
+l'historique ait jamais contenue est la chaîne littérale `secret`** — zéro entropie, et rendue
+inerte par construction dès la bascule. Un `filter-repo` + force-push coordonné pour retirer un mot
+du dictionnaire n'est pas un arbitrage raisonnable. Ce qui compte n'est pas d'effacer l'ancien
+secret mais **que le nouveau n'entre jamais dans git** : il ne vit que dans `.env` (gitignoré), et
+les gabarits versionnés portent une valeur **vide**.
 
-- Basculer coturn sur `use-auth-secret` / `static-auth-secret` (`socializer.conf`).
-- Route authentifiée renvoyant
-  `{ username: "<expiry>:<userId>", credential: HMAC-SHA1(secret, username) }`, TTL court
-  (~1 h) — TURN REST API.
+#### Trois choses apprises, dont deux qui n'étaient pas au plan
 
-**Tests :** credential expiré rejeté par coturn · format conforme à la RFC.
+**1. ⚠️ La ligne « Basculer coturn (`socializer.conf`) » de ce plan était FAUSSE, et c'est la
+deuxième fois que ce fichier ment sur ce point.** `socializer.conf` est un **vhost Nginx** livré par
+le paquet, sans un seul bloc TURN — ce que `docs/architecture/package.md` rectifiait déjà le 23/08.
+Il n'existe **aucun fichier de configuration coturn** sur la machine (`find / -name turnserver.conf`
+→ rien, aucun volume monté sur le service) : coturn est configuré **entièrement en drapeaux CLI**
+dans le `docker-compose` de l'hôte. Corollaire de méthode : une tâche qui nomme un fichier d'infra
+se vérifie sur le fichier, pas sur le souvenir qu'on en a.
+
+**2. Le TTL de « ~1 h » qu'écrivait ce plan était trop court, et la raison est côté client.** Le
+navigateur ne demande la configuration ICE **qu'une fois par cycle de vie du `Peer`** — lequel est
+un singleton d'onglet monté au tick 0 par le contexte permanent `data-app`, dont
+`PEER_DESTROY_DELAY_MS` n'est jamais atteint tant que la SPA vit, et dont `peer.reconnect()`
+réutilise le même `_options.config`. Un TTL d'une heure expirerait donc dans le dos d'un onglet
+ouvert : l'appel en cours tient, mais toute **nouvelle** allocation échoue — « la visio ne passe
+plus, un F5 la répare ». D'où 24 h, et la borne écrite dans `securite.md`. Le gain de D1 n'était
+jamais la brièveté : c'est que le credential devienne **par-utilisateur** — attribuable dans les
+journaux coturn, plafonnable par `--user-quota`, révocable en bloc par rotation du secret. Le
+rafraîchissement est **cadré en D3**, pas laissé à re-chercher.
+
+**3. ⚠️ Une contre-épreuve a démoli une affirmation que je venais d'écrire dans le code.** Le
+docblock disait « l'ordre des instructions est un garde : `Auth::check()` avant la lecture du
+secret, et `IceServersTest` l'épingle ». La mutation correspondante — déplacer le garde après le
+calcul du HMAC — laisse **la suite entière verte**, parce que le garde rend `null` de toute façon et
+qu'aucune fuite n'atteint le corps de la réponse. Une fuite par **journal** n'est pas observable
+dans une réponse HTTP : aucun test ne peut épingler cet ordre. Le docblock a été corrigé pour dire
+ce qui est vrai (l'ordre est une convention de relecture) et nommer ce qui est réellement épinglé
+(le secret n'atteint pas la réponse, contre-épreuve : un splat de `config('...turn')`). La leçon
+générale : **écrire « tel test l'épingle » est une affirmation vérifiable — et elle se vérifie en
+cassant le code, pas en relisant le test.**
+
+**Une quatrième, mineure mais coûteuse en revue** : `src/config/socializer.php` n'était pas
+pint-clean, et `pint` y reformate 283 lignes sans rapport avec D1 (imports hissés, virgules
+traînantes, `(int)env` → `(int) env`). Le reformat a été isolé dans son **propre commit**, avant
+celui de D1 : `pint(HEAD)` et `pint(HEAD + les edits)` ne diffèrent que des deux hunks voulus, ce
+qui rend le découpage mécaniquement sûr.
+
+**Tests :** `IceServersTest` (14 cas) · les quatre contre-épreuves qui exigent un vrai coturn sont
+dans la bannière du fichier de test — le format est vert avec un mauvais ordre de champs, seul le
+relais tranche.
 **Commit :** `secu(socializer): endpoint de credentials TURN éphémères`
 
 ---
 
-### D2 — Consommer les credentials éphémères côté client `[S]`
+### D2 — Consommer les credentials éphémères côté client `[S]` ✅ 23/08/2026
 
-- [ ] **Dépend de :** D1.
+- [x] **Dépend de :** D1.
 
-**✅ Intégralement livrée par D0 le 23/08/2026.** `_doInit` récupère la configuration ICE avant
-`new Peer(...)`, avec repli STUN et timeout ; les variables `VITE_COTURN_*` ont disparu des trois
-`.env` et du bundle (vérifié : 2 occurrences → 0 après reconstruction).
+**✅ Intégralement livrée par D0 le 23/08/2026**, et **confirmée par D1 le même jour** : le passage
+au credential signé n'a demandé aucune ligne de JavaScript. `_doInit` récupère la configuration ICE
+avant `new Peer(...)`, avec repli STUN et timeout ; les variables `VITE_COTURN_*` ont disparu des
+trois `.env` et du bundle (vérifié : 2 occurrences → 0 après reconstruction). `isUsableEntry`
+n'exige que `urls`, et le tableau est passé opaque à PeerJS — c'est ce qui a rendu D1 confinée au
+PHP.
 
 > ⚠️ **La note d'origine de cette tâche était insuffisante, et c'est le principal enseignement du
 > lot.** Elle disait : « l'appel réseau doit rester à l'intérieur de `peerInitPromise`, sinon deux
 > contextes créeront deux `Peer` ». Vrai, mais il manquait la **garde d'annulation** : voir le point
 > 3 de D0. Ne pas retirer ce paragraphe en croyant qu'il fait doublon.
 
-Ne reste de D2 que ce qui accompagnera D1 : reconsommer les credentials horodatés, ce qui ne
-demandera **aucun changement côté client** — la forme de la réponse est déjà la bonne.
+---
+
+### D3 — Rafraîchir le credential avant qu'il n'expire `[M]` 🟡 — ouverte le 23/08/2026
+
+- [ ] **Dépend de :** D1 (livrée). **N'est pas un prérequis de quoi que ce soit** : la borne qu'elle
+      ferme est assumée et documentée dans `docs/modules/webrtc2/securite.md`.
+
+**Le problème, tel que D1 l'a mesuré.** Le navigateur ne demande la configuration ICE **qu'une fois
+par cycle de vie du `Peer`**, et le `Peer` est un singleton d'onglet que rien ne détruit tant que la
+coquille SPA vit (contexte permanent `data-app` monté au tick 0 ; `PEER_DESTROY_DELAY_MS` ne se
+déclenche qu'au départ du **dernier** consommateur ; `peer.reconnect()` réutilise la même instance,
+donc le même `_options.config`). Passé le TTL, l'appel en cours tient — coturn a déjà sa clé de
+session — mais **toute nouvelle allocation échoue** : nouvel appel, ICE restart, nouveau flux.
+Symptôme utilisateur : « la visio ne passe plus, un F5 la répare ». Le TTL de 24 h rend le cas rare,
+il ne le supprime pas.
+
+**Le mécanisme est déjà repéré, et il est petit.** `node_modules/peerjs/dist/bundler.mjs` fait
+`new RTCPeerConnection(this.connection.provider.options.config)` — relu à **chaque** connexion — et
+`options` est un getter vivant sur `_options`. Réécrire `peerStore.localPeer.options.config`
+suffirait donc pour toutes les connexions futures, sans `setConfiguration()` ni chirurgie sur les
+connexions ouvertes.
+
+**Ce qui reste à trancher, et qui est tout le coût de la tâche :**
+
+- **le déclencheur** — timer aligné sur le TTL, ou paresseux avant chaque `connectToPeer` ? Le
+  paresseux ne dépend d'aucune horloge et ne travaille que si l'on appelle, mais il ajoute un
+  `await` sur un chemin d'appel : relire l'enseignement 3 de D0 avant de l'écrire (**insérer un
+  `await` dans une séquence synchrone crée un état intermédiaire observable**, et ici l'état en
+  question est celui d'un `Peer` déjà vivant).
+- **`options.config` est un interne PeerJS non contractuel** : à épingler par un test qui casse si
+  une mise à jour de PeerJS le renomme, faute de quoi le rafraîchissement deviendra muet.
+- **La condition de réouverture du `throttle`** énoncée dans `routes.public.php` : si D3 permet de
+  descendre le TTL à l'échelle de l'heure, la route se met à être re-appelée et la question du
+  plafond se rouvre — bucket dédié rendant `Limit::none()` pour l'invité, jamais une clé IP.
+
+**Tests :** le credential est re-demandé après expiration simulée · une connexion ouverte n'est pas
+perturbée · `options.config` existe toujours (garde anti-renommage).
+**Commit :** `secu(socializer): rafraichir le credential TURN avant expiration`
 
 ---
 

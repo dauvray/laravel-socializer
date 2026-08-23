@@ -650,11 +650,16 @@ return [
         | clé lue par PHP prend effet au redémarrage. Changer de TURN redevient une édition
         | de `.env`.
         |
-        | ⚠️ NIVEAU 1 : les identifiants restent STATIQUES, longue durée et partagés. Ce qui
-        | change est le seul fait qu'il faut désormais une session authentifiée pour les
-        | obtenir. Le niveau 2 (coturn en `use-auth-secret` + credential HMAC horodaté, lot D
-        | de `work/webrtc2-securite-2026-08-14.md`) remplacera `username`/`password` par un
-        | secret, sans toucher ni à la route ni à la forme de la réponse.
+        | DEUX MODES D'AUTHENTIFICATION, et c'est la PRÉSENCE de `turn.static_auth_secret` qui
+        | commute, jamais une clé de mode :
+        |
+        |  - secret posé ⇒ TURN REST API. coturn tourne en `--use-auth-secret
+        |    --static-auth-secret <même valeur>`, le contrôleur signe un couple horodaté par
+        |    utilisateur. C'est le mode recommandé, et le seul où un abus soit attribuable.
+        |  - secret vide ⇒ le couple statique `username`/`password`, longue durée et partagé
+        |    entre tous les utilisateurs. Conservé pour ne pas casser un déploiement dont le
+        |    coturn est encore en `--user` : un refus sec serait une panne muette offerte à
+        |    toute installation existante.
         |
         */
 
@@ -702,11 +707,50 @@ return [
                 'port' => (int) env('SOCIALIZER_TURN_PORT', 3478),
 
                 /*
-                 * ⚠️ `COTURN_USER` / `COTURN_PASS`, et surtout PAS de nouvelles clés : ce sont
-                 * exactement celles que le `docker-compose` passe au conteneur
-                 * (`--user ${COTURN_USER}:${COTURN_PASS}`). Deux couples de variables pour un
-                 * seul compte, c'est la panne muette garantie le jour où l'on tourne le mot de
-                 * passe d'un seul côté.
+                 * ⚠️ UNE SEULE VARIABLE, LUE DES DEUX CÔTÉS. C'est la même règle qui imposait
+                 * `COTURN_USER` / `COTURN_PASS` ci-dessous plutôt que des clés neuves : le
+                 * `docker-compose` de l'hôte interpole `COTURN_STATIC_AUTH_SECRET` dans
+                 * `--static-auth-secret`, PHP lit la même clé. Deux variables pour un seul
+                 * secret, c'est la panne muette garantie le jour où l'on n'en tourne qu'une —
+                 * et ici la panne serait silencieuse des deux côtés : coturn refuserait chaque
+                 * allocation, le navigateur se rabattrait sur STUN, et le symptôme serait
+                 * « la visio ne passe que sur le réseau local ».
+                 *
+                 * ⚠️ CE SECRET EST CELUI DE TOUS LES UTILISATEURS. Le publier ne vaut pas
+                 * seulement un relais ouvert : il permet de forger le credential de n'importe
+                 * qui, donc de perdre la non-répudiation que ce mode achète. Il ne sort JAMAIS
+                 * d'ici — le contrôleur nomme trois clés une par une, et
+                 * `IceServersTest::la_charge_utile_ne_relaie_que_les_trois_cles_attendues` est
+                 * ce qui arrête un splat écrit distraitement.
+                 *
+                 * Vide = mode statique (voir la bannière de section). Le générer :
+                 * `openssl rand -hex 32`.
+                 */
+                'static_auth_secret' => env('COTURN_STATIC_AUTH_SECRET'),
+
+                /*
+                 * Durée de vie du credential signé, en secondes. 24 h, et ce n'est pas de la
+                 * timidité : le navigateur ne récupère la configuration ICE QU'UNE FOIS par
+                 * cycle de vie du `Peer`, lequel est un singleton d'onglet monté au tick 0 par
+                 * le contexte permanent `data-app` et jamais détruit tant que la coquille SPA
+                 * vit (`usePeerTransport::_doInit`). Un TTL d'une heure expirerait donc dans le
+                 * dos d'un onglet resté ouvert, et le symptôme serait « la visio ne passe plus,
+                 * un F5 la répare ».
+                 *
+                 * Ce que D1 achète n'est pas la brièveté mais le fait que le credential soit
+                 * par-utilisateur : `--user-quota` devient un plafond par personne, les journaux
+                 * coturn nomment l'abuseur, et une rotation du secret invalide tout l'existant
+                 * d'un coup. Raccourcir sans mécanisme de rafraîchissement ne fermerait rien de
+                 * plus et ouvrirait une panne intermittente — voir la borne écrite dans
+                 * `docs/modules/webrtc2/securite.md`.
+                 */
+                'credential_ttl' => (int) env('COTURN_CREDENTIAL_TTL', 86400),
+
+                /*
+                 * ⚠️ MODE STATIQUE — conservé pour les déploiements dont le coturn tourne encore
+                 * en `--user ${COTURN_USER}:${COTURN_PASS}`. Ces deux variables sont exactement
+                 * celles que ce `docker-compose`-là passe au conteneur, pour la raison écrite
+                 * juste au-dessus. Elles sont IGNORÉES dès que `static_auth_secret` est posé.
                  *
                  * Vides = déploiement SANS relais : le contrôleur n'émet alors AUCUNE entrée
                  * TURN. Surtout pas une entrée aux identifiants nuls — l'agent ICE la
