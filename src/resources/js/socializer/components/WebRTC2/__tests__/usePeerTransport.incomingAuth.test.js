@@ -16,6 +16,7 @@ import { createMockContext } from './helpers/createMockContext.js'
 import { withSetup } from './helpers/withSetup.js'
 import { resetPeerMock, getLastPeerInstance } from './__mocks__/peerjs.js'
 import { usePeerTransport } from '~socializer/components/WebRTC2/Composables/usePeerTransport.js'
+import { MAX_METADATA_BYTES } from '~socializer/components/WebRTC2/webrtc2.config.js'
 
 describe('usePeerTransport — authentification des connexions entrantes', () => {
     let ctx
@@ -316,5 +317,69 @@ describe('usePeerTransport — authentification des connexions entrantes', () =>
             expect.stringContaining('Admission entrante non corroborée'),
             expect.anything()
         )
+    })
+
+    /*
+    |--------------------------------------------------------------------------
+    | Taille de la metadata (E2) — le premier garde du chemin, avant les logs
+    |--------------------------------------------------------------------------
+    |
+    | `conn.metadata` est un objet du réseau, non borné. Le garde va AVANT tout le
+    | reste, et notamment avant les `console.warn` de non-résolution de contexte :
+    | ceux-là journalisent l'objet ENTIER, et c'est le pair distant qui décide de les
+    | déclencher — il contrôle `callbackKey`, donc le fait qu'aucun contexte ne se
+    | résolve. Un garde placé après eux serait vide de son objet.
+    */
+
+    describe('taille de la metadata entrante', () => {
+        // Dépasse MAX_METADATA_BYTES (4 Ko) tout en restant loin de MAX_PAYLOAD_BYTES :
+        // c'est bien le plafond de metadata qui doit mordre, pas celui des payloads.
+        const bloat = 'x'.repeat(MAX_METADATA_BYTES)
+
+        beforeEach(() => {
+            vi.spyOn(console, 'warn').mockImplementation(() => {})
+        })
+
+        it('ferme une connexion data dont la metadata dépasse le plafond', () => {
+            const conn = incomingConn({ from: 'bob', bloat })
+            peerInstance._triggerEvent('connection', conn)
+
+            expect(ctx.setUpConnectionListeners).not.toHaveBeenCalled()
+            expect(conn.close).toHaveBeenCalled()
+        })
+
+        it('ferme un appel dont la metadata dépasse le plafond', () => {
+            const call = incomingCall({ from: 'bob', bloat })
+            peerInstance._triggerEvent('call', call)
+
+            expect(call.answer).not.toHaveBeenCalled()
+            expect(call.close).toHaveBeenCalled()
+        })
+
+        it('admet toujours une metadata nominale', () => {
+            const conn = incomingConn({ from: 'bob', fromName: 'Bob Martin' })
+            peerInstance._triggerEvent('connection', conn)
+
+            expect(ctx.setUpConnectionListeners).toHaveBeenCalledWith(conn)
+        })
+
+        /**
+         * Le point de la tâche : un pair qui vise le `console.warn` de non-résolution
+         * de contexte — en fournissant un `callbackKey` inconnu — ne doit pas pouvoir y
+         * faire passer un objet non borné. Le garde de taille est en amont, donc ce
+         * warn n'est jamais atteint.
+         */
+        it('ne journalise pas l\'objet quand il est surdimensionné, même sur un contexte introuvable', () => {
+            const conn = incomingConn({ from: 'bob', bloat, callbackKey: 'contexte-inconnu' })
+            peerInstance._triggerEvent('connection', conn)
+
+            const logged = console.warn.mock.calls.flat()
+                .map(arg => JSON.stringify(arg))
+                .join(' ')
+
+            expect(logged).not.toContain(bloat)
+            expect(logged).not.toContain('Aucun contexte trouvé')
+            expect(conn.close).toHaveBeenCalled()
+        })
     })
 })

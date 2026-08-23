@@ -1114,9 +1114,9 @@ test fuit dans le suivant.
 
 ---
 
-### E2 — Borner et sanitiser `conn.metadata` `[S]`
+### E2 — Borner et sanitiser `conn.metadata` `[S]` ✅ 23/08/2026
 
-- [ ] **Dépend de :** rien.
+- [x] **Dépend de :** rien.
 
 Seules les frames data sont contrôlées en taille (`isPayloadWithinLimit` dans `handleData`).
 `conn.metadata` est distant, non borné, et seul `type` est sanitisé
@@ -1127,11 +1127,45 @@ Seules les frames data sont contrôlées en taille (`isPayloadWithinLimit` dans 
 > échappe l'interpolation. Le risque est la dégradation de mise en page et la pollution des
 > logs, pas l'exécution.
 
-- Étendre `utils/sanitizeMetadata.js` : `sanitizeMetadataName` (longueur bornée) + contrôle
-  de la taille globale de l'objet metadata à l'admission.
+- [x] `utils/sanitizeMetadata.js` étendu : `sanitizeMetadataName`, qui **tronque** au lieu de
+  rejeter — un type hors liste blanche n'a aucun repli utilisable, un nom trop long en a un,
+  lui-même coupé.
+- [x] Contrôle de la taille globale à l'admission, `MAX_METADATA_BYTES` = 4 Ko. Il réutilise
+  `payloadSize.js` par un paramètre `maxBytes` optionnel : quatrième point d'application de la
+  mécanique, pas une seconde mécanique (`securite.md` en documentait trois).
 
-**Tests :** `utils/sanitizeMetadata.test.js` — nom trop long tronqué · metadata
-surdimensionné rejeté.
+**Ce que la position du garde valait.** Les deux `console.warn` de non-résolution de contexte
+(`usePeerTransport:609/646`) journalisent l'objet metadata **ENTIER**, et c'est le pair distant qui
+décide de les déclencher : il contrôle `callbackKey`, donc le fait qu'aucun contexte ne se résolve.
+Un garde de taille placé après eux aurait été vide de son objet — il est donc la **première
+instruction** des deux dispatchers. Épinglé par
+`ne journalise pas l'objet quand il est surdimensionné, même sur un contexte introuvable`.
+
+**Ce qui n'était pas au plan, et qui était le vrai trou.** `useStreamManager:175` recopiait la
+metadata distante par un spread `...meta` : **toute** clé du pair distant traversait jusqu'à
+`streamData.metadata`, et ce que le player en fait n'est pas inerte — `countViewers` y est **rendu
+en texte** (`MediaBroadcastPlayer:52`) et `roomId` devient le `wrapperId` de la directive `v-resize`
+(`:170`). Vérifié : **aucun producteur local ne pose ces deux clés sur ce chemin**, elles ne
+pouvaient venir que du réseau. Borner `fromName` sans fermer le spread aurait laissé deux champs
+libres juste à côté de lui. Sept champs explicites les remplacent, `roomId` **dérivé** de `room`,
+les deux drapeaux coercés en booléens, et `type` passé par `sanitizeMetadataType` — c'était l'un des
+deux derniers sites qui le lisaient brut, alors qu'il compose la clé `remoteStreamsMap` et le
+`videoId`.
+
+Effet visible et voulu : **plus de compteur d'audience sur les vignettes visio/vocal/écran.** C'est
+ce que le composant documente déjà (`MediaBroadcastPlayer:44-49` : le compteur n'a de sens qu'en
+diffusion), et la diffusion le calcule localement.
+
+**Un second chemin de rendu, trouvé en fermant le premier.** `remoteStreamsMap` conserve la metadata
+**brute**, et le mode diffusion ne passe pas par `createVideoElement` : il rend le registre
+directement via `StreamSimpleUI`, qui lisait donc `fromName` sans borne malgré sa propre liste
+blanche de sept champs. Borné là aussi. **Deux chemins de rendu, deux points à tenir** — c'est
+consigné dans `securite.md`.
+
+**Tests :** 19 ajoutés (6 sur `sanitizeMetadataName`, 4 sur le plafond paramétrable de
+`payloadSize`, 3 sur l'admission, 6 sur la liste blanche). Contrôle de harnais fait sur les quatre
+lignes de production (troncature, plafond paramétrable, les deux gardes d'admission, le spread) :
+seuls les tests visés rougissent. Suite complète **694 tests / 38 fichiers**, verte.
 **Commit :** `secu(webrtc2): borner les métadonnées de connexion entrantes`
 
 ---
@@ -1646,8 +1680,9 @@ message diffusé.
 
 ## Vérification globale
 
-- `npx vitest run` après **chaque** tâche. Référence relue le 22/08/2026, après E8 :
-  **655 tests / 38 fichiers, ~3,8 s**.
+- `npx vitest run` après **chaque** tâche. Référence relue le 23/08/2026, après E1 et E2 :
+  **694 tests / 38 fichiers, ~3,9 s**. ⚠️ Relire la référence au runner, ne jamais la déduire d'un
+  delta : celle qui figurait ici (655, « après E8 ») était déjà fausse de 7 tests avant E1.
 - **Backend** : `vendor/bin/phpunit` **depuis le paquet** (Orchestra Testbench, aucun serveur
   requis) — cf. [docs/architecture/tests.md](../docs/architecture/tests.md). Socle posé avec C3
   le 15/08/2026, référence après E9 : **139 tests / 335 assertions, ~7 s**. ⚠️ Le décompte qui

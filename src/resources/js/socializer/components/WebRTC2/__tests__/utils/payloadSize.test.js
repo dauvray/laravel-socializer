@@ -86,4 +86,32 @@ describe('isPayloadWithinLimit', () => {
         expect(isPayloadWithinLimit(() => {}, '[Recv]')).toBe(false)
         expect(console.warn).toHaveBeenCalled()
     })
+
+    /*
+    | Plafond paramétrable : c'est ce qui fait de la metadata de connexion entrante un
+    | QUATRIÈME point d'application de cette mécanique, et non une seconde mécanique.
+    */
+
+    it('le plafond passé en argument prime sur MAX_PAYLOAD_BYTES', () => {
+        const payload = 'x'.repeat(2048)
+
+        expect(isPayloadWithinLimit(payload, '[Admission]')).toBe(true)
+        expect(isPayloadWithinLimit(payload, '[Admission]', 1024)).toBe(false)
+    })
+
+    it('un objet sous le plafond réduit passe toujours', () => {
+        const metadata = { from: 'alice', fromName: 'Alice', type: 'visio' }
+
+        expect(isPayloadWithinLimit(metadata, '[Admission]', 1024)).toBe(true)
+    })
+
+    it('ne journalise jamais la valeur rejetée, seulement sa taille et son genre', () => {
+        // Un garde posé contre la pollution des logs ne doit pas polluer les logs.
+        const secret = 'CONTENU-SENSIBLE-'.repeat(200)
+
+        isPayloadWithinLimit(secret, '[Admission]', 64)
+
+        const logged = console.warn.mock.calls.flat().map(arg => JSON.stringify(arg)).join(' ')
+        expect(logged).not.toContain('CONTENU-SENSIBLE')
+    })
 })

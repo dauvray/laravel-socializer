@@ -52,25 +52,33 @@ export function getPayloadSizeBytes(payload) {
 }
 
 /**
- * Contrôle anti-DoS d'un payload : vérifie qu'il est mesurable ET qu'il ne dépasse
- * pas MAX_PAYLOAD_BYTES. Retourne true si le traitement peut se poursuivre, false
- * s'il doit être abandonné (payload invalide ou trop volumineux). Logge un warning
+ * Contrôle anti-DoS d'un objet mesurable : vérifie qu'il est mesurable ET qu'il ne
+ * dépasse pas le plafond. Retourne true si le traitement peut se poursuivre, false
+ * s'il doit être abandonné (valeur invalide ou trop volumineuse). Logge un warning
  * descriptif dans les deux cas de rejet.
  *
- * @param {*} data        Payload à contrôler
- * @param {string} logPrefix  Préfixe de log (ex: '[Mesh]', '[Recv]')
+ * ⚠️ Le rejet ne journalise JAMAIS la valeur, seulement sa taille et son genre :
+ * un garde posé contre la pollution des logs ne doit pas polluer les logs lui-même.
+ *
+ * Le plafond est paramétrable pour que la metadata de connexion entrante
+ * (`MAX_METADATA_BYTES`, un ordre de grandeur plus petit) soit un QUATRIÈME point
+ * d'application de cette mécanique, et non une seconde mécanique à côté.
+ *
+ * @param {*} data        Valeur à contrôler
+ * @param {string} logPrefix  Préfixe de log (ex: '[Mesh]', '[Recv]', '[Admission]')
+ * @param {number} [maxBytes=MAX_PAYLOAD_BYTES]  Plafond applicable
  * @returns {boolean}
  */
-export function isPayloadWithinLimit(data, logPrefix) {
+export function isPayloadWithinLimit(data, logPrefix, maxBytes = MAX_PAYLOAD_BYTES) {
     const payloadSize = getPayloadSizeBytes(data)
     if (!payloadSize.ok) {
         console.warn(`${logPrefix} Payload ignoré: invalide`, { reason: payloadSize.reason })
         return false
     }
-    if (payloadSize.bytes > MAX_PAYLOAD_BYTES) {
+    if (payloadSize.bytes > maxBytes) {
         console.warn(
             `${logPrefix} Payload ignoré: trop volumineux ` +
-            `(${payloadSize.bytes} octets > ${MAX_PAYLOAD_BYTES})`,
+            `(${payloadSize.bytes} octets > ${maxBytes})`,
             { payloadKind: payloadSize.kind }
         )
         return false

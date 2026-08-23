@@ -214,6 +214,34 @@ export const VALID_CONNECTION_TYPES = new Set(['data', 'stream', 'screen', 'visi
  */
 export const SLUG_PATTERN = /^[a-zA-Z0-9_\-.]{1,100}$/
 
+// ─── Métadonnées de connexion entrantes ────────────────────────────────────
+/**
+ * Taille maximale (octets) de l'objet `conn.metadata` accepté à l'admission d'une
+ * connexion entrante, mesurée par la même mécanique que les payloads
+ * (`utils/payloadSize.js`).
+ *
+ * ⚠️ Le garde va AVANT toute autre chose sur le chemin d'admission, y compris avant
+ * les `console.warn` de non-résolution de contexte : ceux-ci journalisent l'objet
+ * metadata ENTIER, et c'est le pair distant qui décide de les déclencher — il
+ * contrôle `callbackKey`, donc le fait qu'aucun contexte ne se résolve.
+ *
+ * Dimensionnement : la metadata nominale (`_buildPeerConnectionConfig`) porte 8
+ * champs dont deux slugs bornés à 100 caractères, soit moins de 500 octets. 4 Ko
+ * laissent huit fois la marge et restent 16 fois sous `MAX_PAYLOAD_BYTES`.
+ */
+export const MAX_METADATA_BYTES = 4 * 1024
+
+/**
+ * Longueur maximale d'un nom d'affichage reçu d'un pair distant
+ * (`metadata.fromName`, rendu par `MediaBroadcastPlayer`).
+ *
+ * Tronqué et non rejeté : c'est une étiquette de vignette, un nom trop long doit
+ * s'afficher coupé et non faire disparaître le pair. Il n'y a pas de XSS à ce
+ * niveau (aucun `v-html` ni `innerHTML` dans le module, Vue échappe
+ * l'interpolation) — ce qui est borné, c'est la mise en page et les logs.
+ */
+export const MAX_METADATA_NAME_LENGTH = 64
+
 // ─── Endpoints HTTP (signaling backend) ────────────────────────────────────
 export const ENDPOINTS = {
     /** Demander le peerId d'un utilisateur distant (connexion directe) */

@@ -31,6 +31,7 @@
 
 import { MAX_REMOTE_STREAMS, STREAM_STALE_MS } from '~socializer/components/WebRTC2/webrtc2.config.js'
 import { resolveRemoteSlug } from '~socializer/components/WebRTC2/Composables/utils/resolveRemoteSlug.js'
+import { sanitizeMetadataName, sanitizeMetadataType } from '~socializer/components/WebRTC2/Composables/utils/sanitizeMetadata.js'
 
 export function useStreamManager(ctx, { media, callManager }) {
 
@@ -124,7 +125,12 @@ export function useStreamManager(ctx, { media, callManager }) {
 
         const meta = metadata || conn?.metadata || {}
         const remoteSlug = _resolveRemoteSlug(meta)
-        const remoteType = meta?.type || conn?.metadata?.type || 'visio'
+        // `type` est distant et sert de composante de la clé `remoteStreamsMap` ET du
+        // `videoId` du player : il passe par la sanitisation centralisée, comme sur les
+        // deux autres chemins qui le lisent.
+        const remoteType = sanitizeMetadataType(meta?.type)
+            || sanitizeMetadataType(conn?.metadata?.type)
+            || 'visio'
 
         if (!remoteSlug) return
 
@@ -171,11 +177,27 @@ export function useStreamManager(ctx, { media, callManager }) {
                     roomId: meta?.room || ctx.session.currentCallRoomId || null,
                     // Identité affichée par le player (cf. usePeerMedia._acquireSlot) :
                     // sans elle, la vignette du pair distant reste anonyme.
+                    //
+                    // ⚠️ LISTE BLANCHE, et pas un spread `...meta`. La metadata vient du
+                    // réseau, et ce que le player en fait n'est pas inerte : `countViewers`
+                    // y est rendu en texte, `roomId` devient le `wrapperId` de la directive
+                    // `v-resize` (MediaBroadcastPlayer). Un spread laissait donc le pair
+                    // distant peupler ces deux champs, qu'aucun producteur local ne pose
+                    // sur ce chemin. Une liste noire n'aurait fermé que les champs connus
+                    // le jour de son écriture — même leçon qu'E8/E9 côté backend.
+                    //
+                    // Ajouter un champ ici demande de vérifier ce que le player en fait :
+                    // la liste est celle de `Exemples/StreamSimple/StreamSimpleUI.vue`,
+                    // l'autre producteur de `streamData`, et les deux doivent s'accorder.
                     metadata: {
-                        ...meta,
-                        fromName: _resolveRemoteName(meta, remoteSlug),
+                        fromName: sanitizeMetadataName(_resolveRemoteName(meta, remoteSlug)) || remoteSlug,
                         currentType: remoteType,
+                        // Dérivé de `room`, jamais repris d'un `roomId` distant : c'est un
+                        // identifiant de conteneur DOM local, pas une donnée à relayer.
+                        roomId: meta?.room || ctx.session.currentCallRoomId || null,
                         peerId: conn?.peer || null,
+                        isAudioMuted: meta?.isAudioMuted === true,
+                        isVideoEnabled: meta?.isVideoEnabled === true,
                         isMe: false,
                     },
                 },

@@ -11,7 +11,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { createMockContext } from './helpers/createMockContext.js'
 import { useStreamManager } from '~socializer/components/WebRTC2/Composables/useStreamManager.js'
-import { MAX_REMOTE_STREAMS, STREAM_STALE_MS } from '~socializer/components/WebRTC2/webrtc2.config.js'
+import { MAX_METADATA_NAME_LENGTH, MAX_REMOTE_STREAMS, STREAM_STALE_MS } from '~socializer/components/WebRTC2/webrtc2.config.js'
 
 describe('useStreamManager', () => {
     let ctx
@@ -125,6 +125,108 @@ describe('useStreamManager', () => {
             const [options] = media.createVideoElement.mock.calls[0]
 
             expect(options.metadata.fromName).toBe('alice')
+        })
+
+        /*
+        | La metadata transmise au player est une LISTE BLANCHE (E2). Elle l'était par
+        | un spread `...meta`, donc toute clé du distant traversait jusqu'à l'interface :
+        | `countViewers` y est rendu en texte et `roomId` devient le `wrapperId` de la
+        | directive `v-resize` (MediaBroadcastPlayer). Aucun producteur local ne posait
+        | ces deux clés sur ce chemin — elles ne pouvaient venir que du réseau.
+        |
+        | Une liste noire aurait fermé les champs connus le jour où on l'écrit ; c'est la
+        | leçon d'E8/E9 côté backend, appliquée ici au front.
+        */
+
+        it('ne transmet au player aucune clé hors liste blanche', async () => {
+            await sm.handleStreamReceived(fakeStream(), fakeConn({
+                metadata: {
+                    from: 'alice',
+                    fromName: 'Alice',
+                    type: 'visio',
+                    room: 'call-room-1',
+                    countViewers: '9999999 spectateurs',
+                    injecte: 'valeur arbitraire',
+                },
+            }))
+
+            const [options] = media.createVideoElement.mock.calls[0]
+
+            expect(options.metadata).not.toHaveProperty('countViewers')
+            expect(options.metadata).not.toHaveProperty('injecte')
+            expect(Object.keys(options.metadata).sort()).toEqual([
+                'currentType', 'fromName', 'isAudioMuted', 'isMe', 'isVideoEnabled', 'peerId', 'roomId',
+            ])
+        })
+
+        /**
+         * `roomId` est DÉRIVÉ de `room`, jamais repris du distant : c'est un identifiant
+         * de conteneur DOM côté player, pas une donnée à relayer.
+         */
+        it('dérive roomId de `room` et ignore un roomId fourni par le distant', async () => {
+            await sm.handleStreamReceived(fakeStream(), fakeConn({
+                metadata: {
+                    from: 'alice', type: 'visio', room: 'call-room-1', roomId: 'conteneur-force',
+                },
+            }))
+
+            const [options] = media.createVideoElement.mock.calls[0]
+
+            expect(options.metadata.roomId).toBe('call-room-1')
+        })
+
+        it('tronque un nom distant trop long', async () => {
+            await sm.handleStreamReceived(fakeStream(), fakeConn({
+                metadata: {
+                    from: 'alice',
+                    fromName: 'A'.repeat(MAX_METADATA_NAME_LENGTH + 200),
+                    type: 'visio',
+                    room: 'call-room-1',
+                },
+            }))
+
+            const [options] = media.createVideoElement.mock.calls[0]
+
+            expect(options.metadata.fromName).toHaveLength(MAX_METADATA_NAME_LENGTH)
+        })
+
+        it('retombe sur le slug quand le nom distant est vide ou n\'est pas une chaîne', async () => {
+            await sm.handleStreamReceived(fakeStream(), fakeConn({
+                metadata: { from: 'alice', fromName: '   ', type: 'visio', room: 'call-room-1' },
+            }))
+
+            expect(media.createVideoElement.mock.calls[0][0].metadata.fromName).toBe('alice')
+        })
+
+        it('coerce en booléens les drapeaux de flux du distant', async () => {
+            await sm.handleStreamReceived(fakeStream(), fakeConn({
+                metadata: {
+                    from: 'alice',
+                    type: 'visio',
+                    room: 'call-room-1',
+                    isAudioMuted: 'oui',
+                    isVideoEnabled: { toString: () => 'true' },
+                },
+            }))
+
+            const [options] = media.createVideoElement.mock.calls[0]
+
+            expect(options.metadata.isAudioMuted).toBe(false)
+            expect(options.metadata.isVideoEnabled).toBe(false)
+        })
+
+        /**
+         * `metadata.type` sert de composante de la clé `remoteStreamsMap` et du `videoId`
+         * du player : une valeur forgée s'y retrouverait telle quelle. C'était l'un des
+         * deux derniers `metadata.type` lus sans passer par la sanitisation centralisée.
+         */
+        it('ramène un type forgé au type par défaut', async () => {
+            await sm.handleStreamReceived(fakeStream(), fakeConn({
+                metadata: { from: 'alice', type: '../../admin', room: 'call-room-1' },
+            }))
+
+            expect(ctx.media.remoteStreamsMap.has('alice-visio')).toBe(true)
+            expect(media.createVideoElement.mock.calls[0][0].metadata.currentType).toBe('visio')
         })
 
         it('confirme l\'établissement de l\'appel via le CallManager', async () => {

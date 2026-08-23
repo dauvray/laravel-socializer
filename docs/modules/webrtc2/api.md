@@ -113,6 +113,14 @@ Deux producteurs de cet objet, à tenir cohérents : le consommateur qui rend se
 pour le pool — dont les appelants sont `useStreamManager.handleStreamReceived` (flux distant) et
 `useCallManager._enterCallSession` (flux local d'appel).
 
+⚠️ **Cet objet est une liste blanche, pas une copie de `conn.metadata`.** Deux des champs ci-dessus
+ne sont pas inertes — `countViewers` est rendu en texte, `roomId` sert de cible à `v-resize` — et un
+spread laissait le pair distant les peupler. Un producteur qui ajoute un champ vérifie donc d'abord
+ce que le player en fait, et le nom distant passe par `sanitizeMetadataName` : voir
+[securite.md](securite.md#connmetadata--trois-gardes-dont-un-de-position). Corollaire :
+`countViewers` n'apparaît que sur un flux dont le producteur **local** compte l'audience — jamais
+sur une vignette de visio ou d'appel.
+
 ⚠️ Sur une connexion **sortante**, `conn.metadata.fromName` porte **mon** nom, pas celui du
 distant (cf. [`resolveRemoteSlug`](../../../src/resources/js/socializer/components/WebRTC2/Composables/utils/resolveRemoteSlug.js)
 pour la même règle sur le slug) : `useStreamManager` retombe donc sur le slug distant. La
@@ -164,6 +172,7 @@ elles bougent, le fichier fait foi.
 | `MAX_PAYLOAD_BYTES` | anti-DoS : émission mesh, retransmission hub **et** réception |
 | `HUB_MAX_MESSAGES_PER_WINDOW` · `HUB_RATE_WINDOW_MS` | rate-limit `forwardStarMessage` |
 | `HUB_MAX_BYTES_PER_WINDOW` | anti-amplification : octets **retransmis** par le hub (`payload × destinataires`), **par émetteur** |
+| `MAX_METADATA_BYTES` · `MAX_METADATA_NAME_LENGTH` | taille de `conn.metadata` à l'admission, et longueur d'un `fromName` distant (tronqué) |
 | `ASK_PEER_MAX_REQUESTS_PER_WINDOW` · `ASK_PEER_RATE_WINDOW_MS` | rate-limit `/ask-to-peer-id`, **par cible** (`slug\|room\|connectionType`) |
 | `SIGNALING_STALE_MS` | âge d'une entrée `waiting` — anti-spam **et** déclencheur de re-demande |
 | `STREAM_WAIT_TIMEOUT_MS` · `ME_READY_TIMEOUT_MS` | attentes réactives (flux local, identité locale) |

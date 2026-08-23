@@ -74,6 +74,7 @@
     import GroupLocalStreamBtn from '~socializer/components/WebRTC2/Widgets/UI/Buttons/GroupLocalStreamBtn.vue'
     import Spinner from '~estarter/components/widgets/Spinners/Spinner1.vue'
     import { useAwaitedStreams } from '~socializer/components/WebRTC2/Widgets/Mediaplayer/Composables/useAwaitedStreams.js'
+    import { sanitizeMetadataName } from '~socializer/components/WebRTC2/Composables/utils/sanitizeMetadata.js'
 
     const props = defineProps({
         api: Object,
@@ -193,7 +194,12 @@
         return streams.map(rs => ({
             stream: rs.stream, // On passe le flux brut tel quel
             metadata: {
-                fromName: rs.metadata?.fromName || 'Unknown',
+                // `remoteStreamsMap` conserve la metadata BRUTE du distant : le mode
+                // diffusion ne passe pas par `createVideoElement`, donc pas par la liste
+                // blanche de `useStreamManager`. Le nom est borné ici, au seul endroit
+                // qui le rend. (La règle d'ATTRIBUTION du nom — `from === remoteSlug` —
+                // vit dans `useStreamManager._resolveRemoteName`, pas ici.)
+                fromName: sanitizeMetadataName(rs.metadata?.fromName) || 'Unknown',
                 roomId: rs.metadata?.room,
                 countViewers: apiInstance.usersInRoom?.value?.length || apiInstance.usersInRoom?.length || 0,
                 currentType: rs.remoteType,
@@ -208,7 +214,8 @@
         props.api.remoteScreens.value.map(rs => ({
             stream: rs.stream,
             metadata: {
-                fromName: rs.metadata?.fromName || rs.remoteSlug || 'Unknown',
+                // Même raison que pour les flux : la metadata du registre est brute.
+                fromName: sanitizeMetadataName(rs.metadata?.fromName) || rs.remoteSlug || 'Unknown',
                 roomId: rs.metadata?.room,
                 countViewers: props.api.usersInRoom.value.length,
                 currentType: 'screen',

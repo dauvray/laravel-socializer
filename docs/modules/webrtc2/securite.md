@@ -235,17 +235,43 @@ ce contexte** — sinon l'`onUnmounted` d'un ancien contexte effacerait l'entré
 nouveau, qui ne recevrait plus aucune connexion entrante. Le risque résiduel (usurpation de
 `callbackKey` par un pair distant) est couvert en aval par `_isAuthorizedIncomingPeer`.
 
-### `conn.metadata` : sanitisation restreinte à `type`
+### `conn.metadata` : trois gardes, dont un de position
 
-`Composables/utils/sanitizeMetadata.js` (`sanitizeMetadataType`) rejette toute valeur hors
-`VALID_CONNECTION_TYPES` (retour `null`). Appliqué dans `createPeerContext.setUpConnectionListeners`
-(clé de store et étiquette de log) et dans le dispatcher `peer.on('call')`.
+`conn.metadata` est un objet **du réseau**. Trois choses le bornent, et elles ne se remplacent pas.
 
-Périmètre volontairement restreint à `metadata.type` : `from` est couvert par
-`_isAuthorizedIncomingPeer`, `room`/`slug` sont no-op s'ils manquent. **Non couverts** :
-`metadata.fromName` (affiché dans `MediaBroadcastPlayer.vue`) et la taille globale de l'objet
-metadata — pas de XSS (aucun `v-html` ni `innerHTML` dans le module, Vue échappe l'interpolation),
-mais dégradation de mise en page et pollution des logs possibles. Traitement prévu en lot E.
+**1. La taille, à l'admission — et sa position fait le garde.**
+`isPayloadWithinLimit(metadata, …, MAX_METADATA_BYTES)` est la **première** instruction des deux
+dispatchers entrants (`bind('connection')`, `bind('call')`), avant la résolution de contexte. La
+raison n'est pas l'économie : les `console.warn` de non-résolution journalisent l'objet **entier**,
+et c'est le pair distant qui décide de les déclencher — il contrôle `callbackKey`, donc le fait
+qu'aucun contexte ne se résolve. Un garde placé après eux serait vide de son objet. C'est un
+**quatrième point d'application** de `payloadSize.js`, pas une seconde mécanique.
+
+**2. Les champs, par liste blanche.** `sanitizeMetadataType` (liste blanche
+`VALID_CONNECTION_TYPES`, rejet) et `sanitizeMetadataName` (longueur bornée, **troncature**) — un
+type hors liste n'a aucun repli utilisable, un nom trop long en a un : lui-même, coupé.
+
+**3. Ce qui atteint l'interface, par liste blanche aussi.** `useStreamManager` recopiait la metadata
+distante par un spread `...meta` : **toute** clé du pair distant traversait donc jusqu'à
+`streamData.metadata`, et ce que le player en fait n'est pas inerte — `countViewers` est **rendu en
+texte** et `roomId` devient le `wrapperId` de la directive `v-resize`
+(`MediaBroadcastPlayer.vue`). Aucun producteur local ne posait ces deux clés sur ce chemin : elles
+ne pouvaient venir que du réseau. Sept champs explicites les remplacent, `roomId` étant **dérivé**
+de `room` et les deux drapeaux coercés en booléens.
+
+> **Une liste noire ne ferme pas des champs, elle ferme ceux qu'on connaissait le jour où on l'a
+> écrite.** Même leçon qu'E8/E9 côté backend, ici sur le front. Les deux producteurs de
+> `streamData` — `useStreamManager` et `Exemples/StreamSimple/StreamSimpleUI.vue` — doivent
+> s'accorder sur cette liste ; ajouter un champ demande de vérifier ce que le player en fait.
+
+⚠️ **Le registre `remoteStreamsMap` conserve la metadata brute**, lui. Le mode **diffusion** ne
+passe pas par `createVideoElement`, donc pas par la liste blanche : il rend le registre
+directement, et c'est `StreamSimpleUI` qui borne le nom à l'affichage. Deux chemins de rendu, deux
+points à tenir.
+
+**Toujours pas de XSS** : aucun `v-html` ni `innerHTML` dans le module, Vue échappe l'interpolation.
+Ce qui est borné ici, c'est la **mise en page** et les **logs** — et le rejet lui-même ne journalise
+jamais la valeur rejetée, seulement sa taille et son genre.
 
 ### Fuites mémoire fermées
 

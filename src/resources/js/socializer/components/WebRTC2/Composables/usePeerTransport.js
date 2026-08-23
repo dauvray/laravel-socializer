@@ -25,6 +25,7 @@ import {
     HUB_RATE_WINDOW_MS,
     HUB_MAX_MESSAGES_PER_WINDOW,
     HUB_MAX_BYTES_PER_WINDOW,
+    MAX_METADATA_BYTES,
     MAX_PAYLOAD_BYTES,
     PEER_DESTROY_DELAY_MS, 
     RECONNECT_BASE_DELAY_MS, 
@@ -613,6 +614,17 @@ export function usePeerTransport(ctx) {
             // ---------------------------------------------------------------------
             bind('connection', async (conn) => {
                 const metadata = conn?.metadata || conn?.options?.metadata || {}
+
+                // PREMIER garde du chemin, et sa position fait tout : le `console.warn`
+                // ci-dessous journalise l'objet metadata ENTIER, et c'est le pair distant
+                // qui décide de le déclencher (il contrôle `callbackKey`, donc le fait
+                // qu'aucun contexte ne se résolve). Placé après, ce contrôle serait vide
+                // de son objet.
+                if (!isPayloadWithinLimit(metadata, '[Admission] metadata', MAX_METADATA_BYTES)) {
+                    try { conn.close() } catch (e) { /* ignore */ }
+                    return
+                }
+
                 const targetCtx = resolveContextByMetadata(metadata)
 
                 if (!targetCtx) {
@@ -641,6 +653,13 @@ export function usePeerTransport(ctx) {
             // ---------------------------------------------------------------------
             bind('call', async (call) => {
                 const metadata = call?.metadata || {}
+
+                // Même garde, même position que sur le chemin data — cf. son commentaire.
+                if (!isPayloadWithinLimit(metadata, '[Admission] metadata', MAX_METADATA_BYTES)) {
+                    try { call.close() } catch (e) { /* ignore */ }
+                    return
+                }
+
                 // `metadata.type` est fourni par le pair distant : on le passe par la
                 // sanitization centralisée (VALID_CONNECTION_TYPES) avant tout usage,
                 // puis on exclut 'data' qui n'a pas de sens sur une MediaConnection.
