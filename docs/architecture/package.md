@@ -37,6 +37,20 @@ C'est la particularité structurante du package.
 L'identifiant pivot est **`vertex_id` / `vertexid`** : la clé d'un nœud NebulaGraph, présente sur les
 modèles Mongo comme dans les URLs.
 
+**Qui est maître de quoi — décision du 23/08/2026.** « MySQL est la source de vérité, le graphe un
+réplica » n'est vrai que de ce que la projection couvre :
+
+| Donnée | Maître | Le graphe est alors… |
+|---|---|---|
+| utilisateurs, groupes, articles | **MySQL** | un réplica, reconstructible par `projectAll()` |
+| murs, feeds, sommets de groupe, serveur d'un groupe | **MySQL**, par dérivation | un réplica, reconstructible |
+| serveurs ad hoc, **salons**, chats, applications, tableaux blancs | **NebulaGraph** | la source de vérité — rien ne les recréera |
+| contenus (`Post`, `Message`, `Page`, `Application`) | **MongoDB**, indexé sur le vid | ni l'un ni l'autre : il porte le lien |
+
+Il n'est **pas prévu** de donner un maître MySQL aux salons et aux messages. Les conséquences de cette
+ligne — dont la sauvegarde du space, qui devient une exigence d'exploitation — sont écrites dans
+[projection-graphe.md](projection-graphe.md#ce-que-la-projection-ne-recréera-jamais).
+
 Conséquence : **les « relations » ne sont presque jamais des relations Eloquent.** Elles vivent dans
 deux traits de `src/app/Helpers/ModelTraits/` :
 

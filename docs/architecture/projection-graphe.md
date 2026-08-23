@@ -1,10 +1,12 @@
 # Projection MySQL → NebulaGraph
 
-**MySQL est la source de vérité, le graphe en est un réplica.** Ce document dit qui écrit ce
-réplica, quel invariant il respecte, et pourquoi rejouer une projection est sans danger.
+**MySQL est la source de vérité, le graphe en est un réplica — pour ce que la projection couvre.**
+Ce document dit qui écrit ce réplica, quel invariant il respecte, pourquoi rejouer une projection est
+sans danger, et **ce que la projection ne recréera jamais** : pour les salons, les chats et leurs
+contenus, le maître est le graphe lui-même. La ligne de partage est dans
+[package.md](package.md#trois-bases-de-données).
 
-À lire avec [package.md](package.md#tri-persistance) pour la tri-persistance, et
-[tests.md](tests.md) pour le harnais qui épingle tout ça.
+À lire aussi avec [tests.md](tests.md) pour le harnais qui épingle tout ça.
 
 ---
 
@@ -188,6 +190,34 @@ d'idempotence interroge donc le graphe (voir le tableau des adresses stables plu
    les décomptes ne doivent plus bouger.
 
 ⚠️ **`migrate:rollback` n'est pas une réparation.** Son `down()` fait un `dropSpace` : il détruit
-aussi tout ce que la projection ne sait PAS recréer — serveurs, salons, chats, messages, pages,
-commentaires —, et les documents MongoDB correspondants restent en pointant sur des sommets
-disparus.
+aussi tout ce que la projection ne sait PAS recréer — voir la section suivante, qui dit pourquoi et
+ce que ça impose.
+
+## Ce que la projection ne recréera jamais
+
+**Décision du 23/08/2026 : il n'est pas prévu de donner un maître MySQL aux salons, aux chats et aux
+messages.** Pour eux, le graphe *est* la source de vérité, et Mongo porte leurs contenus indexés sur
+le vid. Ce n'est pas un manque à combler plus tard, c'est un choix, et il a trois conséquences qu'il
+faut assumer explicitement.
+
+**1. Ces sommets ne sont pas projetables, et la question de l'id dérivé ne les concerne pas.** Un
+salon naît d'un `createRoomServer` appelé par un contrôleur ; aucune ligne MySQL ne dit qu'il existe,
+donc il n'y a rien à parcourir ni aucune adresse à recalculer. Les `insertVertex` sans `id` de
+`createRoomServer`, `_createContentVertex`, `createDataVertice`, `createClassroomVertice`,
+`createBoardVertice` et `createFeedWallVertice` **ne sont donc pas une dette de projection** : ils ne
+coûteraient quelque chose que si un gabarit, un import ou un installeur créait des salons en lot — ce
+qu'aucun code ne fait aujourd'hui.
+
+**2. Une perte est définitive.** Un `dropSpace` — le `down()` de `create_nebula`, donc
+`migrate:rollback` et `migrate:fresh` — efface des données dont il n'existe aucune copie. Idem pour
+une écriture de sommet refusée : depuis E7 elle est au moins **bruyante** (journalisée, et levée sur
+les six méthodes DML), et c'est la seule garde qui reste. Lire le journal du réplica n'est pas une
+précaution, c'est le seul filet.
+
+**3. La sauvegarde du space NebulaGraph est une exigence d'exploitation**, au même rang que le dump
+MySQL — et **rien dans ce dépôt ne la fait** : c'est une tâche d'infra, côté projet hôte.
+
+⚠️ **Et les pointeurs vont dans l'autre sens.** `groups.extras['socializer_server_vid']`,
+`questionnaires.extras.collection` (`server_<vid>`), `pages.vertexid`, `posts.feed_id` : MySQL et
+Mongo **désignent** des vids du graphe. Un sommet perdu ne laisse donc pas un trou, il laisse des
+pointeurs qui pendent — constaté sur le dev, 3 posts Mongo attachés à un mur qui n'existait plus.

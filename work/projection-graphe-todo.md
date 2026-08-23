@@ -209,12 +209,26 @@ l'assemblage — la boucle, le garde de config, l'arête d'auteur.
 Le §1 a montré le chemin : `tests/Stubs/Page.php` double un modèle Mongo par un Eloquent sqlite, et
 c'est ce qui a débloqué la couverture des serveurs de groupes. Le même motif s'applique ici.
 
-## 10. Les contenus de salon ne sont pas idempotents 🟠
+## 10. Les salons ne sont pas projetables — assumé le 23/08 🟢
 
-Ouvert le 23/08 en fermant le §1, qui n'a rendu idempotents que le groupe, son serveur et sa page.
-Un étage plus bas, **six `insertVertex` ne posent aucun `id`** — donc autant de sommets nés sous
-`uniqidReal()`, indupliquables sans doublon et invisibles pour qui les cherche par une adresse
-recalculée :
+Ouvert le 23/08 en fermant le §1, **et refermé le même jour par un arbitrage**. Sa première rédaction
+posait la mauvaise question : « quel est l'id stable de ces sommets ? » présuppose qu'une ligne MySQL
+dise qu'ils existent. Vérifié : **il n'y a aucune table `rooms` ni `servers`**, ni ici ni dans le
+socle. Un salon n'existe que comme sommet, créé par un contrôleur, avec son contenu dans Mongo indexé
+sur le vid.
+
+**Décision : pas de maître MySQL pour les salons, les chats et les messages.** Le graphe est leur
+source de vérité. Les trois conséquences — non-projetables, perte définitive, sauvegarde du space
+comme exigence d'exploitation — sont écrites dans
+[`docs/architecture/projection-graphe.md`](../docs/architecture/projection-graphe.md#ce-que-la-projection-ne-recréera-jamais),
+et la ligne de partage « qui est maître de quoi » dans
+[`docs/architecture/package.md`](../docs/architecture/package.md#trois-bases-de-données).
+
+Ce qui reste vrai et sans enjeu **tant que la décision tient** : six `insertVertex` ne posent aucun
+`id`, donc autant de sommets nés sous `uniqidReal()`. Ils ne coûtent rien puisque personne ne rejoue
+leur création ; ils redeviendraient une dette le jour où un gabarit, un import ou un installeur
+créerait des salons en lot — c'est le déroulé « installer puis rattraper » qui avait donné 2 murs par
+utilisateur.
 
 | Site | Sommet |
 |---|---|
@@ -225,14 +239,14 @@ recalculée :
 | `Server::createBoardVertice` | `board` |
 | `Server::createFeedWallVertice` | le mur/feed d'un salon |
 
-Sans conséquence **aujourd'hui**, parce qu'aucune projection ne les rejoue : ils ne naissent que du
-chemin applicatif, une fois. Le jour où l'on voudra projeter les salons — la suite logique du §1 —
-c'est cette liste qu'il faudra traiter, et la question à répondre pour chacun est celle de la doc :
-*quel est son id stable, recalculable depuis MySQL ?* Pour un salon, MySQL n'en a peut-être aucun :
-c'est à trancher avant d'écrire le code.
+Ce qui reste ouvert, et qui n'appartient pas à ce dépôt :
 
-- [ ] Trancher, sommet par sommet, s'il existe une adresse dérivable — sinon assumer que ces contenus
-      ne sont pas projetables et l'écrire
-- [ ] Au passage, retirer le `setGroupHasParentRelation($event->group)` de
-      `GroupCreatedListener:39` : `Users::createGroup()` le fait déjà, l'arête est posée deux fois
-      (inoffensif, les arêtes sont clefées — mais c'est une copie de plus)
+- [ ] **La sauvegarde du space NebulaGraph** — exigence d'exploitation qui découle directement de la
+      décision, au même rang que le dump MySQL. Rien ici ne la fait, et rien ici ne peut la faire :
+      c'est une tâche d'infra du projet hôte, à porter là où vivent les sauvegardes MySQL et Mongo.
+
+Et une broutille de ce dépôt, sans rapport avec la décision :
+
+- [ ] Retirer le `setGroupHasParentRelation($event->group)` de `GroupCreatedListener:39` :
+      `Users::createGroup()` le fait déjà, l'arête est posée deux fois. Inoffensif — les arêtes sont
+      clefées — mais c'est une copie de plus.
