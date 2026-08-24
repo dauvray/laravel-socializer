@@ -110,10 +110,17 @@ trait Socializable
     |    ⚠️ Vrai du chemin LECTURE seulement. Les 6 méthodes d'écriture DML, elles, LÈVENT une
     |    `NebulaGraphException` depuis E7 (22/08/2026) — asymétrie délibérée : faire lever les
     |    lectures rendrait ces branches inatteignables, donc un 500 à la place d'un 403.
-    | 2. `canJoinRoom` / `canJoinServer` ne sont PAS des prédicats d'appartenance : sur
-    |    `privacy == 0` la clause est vraie pour n'importe quel couple. Constat assumé, hors
-    |    périmètre du correctif du 21/08/2026 — docs/modules/webrtc2/securite.md, piège 1.
-    |    `canJoinchatRoom`, elle, l'est depuis cette date.
+    | 2. `canJoinRoom` n'est PAS un prédicat d'appartenance : sur `privacy == 0` sa clause est
+    |    vraie pour n'importe quel couple, et une room publique VIDE refuse jusqu'à son
+    |    propriétaire. Constat assumé — docs/modules/webrtc2/securite.md, piège 1.
+    |    ⚠️ Ne PAS généraliser depuis ses sœurs : `canJoinchatRoom` est un prédicat
+    |    d'appartenance depuis le 21/08/2026, `canJoinServer` depuis le 24/08/2026.
+    | 3. `canJoinServer` lit l'appartenance dans MariaDB, les deux autres dans le graphe — et
+    |    ce n'est pas une incohérence, c'est la règle : chaque donnée se lit chez son maître.
+    |    L'appartenance à un GROUPE a MySQL pour maître, le graphe n'en est qu'un réplica ;
+    |    l'inscription à un CHAT ou à un SALON n'existe que dans le graphe, qui en est le
+    |    maître (il n'y a ni table `rooms` ni table `servers`). L'arête `registered_in` porte
+    |    les deux sémantiques, la source de vérité n'est pas la même — E4.2, securite.md.
     |
     | Épinglé par tests/Feature/Channels/ChannelGuardTest.php.
     |
@@ -144,15 +151,77 @@ trait Socializable
         return $this->_checkCanJoin($result, 'canJoinchatRoom', $vertex_id);
     }
 
+    /**
+     * L'utilisateur courant peut-il rejoindre ce serveur ?
+     *
+     * ⚠️ **Chaque donnée est lue chez son maître, et c'est tout le correctif d'E4.2.** Le graphe
+     * ne répond que de ce dont il est maître — la confidentialité du sommet serveur, et quel
+     * groupe le possède. L'APPARTENANCE, elle, se lit dans MariaDB : le graphe n'en est qu'un
+     * réplica, et chacun de ses trous de synchronisation y laisse une arête `registered_in` EN
+     * TROP, jamais en moins. La dérive accordait, donc personne ne la signalait. Même décision que
+     * `sharesGroupWith` le 15/08/2026, étendue ici le 24/08/2026 au dernier garde concerné.
+     *
+     * ⚠️ **DEUX colonnes, jamais une.** `NebulaGraphConnection::formatValues` effondre une ligne
+     * d'une SEULE colonne sur sa valeur : alléger ce `RETURN` rendrait une liste plate de chaînes,
+     * sur laquelle `$result[0]['privacy']` vaut `null` en silence. Le piège a déjà coûté un
+     * serveur en double (`Services\Server::findGroupServerVertexId`).
+     *
+     * ⚠️ Un serveur SANS groupe — ceux de `createUserServer` — ne correspond à aucune ligne et
+     * reste refusé, comme avant ce correctif : le motif `owned_by` manquait déjà.
+     */
     public function canJoinServer($vertex_id): bool
     {
        $result = app('nebulaGraph')->execute("
-            MATCH (u:user)-[:registered_in]->(g:group)<-[:owned_by]-(s:server)
-            WHERE id(s) == '$vertex_id' AND (s.server.privacy == 0 OR (s.server.privacy == 1 AND id(u) == '$this->vertexid'))
-            RETURN id(u)
+            MATCH (s:server)-[:owned_by]->(g:group)
+            WHERE id(s) == '$vertex_id'
+            RETURN s.server.privacy AS privacy, id(g) AS group_vertexid
         ");
 
-        return $this->_checkCanJoin($result, 'canJoinServer', $vertex_id);
+        if (! is_array($result)) {
+            return $this->_refusSansReponse('canJoinServer', $vertex_id);
+        }
+
+        // Zéro ligne : le graphe a répondu « ce serveur n'existe pas, ou n'appartient à aucun
+        // groupe ». C'est un refus légitime, pas une panne — donc pas de warning, même motif
+        // que `_checkCanJoin`.
+        if (! isset($result[0]['privacy'])) {
+            return false;
+        }
+
+        // La confidentialité est une propriété du sommet : elle ne dépend d'aucune appartenance.
+        // L'exiger était l'effet miroir du piège 1 — un serveur public VIDE refusait tout le
+        // monde, son propriétaire compris.
+        if ((int) $result[0]['privacy'] === 0) {
+            return true;
+        }
+
+        $group_id = getRealIdFromVertexId($result[0]['group_vertexid'] ?? '', 'group');
+
+        // Un vid né sous `uniqidReal()`, avant l'id dérivé, n'est pas reconstituable : il n'y a
+        // aucune ligne MariaDB à interroger. Anomalie de réplica, donc journalisée — et refus,
+        // parce qu'un identifiant illisible ne peut rien accorder.
+        if (! $group_id) {
+            return $this->_refusSansReponse('canJoinServer', $vertex_id);
+        }
+
+        return $this->isMemberOfGroup($group_id);
+    }
+
+    /**
+     * Appartenance à UN groupe, lue dans MariaDB — la version à un seul utilisateur de
+     * `sharesGroupWith`, dont elle reprend l'idiome et la clé de config.
+     *
+     * ⚠️ Requête directe et non `$this->groups()` : cette relation vit sur `EstarterUser`, d'un
+     * paquet que le harnais de tests remplace par un stub qui lève.
+     */
+    private function isMemberOfGroup($group_id): bool
+    {
+        $table = config('socializer.signaling.relation.group_user_table', 'group_user');
+
+        return DB::table($table)
+            ->where('user_id', $this->getKey())
+            ->where('group_id', $group_id)
+            ->exists();
     }
 
     public function canJoinRoom($vertex_id): bool
@@ -193,16 +262,29 @@ trait Socializable
     private function _checkCanJoin($result, string $guard, $vertex_id): bool
     {
         if (! is_array($result)) {
-            Log::warning($guard.' : le graphe n\'a pas répondu, refus par défaut', [
-                'guard' => $guard,
-                'vertex_id' => $vertex_id,
-                'user_vertexid' => $this->vertexid,
-            ]);
-
-            return false;
+            return $this->_refusSansReponse($guard, $vertex_id);
         }
 
         return array_filter($result, static fn ($vertexid) => $vertexid !== null) !== [];
+    }
+
+    /**
+     * Le refus par défaut, et son journal — partagé par les trois `canJoin*`.
+     *
+     * Extrait de `_checkCanJoin` le 24/08/2026 : `canJoinServer` a cessé de passer par ce verdict
+     * commun (sa requête ne rend plus des vids mais deux colonnes), et le message comme le
+     * contexte doivent rester identiques d'un garde à l'autre — c'est ce que le journal
+     * d'exploitation attend, et ce que `ChannelGuardTest` épingle sur les trois gardes à la fois.
+     */
+    private function _refusSansReponse(string $guard, $vertex_id): bool
+    {
+        Log::warning($guard.' : le graphe n\'a pas répondu, refus par défaut', [
+            'guard' => $guard,
+            'vertex_id' => $vertex_id,
+            'user_vertexid' => $this->vertexid,
+        ]);
+
+        return false;
     }
 
     public function isCreator($vertex_id)
@@ -335,10 +417,13 @@ trait Socializable
     /**
      * Appartenance à un même groupe, lue dans MariaDB.
      *
-     * ⚠️ Pourquoi pas le graphe, alors que `canJoinServer` y lit la même notion : MariaDB est le
-     * maître, le graphe un réplica — synchronisé à l'attachement et au détachement, mais pas par
-     * la cascade SQL de `group_user`, qui laisse l'arête. Détail et conséquences :
-     * docs/modules/webrtc2/securite.md, piège 2. Décision du 15/08/2026, tenue depuis.
+     * ⚠️ Pourquoi pas le graphe : MariaDB est le maître, le graphe un réplica — synchronisé à
+     * l'attachement et au détachement, mais pas par les chemins qui n'émettent aucun événement
+     * Eloquent, ni quand l'écriture de réplica échoue (`ToleratesGraphFailure` la tolère par
+     * décision). Chacun de ces trous laisse une arête EN TROP, donc la dérive ACCORDE. Détail et
+     * conséquences : docs/modules/webrtc2/securite.md, piège 2. Décision du 15/08/2026, tenue
+     * depuis — et **`canJoinServer` l'a rejointe le 24/08/2026 (E4.2)** : plus aucun garde ne lit
+     * l'appartenance à un groupe dans le graphe.
      *
      * ⚠️ Deux `GroupUserCreatedListener` homonymes sont abonnés à l'événement ; celui d'estarter
      * est mort, celui de ce paquet écrit l'arête. Lire le premier fait conclure à tort que rien ne

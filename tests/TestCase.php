@@ -307,7 +307,11 @@ abstract class TestCase extends BaseTestCase
      * ⚠️ `App\Models\User` et non `makeUser()` : les closures de `channels.php` sont typées sur
      * la classe de l'app hôte, en dur. Un `Tests\Stubs\User` ne satisfait pas la signature.
      *
-     * Pas de `joinGroup` ici : aucun garde de canal ne lit l'appartenance MariaDB.
+     * ⚠️ Pas de `joinGroup` ici, mais ce n'est plus « parce qu'aucun garde de canal ne lit
+     * l'appartenance MariaDB » : depuis E4.2 (24/08/2026) `canJoinServer` la lit, et c'est même
+     * tout le correctif. Un test qui attend l'admission sur `server.{serverId}` doit donc
+     * inscrire son sujet — la valeur par défaut reste « aucun groupe » pour que l'admission soit
+     * toujours une décision explicite du test, jamais un effet de bord du harnais.
      */
     protected function makeChannelUser(string $name): HostUser
     {

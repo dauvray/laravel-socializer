@@ -315,26 +315,53 @@ attaquant s'octroie la relation en une requête.
 
 ### Deux pièges du graphe que ce garde contourne
 
-**1. `canJoinRoom` / `canJoinServer` ne sont pas des prédicats d'appartenance.** Dans les deux, `u`
-est *n'importe quel* utilisateur enregistré, pas l'appelant, dont le `vertexid` ne pèse que sur la
-branche `privacy == 1`. Sur une room publique la requête renvoie une ligne dès qu'un membre
-quelconque existe : **`true` pour tout le monde**. (Effet miroir : une room publique **vide** renvoie
-`false`, même à son propriétaire.) Ce sont des gardes de **canal Reverb** ; les employer comme gardes
-de relation rendrait le contrôle contournable en nommant une room publique. Leur troisième sœur
-`canJoinchatRoom`, elle, **est** un prédicat d'appartenance depuis le 21/08/2026 — ne pas généraliser
-des deux premières à la troisième (`ChannelGuardTest`).
+**1. `canJoinRoom` n'est pas un prédicat d'appartenance.** `u` y est *n'importe quel* utilisateur
+enregistré, pas l'appelant, dont le `vertexid` ne pèse que sur la branche `privacy == 1`. Sur une
+room publique la requête renvoie une ligne dès qu'un membre quelconque existe : **`true` pour tout
+le monde**. (Effet miroir : une room publique **vide** renvoie `false`, même à son propriétaire.)
+C'est un garde de **canal Reverb** ; l'employer comme garde de relation rendrait le contrôle
+contournable en nommant une room publique.
 
-**2. L'appartenance vit dans MariaDB, pas dans le graphe.** L'arête
-`user -[:registered_in]-> group` est bien **synchronisée** à l'attachement et au détachement : le
+⚠️ **Ne pas généraliser de lui à ses deux sœurs, qui sont bien des prédicats d'appartenance** :
+`canJoinchatRoom` depuis le 21/08/2026, `canJoinServer` depuis le 24/08/2026 (`ChannelGuardTest`).
+
+**2. L'appartenance à un groupe vit dans MariaDB, et plus aucun garde ne la lit ailleurs.**
+L'arête `user -[:registered_in]-> group` est **synchronisée** à l'attachement et au détachement : le
 pivot `GroupUser` du socle émet `GroupUserCreated` / `GroupUserDeleted` — `->using()` est déclaré
 des deux côtés de la relation, sans quoi aucun événement ne partirait — et les listeners **de ce
-paquet** posent puis retirent l'arête. Elle dérive quand même, par les chemins qui n'émettent aucun
-événement Eloquent : `group_user` porte `onDelete('cascade')` sur ses deux clés étrangères, donc
-supprimer un groupe ou un compte retire les lignes en SQL et **laisse l'arête**. À quoi s'ajoutent
-les rattachements antérieurs aux listeners, rattrapés seulement par `socializer:nebula-populate`.
-De même, `user -[:registered_in]-> room` n'est posée que pour le **créateur** de la room — aucune
-route « rejoindre une room » ne l'ajoute. Cette dérive-là **reste ouverte** : c'est la seule des
-trois faiblesses des gardes de canal que le correctif du 21/08/2026 n'a pas fermée.
+paquet** posent puis retirent l'arête. Sur Laravel 13, `attach`/`detach`/`sync` passent tous par le
+modèle de pivot, y compris `detach()` sans argument : ce ne sont pas des trous.
+
+Elle dérive quand même, et **toujours dans le sens qui accorde** — un trou y laisse une arête *en
+trop*, jamais en moins, donc personne ne s'en plaint :
+
+| Chemin | Ce qui se passe |
+|---|---|
+| **écriture de réplica refusée** | `ToleratesGraphFailure` la rattrape **par décision** — MySQL ne doit pas échouer parce qu'une copie n'a pas pu être écrite. Journalisée depuis E7, jamais réparée |
+| suppression de groupe hors Eloquent | ne passe pas par `deleting`, donc aucun listener |
+| `group_user` vidé par la cascade SQL | les lignes partent sans événement de pivot |
+| rattachements antérieurs aux listeners | arête jamais posée — le seul trou qui *refuse* ; `socializer:nebula-populate` le rattrape |
+
+⚠️ **La suppression d'un groupe par Eloquent, elle, ne dérive pas** : `Users::deleteGroup` fait un
+`deleteVertex(…, WITH EDGE)` qui emporte les `registered_in` entrantes. L'annotation qui la donnait
+en exemple était fausse ; corrigée le 24/08/2026.
+
+⚠️ **`socializer:nebula-populate` ne répare pas cette dérive-ci.** `projectUsers()` repose les
+arêtes manquantes mais est **purement additive** : aucune étape de `GraphProjection` ne supprime une
+arête `registered_in` orpheline.
+
+**D'où le correctif du 24/08/2026 (E4.2) : `canJoinServer` a cessé de lire l'appartenance dans le
+graphe.** Il n'y demande plus que ce dont le graphe est maître — la confidentialité du sommet
+serveur et le groupe qui le possède — puis interroge `group_user`. Les quatre chemins ci-dessus
+basculent ainsi en **refus**, puisqu'une ligne pivot absente est précisément ce qu'ils produisent
+tous. Les deux autres lecteurs de la même clause, `Services\Server::getServer` et le pré-contrôle
+`checkServerAccess` du front, passent par le même garde (`ServerAccessTest`) — trois copies d'une
+règle d'accès divergent toujours.
+
+⚠️ **Ce qui reste ouvert, et qui n'est plus un sujet de sécurité.** `Socializable::servers()`,
+`Server::getServers` et le compteur `nb_users` continuent de lire `registered_in` : la qualité du
+réplica reste un sujet de **données**. De même, `user -[:registered_in]-> room` n'est posée que pour
+le **créateur** de la room — aucune route « rejoindre une room » ne l'ajoute.
 
 > ⚠️ **Deux listeners homonymes sont abonnés au même événement**, un par paquet :
 > `Dauvray\Estarter\app\Listeners\GroupUserCreatedListener` est entièrement commenté,
@@ -344,7 +371,18 @@ trois faiblesses des gardes de canal que le correctif du 21/08/2026 n'a pas ferm
 > **La leçon durable : le graphe est un réplica, pas une source de vérité.** Un garde qui l'interroge
 > pour une donnée dont MySQL est le maître hérite de tous les trous de sa synchronisation — et ici le
 > trou **accorde** au lieu de refuser, donc personne ne s'en plaint et il dérive d'autant plus que le
-> temps passe. Le follow y reste lu : c'est la seule donnée dont le graphe est bien le maître.
+> temps passe.
+>
+> **Corollaire de méthode, tranché le 24/08/2026 en arbitrant E4.2.** Face à un réplica qui dérive,
+> deux voies : le re-synchroniser, ou cesser de le lire. La seconde a été retenue, et l'argument
+> vaut au-delà de ce cas : **re-synchroniser aurait ajouté des événements à une chaîne dont l'échec
+> est toléré par décision** (`ToleratesGraphFailure`), donc n'aurait pas pu fermer le trou qui reste
+> — elle aurait raccourci la fenêtre entre dérive et réparation, pas supprimé la fenêtre. Router la
+> question vers le maître ne laisse aucune fenêtre.
+>
+> Ce n'est pas « ne jamais lire le graphe » : le follow y reste lu, et l'inscription à un chat ou à
+> un salon aussi. Le graphe en est le maître — c'est **la même règle**, pas une exception à elle.
+> `registered_in` porte les deux sémantiques : le tag aux deux bouts de l'arête dit laquelle.
 
 > **Corollaire refermé le 21/08/2026 : un graphe qui ne répond pas vaut un refus.** En LECTURE,
 > `execute()` ne lève pas — sur erreur nGQL il rend un `JsonResponse`, un objet donc *truthy*. Les
@@ -374,12 +412,14 @@ trois faiblesses des gardes de canal que le correctif du 21/08/2026 n'a pas ferm
 > | écritures DML | ✅ | ✅ | une valeur de retour, ça s'ignore — c'est précisément le bug |
 > | DDL | ✅ | ❌ | schéma asynchrone, `IF NOT EXISTS`, la migration doit rester rejouable |
 >
-> Second arbitrage, sur les onze listeners : **un échec d'écriture de réplica ne fait pas échouer
+> Second arbitrage, sur les douze listeners : **un échec d'écriture de réplica ne fait pas échouer
 > l'opération hôte.** Aucun n'est `ShouldQueue`, ils tournent dans la requête HTTP du socle ; faire
 > échouer l'attachement d'un utilisateur à un groupe parce qu'une *copie* n'a pas pu être écrite
 > inverserait le rapport entre la source de vérité et son réplica. Ils rattrapent et journalisent
-> (`ToleratesGraphFailure`, `ReplicaFailureListenerTest`) — la dérive qui en résulte est le sujet
-> d'E4.2, que ce lot débloque.
+> (`ToleratesGraphFailure`, `ReplicaFailureListenerTest`) — la dérive qui en résulte a été arbitrée
+> le 24/08/2026 : elle n'est **pas** réparée, les gardes ont cessé de la lire (E4.2, piège 2
+> ci-dessus). C'est cette tolérance-ci qui l'imposait — tant qu'un échec d'écriture est absorbé par
+> décision, aucune reprise ne peut fermer la fenêtre, seulement la raccourcir.
 >
 > Deux leçons de méthode au passage. **Faire lever révèle des erreurs nGQL préexistantes** : un post
 > sans commentaire émettait `DELETE VERTEX  WITH EDGE`, invalide et absorbé depuis toujours — d'où le

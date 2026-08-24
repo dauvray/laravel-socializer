@@ -265,11 +265,25 @@ class ChannelGuardTest extends TestCase
     #[Test]
     public function le_canal_de_serveur_refuse_un_non_membre(): void
     {
-        $this->fakeNebulaGraph()->when('s.server.privacy', []);
+        $this->fakeNebulaGraph()->when('s.server.privacy', [['privacy' => 1, 'group_vertexid' => 'group7']]);
 
+        // Aucun `joinGroup` : c'est MySQL qui refuse, et c'est tout le sujet d'E4.2.
         $refus = $this->joinChannel('server.{serverId}', $this->makeChannelUser('jacinthe'), 'server42');
 
         $this->assertFalse((bool) $refus);
+    }
+
+    #[Test]
+    public function le_canal_de_serveur_admet_un_membre_du_groupe(): void
+    {
+        $this->fakeNebulaGraph()->when('s.server.privacy', [['privacy' => 1, 'group_vertexid' => 'group7']]);
+
+        $user = $this->makeChannelUser('romain');
+        $this->joinGroup($user, 7);
+
+        $admission = $this->joinChannel('server.{serverId}', $user, 'server42');
+
+        $this->assertInstanceOf(PresenceUser::class, $admission);
     }
 
     /**
@@ -290,5 +304,127 @@ class ChannelGuardTest extends TestCase
         $user = $this->makeChannelUser('kevin'.substr($pattern, 0, 4));
 
         $this->assertFalse((bool) $this->joinChannel($pattern, $user, 'room42'));
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | 4. `canJoinServer` — l'appartenance se lit dans MySQL (E4.2)
+    |--------------------------------------------------------------------------
+    |
+    | Le garde interrogeait `user -[:registered_in]-> group` dans NebulaGraph, qui n'en est qu'un
+    | RÉPLICA. Chaque trou de synchronisation y laisse une arête EN TROP, jamais en moins : la
+    | dérive accordait, donc personne ne la signalait. Le graphe ne répond plus que de ce dont il
+    | est maître — les propriétés du sommet serveur, et quel groupe le possède.
+    |
+    | ⚠️ Ces tests scriptent des lignes ASSOCIATIVES parce que la requête ramène DEUX colonnes.
+    | Une seule colonne, et `formatValues` effondrerait la ligne sur sa valeur : le nombre de
+    | colonnes est load-bearing, cf. `une_reponse_effondree_sur_une_colonne_est_refusee`.
+    |
+    */
+
+    /**
+     * Le pendant serveur du contrôle de texte fait plus haut sur le chat, et pour la même raison :
+     * la doublure ne PARSE pas le nGQL, elle ne peut donc pas prouver qu'une notion a cessé d'être
+     * lue. Asserter l'absence de `registered_in` dans la requête est la seule prise disponible.
+     */
+    #[Test]
+    public function le_garde_de_serveur_ne_lit_plus_l_appartenance_dans_le_graphe(): void
+    {
+        $graph = $this->fakeNebulaGraph()->when('s.server.privacy', []);
+
+        $this->makeChannelUser('leonie')->canJoinServer('server42');
+
+        $this->assertNotEmpty($graph->queries());
+        $this->assertStringNotContainsString('registered_in', $graph->queries()[0]);
+        $this->assertStringContainsString(
+            'RETURN s.server.privacy AS privacy, id(g) AS group_vertexid',
+            $graph->queries()[0]
+        );
+    }
+
+    /**
+     * LE test d'E4.2, celui que le plan de chantier nomme.
+     *
+     * Le graphe répond ce qu'il répondrait avec une arête `registered_in` survivante — le serveur
+     * existe, il est privé, il appartient au groupe 7. MySQL, lui, n'a plus la ligne pivot. Avant
+     * ce correctif, l'arête seule suffisait à ouvrir le canal.
+     */
+    #[Test]
+    public function un_ancien_membre_dont_l_arete_a_survecu_ne_rejoint_pas_le_serveur_prive(): void
+    {
+        $this->fakeNebulaGraph()->when('s.server.privacy', [['privacy' => 1, 'group_vertexid' => 'group7']]);
+
+        $this->assertFalse($this->makeChannelUser('marceau')->canJoinServer('server42'));
+    }
+
+    #[Test]
+    public function un_membre_du_groupe_rejoint_le_serveur_prive(): void
+    {
+        $this->fakeNebulaGraph()->when('s.server.privacy', [['privacy' => 1, 'group_vertexid' => 'group7']]);
+
+        $user = $this->makeChannelUser('noemie');
+        $this->joinGroup($user, 7);
+
+        $this->assertTrue($user->canJoinServer('server42'));
+    }
+
+    /**
+     * L'effet miroir du piège 1, refermé en passant.
+     *
+     * L'ancienne requête exigeait qu'un membre QUELCONQUE existe avant de conclure « public » :
+     * un serveur public vide refusait donc tout le monde, son propre propriétaire compris. La
+     * confidentialité est une propriété du sommet, elle ne dépend d'aucune appartenance.
+     */
+    #[Test]
+    public function un_serveur_public_sans_aucun_membre_reste_ouvert(): void
+    {
+        $this->fakeNebulaGraph()->when('s.server.privacy', [['privacy' => 0, 'group_vertexid' => 'group7']]);
+
+        $this->assertTrue($this->makeChannelUser('oscar')->canJoinServer('server42'));
+    }
+
+    /**
+     * Un vid de groupe non reconstituable est un REFUS, pas un accord.
+     *
+     * Le cas n'est pas théorique : les sommets nés avant l'id dérivé portent un `uniqidReal()`,
+     * et le serveur du cluster de dev en est un (`0e64e1713d940`). `getRealIdFromVertexId` rend
+     * alors `null` — il n'existe aucune ligne MySQL à interroger, donc rien qui puisse accorder.
+     * Journalisé, parce qu'un réplica illisible est une anomalie d'infrastructure, pas un refus
+     * ordinaire.
+     */
+    #[Test]
+    public function un_identifiant_de_groupe_illisible_refuse_et_journalise(): void
+    {
+        $this->fakeNebulaGraph()->when('s.server.privacy', [['privacy' => 1, 'group_vertexid' => '0e64e1713d940']]);
+
+        $user = $this->makeChannelUser('quentin');
+        $this->joinGroup($user, 7);
+
+        Log::spy();
+
+        $this->assertFalse($user->canJoinServer('server42'));
+
+        Log::shouldHaveReceived('warning')
+            ->withArgs(fn (string $message, array $context) => ($context['guard'] ?? null) === 'canJoinServer')
+            ->once();
+    }
+
+    /**
+     * Le garde-fou du nombre de colonnes.
+     *
+     * `formatValues` effondre une ligne d'une SEULE colonne sur sa valeur. Si quelqu'un allège la
+     * requête à `RETURN id(g)`, la production rendra une liste plate de chaînes — et lire
+     * `$result[0]['privacy']` dessus vaut `null`, silencieusement. Ce test décrit ce que le code
+     * doit faire de cette forme : refuser.
+     */
+    #[Test]
+    public function une_reponse_effondree_sur_une_colonne_est_refusee(): void
+    {
+        $this->fakeNebulaGraph()->when('s.server.privacy', ['group7']);
+
+        $user = $this->makeChannelUser('sidonie');
+        $this->joinGroup($user, 7);
+
+        $this->assertFalse($user->canJoinServer('server42'));
     }
 }

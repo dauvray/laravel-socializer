@@ -94,9 +94,16 @@ class PresencePayloadTest extends TestCase
     {
         parent::setUp();
 
-        // Les quatre gardes admettent : une ligne exploitable suffit (`_checkCanJoin`). Ce
-        // fichier ne teste pas les verdicts — c'est le travail de `ChannelGuardTest`.
-        $this->fakeNebulaGraph()->always(['unInscritQuelconque']);
+        // Les gardes admettent : une ligne exploitable suffit (`_checkCanJoin`). Ce fichier ne
+        // teste pas les verdicts — c'est le travail de `ChannelGuardTest`.
+        //
+        // ⚠️ `canJoinServer` fait exception depuis E4.2 : sa requête ne rend plus des vids mais
+        // DEUX colonnes, et l'appartenance se lit dans MariaDB. On le scripte donc en serveur
+        // PUBLIC — la seule branche qui admette sans exiger de ligne `group_user`, et la moins
+        // bavarde des deux pour un fichier qui ne s'intéresse qu'à la charge utile.
+        $this->fakeNebulaGraph()
+            ->when('s.server.privacy', [['privacy' => 0, 'group_vertexid' => 'group1']])
+            ->always(['unInscritQuelconque']);
         $this->fakeOnlineUsers();
     }
 

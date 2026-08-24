@@ -12,6 +12,10 @@ qui a été **vu et laissé de côté**, avec de quoi le reprendre.
 > **ne bloque rien**, et ne se prend qu'**au besoin** : quand un chantier prioritaire le croise, ou
 > sur demande explicite. L'ordre du paquet est dans [`README.md`](README.md).
 >
+> ⚠️ **§11 et §12 y ont été versés le 24/08/2026 sans rouvrir le chantier** — deux constats tombés
+> en instruisant E4.2. C'est l'usage prévu de ce fichier : un chantier prioritaire le croise, il y
+> dépose ce qu'il a vu et n'en fait rien.
+>
 > Le piège à ne pas retomber dedans : chaque item d'ici *paraît* petit et adjacent au précédent.
 > C'est exactement comme la dérive s'est produite.
 
@@ -283,3 +287,53 @@ Et une broutille de ce dépôt, sans rapport avec la décision :
 - [ ] Retirer le `setGroupHasParentRelation($event->group)` de `GroupCreatedListener:39` :
       `Users::createGroup()` le fait déjà, l'arête est posée deux fois. Inoffensif — les arêtes sont
       clefées — mais c'est une copie de plus.
+
+---
+
+## 11. Aucun listener n'est abonné à `UserDeleted` — le sommet d'un compte supprimé survit
+
+- [ ] **Trouvé le 24/08/2026** en instruisant l'arbitrage d'E4.2, hors de son périmètre.
+
+`EstarterUser::booted` dispatche bien `UserDeleted` sur `static::deleting` — soft delete **et**
+`forceDelete`. Mais `SocializerEventServiceProvider` n'y abonne **rien** : le seul abonné est le
+listener d'estarter, qui ne supprime que la vignette et la `location`. **Le sommet `user` du graphe
+n'est donc jamais retiré, ni ses arêtes** — alors que la cascade SQL de `group_user` a, elle, effacé
+les lignes pivot.
+
+Le pendant existe pourtant pour le groupe : `GroupDeletedListener` → `Users::deleteGroup` →
+`deleteVertex(…, WITH EDGE)`. C'est un trou d'écrivain, pas une décision.
+
+⚠️ **Ce n'est pas un défaut de sécurité, et il ne faut pas le vendre comme tel** : le compte est
+supprimé, il ne s'authentifie plus, aucun garde ne peut donc être trompé par ses arêtes — d'autant
+que depuis E4.2 l'appartenance ne se lit plus dans le graphe. Ce que ça fausse, ce sont les
+**décomptes et les listings** : `Server::getServers`, `nb_users`, `Socializable::servers()`.
+
+- Symétrique de `GroupDeletedListener`, `ToleratesGraphFailure` compris.
+- ⚠️ Le hook est `deleting`, qui **ne distingue pas** le soft delete du `forceDelete` : supprimer le
+  sommet sur une mise à la corbeille rendrait `restore()` incohérent. C'est le motif déjà rencontré
+  sur l'article (§7) — le sens de l'événement se lit sur le hook, pas sur son nom —, et c'est la
+  seule vraie difficulté de la tâche.
+
+**Tests :** un compte détruit ne laisse ni sommet ni arête · un compte mis à la corbeille les garde.
+
+---
+
+## 12. `checkServerAccess` : le helper global n'a plus qu'un appelant, et il est douteux
+
+- [ ] **Trouvé le 24/08/2026** en livrant E4.2, qui a débranché son usage `server`.
+
+`Services\Server::checkServerAccess` passe désormais par `Socializable::canJoinServer`. Le helper
+global `checkServerAccess()` de `Helpers/Socializer.php` n'est donc plus appelé que par
+`ServerController::getAdminpanelList:265`, avec le tag `room` :
+
+```php
+if(!checkServerAccess($options['roomId'], $user->vertex_id, 'room')) { abort(403); }
+```
+
+Or son motif est `(creator:user)<-[:has_creator]-(g:group)<-[:owned_by]-(s:<tag>)` : il attend un
+sommet **possédé par un groupe**. Les salons ne le sont pas — ils sont `published_in` un serveur.
+Cette garde ne peut donc rien rendre d'autre que « refusé », sur toute donnée réelle.
+
+À trancher sur pièces : la remplacer par le garde de salon (`canJoinRoom || isRoomOwner`), ou
+constater qu'elle protège une route morte. **Ne pas supprimer le helper avant d'avoir tranché ce
+point** — c'est son dernier appelant.

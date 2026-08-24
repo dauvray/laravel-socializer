@@ -21,7 +21,7 @@ C3 ──> C4 ──> C2 ──┬─> E3     (tous sur UserController — à s�
                    └─> C5     (front : le bouton d'appel)
 B3, C1                        (indépendants)
 D1 ──> D2
-E7 ──> E4.2                   (E7 ✅ 22/08 — E4.2 n'attend plus qu'un arbitrage)
+E7 ──> E4.2                   (les deux ✅ — E4.2 le 24/08, arbitrage rendu : voie B)
 E1, E2, E5, E6, E8, E9        (indépendants)
 F1                            (dernier)
 ```
@@ -35,12 +35,15 @@ refus) — 15 et 16/08 —, **E4.1** le 21/08 : la plus grave des tâches ouvert
 22/08 **E8** (la présence ne diffuse plus le bloc privé de personne), **E9** dans la foulée (les
 charges utiles d'auteur de message passent en liste blanche, diffusion **et** historique HTTP), et
 **E7** le même jour — les écritures de graphe lèvent et se journalisent, ce qui **débloque E4.2**.
-Puis **E1** et **E2** le 23/08, et **D0** le même jour — la moitié de D1/D2 qui ne demandait aucune
-décision d'infra : les identifiants TURN sortent du bundle public (2 occurrences → 0), servis par
-`GET /get-ice-servers`.
-Restent : **D1** (rendre les credentials éphémères — requiert une bascule coturn **et la rotation
-du secret, qui est compromis**), la part `getUsersList` d'**E3**, **E4.2** (dérive du réplica,
-arbitrage à produire), **E6** (périmètre estarter) et **F1** en clôture.
+Puis **E1** et **E2** le 23/08, et le lot **D** en entier le même jour — **D0** (les identifiants
+TURN sortent du bundle public, 2 occurrences → 0, servis par `GET /get-ice-servers`), puis **D1** et
+**D2** : credentials éphémères signés par utilisateur, la bascule de coturn en `--use-auth-secret`
+valant rotation du secret compromis.
+Le 24/08, **E4.2** : arbitrage rendu — **les gardes cessent de lire l'appartenance dans le réplica**
+plutôt que de le re-synchroniser, parce qu'une chaîne dont l'échec est toléré par décision ne peut
+pas être resynchronisée sans laisser de fenêtre.
+Restent : la part `getUsersList` d'**E3** (arbitrage produit), **E6** (périmètre estarter), **D3**
+(rafraîchir le credential TURN, 🟡) et **F1** en clôture.
 
 ---
 
@@ -1454,42 +1457,78 @@ canaux — `questionnaire` y était annoncé « présence » et est **privé** a
 
 ---
 
-#### E4.2 — Le réplica graphe dérive dans le sens qui accorde `[M]` 🟡
+#### E4.2 — Le réplica graphe dérive dans le sens qui accorde `[M]` ✅ 24/08/2026
 
-- [ ] **Dépend de :** un arbitrage produit. **E7 est levée depuis le 22/08/2026** : les écritures
-  d'arête lèvent et se journalisent, la dépendance technique est donc satisfaite. Ce qui reste est
-  l'arbitrage lui-même. ⚠️ E7 rend désormais la dérive **observable mais non réparée** : les 11
-  listeners journalisent `Réplica NebulaGraph désynchronisé` sans resynchroniser — relever ces
-  entrées est la première mesure du problème, et elle n'existait pas avant.
-[La migration](../../../innovation/laravel-estarter/src/database/migrations/3019_10_31_000025_create_user_group_table.php)
-pose `onDelete('cascade')` sur les deux clés étrangères de `group_user` : supprimer un groupe ou
-un compte retire les lignes **en SQL, sans événement Eloquent**, et l'arête `registered_in`
-survit dans le graphe. S'y ajoutent les rattachements antérieurs aux listeners. Le symptôme
-attendu est donc l'inverse de celui annoncé le 16/08 : un **faux positif** — l'ancien membre
-d'un groupe supprimé garde l'accès au canal du serveur privé — donc personne ne le signale.
+- [x] **Dépendait d'** un arbitrage produit. **Rendu le 24/08/2026 : voie B — cesser de lire, plutôt
+  que re-synchroniser.**
 
-> **Corollaire, même famille que 2.** Les deux listeners **ignorent la valeur de retour** de
-> `insertEdge` / `deleteEdge`, qui ne lève pas non plus : un échec d'écriture d'arête est
-> totalement muet — pas d'arête, pas de log, pas d'exception. C'est *ce* chemin qui produit le
-> faux négatif que E4 attribuait au listener commenté.
+**L'arbitrage, et son argument.** Deux voies étaient ouvertes : re-synchroniser le réplica (observer
+`Group`/`User`, cascade applicative, étape de réconciliation), ou cesser de lire l'appartenance dans
+le graphe comme `mayReach` l'avait fait le 15/08 pour `sharesGroupWith`. C'est la seconde.
+**Re-synchroniser aurait ajouté des événements à une chaîne dont l'échec est toléré PAR DÉCISION**
+(`ToleratesGraphFailure`, arbitrage d'E7 : une copie ratée ne doit pas faire échouer l'opération
+hôte). Elle aurait donc raccourci la fenêtre de dérive sans la supprimer. Router la question vers le
+maître ne laisse aucune fenêtre — et prolonge une décision déjà prise au lieu d'en créer une.
 
-⚠️ **Constat annexe, déjà durable** : `canJoinRoom` / `canJoinServer` ne sont pas des prédicats
-d'appartenance (sur `privacy == 0` la clause est vraie pour n'importe quel couple ⇒ `true` pour
-tout le monde). Consigné dans
-[`docs/modules/webrtc2/securite.md`](../docs/modules/webrtc2/securite.md) (« Deux pièges du
-graphe que ce garde contourne ») — ne pas le recopier ici. **Toujours vrai après le 21/08/2026**,
-explicitement hors périmètre ; le renommage est une tâche de
-[`work/doc-rustines.md`](doc-rustines.md), lot 3, que E4.1 vient de débloquer.
+**La prémisse de cette tâche était fausse, et c'est l'instruction qui l'a montré.** Le titre parlait
+d'« un groupe supprimé » : or `Users::deleteGroup` fait `deleteVertex(…, WITH EDGE)`, qui emporte
+les `registered_in` entrantes. De même `attach`/`detach`/`sync` passent tous par le modèle de pivot
+sur Laravel 13 — `detach()` sans argument compris. Après E4.1 et E7, **tout chemin encore
+exploitable passait par un échec d'écriture graphe**, c'est-à-dire par un événement que E7 rend
+bruyant. Le défaut restait réel ; son urgence, non.
 
-**Périmètre de E4.2.** L'arbitrage : re-synchroniser sur la suppression (observer sur
-`Group`/`User`, ou `deleting` en cascade applicative), ou cesser de lire l'appartenance dans le
-graphe pour `canJoinServer` comme `mayReach` l'a déjà fait pour `sharesGroupWith` — la seconde voie
-retire le sujet au lieu de le maintenir.
+**La mesure, faite avant de trancher.** `LOG_STACK=single`, fichier jamais roté, continu du 28/05 au
+23/08 : **0 entrée** `Réplica NebulaGraph désynchronisé`, **2** arêtes `user → group` pour **2**
+lignes `group_user`, **12** sommets `user` pour **12** lignes. Le réplica est exact — sur un banc
+qui porte 1 groupe et 2 attachements figés depuis le 28/05, donc **aucun chemin de dérive n'y a été
+exercé**. `securite.md` écrit déjà que sur des données clairsemées la statistique ne prouve rien ; la
+réciproque valait ici, et c'est ce qui a évité de conclure « pas de dérive, pas de sujet ».
 
-> Corollaire des écritures d'arête muettes : sorti en **E7** le 21/08 — il ne dépend pas de cet
-> arbitrage, et le laisser ici en ferait un orphelin dans une tâche à moitié cochée.
+**Trois trouvailles qui n'étaient pas au plan.**
 
-**Tests :** un ancien membre d'un groupe supprimé ne rejoint pas le canal du serveur privé.
+1. **Le vid d'un serveur n'est pas toujours dérivable.** Le serveur du cluster de dev porte
+   `0e64e1713d940`, un `uniqidReal()` d'avant l'id dérivé. Résoudre le groupe en décomposant le vid
+   du serveur — la voie évidente — aurait donc refusé le seul serveur existant. Le garde demande
+   `id(g)` au graphe, qui répond de ce dont il est maître.
+2. **`nb_users` valait toujours 1 pour la MÊME cause que la faille.** La clause de confidentialité
+   pendait au motif `(u:user)-[:registered_in]->(g)` qui sert aussi à `count(distinct u)` : elle
+   filtrait ET décidait. Sortir la décision répare le compteur — contre-épreuve sur le cluster de
+   dev, `nb_users` rend **2** là où l'ancienne requête rendait 1. Ferme l'item de
+   [`serveur-todo.md`](serveur-todo.md).
+3. **Un test écrit trop vite ne gardait rien.** `get_server_refuse_avant_de_toucher_au_graphe`
+   comptait les requêtes émises — or sans garde il n'en part qu'une aussi, la grosse. Il restait
+   vert alors qu'on venait de retirer ce qu'il prétendait garder. C'est l'**identité** de la requête
+   qui distingue les deux mondes, pas leur nombre. Trouvé par la contre-épreuve, pas à la relecture.
+
+**Code :** `Socializable::canJoinServer` (requête à **deux colonnes** — une seule et `formatValues`
+effondrerait la ligne) + `isMemberOfGroup` · `Server::getServer` (garde en amont, clause retirée du
+motif de comptage) · `Server::checkServerAccess` (le miroir d'interface du garde, leçon de C5 :
+trois copies d'une règle d'accès divergent). `_checkCanJoin` a rendu son journal à
+`_refusSansReponse`, partagé.
+
+**Tests :** 6 cas neufs dans `ChannelGuardTest` (dont *un ancien membre dont l'arête a survécu ne
+rejoint pas le serveur privé*, celui que cette tâche nommait) et `tests/Feature/Server/ServerAccessTest.php`,
+**neuf** contre-épreuves par mutation rejouées une par une, toutes ciblées. **Contre-épreuve nGQL
+des deux requêtes réécrites contre le cluster de dev** — la leçon d'E4.1 : `FakeNebulaGraph` fait du
+`str_contains` et ne parse rien. Harnais : `PresencePayloadTest` scripte désormais un serveur
+public, et le commentaire de `makeChannelUser` qui affirmait « aucun garde de canal ne lit
+l'appartenance MariaDB » est devenu faux — corrigé.
+
+**Doc :** `securite.md` (pièges 1 et 2 réécrits, la leçon du réplica augmentée du corollaire de
+méthode) · `package.md` (liste des gardes) · `Socializable.php` (en-tête de section, docblocks) ·
+`ToleratesGraphFailure.php` (ce qu'il ne règle pas, et pourquoi ça restera ainsi) · `CLAUDE.md`.
+Décompte « onze listeners » corrigé en **douze** (`ArticleRestoredListener`, 23/08).
+`core.blade.php` : zéro occurrence, donc **pas de `boost:update`**.
+
+**Ce qui reste, et qui n'est plus de la sécurité.** Les listings (`Socializable::servers()`,
+`Server::getServers`, `nb_users`) lisent encore `registered_in` : la qualité du réplica est un sujet
+de **données**, arbitrable plus tard sans échéance. Deux constats annexes sont sortis en tâches
+propres dans [`projection-graphe-todo.md`](projection-graphe-todo.md) : **aucun listener n'est
+abonné à `UserDeleted`** (le sommet d'un compte supprimé et ses arêtes survivent), et le helper
+global `checkServerAccess` n'a plus qu'un appelant, qui l'utilise avec le tag `room` sur un motif
+`owned_by → group` que les salons ne portent pas.
+
+**Commit :** `secu(socializer): l'appartenance à un groupe se lit dans MySQL`
 
 ---
 

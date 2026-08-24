@@ -97,6 +97,10 @@ projet consommateur n'a rien à câbler à la main.
   (les 5 routes n'ont pas la même cadence légitime), un `validate()` sur les 5 payloads et un
   contrôle de relation émetteur ↔ destinataire en 403 uniforme — épinglés par
   `tests/Feature/Signaling/` et `tests/Feature/Profile/`.
+  **Les gardes de canal ne lisent plus l'appartenance à un groupe dans NebulaGraph** (24/08/2026) :
+  le graphe en est un réplica qui dérive **dans le sens qui accorde**, MariaDB en est le maître.
+  Arbitrage écrit dans [securite.md](docs/modules/webrtc2/securite.md), piège 2 — le lire avant de
+  proposer d'y ajouter une re-synchronisation.
   **Restent ouverts** : l'usurpation intra-room par un membre qui se présente avec un peerId neuf
   sous le slug d'un autre — les deux chemins ont la même signature locale, ce n'est pas fermable
   côté client —, et l'énumération via `getUsersList`. Les credentials TURN sont sortis du bundle

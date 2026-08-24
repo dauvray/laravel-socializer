@@ -62,6 +62,12 @@ deux traits de `src/app/Helpers/ModelTraits/` :
   de **relation** `mayReach()`, posé sur les 5 routes de signalisation
   ([securite.md](../modules/webrtc2/securite.md)). Tous refusent par défaut quand le graphe ne
   répond pas. Plus l'accesseur pivot `getVertexIdAttribute()`.
+  ⚠️ **Deux d'entre eux ne lisent PAS l'appartenance dans le graphe** : `mayReach()` (depuis le
+  15/08/2026) et `canJoinServer()` (depuis le 24/08/2026) interrogent `group_user` dans MariaDB,
+  qui en est le maître. Le graphe n'y répond plus que de ce dont il est maître — la
+  confidentialité du sommet, et le groupe qui possède le serveur. Le pourquoi est le piège 2 de
+  [securite.md](../modules/webrtc2/securite.md) : un réplica ne dérive jamais que dans le sens qui
+  accorde.
 - **`Commentable`** (sur tout modèle commentable) — `mustBeApprovedComment()`, accesseurs
   `getIsCommentableAttribute()`, `getVertexIdAttribute()`, `getNbCommentsAttribute()`.
 

@@ -50,10 +50,25 @@ class Server
     | SERVER
     |-----------------------------------*/
 
+    /**
+     * Le pré-contrôle d'accès que le front interroge avant d'ouvrir un serveur.
+     *
+     * ⚠️ **C'est le miroir d'interface du garde de canal, il doit donc rendre exactement le même
+     * verdict que lui** — sinon `Servers.vue` propose un serveur dont l'abonnement Reverb sera
+     * refusé, et le bouton ne fait rien. C'est la leçon de C5, ici appliquée à la lettre : depuis
+     * le 24/08/2026 les deux passent par `canJoinServer`, plutôt que par deux copies d'une même
+     * clause nGQL qui ont divergé.
+     *
+     * **Delta assumé** : le helper global qu'il appelait portait une branche `privacy == 2` qui
+     * accordait au créateur, absente du garde. Aucun serveur ne porte cette valeur (relevé sur le
+     * cluster de dev le 24/08/2026), et le créateur d'un serveur de groupe est le leader de ce
+     * groupe, donc membre — le garde l'admet par l'autre chemin. Si `privacy == 2` devient une
+     * valeur réelle pour un serveur, c'est `canJoinServer` qu'il faudra étendre, pas cette
+     * méthode : le pré-contrôle doit rester une délégation, jamais une seconde règle.
+     */
     public function checkServerAccess($vertex_id)
     {
-        $user_vertexid = $this->user->vertexid;
-        return checkServerAccess($vertex_id, $user_vertexid);
+        return $this->user->canJoinServer($vertex_id);
     }
 
     public function requestServerAccess(Request $request)
@@ -511,16 +526,30 @@ class Server
         return $this->user->servers();
     }
 
+    /**
+     * ⚠️ **La clause de confidentialité faisait DEUX choses, et c'est ce qui cassait `nb_users`.**
+     * Le motif `(u:user)-[:registered_in]->(g)` sert à compter les membres ; y accrocher
+     * `id(u) == <le demandeur>` restreignait ce compte au demandeur lui-même, donc `nb_users`
+     * valait **toujours 1** sur un serveur privé. Depuis le 24/08/2026 la décision d'accès est
+     * prise en amont par `canJoinServer` — qui lit l'appartenance dans MariaDB (E4.2) — et le
+     * motif ne fait plus que compter.
+     *
+     * ⚠️ Le garde ne porte que sur `$with_relations`, et ce n'est pas un oubli. La forme courte
+     * sert le flux de DEMANDE d'accès (`requestServerAccess`, `responseServerAccess`), où
+     * l'appelant n'est par définition PAS membre : la garder fermerait la fonctionnalité. Elle ne
+     * rend que le sommet, et n'a jamais été gardée.
+     */
     public function getServer($vertex_id = null, $with_relations = true)
     {
+        if($with_relations && !$this->user->canJoinServer($vertex_id)) {
+            return false;
+        }
+
         $query = "MATCH (o:user)<-[:has_creator]-(g:group)<-[:owned_by]-(s:server), (u:user)-[:registered_in]->(g) WHERE id(s) == '$vertex_id' ";
 
             if($with_relations) {
 
-                $user_vertexid = $this->user->vertexid;
-
-                $query .= "AND (s.server.privacy == 0 OR (s.server.privacy == 1 AND id(u) == '$user_vertexid')) 
-                    MATCH (s)<-[:published_in]-(p:page) 
+                $query .= "MATCH (s)<-[:published_in]-(p:page)
                     OPTIONAL MATCH (s)<-[:published_in]-(r:room)
                     WITH s as server, properties(s) AS server_props, count(distinct u) as nb_users, collect(r) as rooms , o as owner, p as page
                     RETURN server, owner, nb_users, rooms, page

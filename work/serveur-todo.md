@@ -5,10 +5,26 @@
 
 ---
 
-## 🔴 `nb_users` est faux sur un serveur privé `[M]`
+## ✅ `nb_users` est faux sur un serveur privé `[M]` — corrigé le 24/08/2026
 
-- [ ] **Découvert le 21/08/2026**, en voulant afficher « combien de membres ont accès » à côté du
-      compteur de présence.
+- [x] **Découvert le 21/08/2026**, en voulant afficher « combien de membres ont accès » à côté du
+      compteur de présence. **Fermé en livrant E4.2** du chantier sécurité, sans avoir été pris
+      pour lui-même : le défaut de comptage et le défaut d'accès étaient **la même clause**, et
+      sortir la décision d'accès de la requête répare le compteur par construction.
+
+> **Ce qui l'a fermé.** `Socializable::canJoinServer` décide désormais en amont — et lit
+> l'appartenance dans MariaDB, pas dans le graphe (c'est E4.2). Le motif
+> `(u:user)-[:registered_in]->(g)` ne fait plus que compter.
+> **Contre-épreuve sur le cluster de dev, sur ce serveur même :** `nb_users` rend **2**, là où
+> l'ancienne requête rendait 1.
+> Tests : `tests/Feature/Server/ServerAccessTest.php` — un non-membre ne voit toujours pas le
+> serveur, et la clause de confidentialité a bien disparu de la requête de comptage. ⚠️ Le harnais
+> ne compte rien (la doublure rend ce qu'on lui script) : c'est la contre-épreuve nGQL qui prouve
+> le chiffre, pas la suite.
+> **L'affichage « N membres ont accès » de `ServerParamsButton` n'est donc plus bloqué.**
+
+<details>
+<summary>Le diagnostic d'origine, conservé pour la leçon</summary>
 
 `Services/Server::getServer` renvoie `nb_users`, censé être le nombre de membres du serveur. Sa
 requête nGQL laisse **une seule clause faire deux métiers** — « ai-je le droit de voir ce
@@ -43,10 +59,8 @@ conditionner le résultat entier, jamais l'ensemble qu'on énumère dedans.**
 
 **Tests :** un membre d'un serveur privé voit le vrai nombre de membres · un **non**-membre ne voit
 toujours pas le serveur (404/`false`, inchangé) · un serveur public reste juste.
-**Commit :** `fix(socializer): compter les membres d'un serveur privé sans se restreindre au demandeur`
 
-Bloque l'affichage « N membres ont accès » dans le dropdown de présence de `ServerParamsButton` :
-afficher 1 quand il y en a 2 serait pire que de ne rien afficher.
+</details>
 
 ---
 
