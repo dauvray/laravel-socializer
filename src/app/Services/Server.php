@@ -527,12 +527,24 @@ class Server
     }
 
     /**
-     * ⚠️ **La clause de confidentialité faisait DEUX choses, et c'est ce qui cassait `nb_users`.**
+     * ⚠️ **La clause de confidentialité faisait TROIS choses, et c'est ce qui cassait `nb_users`.**
      * Le motif `(u:user)-[:registered_in]->(g)` sert à compter les membres ; y accrocher
      * `id(u) == <le demandeur>` restreignait ce compte au demandeur lui-même, donc `nb_users`
      * valait **toujours 1** sur un serveur privé. Depuis le 24/08/2026 la décision d'accès est
      * prise en amont par `canJoinServer` — qui lit l'appartenance dans MariaDB (E4.2) — et le
      * motif ne fait plus que compter.
+     *
+     * ⚠️ **`collect(distinct r)`, et le `distinct` est load-bearing.** C'était le troisième métier
+     * de la clause retirée, celui que personne n'avait vu : en épinglant `u` à un seul
+     * utilisateur, elle garantissait UNE ligne par salon avant l'agrégation. Sans elle, le produit
+     * cartésien rend `nb_users` lignes par salon — et `collect()` ne dédoublonne pas, contrairement
+     * à `count(distinct u)` juste à côté, qui était déjà protégé. L'interface affichait donc
+     * **chaque salon en autant d'exemplaires qu'il y a de membres** (constaté en production le
+     * 24/08/2026, deux membres ⇒ deux salons de chat).
+     *
+     * La leçon, générale : **retirer une clause de filtrage change la CARDINALITÉ du jeu de lignes
+     * que consomment les agrégats de la même requête.** Chaque agrégat doit être réexaminé, pas
+     * seulement celui qu'on voulait réparer.
      *
      * ⚠️ Le garde ne porte que sur `$with_relations`, et ce n'est pas un oubli. La forme courte
      * sert le flux de DEMANDE d'accès (`requestServerAccess`, `responseServerAccess`), où
@@ -551,7 +563,7 @@ class Server
 
                 $query .= "MATCH (s)<-[:published_in]-(p:page)
                     OPTIONAL MATCH (s)<-[:published_in]-(r:room)
-                    WITH s as server, properties(s) AS server_props, count(distinct u) as nb_users, collect(r) as rooms , o as owner, p as page
+                    WITH s as server, properties(s) AS server_props, count(distinct u) as nb_users, collect(distinct r) as rooms , o as owner, p as page
                     RETURN server, owner, nb_users, rooms, page
                 ";
             } else {

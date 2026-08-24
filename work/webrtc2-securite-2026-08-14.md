@@ -1500,6 +1500,27 @@ réciproque valait ici, et c'est ce qui a évité de conclure « pas de dérive,
    vert alors qu'on venait de retirer ce qu'il prétendait garder. C'est l'**identité** de la requête
    qui distingue les deux mondes, pas leur nombre. Trouvé par la contre-épreuve, pas à la relecture.
 
+> 🔴 **Régression signalée en production le 24/08, corrigée le jour même : chaque salon s'affichait
+> en double.** La clause retirée faisait un **troisième** métier que ni le plan ni la contre-épreuve
+> n'avaient vu : en épinglant `u` à un seul utilisateur, elle garantissait UNE ligne par salon avant
+> l'agrégation. Sans elle, le produit cartésien en rend `nb_users` — et **`collect()` ne dédoublonne
+> pas**, contrairement au `count(distinct u)` juste à côté, qui était déjà protégé. Deux membres ⇒
+> deux exemplaires de chaque salon. Corrigé en `collect(distinct r)`, mesuré contre le cluster de
+> dev (`size(rooms)` : 2 sans le `distinct`, 1 avec), épinglé par
+> `get_server_ne_collecte_pas_un_salon_par_membre`.
+>
+> **La leçon, et elle est générale — c'est la jumelle de celle de D0 sur l'`await`.** Retirer une
+> clause de filtrage ne change pas seulement ce qu'elle filtrait : elle change la **cardinalité du
+> jeu de lignes que consomment TOUS les agrégats de la requête**. Chacun doit être réexaminé, pas
+> seulement celui qu'on voulait réparer. Ici l'un des deux était `distinct` et l'autre non — la
+> différence ne se voyait pas tant que la clause tenait les deux.
+>
+> **Ce que le harnais ne pouvait pas voir**, et il faut le dire : `FakeNebulaGraph` rend la liste
+> qu'on lui script, il ne produit aucun produit cartésien. Aucun test de la suite ne pouvait
+> rougir. La contre-épreuve nGQL, elle, aurait pu — mais elle avait porté sur `nb_users`, la valeur
+> qu'on venait de réparer, et pas sur `rooms`. **Contre-épreuver la ligne qu'on corrige ne suffit
+> pas : il faut contre-épreuver la requête entière.**
+
 **Code :** `Socializable::canJoinServer` (requête à **deux colonnes** — une seule et `formatValues`
 effondrerait la ligne) + `isMemberOfGroup` · `Server::getServer` (garde en amont, clause retirée du
 motif de comptage) · `Server::checkServerAccess` (le miroir d'interface du garde, leçon de C5 :

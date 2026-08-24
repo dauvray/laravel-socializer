@@ -101,4 +101,36 @@ class ServerAccessTest extends TestCase
         $this->assertStringContainsString('count(distinct u) as nb_users', $graph->queries()[1]);
         $this->assertStringNotContainsString('s.server.privacy', $graph->queries()[1]);
     }
+
+    /**
+     * Le troisième métier de la clause retirée — celui qui a mordu en production.
+     *
+     * En épinglant `u` à un seul utilisateur, la clause de confidentialité garantissait UNE ligne
+     * par salon avant l'agrégation. Sans elle, le produit cartésien en rend `nb_users` — et
+     * `collect()` **ne dédoublonne pas**, contrairement au `count(distinct u)` d'à côté, déjà
+     * protégé. Résultat le 24/08/2026, sur un serveur à deux membres : chaque salon de chat
+     * affiché **en double**.
+     *
+     * ⚠️ Assertion de TEXTE, faute de mieux : la doublure rend la liste qu'on lui script, elle ne
+     * peut pas produire un produit cartésien. Le chiffre, lui, a été mesuré contre le cluster de
+     * dev — `size(rooms)` rend 2 sans le `distinct`, 1 avec.
+     *
+     * La leçon que ce test épingle : **retirer une clause de filtrage change la cardinalité du jeu
+     * de lignes que consomment TOUS les agrégats de la requête**, pas seulement celui qu'on
+     * voulait réparer.
+     */
+    #[Test]
+    public function get_server_ne_collecte_pas_un_salon_par_membre(): void
+    {
+        $this->fakeOnlineUsers();
+        $graph = $this->fakeNebulaGraph()->when('s.server.privacy', $this->serveurPriveDuGroupe7());
+
+        $membre = $this->makeChannelUser('xavier');
+        $this->joinGroup($membre, 7);
+        $this->actingAs($membre);
+
+        (new ServerService)->getServer('server42');
+
+        $this->assertStringContainsString('collect(distinct r) as rooms', $graph->queries()[1]);
+    }
 }
