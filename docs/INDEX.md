@@ -16,6 +16,7 @@ Point d'entrée court : [`CLAUDE.md`](../CLAUDE.md) · Installation : [`README.m
 | écrire du code qui ressemble au reste | [architecture/conventions.md](architecture/conventions.md) |
 | ajouter un événement temps réel, un canal Reverb | [architecture/signalisation.md](architecture/signalisation.md) |
 | **projeter des données dans NebulaGraph**, ou réparer un graphe qui a divergé | [architecture/projection-graphe.md](architecture/projection-graphe.md) |
+| comprendre la couture NebulaGraph : qui lève, qui journalise, **et pourquoi une session refusée se rejoue** | [architecture/signalisation.md](architecture/signalisation.md#la-session-nebulagraph-est-partagée-recyclée-et-un-processus-long-doit-y-survivre) |
 | lancer ou écrire des tests | [architecture/tests.md](architecture/tests.md) |
 | **brancher la visio / le chat data / la diffusion** | [modules/webrtc2/api.md](modules/webrtc2/api.md) |
 | comprendre pourquoi un flux WebRTC n'arrive pas | [modules/webrtc2/flux.md](modules/webrtc2/flux.md) |

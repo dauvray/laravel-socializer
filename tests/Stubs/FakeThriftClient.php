@@ -43,6 +43,17 @@ final class FakeThriftClient extends NebulaGraphClient
 
     private string $default;
 
+    /** Combien d'appels restent à faire échouer avant de retomber sur les règles. */
+    private int $failuresRemaining = 0;
+
+    /** La charge servie tant que `$failuresRemaining` n'est pas épuisé. */
+    private ?string $transientJson = null;
+
+    private int $refreshCount = 0;
+
+    /** @var array<int, string> les identifiants passés à `logout()`, dans l'ordre */
+    private array $signOuts = [];
+
     public function __construct(?string $default = null)
     {
         $this->default = $default ?? self::successWithoutRows();
@@ -85,6 +96,22 @@ final class FakeThriftClient extends NebulaGraphClient
     public function respondsOn(string $fragment, string $json): static
     {
         $this->rules[] = ['fragment' => $fragment, 'json' => $json];
+
+        return $this;
+    }
+
+    /**
+     * Les `$times` PREMIERS appels échouent avec ce code, les suivants retombent sur les règles.
+     *
+     * C'est ce qui rend le rejeu observable : un refus de session suivi d'un succès. Épuisable et
+     * prioritaire sur `$rules` — délibérément un mécanisme SÉPARÉ et non une règle, pour ne pas
+     * toucher à la sémantique « la première règle déclarée qui matche gagne » : retirer une règle
+     * épuisée changerait l'ordre en cours de test.
+     */
+    public function failsTimes(int $times, int $code, string $message = 'Session not existed!'): static
+    {
+        $this->failuresRemaining = $times;
+        $this->transientJson = self::failure($code, $message);
 
         return $this;
     }
@@ -152,6 +179,12 @@ final class FakeThriftClient extends NebulaGraphClient
     {
         $this->statements[] = $stmt;
 
+        if ($this->failuresRemaining > 0) {
+            $this->failuresRemaining--;
+
+            return $this->transientJson;
+        }
+
         foreach ($this->rules as $rule) {
             if (str_contains($stmt, $rule['fragment'])) {
                 return $rule['json'];
@@ -166,7 +199,27 @@ final class FakeThriftClient extends NebulaGraphClient
         return $this->executeJson($stmt);
     }
 
-    public function logout($session_id = null): void {}
+    /**
+     * ⚠️ OVERRIDE OBLIGATOIRE, ET LE PIÈGE EST FATAL SI ON L'OUBLIE.
+     *
+     * Cette doublure n'appelle pas `parent::__construct()` (cf. le docblock de tête), donc
+     * `$this->connection` est **null**. La vraie `refreshSession()` finirait par appeler
+     * `$this->connection->authenticate(...)` : `Error: Call to a member function on null`, pas un
+     * warning rattrapable. On se contente donc de COMPTER — cette doublure observe la couture, elle
+     * ne simule pas la logique de session. Cette logique-là se teste avec `FakeGraphService`, qui se
+     * branche un cran plus bas encore.
+     */
+    public function refreshSession(string $username, string $password): bool
+    {
+        $this->refreshCount++;
+
+        return true;
+    }
+
+    public function logout($session_id = null): void
+    {
+        $this->signOuts[] = (string) $session_id;
+    }
 
     /*
     |--------------------------------------------------------------------------
@@ -183,6 +236,18 @@ final class FakeThriftClient extends NebulaGraphClient
     public function lastStatement(): ?string
     {
         return $this->statements === [] ? null : $this->statements[array_key_last($this->statements)];
+    }
+
+    /** Combien de fois la couture a demandé une session neuve. */
+    public function refreshCount(): int
+    {
+        return $this->refreshCount;
+    }
+
+    /** @return array<int, string> les identifiants dont on a demandé la déconnexion */
+    public function signOuts(): array
+    {
+        return $this->signOuts;
     }
 
     /**

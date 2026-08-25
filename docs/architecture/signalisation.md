@@ -119,6 +119,69 @@ Faire lever les lectures rendrait les branches de refus inatteignables : une pan
 donnerait un **500 à la place d'un 403**. C'est le sens de l'asymétrie, pas un oubli — détail et
 conséquences dans [securite.md](../modules/webrtc2/securite.md).
 
+### La session NebulaGraph est partagée, recyclée, et un processus long doit y survivre
+
+Troisième propriété de la même couture, et la moins intuitive. `NebulaGraphClient::authenticate()`
+**partage un identifiant de session par le cache** entre tous les conteneurs, avec un TTL court. À
+l'expiration, le premier processus qui passe recycle : il ferme la session sortante et en forge une.
+
+⚠️ **Ce recyclage est un garde-fou, pas une maladresse.** NebulaGraph plafonne les sessions par
+couple (ip, utilisateur) et **ce plafond a déjà été atteint sur ce déploiement, ce qui bloque
+l'application entière** — plus une seule session accordée. Sans recyclage, la session partagée n'est
+jamais réclamée. `SHOW SESSIONS` doit rendre **1**, et c'est `authenticate()` qui le tient. Ne pas la
+« simplifier ».
+
+Sa contrepartie est structurelle : le singleton `nebulaGraph` est résolu **une fois par processus**.
+En php-fpm c'est une fois par requête, donc inoffensif. Dans un processus **long** — `reverb`,
+`queue`, dont plusieurs listeners ne sont pas `ShouldQueue` et tournent donc dans le processus du
+serveur — l'identifiant en mémoire meurt au premier recyclage, **et rien ne le dit** : la socket
+Thrift reste ouverte, l'erreur est applicative (`E_SESSION_INVALID`, -1002), et le rattrapage
+d'`OnlineUsersService` est muet par décision. Mesuré le 25/08/2026 : 288 refus côté graphd en une
+journée, la projection `connected` totalement à l'arrêt, zéro symptôme visible dans l'application.
+
+D'où le troisième régime de la couture : **un refus de SESSION se récupère, une fois, sans bruit.**
+`NebulaGraphConnection::executeJsonRecovering()` détecte les trois codes de session, demande une
+session utilisable, réémet le `USE <space>` (le space est un état *de session*) et rejoue.
+
+| Propriété | Pourquoi elle est là |
+|---|---|
+| la couture enveloppe l'**émission**, pas le décodage | la première réponse n'atteint jamais `errorIn()`, donc un refus récupéré ne produit **aucun** `Log::error` — sinon on remplace N erreurs par N erreurs d'une autre couleur |
+| **un seul** rejeu | si le rejeu échoue, le comportement est *exactement* celui d'avant : journal une fois, `JsonResponse` en lecture, exception en écriture. Ce chemin ne peut pas être pire que le statu quo |
+| liste blanche de **trois** codes | `E_SESSION_INVALID`, `E_SESSION_TIMEOUT`, `E_SESSION_NOT_FOUND`. **Jamais** `E_EXECUTION_ERROR` ni `E_SEMANTIC_ERROR` : ceux-là peuvent survenir *après* exécution |
+| la récupération **adopte** avant de forger | quand le cache porte déjà un identifiant différent, un autre processus a publié une session valide : on la prend, sans authentifier ni tuer. C'est le chemin nominal, et il ne crée **aucune** session — la condition pour ne pas rouvrir la saturation |
+| journal **étranglé par processus** | une récupération est un symptôme (`warning`, pas `error`). Si le graphe part en vrille, chaque battement de présence récupérerait : une ligne par fenêtre suffit |
+
+**Pourquoi rejouer est licite, et la balise à ne pas franchir.** L'argument qui tient dans ce dépôt
+n'est pas « le refus est pré-exécution » — vrai, prouvé par le journal de graphd, mais dépendant d'un
+site d'émission que la version suivante peut déplacer. C'est que **le DML du paquet est idempotent par
+construction** : `INSERT VERTEX IF NOT EXISTS`, affectations **absolues** (`SET t.k = v`),
+suppressions par vid — et `stringFormat()` quote toute chaîne, donc un `['n' => 'n + 1']` produirait
+une erreur de type, pas un incrément. ⚠️ **Le jour où une méthode DML porte un incrément, elle doit
+sortir de ce chemin.**
+
+Épinglé par `tests/Feature/Graph/NebulaGraphSessionRecoveryTest.php`, dont la contre-épreuve est
+faite : neutraliser la détection fait tomber 9 tests.
+
+⚠️ **Ce qui reste ouvert, et n'est pas fermé par ce correctif :**
+
+- **Une socket morte n'est pas une session morte.** `createConnection()` n'est appelée qu'au
+  constructeur : si graphd redémarre, le `TSocket` d'un processus long est définitivement cassé et
+  `executeJson` lève une `TTransportException`, qui n'est **pas** une `NebulaGraphException` — elle
+  traverse donc le `catch` d'`OnlineUsersService` **et** `ToleratesGraphFailure`. Sur des listeners
+  synchrones, cela veut dire un 500 sur création de compte ou attachement à un groupe. Chantier
+  distinct.
+- **Le plafond réel de sessions est inconnu.** Le service `graphd` du `docker-compose` ne fixe
+  **aucun** drapeau de session (`session_idle_timeout_secs`, `max_sessions_per_ip_per_user`) : on
+  hérite des défauts de l'image, non lus. C'est ce qui interdit de raisonner sur le débit de création.
+- **`socializer:nebula-clear-sessions` n'est pas un filet, c'est une grenade** : elle déconnecte tout
+  ce que `SHOW SESSIONS` rend, sessions vivantes comprises — donc elle provoque à la main l'incident
+  ci-dessus. Depuis le 25/08 elle n'empoisonne au moins plus le cache (`logout()` n'évince la clé
+  partagée que si l'identifiant sortant est celui qui y est publié).
+- **Le `KILL SESSION` d'`authenticate()` est inerte** : `logout()` remet `$this->sessionId` à null
+  avant que la ligne suivante s'en serve. C'est `signOut` — un appel Thrift **ONEWAY**, donc sans
+  réponse ni erreur — qui tue réellement la session. Laissé en place : le rendre actif ferait émettre
+  un nGQL que graphd refuse, soit une ligne d'erreur par recyclage pour tuer une session déjà morte.
+
 ⚠️ `canJoinRoom` / `canJoinServer` restent des gardes de canal et **non** des prédicats
 d'appartenance : sur `privacy == 0` ils répondent `true` à tout le monde
 ([securite.md](../modules/webrtc2/securite.md)).

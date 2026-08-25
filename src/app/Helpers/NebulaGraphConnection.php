@@ -72,6 +72,8 @@ use Dauvray\Socializer\app\Exceptions\NebulaGraphException;
 use Dauvray\Socializer\app\Helpers\NebulaGraphClient;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
+use Nebula\Common\ErrorCode;
 
 class NebulaGraphConnection extends Connection {
 
@@ -107,6 +109,41 @@ class NebulaGraphConnection extends Connection {
     protected $replica_factor;
 
     protected $query = [];
+
+    /**
+     * Les codes nGQL qui disent « ta session ne vaut plus rien », et EUX SEULS.
+     *
+     * Liste blanche volontairement courte, parce que ce qui est dans cette liste est REJOUÉ :
+     *
+     *  - `E_SESSION_INVALID` (-1002) — le seul observé en production. Le journal de graphd le prouve
+     *    pré-exécution : « Get session for sessionId: … failed » part de `GraphService.cpp`, à la
+     *    recherche de session, donc AVANT tout parse de la requête.
+     *  - `E_SESSION_TIMEOUT` (-1003) — même étage. Défensif : en 3.8 le fil de recyclage retire la
+     *    session et le client voit -1002.
+     *  - `E_SESSION_NOT_FOUND` (-2069) — code de la plage meta, atteignable avec plusieurs graphd ou
+     *    après un redémarrage avec sessions persistées. Défensif aussi.
+     *
+     * ⚠️ NE JAMAIS Y AJOUTER `E_EXECUTION_ERROR` (-1005) NI `E_SEMANTIC_ERROR` (-1009). Ce sont
+     * précisément les codes qui peuvent arriver APRÈS exécution : les rejouer rejouerait une requête
+     * déjà appliquée.
+     */
+    private const SESSION_REJECTED_CODES = [
+        ErrorCode::E_SESSION_INVALID,
+        ErrorCode::E_SESSION_TIMEOUT,
+        ErrorCode::E_SESSION_NOT_FOUND,
+    ];
+
+    /** Fenêtre d'étranglement du journal de récupération, en secondes. */
+    private const RECOVERY_LOG_WINDOW_SECONDS = 300;
+
+    /**
+     * Quand la dernière récupération a été journalisée — EN MÉMOIRE DU PROCESSUS, jamais en cache.
+     *
+     * La pathologie est par processus (c'est un processus long qui garde une session morte), donc
+     * l'étranglement doit l'être aussi : un compteur partagé masquerait la première récupération des
+     * autres conteneurs. Et le mettre en cache ajouterait un aller-retour sur un chemin de reprise.
+     */
+    private ?float $lastRecoveryLoggedAt = null;
 
     /**
      * @param  NebulaGraphClient|null  $client  Client injecté — RÉSERVÉ AUX TESTS.
@@ -258,7 +295,7 @@ class NebulaGraphConnection extends Connection {
      */
     private function executeWrite(string $operation, string $query): array
     {
-        $decoded = json_decode($this->nebula->executeJson($query));
+        $decoded = json_decode($this->executeJsonRecovering($query));
 
         $error = $this->errorIn($decoded, $operation, $query);
 
@@ -338,9 +375,137 @@ class NebulaGraphConnection extends Connection {
      */
     public function execute(string $stmt)
     {
-         $res = $this->responseJson($this->nebula->executeJson($stmt), $stmt);
+         $res = $this->responseJson($this->executeJsonRecovering($stmt), $stmt);
         //\Log::debug('NebulaGraph Query: '. $stmt.' Result: '.json_encode($res));
         return $res;
+    }
+
+    /**
+     * Émet le nGQL, et si graphd refuse la SESSION, en récupère une et rejoue — une seule fois.
+     *
+     * ── LE DÉFAUT QUE ÇA FERME ────────────────────────────────────────────────────────────────
+     *
+     * La session NebulaGraph est partagée par le cache entre tous les conteneurs, et recyclée
+     * périodiquement par `NebulaGraphClient::authenticate()` — recyclage nécessaire, cf. son
+     * docblock. Un processus LONG (`reverb`, `queue`) résout le singleton `nebulaGraph` une seule
+     * fois à son démarrage : au premier recyclage, l'identifiant qu'il garde en mémoire ne vaut plus
+     * rien, et **rien ne le lui dit**. La socket Thrift reste ouverte, l'erreur est applicative
+     * (-1002), aucun code ne la détectait. Mesuré le 25/08/2026 : 288 refus côté graphd en une
+     * journée, dont 243 journalisés côté application, sur le heartbeat de présence — la projection
+     * `connected` ne s'écrivait plus du tout, en silence complet (le rattrapage d'`OnlineUsersService`
+     * est muet par décision).
+     *
+     * ── POURQUOI REJOUER EST SÛR, ET DANS CET ORDRE D'ARGUMENTS ───────────────────────────────
+     *
+     * 1. **Le DML du paquet est idempotent par construction**, et c'est l'argument qui tient dans ce
+     *    dépôt, vérifiable site par site : `insertVertex` émet `INSERT VERTEX IF NOT EXISTS`,
+     *    `updateVertex`/`updateEdge` n'émettent que des affectations ABSOLUES (`SET t.k = v`),
+     *    `insertEdge` réécrit le même rang avec les mêmes valeurs, les suppressions portent sur des
+     *    vid. Et aucune expression relative ne peut passer : `stringFormat()` quote toute chaîne,
+     *    donc un `['n' => 'n + 1']` produirait `SET t.n = 'n + 1'` — une erreur de type, pas un
+     *    incrément.
+     *    ⚠️ **BALISE : le rejeu est licite TANT QUE le DML reste en affectation absolue.** Le jour où
+     *    une méthode DML porte un incrément, elle doit sortir de ce chemin.
+     * 2. Le refus est **pré-exécution**, ce que le journal de graphd prouve (cf.
+     *    `SESSION_REJECTED_CODES`). Argument secondaire : il porte sur un site d'émission, et rien
+     *    ne garantit que la version suivante de NebulaGraph le rendra au même endroit.
+     *
+     * ── DEUX PROPRIÉTÉS À NE PAS CASSER ───────────────────────────────────────────────────────
+     *
+     * **On enveloppe l'ÉMISSION, pas le décodage.** C'est ce qui fait que la première réponse
+     * n'atteint jamais `errorIn()` : un refus récupéré ne produit donc AUCUN `Log::error`, sinon on
+     * aurait remplacé 243 erreurs par 243 erreurs d'une autre couleur. Ne pas « simplifier » en
+     * déplaçant ce helper autour de `responseJson()`.
+     *
+     * **UN SEUL rejeu, jamais de boucle.** Si le rejeu échoue, le comportement est EXACTEMENT celui
+     * d'avant ce correctif : `errorIn()` journalise une fois, la lecture rend un `JsonResponse`,
+     * l'écriture lève. Ce chemin ne peut pas être pire que le statu quo — c'est ce qui le rend sûr.
+     *
+     * @param  string  $stmt  le nGQL, rejoué tel quel
+     * @return string  la réponse JSON brute, à décoder par l'appelant
+     */
+    private function executeJsonRecovering(string $stmt): string
+    {
+        $raw = $this->nebula->executeJson($stmt);
+
+        if(!$this->isSessionRejected(json_decode($raw))) {
+            return $raw;
+        }
+
+        $this->logSessionRecovery($stmt);
+
+        $this->nebula->refreshSession($this->config['username'], $this->config['password']);
+
+        // ⚠️ `USE` INCONDITIONNEL, ET PAR `executeJson` — deux pièges d'affilée.
+        //
+        // Le space est un état DE SESSION côté graphd : une session neuve n'en a aucun, et le rejeu
+        // échouerait en `SpaceNotChosen`. Il le faut même sur la branche « adopter » de
+        // `refreshSession`, parce que le constructeur publie la session au cache AVANT d'émettre son
+        // propre `USE` : il existe donc une fenêtre où l'identifiant publié désigne une session sans
+        // space.
+        //
+        // Et par `executeJson`, pas par `NebulaGraphClient::execute()`, dont la valeur de retour est
+        // jetée : un `USE` muet ferait échouer le rejeu sur `SpaceNotChosen`, un code qui ne dit
+        // rien du vrai problème. On rend donc la réponse D'ORIGINE quand le `USE` est refusé — c'est
+        // le refus de session que l'appelant doit voir journalisé, pas sa conséquence.
+        // ⚠️ Ne JAMAIS écrire `$this->execute(...)` ici : ce serait la méthode de CETTE classe, donc
+        // une récursion infinie. Une lettre d'écart.
+        $use = $this->nebula->executeJson('USE '.$this->config['space']);
+
+        if($this->isSessionRejected(json_decode($use))) {
+            return $raw;
+        }
+
+        return $this->nebula->executeJson($stmt);
+    }
+
+    /**
+     * Cette réponse dit-elle « ta session ne vaut plus rien » ?
+     *
+     * Garde de forme reprise mot pour mot d'`errorIn()`, et load-bearing pour la même raison : sur
+     * un transport dégradé `json_decode` rend `null`, et `$decoded->errors[0]->code` produirait une
+     * cascade de warnings PHP — que `phpunit.xml` transforme en échec (`failOnWarning="true"`).
+     *
+     * Le `(int)` n'est pas cosmétique : `json_decode` peut rendre un float sur un grand entier, et
+     * `in_array` en mode strict le raterait.
+     */
+    private function isSessionRejected($decoded): bool
+    {
+        if(!is_object($decoded) || !isset($decoded->errors[0]->code)) {
+            return false;
+        }
+
+        return in_array((int) $decoded->errors[0]->code, self::SESSION_REJECTED_CODES, true);
+    }
+
+    /**
+     * Journalise une récupération, au plus une fois par fenêtre et par processus.
+     *
+     * Une récupération est un **symptôme**, donc elle se voit — mais `warning` et non `error`, pour
+     * ne pas déclencher les alertes calées sur `error` alors que la requête, elle, a abouti.
+     *
+     * L'étranglement n'est pas de la cosmétique. Dans le régime nominal les récupérations sont rares
+     * (une par mort de session et par processus) et le journal est gratuit. Mais si le graphe part
+     * en vrille — graphd redémarré, `nebula-clear-sessions` lancée, recyclage anormalement court —
+     * alors CHAQUE battement de présence récupère : à 120 s par onglet, ça fait quelques centaines de
+     * lignes par jour pour deux onglets et des dizaines de milliers pour vingt utilisateurs. Une
+     * ligne par 5 minutes garde la première occurrence visible et rend le régime dégradé lisible.
+     */
+    private function logSessionRecovery(string $stmt): void
+    {
+        $now = microtime(true);
+
+        if($this->lastRecoveryLoggedAt !== null
+            && ($now - $this->lastRecoveryLoggedAt) < self::RECOVERY_LOG_WINDOW_SECONDS) {
+            return;
+        }
+
+        $this->lastRecoveryLoggedAt = $now;
+
+        Log::warning('Session NebulaGraph refusée — récupération et rejeu', [
+            'query' => Str::limit($stmt, 300),
+            'window_seconds' => self::RECOVERY_LOG_WINDOW_SECONDS,
+        ]);
     }
 
     public function getConfig($option = null)
