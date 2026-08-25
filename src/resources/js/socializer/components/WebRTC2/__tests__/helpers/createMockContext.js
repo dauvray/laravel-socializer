@@ -122,6 +122,13 @@ export function createMockContext(overrides = {}) {
     const _waitingRemotePeerIds = new Map()
     const _roomMembers = {}
     const _signalQueueRooms = {}
+    // Registre des contextes montés. Une vraie Map, comme dans peers2/state.js — mais
+    // NON réactive des deux côtés : le store réel la pose en `markRaw` précisément pour
+    // que les valeurs ressorties soient les objets de contexte eux-mêmes et non des
+    // proxies, dont les comparaisons d'identité (`unregisterContext`) échoueraient.
+    const _contextRegistry = new Map()
+    // Jetons des consommateurs du peer singleton — un Set, comme peers2/state.js.
+    const _peerConsumers = new Set()
 
     const peerStore = {
         lastLocalPeerId: overrides.peerStore?.lastLocalPeerId ?? null,
@@ -137,6 +144,30 @@ export function createMockContext(overrides = {}) {
         // Exposées telles quelles : la recovery du transport les parcourt directement.
         remotePeersId: _remotePeerIds,
         waitingRemotePeerId: _waitingRemotePeerIds,
+
+        // ── Registre des contextes montés ─────────────────────────────────────
+        // Mêmes deux gardes que le store réel, et ils ne sont PAS décoratifs :
+        // last-write-wins à l'inscription (un contexte remonté reprend l'id de celui
+        // qui se démonte), identité au retrait (sinon l'onUnmounted de l'ancien
+        // effacerait l'entrée du nouveau, qui ne recevrait plus rien).
+        contextRegistry: _contextRegistry,
+        registerContext: vi.fn((registered) => {
+            if (!registered?.contextId) return
+            _contextRegistry.set(registered.contextId, registered)
+        }),
+        unregisterContext: vi.fn((registered) => {
+            if (!registered?.contextId) return
+            if (_contextRegistry.get(registered.contextId) === registered) {
+                _contextRegistry.delete(registered.contextId)
+            }
+        }),
+        getContextById: vi.fn((contextId) => {
+            if (!contextId) return null
+            return _contextRegistry.get(contextId) ?? null
+        }),
+        // Une FONCTION, comme le getter réel — dont le commentaire explique pourquoi :
+        // sur une collection `markRaw`, un getter Pinia mis en cache figerait le registre.
+        getRegisteredContexts: vi.fn(() => [..._contextRegistry.values()]),
 
         getRemotePeerId: vi.fn((slug) => _remotePeerIds.get(slug) ?? null),
         hasRemotePeerId: vi.fn((slug) => _remotePeerIds.has(slug)),
@@ -221,23 +252,81 @@ export function createMockContext(overrides = {}) {
         // vie du module `usePeerTransport`. Le mock doit donc compter pour de vrai —
         // des `vi.fn()` vides rendraient verts des tests de destruction différée qui
         // ne prouveraient plus rien.
-        peerConsumerCount: overrides.peerStore?.peerConsumerCount ?? 0,
         peerInitPromise: overrides.peerStore?.peerInitPromise ?? null,
         peerReconnectAttempts: overrides.peerStore?.peerReconnectAttempts ?? 0,
         peerDestroyTimer: overrides.peerStore?.peerDestroyTimer ?? null,
         peerReconnectTimer: overrides.peerStore?.peerReconnectTimer ?? null,
         peerListenersDetach: overrides.peerStore?.peerListenersDetach ?? null,
 
-        addPeerConsumer: vi.fn(() => {
-            peerStore.peerConsumerCount += 1
-            return peerStore.peerConsumerCount
+        // ⚠️ Des JETONS, comme le store réel, et le `null` de retour est le point de
+        // fidélité qui compte : un retrait de jeton inconnu rend `null` (« rien à
+        // conclure »), jamais `0`. Reproduire un compteur planché ici rendrait vert un
+        // appelant qui testerait `<= 0` — c'est-à-dire exactement le bug corrigé, qui
+        // permettait de détruire un Peer encore consommé.
+        peerConsumers: _peerConsumers,
+        addPeerConsumer: vi.fn((token) => {
+            if (token === undefined || token === null) return _peerConsumers.size
+            _peerConsumers.add(token)
+            return _peerConsumers.size
         }),
-        // Plancher à 0 comme le store réel : un décrément orphelin ne doit pas rendre
-        // le compteur négatif.
-        removePeerConsumer: vi.fn(() => {
-            peerStore.peerConsumerCount = Math.max(0, peerStore.peerConsumerCount - 1)
-            return peerStore.peerConsumerCount
+        removePeerConsumer: vi.fn((token) => {
+            if (!_peerConsumers.delete(token)) return null
+            return _peerConsumers.size
         }),
+
+        // ── Observabilité de l'état du Peer ───────────────────────────────────
+        // La logique est DUPLIQUÉE du store réel, à contre-cœur mais à dessein : c'est le
+        // seul fait dérivé que le transport journalise, et un mock qui rendrait un état
+        // constant ferait taire l'audit exactement là où il doit crier. Les deux
+        // implémentations sont épinglées par les mêmes codes de violation.
+        //
+        // ⚠️ Des FONCTIONS, comme les getters réels : `localPeer` porte un Peer `markRaw`,
+        // donc un `computed` servirait un état partiellement périmé.
+        peerIdentity: vi.fn(() => {
+            const peer = peerStore.localPeer
+            const id = (typeof peer?.id === 'string') ? peer.id : null
+            const base = { id, lastId: peerStore.lastLocalPeerId, consumers: _peerConsumers.size }
+
+            if (!peer) return { state: peerStore.peerInitPromise ? 'creating' : 'absent', ...base }
+            if (peer.destroyed) return { state: 'destroyed', ...base }
+            if (peer.disconnected) return { state: 'disconnected', ...base }
+            return { state: peerStore.localPeerReady ? 'ready' : 'connecting', ...base }
+        }),
+        peerStateViolations: vi.fn(() => {
+            const peer = peerStore.localPeer
+            const violations = []
+            const add = (code, message) => violations.push({ code, message })
+
+            if (peerStore.localPeerReady && !peer) {
+                add('pret-sans-peer', 'localPeerReady est vrai alors que localPeer est nul')
+            }
+            if (peerStore.lastLocalPeerId && !peer && !peerStore.peerInitPromise) {
+                add('id-historique-sans-peer', 'lastLocalPeerId est posé alors qu\'aucun peer n\'existe et qu\'aucune init n\'est en vol')
+            }
+            if (peer && peerStore.localPeerReady && typeof peer.id !== 'string') {
+                add('pret-sans-id', 'localPeerReady est vrai alors que le peer n\'a pas d\'id utilisable')
+            }
+            if (peerStore.lastLocalPeerId && peer && (peer.destroyed || (peer.disconnected && !peerStore.peerReconnectTimer))) {
+                add('id-historique-sur-peer-inutilisable', 'lastLocalPeerId est posé sur un peer détruit ou déconnecté sans reconnexion en vol')
+            }
+            if (peer?.destroyed && peerStore.localPeerReady) {
+                add('pret-mais-detruit', 'localPeerReady est vrai sur un peer détruit')
+            }
+            if (peer && !peer.destroyed && _peerConsumers.size === 0 && !peerStore.peerDestroyTimer) {
+                add('peer-orphelin', 'un peer vivant n\'a plus aucun consommateur et aucune destruction n\'est armée')
+            }
+            return violations
+        }),
+        auditPeerState: vi.fn((where = '?') => {
+            const violations = peerStore.peerStateViolations()
+            if (violations.length === 0) return violations
+            console.error(
+                `[WebRTC2][invariant] ${where} — ${violations.length} contradiction(s) dans l'état du Peer :`,
+                { identity: peerStore.peerIdentity(), violations }
+            )
+            return violations
+        }),
+
         setPeerInitPromise: vi.fn((promise = null) => { peerStore.peerInitPromise = promise }),
         resetReconnectAttempts: vi.fn(() => { peerStore.peerReconnectAttempts = 0 }),
         incrementReconnectAttempts: vi.fn(() => {
@@ -275,10 +364,10 @@ export function createMockContext(overrides = {}) {
             return true
         }),
 
-        // ⚠️ `keepConsumerCount` reproduit l'asymétrie du store réel : après un échec
-        // d'init (localPeer déjà null), les consommateurs encore montés doivent pouvoir
-        // décrémenter jusqu'à 0 pour qu'un retry reparte d'un compte juste.
-        resetPeerState: vi.fn(({ keepConsumerCount = false } = {}) => {
+        // ⚠️ Ne touche PAS aux consommateurs, comme le store réel : un consommateur est un
+        // composant monté, pas une propriété du Peer. C'est ce qui a rendu l'ancien
+        // paramètre `keepConsumerCount` sans objet.
+        resetPeerState: vi.fn(() => {
             peerStore.detachPeerListeners()
             peerStore.localPeer = null
             peerStore.localPeerReady = false
@@ -287,7 +376,6 @@ export function createMockContext(overrides = {}) {
             peerStore.peerReconnectAttempts = 0
             peerStore.clearPeerDestroyTimer()
             peerStore.clearReconnectTimer()
-            if (!keepConsumerCount) peerStore.peerConsumerCount = 0
         }),
 
         // File de signaux brute : lue par `useSignalingQueue` (détecteur de coalescence).

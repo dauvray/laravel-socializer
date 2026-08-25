@@ -668,6 +668,52 @@ describe('usePeerCore', () => {
             // Sans éviction ce serait 22 (+ le retry de user-0)
             expect(ctx.AjaxService.load).toHaveBeenCalledTimes(21)
         })
+
+        // ── Le garde de peerId local, qui manquait ici ────────────────────────
+        //
+        // Les deux autres émetteurs (`requestRemotePeerConnection`,
+        // `responseRemotePeerConnection`) refusaient déjà d'émettre sans peerId ; celui-ci
+        // non. Et c'est le plus coûteux des trois à laisser passer, parce que `data` est
+        // capturé par la closure du moteur de retry : un `peerId: null` n'y est pas une
+        // requête ratée mais une invitation DÉFINITIVEMENT invalide, réémise en boucle.
+
+        it('n\'émet AUCUNE invitation sans peerId local', async () => {
+            const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+            ctx.peerStore.getLocalPeerId = null
+
+            const inviteId = await core.requestAuthorizationRemotePeerId(buildPayload())
+
+            expect(inviteId).toBeNull()
+            expect(ctx.AjaxService.load).not.toHaveBeenCalled()
+            expect(warn).toHaveBeenCalledWith(
+                expect.stringContaining('aucun peerId local'),
+                expect.anything()
+            )
+        })
+
+        it('n\'arme aucun retry sans peerId local', async () => {
+            vi.spyOn(console, 'warn').mockImplementation(() => {})
+            ctx.peerStore.getLocalPeerId = null
+
+            await core.requestAuthorizationRemotePeerId(buildPayload())
+            await vi.advanceTimersByTimeAsync(60_000)
+
+            // ⭐ Le fait qui compte vraiment : sans ce garde, le moteur de retry rejouait
+            // pendant une minute une invitation que le destinataire ne pouvait pas honorer.
+            expect(ctx.AjaxService.load).not.toHaveBeenCalled()
+        })
+
+        it('n\'inscrit pas de demande en vol sans peerId local', async () => {
+            vi.spyOn(console, 'warn').mockImplementation(() => {})
+            ctx.peerStore.getLocalPeerId = null
+
+            await core.requestAuthorizationRemotePeerId(buildPayload())
+
+            // Sans ça, `openCallBetweenPeer` verrait plus tard une invitation « en vol »
+            // qui n'est jamais partie, et son garde anti-forge accepterait une acceptation
+            // sans invitation réelle.
+            expect(ctx.peerStore.addWaitingRemotePeerId).not.toHaveBeenCalled()
+        })
     })
 
     // ── sendAuthorizationRemotePeerId ───────────────────────────────────────
@@ -757,6 +803,51 @@ describe('usePeerCore', () => {
             const payload = buildPayload()
 
             await expect(core.sendAuthorizationRemotePeerId(payload)).resolves.toBeUndefined()
+        })
+
+        // ── Sans peerId local : l'acceptation part QUAND MÊME, mais sans mentir ─────
+        //
+        // Seul des quatre émetteurs de peerId à ne PAS annuler son envoi, et c'est délibéré :
+        // ce message est une acceptation d'appel. L'appelant a arrêté son retry
+        // (`stopCallInviteRetryForUser`) et la FSM du receveur est déjà en RECEIVING — un
+        // second `answerCallFromPeer` sortirait par le refus de transition sans jamais
+        // réémettre. Refuser perdrait l'acceptation pour de bon.
+
+        it('retire la clé peerId au lieu d\'envoyer null', async () => {
+            const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+            ctx.peerStore.getLocalPeerId = null
+            const payload = buildPayload()
+
+            await core.sendAuthorizationRemotePeerId(payload)
+
+            const sentOptions = ctx.AjaxService.load.mock.calls[0][2].options
+            // ⭐ ABSENTE, pas `null` : les deux lecteurs d'en face conditionnent le mapping à
+            // `if (payload?.options?.peerId)`. Un `null` y serait ignoré de la même façon,
+            // mais `addRemotePeerId(slug, null)` empoisonnerait l'allowlist chez tout
+            // lecteur moins prudent — et l'absence dit la vérité, là où `null` est un id.
+            expect(sentOptions).not.toHaveProperty('peerId')
+            expect(warn).toHaveBeenCalledWith(
+                expect.stringContaining('SANS peerId'),
+                expect.anything()
+            )
+        })
+
+        // ⚠️ Vert dans les deux sémantiques (vérifié), et c'est normal : il n'épingle pas le
+        // garde mais la DÉCISION de ne pas annuler l'envoi. Sa valeur est de rougir si
+        // quelqu'un « harmonise » ce chemin avec les trois autres — ce qui perdrait
+        // l'acceptation pour de bon.
+        it('envoie tout de même l\'acceptation, statut compris', async () => {
+            vi.spyOn(console, 'warn').mockImplementation(() => {})
+            ctx.peerStore.getLocalPeerId = null
+
+            await core.sendAuthorizationRemotePeerId(buildPayload())
+
+            // Le pair redemandera le peerId par `/ask-to-peer-id` (c'est ce que fait
+            // `pool.requestOrConnectPeer` juste après, côté appelant) et le garde de
+            // `responseRemotePeerConnection` répondra dès que le Peer sera prêt.
+            // L'acceptation passe, l'id se rattrape.
+            expect(ctx.AjaxService.load).toHaveBeenCalledOnce()
+            expect(ctx.AjaxService.load.mock.calls[0][2].status).toBe(true)
         })
     })
 })

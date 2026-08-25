@@ -8,10 +8,12 @@
  *
  * Deux contrats sont figés ici parce qu'ils sont invisibles à la lecture :
  *
- * 1. **`resetPeerState({ keepConsumerCount: true })`** — la destruction survenant alors que
- *    `localPeer` est déjà absent (échec d'init) ne doit PAS remettre le compteur à zéro :
- *    les consommateurs encore montés décrémentent normalement jusqu'à 0, sinon un retry
- *    repartirait d'un compte faux et pourrait détruire un peer valide.
+ * 1. **`resetPeerState` ne touche JAMAIS aux consommateurs** — un consommateur est un
+ *    composant monté ; détruire le Peer n'en démonte aucun. Le reset les vidait, et comme
+ *    l'ancien compteur était planché à 0, le démontage suivant d'un consommateur survivant
+ *    rendait `0` : indistinguable de « le dernier vient de partir », donc une destruction
+ *    était réarmée sur un Peer que d'autres utilisaient encore. D'où les jetons : le retrait
+ *    d'un jeton inconnu rend `null`, et l'appelant teste `=== 0`.
  * 2. **une `Promise` traverse le state réactif sans être enveloppée** — Vue ne proxifie que
  *    les objets nus et les collections. Si ce n'était pas le cas, la garde d'init comparerait
  *    des identités différentes et `await` casserait.
@@ -33,22 +35,38 @@ describe('peers2 — runtime du Peer singleton', () => {
         vi.useRealTimers()
     })
 
-    describe('ref-counting des consommateurs', () => {
+    describe('consommateurs par jeton', () => {
         it('compte les consommateurs et retourne le nouveau total', () => {
-            expect(store.addPeerConsumer()).toBe(1)
-            expect(store.addPeerConsumer()).toBe(2)
-            expect(store.removePeerConsumer()).toBe(1)
-            expect(store.peerConsumerCount).toBe(1)
+            const a = {}
+            const b = {}
+            expect(store.addPeerConsumer(a)).toBe(1)
+            expect(store.addPeerConsumer(b)).toBe(2)
+            expect(store.removePeerConsumer(a)).toBe(1)
+            expect(store.peerConsumers.size).toBe(1)
         })
 
-        it('ne descend jamais sous zéro', () => {
-            // Un décrément orphelin (démontage sans enregistrement) ne doit pas rendre le
-            // compteur négatif : la destruction du peer ne serait plus planifiée au bon
-            // moment pour les consommateurs suivants.
-            expect(store.removePeerConsumer()).toBe(0)
-            expect(store.removePeerConsumer()).toBe(0)
+        it('est idempotent : le même jeton ne compte qu\'une fois', () => {
+            const a = {}
+            expect(store.addPeerConsumer(a)).toBe(1)
+            expect(store.addPeerConsumer(a)).toBe(1)
+        })
 
-            expect(store.addPeerConsumer()).toBe(1)
+        it('rend `null` — et jamais 0 — pour un jeton inconnu', () => {
+            // ⭐ LE contrat qui protège un Peer en service. `0` voudrait dire « le dernier
+            // consommateur vient de partir » et l'appelant détruirait le Peer ; `null` dit
+            // « ce jeton n'était pas inscrit, il n'y a rien à conclure ».
+            const monté = {}
+            store.addPeerConsumer(monté)
+
+            expect(store.removePeerConsumer({})).toBeNull()
+            expect(store.peerConsumers.size).toBe(1)
+        })
+
+        it('un retrait déjà effectué ne rend pas 0 une seconde fois', () => {
+            const a = {}
+            store.addPeerConsumer(a)
+            expect(store.removePeerConsumer(a)).toBe(0)
+            expect(store.removePeerConsumer(a)).toBeNull()
         })
     })
 
@@ -178,6 +196,10 @@ describe('peers2 — runtime du Peer singleton', () => {
     })
 
     describe('resetPeerState', () => {
+        /** Jetons des deux consommateurs « montés » du décor. */
+        const consumerA = {}
+        const consumerB = {}
+
         /** État d'un peer vivant, avec deux timers armés et ses listeners branchés. */
         const armLiveState = (onDestroyFire, onReconnectFire, onDetach = vi.fn()) => {
             store.setPeerListenersDetach(onDetach)
@@ -186,8 +208,8 @@ describe('peers2 — runtime du Peer singleton', () => {
             store.lastLocalPeerId = 'peer-alice'
             store.setPeerInitPromise(Promise.resolve())
             store.incrementReconnectAttempts()
-            store.addPeerConsumer()
-            store.addPeerConsumer()
+            store.addPeerConsumer(consumerA)
+            store.addPeerConsumer(consumerB)
             store.peerDestroyTimer = setTimeout(onDestroyFire, 1000)
             store.peerReconnectTimer = setTimeout(onReconnectFire, 1000)
         }
@@ -205,38 +227,41 @@ describe('peers2 — runtime du Peer singleton', () => {
             expect(store.lastLocalPeerId).toBeNull()
             expect(store.peerInitPromise).toBeNull()
             expect(store.peerReconnectAttempts).toBe(0)
-            expect(store.peerConsumerCount).toBe(0)
 
             vi.advanceTimersByTime(5000)
             expect(onDestroyFire).not.toHaveBeenCalled()
             expect(onReconnectFire).not.toHaveBeenCalled()
         })
 
-        it('préserve le compteur de consommateurs avec keepConsumerCount', () => {
+        it('préserve les consommateurs — INCONDITIONNELLEMENT', () => {
             vi.useFakeTimers()
             armLiveState(vi.fn(), vi.fn())
 
-            store.resetPeerState({ keepConsumerCount: true })
+            store.resetPeerState()
 
-            // ⚠️ Le cœur de la contrainte : les deux consommateurs sont toujours montés,
-            // leurs onUnmounted doivent pouvoir décrémenter jusqu'à 0 pour qu'un retry
-            // reparte d'un compte juste. Le reste de l'état, lui, est bien purgé.
-            expect(store.peerConsumerCount).toBe(2)
+            // ⭐ Le cœur de la contrainte, et il n'a plus d'option : les deux consommateurs
+            // sont TOUJOURS montés — détruire un Peer ne démonte aucun composant. Le reste
+            // de l'état, lui, est bien purgé.
+            //
+            // Quand ce reset les vidait, le démontage suivant d'un survivant rendait `0` sur
+            // un compteur planché, l'appelant lisait « plus personne » et réarmait une
+            // destruction sur un Peer encore utilisé par les autres.
+            expect(store.peerConsumers.size).toBe(2)
             expect(store.peerInitPromise).toBeNull()
             expect(store.peerReconnectAttempts).toBe(0)
             expect(store.peerDestroyTimer).toBeNull()
             expect(store.peerReconnectTimer).toBeNull()
 
-            expect(store.removePeerConsumer()).toBe(1)
-            expect(store.removePeerConsumer()).toBe(0)
+            expect(store.removePeerConsumer(consumerA)).toBe(1)
+            expect(store.removePeerConsumer(consumerB)).toBe(0)
         })
 
-        it('détache les listeners du Peer, y compris avec keepConsumerCount', () => {
+        it('détache les listeners du Peer même quand le peer est déjà absent', () => {
             vi.useFakeTimers()
             const onDetach = vi.fn()
             armLiveState(vi.fn(), vi.fn(), onDetach)
 
-            store.resetPeerState({ keepConsumerCount: true })
+            store.resetPeerState()
 
             // Ce chemin est celui de l'early-return de `_destroyPeerSingleton` (peer déjà
             // absent après un échec d'init) : rien d'autre n'exécute la closure là-bas, et

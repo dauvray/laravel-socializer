@@ -246,6 +246,27 @@ export function usePeerCore(ctx) {
 
         const localPeerId = ctx.peerStore.getLocalPeerId
 
+        // Symétrique des gardes de `requestRemotePeerConnection` (:109) et
+        // `responseRemotePeerConnection` (:181), qui manquait ici.
+        //
+        // ⚠️ Ce chemin-ci est le plus coûteux des trois à laisser passer : `data` — qui porte
+        // `peerId` — est capturé par la closure du moteur de retry juste en dessous, et
+        // ré-envoyé à l'identique à chaque tentative. Un `peerId: null` n'y était donc pas une
+        // requête ratée mais une invitation DÉFINITIVEMENT invalide, réémise en boucle : le
+        // destinataire pouvait accepter, il n'avait aucun id vers lequel se connecter.
+        //
+        // Refuser d'émettre est le bon comportement : l'appelant (`useCallManager.startCall`)
+        // ignore le retour et l'utilisateur peut rappeler — alors qu'une invitation partie
+        // avec un id nul ne se corrige plus.
+        if (!localPeerId) {
+            console.warn(
+                '[usePeerCore] requestAuthorizationRemotePeerId : aucun peerId local —' +
+                ` invitation vers "${payload?.toUserSlug}" non émise`,
+                { identity: ctx.peerStore.peerIdentity?.() ?? null }
+            )
+            return null
+        }
+
         const inviteId = payload?.inviteId || buildInviteId()
         const toUserSlug = payload.toUserSlug
 
@@ -301,9 +322,32 @@ export function usePeerCore(ctx) {
         return inviteId
     }
 
-    const sendAuthorizationRemotePeerId = async (payload) => { 
-        if(payload.status) {
-            payload.options.peerId = ctx.peerStore.getLocalPeerId
+    const sendAuthorizationRemotePeerId = async (payload) => {
+        if (payload.status) {
+            const localPeerId = ctx.peerStore.getLocalPeerId
+
+            // ⚠️ Ici, contrairement aux trois autres gardes, on N'ANNULE PAS l'envoi : ce
+            // message est une ACCEPTATION d'appel, et le refuser la perdrait pour de bon —
+            // l'appelant a arrêté son retry (`stopCallInviteRetryForUser`) et la FSM du
+            // receveur est déjà passée en RECEIVING, donc un second `answerCallFromPeer`
+            // sortirait par le refus de transition sans jamais réémettre.
+            //
+            // On se contente de ne pas écrire un `null` : la clé est RETIRÉE. C'est ce que
+            // les deux lecteurs attendent — `openCallBetweenPeer` et `acceptCallFromPeer`
+            // conditionnent tous deux le mapping à `if (payload?.options?.peerId)` — et
+            // `pool.requestOrConnectPeer`, appelé juste après côté appelant, redemandera le
+            // peerId par `/ask-to-peer-id`, où le garde de `responseRemotePeerConnection`
+            // répondra dès que le Peer sera prêt. L'acceptation passe, l'id se rattrape.
+            if (localPeerId) {
+                payload.options.peerId = localPeerId
+            } else {
+                delete payload.options.peerId
+                console.warn(
+                    '[usePeerCore] sendAuthorizationRemotePeerId : aucun peerId local —' +
+                    ' acceptation envoyée SANS peerId (le pair le redemandera)',
+                    { toUserSlug: payload?.fromUserSlug, identity: ctx.peerStore.peerIdentity?.() ?? null }
+                )
+            }
         }
 
         try {

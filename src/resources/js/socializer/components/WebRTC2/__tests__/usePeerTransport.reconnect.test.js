@@ -74,14 +74,24 @@ describe('usePeerTransport — reconnexion PeerJS (backoff, plafond, abandon)', 
         vi.restoreAllMocks()
     })
 
+    /**
+     * Une déconnexion du socket de signalisation, état COMPRIS.
+     *
+     * ⚠️ Pas `_triggerEvent('disconnected')` : émettre l'événement sans poser l'état laisserait
+     * `peer.disconnected === false`, et le vrai `reconnect()` **lève** sur un peer non
+     * déconnecté (`bundler.mjs:1826`). Le mock reproduit désormais cette levée, donc une
+     * déconnexion feinte serait une déconnexion que PeerJS ne peut pas produire.
+     */
+    const disconnectSocket = () => peer.disconnect()
+
     /** Une déconnexion suivie de l'attente complète de son backoff. */
     const disconnectAndWait = (attempt) => {
-        peer._triggerEvent('disconnected')
+        disconnectSocket()
         vi.advanceTimersByTime(expectedDelay(attempt))
     }
 
     it('replanifie la reconnexion après RECONNECT_BASE_DELAY_MS', () => {
-        peer._triggerEvent('disconnected')
+        disconnectSocket()
 
         // Rien d'immédiat : la reconnexion est différée, sinon une coupure réseau
         // déclencherait une rafale synchrone.
@@ -93,14 +103,17 @@ describe('usePeerTransport — reconnexion PeerJS (backoff, plafond, abandon)', 
         vi.advanceTimersByTime(1)
         expect(peer.reconnect).toHaveBeenCalledOnce()
         // Workaround PeerJS : `reconnect()` perd l'id précédent, on le restaure avant.
-        expect(peer.id).toBe(PEER_ID)
+        // ⚠️ `_lastServerId` et lui seul : c'est le champ dont `reconnect()` repart, et le
+        // seul assignable — `id` est un accesseur sans setter (cf. le mock, qui le reproduit
+        // désormais). Assigner `id` ici lèverait, et emporterait le `reconnect()` avec.
         expect(peer._lastServerId).toBe(PEER_ID)
+        expect(peer.reconnect).toHaveBeenCalledOnce()
     })
 
     it('applique un backoff exponentiel plafonné à RECONNECT_MAX_DELAY_MS', () => {
         // 1s · 2s · 4s · 8s · 16s puis plafond à 30s (et non 32s).
         for (let attempt = 1; attempt <= 6; attempt += 1) {
-            peer._triggerEvent('disconnected')
+            disconnectSocket()
 
             vi.advanceTimersByTime(expectedDelay(attempt) - 1)
             expect(peer.reconnect).toHaveBeenCalledTimes(attempt - 1)
@@ -118,7 +131,7 @@ describe('usePeerTransport — reconnexion PeerJS (backoff, plafond, abandon)', 
         }
         expect(peer.reconnect).toHaveBeenCalledTimes(MAX_RECONNECT_ATTEMPTS)
 
-        peer._triggerEvent('disconnected')
+        disconnectSocket()
         vi.advanceTimersByTime(RECONNECT_MAX_DELAY_MS * 2)
 
         // Plus aucune tentative, et aucun timer laissé en vol.
@@ -138,16 +151,115 @@ describe('usePeerTransport — reconnexion PeerJS (backoff, plafond, abandon)', 
         peer._triggerEvent('open', PEER_ID)
 
         // La prochaine coupure repart du délai de base, pas de 8 s.
-        peer._triggerEvent('disconnected')
+        disconnectSocket()
         vi.advanceTimersByTime(RECONNECT_BASE_DELAY_MS)
 
         expect(peer.reconnect).toHaveBeenCalledTimes(4)
     })
 
-    it('ne tente rien sur un Peer détruit', () => {
-        peer.destroyed = true
+    // ── L'état annoncé pendant la coupure ────────────────────────────────────────
+    //
+    // Ces deux tests épinglent le correctif le plus coûteux de la série : un peer déconnecté
+    // continuait de se déclarer « prêt ». `setLocalPeer()` sortait alors par son premier garde
+    // et `waitForMeReady()` répondait oui (il lit `lastLocalPeerId`, un fait HISTORIQUE),
+    // pendant que `getLocalPeerId` rendait `null` — `Peer.disconnect()` met `_id` à null.
+    // Chaque publication du peerId local sortait en `warn` : l'onglet ne répondait plus à
+    // aucune demande de peerId, sans le moindre signe visible.
 
+    it('cesse de se déclarer prêt dès la déconnexion du socket', () => {
+        expect(ctx.peerStore.localPeerReady).toBe(true)
+
+        disconnectSocket()
+
+        expect(ctx.peerStore.localPeerReady).toBe(false)
+    })
+
+    it('se redéclare prêt quand la reconnexion aboutit RÉELLEMENT', () => {
+        disconnectSocket()
+        vi.advanceTimersByTime(RECONNECT_BASE_DELAY_MS)
+
+        // ⭐ Le contrat que le mock ne mesurait pas. `reconnect()` était un `vi.fn()` vide :
+        // toute la suite ne vérifiait que « a-t-il été appelé ». Ici il porte son vrai
+        // contrat — il repart de `_lastServerId`, que l'appelant DOIT avoir restauré, et
+        // n'ouvre rien de synchrone. C'est le serveur qui répond, ci-dessous.
+        expect(peer.reconnect).toHaveBeenCalledOnce()
+        expect(peer.disconnected).toBe(false)
+        expect(ctx.peerStore.localPeerReady).toBe(false)
+
+        // Le serveur répond à la réouverture du socket, avec l'id restauré.
+        peer._triggerEvent('open', peer._lastServerId)
+
+        expect(ctx.peerStore.localPeerReady).toBe(true)
+        // L'onglet a bien retrouvé SON identité, pas une neuve. Nuance avec l'assertion du
+        // premier test : là c'est `_lastServerId` avant l'appel (ce que l'appelant restaure),
+        // ici c'est l'id après le tour complet — donc l'effet, et lui seul, qui aurait été
+        // rouge tant que la ligne fautive sautait le `reconnect()`.
+        expect(peer.id).toBe(PEER_ID)
+        expect(ctx.peerStore.lastLocalPeerId).toBe(PEER_ID)
+    })
+
+    it('nomme la contradiction quand la reconnexion est abandonnée', () => {
+        for (let attempt = 1; attempt <= MAX_RECONNECT_ATTEMPTS; attempt += 1) {
+            disconnectAndWait(attempt)
+        }
+        console.error.mockClear()
+
+        // La déconnexion de trop : plus aucun backoff ne sera armé.
+        disconnectSocket()
+
+        // ⭐ L'état terminal, enfin nommé. `lastLocalPeerId` reste posé sur un peer que rien
+        // ne va reconnecter, et `waitForMeReady` — qui ne lit que ce champ — continuera de
+        // répondre « prêt ». C'est exactement l'état dans lequel un onglet ne répond plus à
+        // aucune demande de peerId sans qu'aucune ligne ne le dise ; celui qu'il a fallu
+        // deviner à la main en croisant les logs Docker et nginx.
+        expect(ctx.peerStore.auditPeerState).toHaveBeenCalledWith(
+            expect.stringContaining('abandon')
+        )
+        expect(console.error).toHaveBeenCalledWith(
+            expect.stringContaining('[WebRTC2][invariant]'),
+            expect.objectContaining({
+                violations: expect.arrayContaining([
+                    expect.objectContaining({ code: 'id-historique-sur-peer-inutilisable' }),
+                ]),
+            })
+        )
+    })
+
+    // ── Deux préconditions de `reconnect()` que rien ne tenait ───────────────────
+    //
+    // Le mock rendait `reconnect()` par un `vi.fn()` vide : toute la suite mesurait « a-t-il
+    // été appelé », jamais s'il était appelable. Le vrai client LÈVE dans deux cas, et
+    // l'appel vit dans un `setTimeout` — une Error y serait `unhandled`, donc muette.
+
+    it('n\'arme jamais deux backoffs à la fois', () => {
+        disconnectSocket()
+
+        // Une seconde coupure avant l'échéance de la première. PeerJS n'émet pas deux
+        // `disconnected` d'affilée aujourd'hui (son `disconnect()` sort tôt), mais rien ici
+        // ne s'appuyait sur cette garantie : l'assignation du handle ÉCRASAIT le précédent
+        // sans l'annuler, laissant un timer orphelin — plus aucune référence pour le
+        // `clearReconnectTimer`, et un `reconnect()` en trop à son échéance.
         peer._triggerEvent('disconnected')
+
+        expect(vi.getTimerCount()).toBe(1)
+    })
+
+    it('ne tente pas de reconnecter un Peer qui s\'est reconnecté entre-temps', () => {
+        disconnectSocket()
+
+        // Le serveur répond de lui-même avant l'échéance du backoff : le peer n'est plus
+        // déconnecté. `reconnect()` y lèverait (« cannot reconnect because it is not
+        // disconnected from the server », `bundler.mjs:1827`).
+        peer._triggerEvent('open', PEER_ID)
+
+        expect(() => vi.advanceTimersByTime(RECONNECT_MAX_DELAY_MS)).not.toThrow()
+        expect(peer.reconnect).not.toHaveBeenCalled()
+    })
+
+    it('ne tente rien sur un Peer détruit', () => {
+        peer._markDestroyed()
+
+        disconnectSocket()
         vi.advanceTimersByTime(RECONNECT_MAX_DELAY_MS)
 
         expect(peer.reconnect).not.toHaveBeenCalled()
@@ -210,7 +322,7 @@ describe('usePeerTransport — reconnexion PeerJS (backoff, plafond, abandon)', 
         vi.advanceTimersByTime(PEER_DESTROY_DELAY_MS - 500)
 
         // Le socket tombe juste avant l'échéance : un backoff est armé (+1 s), donc au-delà.
-        peer._triggerEvent('disconnected')
+        disconnectSocket()
         vi.advanceTimersByTime(500)
 
         expect(peer.destroy).toHaveBeenCalledOnce()

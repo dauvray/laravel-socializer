@@ -312,6 +312,32 @@ export function usePeerConnections(ctx) {
                 return false
             }
 
+            // Garde 6 : le Peer local existe-t-il vraiment ?
+            //
+            // ⚠️ Les cinq branches ci-dessous font `ctx.peerStore.getLocalPeer.connect(…)` ou
+            // `.call(…)` SANS vérifier la nullité, en s'appuyant sur le fait que l'appelant a
+            // *peut-être* attendu `waitForMeReady` — lequel ne teste que `lastLocalPeerId`, un
+            // fait HISTORIQUE (cf. `id-historique-sur-peer-inutilisable` dans
+            // `peers2/getters.js`). Les deux ne disent pas la même chose : `disconnect()` met
+            // `_id` du Peer à null et le `.catch` d'init nulle `localPeer` en laissant
+            // `lastLocalPeerId` posé. Dans les deux cas `waitForMeReady` répond oui et il n'y
+            // a pas de peer.
+            //
+            // Sans ce garde, la TypeError tombait dans le `catch` en bas et sortait en
+            // « Erreur pendant connectToPeer » — un message qui ne nomme ni la cause ni le
+            // pair, sur un chemin dont on sait maintenant qu'il est atteignable en routine.
+            //
+            // `false` et non `true` : le moteur de retry doit REVENIR. `true` voudrait dire
+            // « c'est fait », et le pair resterait injoignable pour de bon.
+            if (!ctx.peerStore.getLocalPeer) {
+                console.warn(
+                    `[usePeerConnections] connectToPeer (${config.options.metadata.type}) :` +
+                    ` aucun Peer local — connexion vers "${userSlug}" reportée`,
+                    { userSlug, room, type, identity: ctx.peerStore.peerIdentity?.() ?? null }
+                )
+                return false
+            }
+
             if (config.options.metadata.type === 'data') {
                 const conn = ctx.peerStore.getLocalPeer.connect(config.peerId, config.options)
                 _saveRoomConnection(config, conn)

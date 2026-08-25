@@ -53,8 +53,9 @@ describe('harnais multi-pairs', () => {
         expect(alice.meStore.getMe.slug).toBe('alice')
         expect(bob.meStore.getMe.slug).toBe('bob')
 
-        // Le singleton module-level de usePeerTransport est bien isolé par pair :
-        // sans vi.resetModules(), les deux partageraient le même Peer.
+        // Chaque pair a bien SON Peer. Ce n'est pas `vi.resetModules()` qui l'isole —
+        // l'état du Peer vit dans Pinia depuis sa migration, et son registre de contextes
+        // l'a rejoint : c'est l'assertion `peerStore` ci-dessus qui porte l'isolation.
         expect(alice.peerInstance).not.toBe(bob.peerInstance)
     })
 

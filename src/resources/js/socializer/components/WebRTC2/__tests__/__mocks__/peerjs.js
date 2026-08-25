@@ -145,21 +145,32 @@ const _emitPeerUnavailable = (peer, peerId) => {
 
 export class Peer {
     constructor(id, options) {
-        this.id = id || _randomId('mock-peer')
+        this._id = id || _randomId('mock-peer')
 
         // PeerJS accepte `new Peer(options)` : le vrai constructeur bascule le 1er argument en
-        // options quand c'est un objet nu, et c'est la forme qu'utilise la production
-        // (`usePeerTransport._doInit`). On expose donc les options RÉELLEMENT reçues, quelle que
-        // soit l'arité — seul angle sous lequel `config.iceServers` est observable en test.
+        // options quand c'est un objet nu. La production passe désormais l'id en 1er argument
+        // (`usePeerTransport._doInit`), mais les deux arités restent acceptées ici — on expose
+        // les options RÉELLEMENT reçues, seul angle sous lequel `config.iceServers` est
+        // observable en test.
         //
-        // ⚠️ `this.id` n'est délibérément PAS corrigé : il continue de porter cet objet jusqu'à
-        // l'`open`. `_registerOnBus` s'en protège déjà par son `typeof === 'string'` (voir son
-        // commentaire), et « corriger » `id` inscrirait le Peer au bus sous une clé aléatoire
-        // avant l'`open`, ce qui changerait le routage de tous les tests de scénario.
-        this.options = (id !== null && typeof id === 'object') ? id : (options ?? null)
-        this.open = false
-        this.destroyed = false
-        this.disconnected = false
+        // ⚠️ `this._id` n'est délibérément PAS corrigé quand le 1er argument est un objet : il
+        // continue de porter cet objet jusqu'à l'`open`. `_registerOnBus` s'en protège déjà par
+        // son `typeof === 'string'` (voir son commentaire), et « corriger » `id` inscrirait le
+        // Peer au bus sous une clé aléatoire avant l'`open`, ce qui changerait le routage de
+        // tous les tests de scénario.
+        //
+        // ⚠️ Les quatre champs ci-dessous sont écrits sous leur nom PRIVÉ, et c'est structurel :
+        // `options`, `open`, `destroyed` et `disconnected` sont des accesseurs sans setter
+        // (cf. le bloc d'accesseurs plus bas et `peerjsMockFidelity.descriptors.test.js`).
+        this._options = (id !== null && typeof id === 'object') ? id : (options ?? null)
+        this._open = false
+        this._destroyed = false
+        this._disconnected = false
+
+        // Le vrai Peer expose `socket` (accesseur interne) : on ne simule pas de socket, mais la
+        // propriété doit exister ET être en lecture seule, sinon une écriture de production y
+        // serait inoffensive ici et fatale dans le navigateur.
+        this._socket = null
 
         // Stockage des handlers par événement
         this._handlers = {}
@@ -253,7 +264,7 @@ export class Peer {
             })
             this._connections.clear()
 
-            this.destroyed = true
+            this._destroyed = true
             this._triggerEvent('close')
 
             // ⚠️ `_handlers` n'est PAS vidé, et ce n'est pas un oubli : le vrai `_cleanup()`
@@ -272,25 +283,125 @@ export class Peer {
         // directement. À traiter comme un item de fidélité distinct.
         this.disconnect = vi.fn(() => {
             if (this.disconnected) return
-            this.disconnected = true
-            this.open = false
+            this._disconnected = true
+            this._open = false
             this._lastServerId = this.id
             this._triggerEvent('disconnected', this.id)
         })
-        this.reconnect = vi.fn()
+
+        /**
+         * Fidèle à `bundler.mjs:1818-1827`, y compris ses DEUX levées.
+         *
+         * ⚠️ Ce n'était qu'un `vi.fn()` vide : la suite de reconnexion ne mesurait que
+         * « `reconnect` a-t-il été appelé », jamais rien de son contrat. Trois faits sont
+         * désormais reproduits, et chacun est un piège du vrai client :
+         *
+         * 1. **un peer détruit LÈVE** — la production garde avant d'appeler, ce garde est donc
+         *    load-bearing et non décoratif ;
+         * 2. **un peer NON déconnecté lève aussi** — `reconnect()` n'est légal que sur un peer
+         *    déconnecté. Deux backoffs armés en parallèle (le handle du premier est écrasé, pas
+         *    annulé) mèneraient donc à une Error non rattrapée dans un timer ;
+         * 3. **`reconnect()` n'ouvre RIEN de synchrone** : il rouvre un socket via
+         *    `_initialize(this._lastServerId)`. Si le serveur ne répond pas, aucun `'open'` ne
+         *    suit — c'est exactement le cas que modélise le backoff. C'est au test d'émettre
+         *    `_triggerEvent('open', peer._lastServerId)` pour jouer un serveur qui répond.
+         */
+        this.reconnect = vi.fn(() => {
+            if (this.destroyed) {
+                throw new Error('This peer cannot reconnect to the server. It has already been destroyed.')
+            }
+            if (!this.disconnected) {
+                if (!this.open) return  // encore en cours de connexion initiale : le vrai log seulement
+                throw new Error(`Peer ${this.id} cannot reconnect because it is not disconnected from the server!`)
+            }
+            this._disconnected = false
+        })
 
         _lastInstance = this
         _instances.push(this)
         this._registerOnBus()
     }
 
+    /*
+     * ── Les SEPT accesseurs sans setter du vrai Peer ──────────────────────────────
+     *
+     * `peerjs` 1.5.4 expose `id`, `options`, `open`, `socket`, `connections`, `destroyed` et
+     * `disconnected` en **lecture seule** (`dist/bundler.mjs:1460-1492`). Le mock n'en
+     * reproduisait qu'un, et ce delta a coûté des mois : tant que `id` était une propriété
+     * simple, un `peer.id = …` du code de production était inoffensif ICI et fatal dans le
+     * navigateur (module ES ⇒ mode strict ⇒ TypeError). C'est exactement ce qui a laissé
+     * passer un `peer.id = …` placé juste avant `peer.reconnect()` : la suite restait verte
+     * alors qu'AUCUNE reconnexion PeerJS n'aboutissait en production.
+     *
+     * Les six autres étaient exposées au même accident. Elles ne le sont plus, et
+     * `peerjsMockFidelity.descriptors.test.js` compare les descripteurs des deux classes
+     * pour que ça reste vrai.
+     *
+     * ⚠️ Le harnais écrit les champs PRIVÉS (`_id`, `_open`, …), jamais les accesseurs. Pour
+     * les cas où un test veut poser un état sans jouer la cascade, passer par un verbe
+     * explicite (`_markDestroyed()`).
+     */
+    get id() {
+        return this._id
+    }
+
+    get options() {
+        return this._options
+    }
+
+    get open() {
+        return this._open
+    }
+
+    get socket() {
+        return this._socket
+    }
+
+    /**
+     * Comme le vrai (`bundler.mjs:1478`) : un objet nu keyé sur le peerId distant, reconstruit
+     * à chaque lecture. Le mock stocke un Set de connexions ; la forme exposée est celle de la
+     * lib, pas celle du stockage.
+     */
+    get connections() {
+        const plain = Object.create(null)
+        this._connections.forEach((conn) => {
+            if (!conn?.peer) return
+            if (!plain[conn.peer]) plain[conn.peer] = []
+            plain[conn.peer].push(conn)
+        })
+        return plain
+    }
+
+    get destroyed() {
+        return this._destroyed
+    }
+
+    get disconnected() {
+        return this._disconnected
+    }
+
+    /**
+     * Pose le seul drapeau `destroyed`, SANS la cascade de `destroy()`.
+     *
+     * Réservé aux tests de garde (« ne tente rien sur un Peer détruit ») : `destroy()` émet
+     * `disconnected` avant de poser le drapeau, ce qui déclencherait précisément le chemin
+     * qu'on veut voir rester inerte.
+     */
+    _markDestroyed() {
+        this._destroyed = true
+        return this
+    }
+
     /**
      * S'inscrit au registre du bus sous son id courant (no-op sans bus actif).
      *
-     * ⚠️ Garde `typeof === 'string'` : le code de production appelle
-     * `new Peer({ host, port, … })` — le 1er argument est l'objet d'options, pas un id.
-     * `this.id` porte donc cet objet jusqu'à l'événement `open`, et l'inscrire
-     * polluerait le registre avec une clé inatteignable.
+     * ⚠️ Garde `typeof === 'string'` : la PRODUCTION fournit désormais son id en 1er argument
+     * (cf. `usePeerTransport._doInit`), mais l'arité `new Peer({ host, port, … })` reste
+     * acceptée ici, et le vrai client comme ce mock laissent alors `id` porter l'objet
+     * d'options jusqu'à l'`open`. L'inscrire polluerait le registre avec une clé
+     * inatteignable. Le garde couvre donc l'ancienne forme, que des tests peuvent encore
+     * exercer volontairement — cf. `usePeerTransport.singleton.test.js`, bloc
+     * « identité du Peer à la construction ».
      */
     _registerOnBus() {
         const bus = _getBus()
@@ -307,8 +418,9 @@ export class Peer {
             if (bus && typeof this.id === 'string' && this.id !== args[0]) {
                 bus.peers.delete(this.id)
             }
-            this.id = args[0]
-            this.open = true
+            this._id = args[0]
+            this._open = true
+            this._disconnected = false
             this._registerOnBus()
         }
 

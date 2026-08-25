@@ -333,6 +333,48 @@ describe('usePeerConnections', () => {
             expect(ctx.peerStore.getLocalPeer.connect).not.toHaveBeenCalled()
         })
 
+        // ── Aucun Peer local ──────────────────────────────────────────────────
+        //
+        // Cinq branches de `connectToPeer` faisaient `ctx.peerStore.getLocalPeer.connect(…)`
+        // ou `.call(…)` SANS test de nullité, en s'appuyant sur le fait que l'appelant a
+        // *peut-être* attendu `waitForMeReady` — lequel ne lit que `lastLocalPeerId`, un fait
+        // HISTORIQUE. Les deux divergent en routine : `Peer.disconnect()` met `_id` à null, et
+        // le `.catch` d'init nulle `localPeer` en laissant `lastLocalPeerId` posé.
+
+        it('ne jette pas et reporte quand il n\'y a aucun Peer local', () => {
+            const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+            ctx.peerStore.getLocalPeer = null
+
+            // ⭐ `false` et non `true` : `true` voudrait dire « c'est fait » et le moteur de
+            // retry ne reviendrait pas — le pair resterait injoignable pour de bon. Avant le
+            // garde, la TypeError tombait dans le `catch` général et sortait en « Erreur
+            // pendant connectToPeer », un message qui ne nomme ni la cause ni le pair.
+            expect(() => connections.connectToPeer({ userSlug: 'alice', peerId: 'p-alice' })).not.toThrow()
+            expect(connections.connectToPeer({ userSlug: 'alice', peerId: 'p-alice' })).toBe(false)
+            expect(warn).toHaveBeenCalledWith(
+                expect.stringContaining('aucun Peer local'),
+                expect.objectContaining({ userSlug: 'alice' })
+            )
+        })
+
+        // ⚠️ Celui-ci reste VERT sans le garde (vérifié) : la TypeError tombait dans le
+        // `catch`, dont le `finally` relâche déjà le verrou. Il n'épingle donc pas le garde
+        // mais la propriété dont le garde dépend — un report doit rester réessayable. Le dire
+        // plutôt que le laisser croire : un test qui passe dans les deux cas n'épingle rien.
+        it('un report faute de Peer local reste réessayable (verrou relâché)', () => {
+            vi.spyOn(console, 'warn').mockImplementation(() => {})
+            ctx.peerStore.getLocalPeer = null
+
+            connections.connectToPeer({ userSlug: 'alice', peerId: 'p-alice' })
+
+            // Sans relâchement, un report gèlerait définitivement toute nouvelle tentative
+            // vers ce pair : la deuxième sortirait par « déjà en vol » et le moteur de retry
+            // ne rattraperait rien.
+            ctx.peerStore.getLocalPeer = fakeLocalPeer()
+            expect(connections.connectToPeer({ userSlug: 'alice', peerId: 'p-alice' })).toBe(true)
+            expect(ctx.peerStore.getLocalPeer.connect).toHaveBeenCalled()
+        })
+
         it('accepte `fromUserSlug` comme alias de `userSlug`', () => {
             expect(connections.connectToPeer({ fromUserSlug: 'alice', peerId: 'p-alice' })).toBe(true)
             expect(ctx.peerStore.getLocalPeer.connect).toHaveBeenCalled()

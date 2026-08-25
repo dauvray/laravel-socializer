@@ -11,17 +11,19 @@
  *
  * ── Pourquoi vi.resetModules() par pair ───────────────────────────────────────
  *
- * `usePeerTransport` garde deux structures **module-level** : `contextRegistry` (le
- * registre des contextes WebRTC actifs, sur lequel repose le routage des connexions
- * entrantes) et `_hubRateLimiter`. Sans reset, deux pairs du même process partageraient
- * le même registre de contextes — ils seraient un seul participant. Chaque pair charge
- * donc sa propre copie du graphe de modules ; le bus PeerJS et le serveur de
+ * Il ne reste dans `usePeerTransport` qu'une seule structure **module-level** :
+ * `_hubRateLimiter` (+ `_hubByteLimiter`), la fenêtre glissante du hub star. C'est
+ * aujourd'hui la seule justification du reset — mais elle suffit : sans lui, les
+ * retransmissions de deux pairs du même process s'imputeraient au même budget. Chaque pair
+ * charge donc sa propre copie du graphe de modules ; le bus PeerJS et le serveur de
  * signalisation vivent sur `globalThis` précisément pour survivre à ces resets et rester
  * partagés.
  *
- * L'état du **Peer singleton** (ref-counting, garde d'init, reconnexion), lui, vit
- * désormais dans `peerStore` : la Pinia neuve créée ci-dessous par pair suffit à l'isoler,
- * et c'est ce qui rend le paquet insensible au HMR (module rechargé, store conservé).
+ * ⚠️ Le **registre des contextes** n'est plus module-level : il vit dans `peerStore`
+ * (`peers2/state.js`), comme l'état du Peer singleton (ref-counting, garde d'init,
+ * reconnexion). Ce sont donc les Pinia neuves créées ci-dessous, une par pair, qui isolent
+ * réellement les participants — et c'est ce qui rend le paquet insensible au HMR : un
+ * module rechargé retrouve les contextes du Peer survivant, au lieu de le laisser sourd.
  *
  * ⚠️ Corollaire : monter les pairs **séquentiellement** (`await` l'un après l'autre).
  * Deux `createVirtualPeer()` concurrents se voleraient le registre de modules.

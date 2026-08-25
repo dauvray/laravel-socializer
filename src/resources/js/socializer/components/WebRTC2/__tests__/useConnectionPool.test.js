@@ -626,6 +626,60 @@ describe('useConnectionPool', () => {
         })
     })
 
+    // ── La demande qui n'est jamais partie ──────────────────────────────────
+
+    describe('demande de peerId non partie (ni ID, ni waiting)', () => {
+
+        // ⭐ La course la plus coûteuse du module, et elle ne tient qu'à une latence.
+        //
+        // `requestOrConnectPeer` lance `requestRemotePeerConnection` SANS l'attendre, puis
+        // arme le moteur à ~1 s. Le drapeau `waiting` n'est écrit qu'APRÈS l'aller-retour
+        // HTTP — et pas écrit du tout si la demande sort par un de ses gardes (plafond de
+        // cadence 3/10 s, peerId local pas prêt, POST en erreur). Au premier tour, le
+        // moteur voit donc « ni ID, ni intention ».
+        //
+        // Lire ça comme « le pair est parti » éteint le moteur (`return true` ⇒ usePeerRetry
+        // ne replanifie rien) : plus personne ne redemande jamais ce peerId. Vu de
+        // l'utilisateur — A diffuse, B arrive, A logue UN `Could not connect to peer <uuid>`
+        // puis se tait, et B n'a même pas de spinner : aucun contact ne lui est parvenu.
+
+        it('reste armé et redemande tant que le pair est présent', async () => {
+            // La demande part (mock) mais n'écrit aucun waiting : exactement l'état laissé
+            // par un POST plus lent que ce tour-ci, ou par le plafond de cadence.
+            ctx.connection.usersInRoom = ['alice']
+
+            pool.requestOrConnectPeer('alice')
+            expect(core.requestRemotePeerConnection).toHaveBeenCalledTimes(1)
+            core.requestRemotePeerConnection.mockClear()
+
+            // Premier tour : ni ID, ni waiting — et pourtant alice est là.
+            await vi.advanceTimersByTimeAsync(FIRST_RETRY_MS)
+            expect(core.requestRemotePeerConnection).toHaveBeenCalledWith('alice', ctx.session.currentType)
+
+            // Et le moteur est toujours vivant au tour suivant : c'est CE point que
+            // l'ancien `return true` faisait échouer, pas la première demande.
+            core.requestRemotePeerConnection.mockClear()
+            await vi.advanceTimersByTimeAsync(SECOND_RETRY_MS)
+            expect(core.requestRemotePeerConnection).toHaveBeenCalledWith('alice', ctx.session.currentType)
+        })
+
+        it('mais s\'arrête pour de bon si le pair n\'est plus nulle part', async () => {
+            // Le pendant indispensable : sans lui, le correctif ci-dessus deviendrait un
+            // insisteur perpétuel sur des pairs réellement partis. `usersInRoom` vide ET
+            // aucun appel autorisé ⇒ plus rien ne concerne ce pair.
+            ctx.connection.usersInRoom = []
+            ctx.isAuthorizedCallPeer.mockReturnValue(false)
+
+            pool.requestOrConnectPeer('alice')
+            core.requestRemotePeerConnection.mockClear()
+
+            await vi.advanceTimersByTimeAsync(FIRST_RETRY_MS)
+            await vi.advanceTimersByTimeAsync(SECOND_RETRY_MS)
+
+            expect(core.requestRemotePeerConnection).not.toHaveBeenCalled()
+        })
+    })
+
     // ── Recovery : peerUnavailableSignal ────────────────────────────────────
 
     describe('recovery peer-unavailable', () => {

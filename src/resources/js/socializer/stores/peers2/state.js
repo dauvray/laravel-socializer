@@ -1,3 +1,4 @@
+import { markRaw } from 'vue'
 
 export default () => {
   return {
@@ -5,12 +6,48 @@ export default () => {
     localPeer: null, // peer local
     localPeerReady : false, // indique si le peer local est prêt (id attribué)
 
+    // ─── Registre des contextes WebRTC montés (clé: contextId) ───────────────
+    // key = contextId (ex: data-room-test, stream-room-test), value = ctx complet.
+    //
+    // ⚠️ ICI, et non au niveau du module ES de usePeerTransport, parce que les
+    // dispatchers du Peer (`bind('call')`, `bind('connection')`, `bind('error')`) sont
+    // des closures qui le consultent : il doit donc vivre EXACTEMENT aussi longtemps que
+    // `localPeer` ci-dessus. Quand il vivait dans le module, un HMR renouvelait le
+    // registre et conservait le Peer : celui-ci résolvait alors les connexions entrantes
+    // contre un registre vide — « Aucun contexte trouvé », connexion FERMÉE — pendant que
+    // les composants remontés s'inscrivaient dans le neuf. La recovery
+    // `peer-unavailable` balayait le même registre mort.
+    //
+    // ⚠️ `markRaw` : Vue proxifie les Map. Sans lui, les valeurs ressorties du registre
+    // seraient des proxies réactifs et non les objets de contexte eux-mêmes, ce qui
+    // casserait les comparaisons d'identité de `unregisterContext` (last-write-wins) et
+    // d'`_isAuthorizedIncomingPeer`. Même arbitrage que les handles de timer plus bas.
+    //
+    // ⚠️ `resetPeerState` NE le vide PAS : un contexte monté survit à la destruction et à
+    // la recréation du Peer. Le vider là reviendrait à rendre le Peer neuf sourd à tous
+    // les contextes déjà en place.
+    contextRegistry: markRaw(new Map()),
+
     // ─── Runtime du Peer singleton (usePeerTransport) ────────────────────────
     // Cet état décrit le cycle de vie du `localPeer` ci-dessus : il vit donc ici, et
     // non au niveau du module ES du transport, sinon un HMR (module rechargé, store
     // conservé) ou une Pinia neuve désynchronise les compteurs de l'état du peer —
     // le dernier consommateur devient invisible et un peer encore utilisé est détruit.
-    peerConsumerCount: 0, // contextes consommateurs du peer singleton (ref-counting)
+    // Consommateurs du peer singleton, par JETON (un par instance de usePeerTransport)
+    // et non par compteur.
+    //
+    // ⚠️ C'était un entier, et la soustraction était un piège à deux détentes :
+    //   1. `resetPeerState` remettait le compteur à 0 alors que des consommateurs étaient
+    //      encore MONTÉS (une destruction de Peer ne démonte personne) ;
+    //   2. le décrément était planché à 0, donc un décrément orphelin restait à 0 et
+    //      repassait le test « plus personne » de l'appelant.
+    // Composés : après une destruction, le démontage suivant d'un consommateur survivant
+    // réarmait une destruction sur un Peer que d'AUTRES consommateurs utilisaient encore.
+    //
+    // Avec des jetons, « plus aucun consommateur » est un fait (`size === 0`) et non le
+    // résultat d'une soustraction, et un retrait de jeton inconnu est un no-op structurel.
+    // `markRaw` pour la même raison que `contextRegistry` : Vue proxifie les Set.
+    peerConsumers: markRaw(new Set()),
     peerInitPromise: null, // init en vol — garde anti-race (2 contextes = 1 seul Peer)
     peerReconnectAttempts: 0, // tentatives de reconnexion PeerJS (backoff + garde anti-boucle)
     peerDestroyTimer: null, // handle de la destruction différée (PEER_DESTROY_DELAY_MS)

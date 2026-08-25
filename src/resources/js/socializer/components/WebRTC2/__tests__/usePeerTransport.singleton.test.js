@@ -19,14 +19,16 @@
  *
  * ── Pourquoi une copie neuve du module par test ───────────────────────────────
  *
- * L'état de ces trois mécanismes vit au niveau du **module ES** (`_peerConsumerCount`,
- * `_peerInitPromise`, `_reconnectAttempts`, `_peerDestroyTimer`, `_reconnectTimer`) :
- * sans `vi.resetModules()`, un test hériterait des compteurs du précédent. Le mock PeerJS
- * doit être rechargé **après le même reset**, sinon `getLastPeerInstance()` ne voit pas
- * les instances créées par la copie sous test (cf. `helpers/createVirtualPeer.js`).
+ * L'état de ces trois mécanismes vit dans le **store Pinia** (`peerConsumers`,
+ * `peerInitPromise`, `peerReconnectAttempts`, les deux handles de timer) — et le registre
+ * des contextes l'a rejoint. C'est donc la Pinia neuve posée par `setup.js` avant chaque
+ * test qui isole l'état, PAS `vi.resetModules()`.
  *
- * Le dernier bloc exploite précisément ce mécanisme pour reproduire le **HMR** : une copie
- * neuve du module qui coexiste avec l'ancienne, alors que le store Pinia, lui, survit.
+ * Le reset de modules sert ici à deux autres fins : recharger le mock PeerJS **dans le même
+ * graphe** que la copie sous test (sinon `getLastPeerInstance()` ne voit pas ses instances,
+ * cf. `helpers/createVirtualPeer.js`), et pouvoir faire coexister deux copies du composable
+ * pour reproduire un HMR — ce que fait le dernier bloc.
+ *
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createMockContext } from './helpers/createMockContext.js'
@@ -320,6 +322,51 @@ describe('usePeerTransport — Peer singleton (garde d\'init, ref-counting, dest
         expect(ctxA.peerStore.localPeer).toBe(peer)
     })
 
+    it('une destruction ne réarme pas une destruction sur le Peer suivant, encore consommé', async () => {
+        // ⭐ Le second cycle « gratuit », et il n'était couvert par rien.
+        //
+        // `resetPeerState` vidait le compteur de consommateurs alors que des composants
+        // étaient TOUJOURS montés. Comme le décrément était planché à 0, le démontage suivant
+        // de l'un d'eux rendait `0` — indistinguable de « le dernier vient de partir » — et
+        // l'appelant, qui testait `<= 0`, réarmait une destruction sur le Peer RECONSTRUIT
+        // entre-temps, que les autres contextes utilisaient encore.
+        // ⚠️ La reconstruction doit venir d'un consommateur DÉJÀ inscrit, et c'est tout le
+        // sel du scénario : son `_isRegisteredAsConsumer` est déjà vrai, donc il ne réajoute
+        // pas son jeton. Sous l'ancienne sémantique, le compteur restait donc à 0 pendant
+        // qu'il reconstruisait — et le démontage suivant de son voisin rendait 0, lu comme
+        // « plus personne ». Un troisième contexte neuf masquerait le bug (il réinscrirait
+        // un jeton, donc le compteur ne serait plus nul).
+        // ⚠️ Le VRAI store Pinia, pas le mock : ce test porte sur la SÉMANTIQUE du
+        // ref-counting (que rend `removePeerConsumer`, et ce que `resetPeerState` touche).
+        // `mockFidelity` ne garantit que la surface — un test contre le mock ne prouverait
+        // rien du store, et c'est exactement le piège que ce fichier documente plus haut.
+        const { usePeerTransport, lastPeer } = await loadTransportCopy()
+        const peerStore = usePeer2Store()
+
+        const ctxA = { ...makeCtx('stream-a'), peerStore }
+        const ctxB = { ...makeCtx('data-app'), peerStore }
+        const [apiA, appA] = mount(usePeerTransport, ctxA)
+        const [apiB] = mount(usePeerTransport, ctxB)
+        await Promise.all([apiA.setLocalPeer(), apiB.setLocalPeer()])
+        lastPeer()._triggerEvent('open', 'peer-alice')
+
+        // Une destruction complète passe par là (ce que fait `_destroyPeerSingleton`).
+        peerStore.resetPeerState()
+
+        // B, toujours monté, reconstruit le Peer. C'est CELUI-LÀ qu'il ne faut pas perdre.
+        await apiB.setLocalPeer()
+        const rebuilt = lastPeer()
+        rebuilt._triggerEvent('open', 'peer-alice-2')
+
+        // A se démonte. B est toujours là : rien ne doit être détruit.
+        vi.useFakeTimers()
+        appA.unmount()
+        vi.advanceTimersByTime(PEER_DESTROY_DELAY_MS * 2)
+
+        expect(rebuilt.destroy).not.toHaveBeenCalled()
+        expect(peerStore.localPeer).toBe(rebuilt)
+    })
+
     it('annule la destruction si un consommateur remonte pendant le délai', async () => {
         const { usePeerTransport, lastPeer } = await loadTransportCopy()
         const ctxA = makeCtx('stream-a')
@@ -409,11 +456,15 @@ describe('usePeerTransport — Peer singleton (garde d\'init, ref-counting, dest
         })
 
         it('un `error` livré après la destruction ne remonte plus rien', async () => {
-            // Seul événement RÉELLEMENT livrable après un `destroy()` : `new Peer({host,…})`
-            // laisse `userId` undefined (bundler.mjs:1517), donc PeerJS résout l'id par HTTP
-            // et le `.catch(error => this._abort(ServerError, error))` de `retrieveId()`
-            // (l.1564 → `emitError` l.1761) n'a aucun garde `destroyed` : il peut tomber bien
-            // après. Sans détachement, la room fermée loggue encore des erreurs PeerJS.
+            // Un `error` peut tomber bien après un `destroy()` : `emitError`
+            // (`bundler.mjs:1761`) n'a aucun garde `destroyed`, et il est atteint par
+            // plusieurs chemins asynchrones (`Socket` en cours de fermeture, `_abort`).
+            //
+            // ⚠️ Ce commentaire décrivait auparavant le chemin `retrieveId()` de
+            // `new Peer({host,…})` — arité que la production n'utilise PLUS : elle fournit son
+            // id, donc `_initialize` est synchrone. Ce chemin-là est fermé (cf. le bloc
+            // « identité du Peer à la construction »), mais le détachement reste nécessaire :
+            // c'est `emitError` qui est sans garde, pas seulement son appelant HTTP.
             const { usePeerTransport, lastPeer } = await loadTransportCopy()
             const ctx = makeCtx('stream-a')
 
@@ -500,21 +551,21 @@ describe('usePeerTransport — Peer singleton (garde d\'init, ref-counting, dest
         const peer = lastPeer()
         peer._triggerEvent('open', 'peer-alice')
 
-        expect(peerStore.peerConsumerCount).toBe(2)
+        expect(peerStore.peerConsumers.size).toBe(2)
         expect(peerStore.getLocalPeer).toBe(peer)
 
         vi.useFakeTimers()
         appB.unmount()
         vi.advanceTimersByTime(PEER_DESTROY_DELAY_MS * 2)
 
-        expect(peerStore.peerConsumerCount).toBe(1)
+        expect(peerStore.peerConsumers.size).toBe(1)
         expect(peer.destroy).not.toHaveBeenCalled()
 
         appA.unmount()
         vi.advanceTimersByTime(PEER_DESTROY_DELAY_MS)
 
         expect(peer.destroy).toHaveBeenCalledOnce()
-        expect(peerStore.peerConsumerCount).toBe(0)
+        expect(peerStore.peerConsumers.size).toBe(0)
         expect(peerStore.getLocalPeer).toBeNull()
         expect(peerStore.getLastLocalPeerId).toBeNull()
         expect(peerStore.peerInitPromise).toBeNull()
@@ -523,10 +574,17 @@ describe('usePeerTransport — Peer singleton (garde d\'init, ref-counting, dest
 
     // ── Rechargement de module (HMR) ─────────────────────────────────────────────
     //
-    // Le HMR remplace le module `usePeerTransport` (état module-level remis à zéro) mais
-    // PAS le store Pinia (le Peer, lui, est toujours vivant). Deux copies du composable
-    // coexistent donc, chacune avec ses propres compteurs — et c'est ce que reproduisent
-    // les tests ci-dessous en chargeant deux copies qui partagent le même store.
+    // Le HMR remplace le module `usePeerTransport` mais PAS le store Pinia (le Peer, lui,
+    // est toujours vivant). Deux copies du composable coexistent donc, et les tests
+    // ci-dessous les reproduisent en chargeant deux copies qui partagent le même store.
+    //
+    // ⚠️ Ce qui traverse un rechargement a changé, et c'est le sujet du dernier test de ce
+    // bloc : le registre des contextes vit désormais dans le store (`peers2/state.js`), et
+    // non plus au niveau du module. Quand il était module-level, la copie neuve
+    // enregistrait ses contextes dans un registre que les dispatchers du Peer survivant —
+    // des closures sur l'ANCIENNE copie — ne consultaient jamais : tout entrant tombait
+    // sur « Aucun contexte trouvé » et était FERMÉ. Il ne reste module-level que
+    // `_hubRateLimiter`, d'où le `vi.resetModules()` toujours nécessaire.
     describe('rechargement du module (HMR) — même store, copie neuve du composable', () => {
 
         it('[harnais] une copie rechargée réagit bien au démontage (sinon les tests suivants seraient verts pour rien)', async () => {
@@ -614,6 +672,49 @@ describe('usePeerTransport — Peer singleton (garde d\'init, ref-counting, dest
             expect(copy1.peerCount()).toBe(1)
             expect(ctxA.peerStore.localPeer).toBe(copy1.lastPeer())
         })
+
+        it('le Peer survivant route un entrant vers un contexte enregistré par la copie NEUVE', async () => {
+            // ⭐ L'invariant que le déménagement du registre dans le store garantit, et le
+            // seul de ce bloc qui touche le chemin des connexions entrantes.
+            //
+            // Le Peer appartient à la copie 1 : ses dispatchers `on('connection')` sont des
+            // closures de CETTE copie. Le contexte destinataire, lui, est monté par la
+            // copie 2 (le HMR). Tant que le registre vivait au niveau du module, la copie 1
+            // ne voyait pas les contextes de la copie 2 : `resolveContextByMetadata` rendait
+            // `null`, la connexion était FERMÉE, et l'utilisateur voyait « A diffuse, B
+            // arrive, rien » — à chaque modification de code, sans une ligne d'erreur.
+            const copy1 = await loadTransportCopy()
+            const ctxA = makeCtx('stream-a')
+            const [apiA] = mount(copy1.usePeerTransport, ctxA)
+            await apiA.setLocalPeer()
+            const peer = copy1.lastPeer()
+            peer._triggerEvent('open', 'peer-alice')
+
+            // 🔥 HMR : copie neuve, MÊME store, et un contexte que seule elle connaît.
+            const copy2 = await loadTransportCopy()
+            const ctxB = createMockContext({
+                contextId: 'data-app',
+                session: { currentType: 'data', currentRoom: 'app' },
+                connection: { usersInRoom: ['bob'] },
+            })
+            ctxB.peerStore = ctxA.peerStore
+            const [apiB] = mount(copy2.usePeerTransport, ctxB)
+            await apiB.setLocalPeer()
+
+            // Aucun second Peer : c'est bien celui de la copie 1 qui reçoit.
+            expect(copy2.lastPeer()).toBeNull()
+
+            const conn = {
+                peer: 'peer-bob',
+                metadata: { type: 'data', room: 'app', callbackKey: 'data-app', from: 'bob' },
+                close: vi.fn(),
+                on: vi.fn(),
+            }
+            peer._triggerEvent('connection', conn)
+
+            expect(ctxB.setUpConnectionListeners).toHaveBeenCalledWith(conn)
+            expect(conn.close).not.toHaveBeenCalled()
+        })
     })
 
     // ── Configuration ICE servie par le serveur ──────────────────────────────────
@@ -625,6 +726,85 @@ describe('usePeerTransport — Peer singleton (garde d\'init, ref-counting, dest
     // Contrôle de harnais : neutraliser la garde d'annulation de `_doInit` (le
     // `if (peerStore.peerInitPromise !== initPromise) return`) doit faire rougir les deux
     // derniers tests de ce bloc, et EUX SEULS. Vérifié le 2026-08-23.
+
+    // ── L'id est fourni par NOUS, en 1er argument ─────────────────────────────────
+    //
+    // Rien n'épinglait cette forme, et le mock normalise les deux arités : un retour à
+    // `new Peer({ host, … })` laissait toute la suite VERTE. Or ce n'est pas cosmétique.
+    //
+    // Sans id, peerjs résout le sien par HTTP puis fait `retrieveId().then(id =>
+    // this._initialize(id))`, sans aucun garde `destroyed`. Un `destroy()` pendant cet
+    // aller-retour n'empêche donc rien : `Socket.start()` ne refuse que si `!!this._socket ||
+    // !this._disconnected`, et après un destroy précoce `_socket` est `undefined` et
+    // `_disconnected` est `true` — les deux passent. Un vrai WebSocket s'ouvre et enregistre
+    // côté serveur un peerId dont le `Peer` ne sait plus rien, ses listeners ayant été
+    // retirés : le pair est ENREGISTRÉ MAIS SOURD. Mesuré en production — 6 peers simultanés
+    // pour 2 navigateurs, dont trois survivants au-delà de 105 s. Un `call()` vers un tel id
+    // réussit au niveau signalisation et l'offre part dans le vide : « rien ne se passe »,
+    // sans une ligne d'erreur.
+
+    describe('identité du Peer à la construction', () => {
+        it('passe un id en 1er argument, et les options en 2nd', async () => {
+            const { usePeerTransport, lastPeer } = await loadTransportCopy()
+            const ctx = makeCtx('data-app')
+            const [api] = mount(usePeerTransport, ctx)
+
+            await api.setLocalPeer()
+
+            const peer = lastPeer()
+            // ⭐ L'assertion qui distingue les deux arités. Avec `new Peer({ host, … })`, le mock
+            // (comme le vrai client) laisse `id` porter l'OBJET d'options jusqu'à l'`open` : il
+            // ne serait pas une chaîne, et `options` serait le même objet que `id`.
+            expect(typeof peer.id).toBe('string')
+            expect(peer.id.length).toBeGreaterThan(8)
+            expect(peer.options).not.toBe(peer.id)
+            expect(peer.options.host).toBeDefined()
+        })
+
+        it('connaît son id AVANT tout `open` — c\'est là qu\'est le fantôme', async () => {
+            const { usePeerTransport, lastPeer } = await loadTransportCopy()
+            const ctx = makeCtx('data-app')
+            const [api] = mount(usePeerTransport, ctx)
+
+            await api.setLocalPeer()
+
+            // Aucun `_triggerEvent('open')` ici, à dessein : c'est précisément la fenêtre
+            // pendant laquelle un Peer sans id fourni s'enregistre au serveur sous un id que
+            // personne côté client ne connaît. Le nôtre est connu, donc destructible.
+            //
+            // ⚠️ `typeof === 'string'` et non `toBeTruthy()` : sous l'ancienne arité, `id`
+            // porte l'OBJET d'options — truthy, donc une assertion de vérité serait verte sans
+            // rien prouver. Vérifié en réintroduisant `new Peer({ host, … })`.
+            expect(typeof lastPeer().id).toBe('string')
+            expect(lastPeer().open).toBe(false)
+        })
+
+        // Celui-ci n'épingle pas l'arité mais le CHOIX de l'id : il resterait vert sous
+        // l'ancienne forme, et rougirait si quelqu'un dérivait un id stable (du slug, par ex.).
+        it('tire un id NEUF à chaque instance (jamais d\'id stable)', async () => {
+            const { usePeerTransport, lastPeer } = await loadTransportCopy()
+            vi.useFakeTimers()
+
+            const ctxA = makeCtx('stream-a')
+            const [apiA, appA] = mount(usePeerTransport, ctxA)
+            await apiA.setLocalPeer()
+            const firstId = lastPeer().id
+
+            // Le peer part, un autre contexte remonte derrière : deuxième construction.
+            appA.unmount()
+            vi.advanceTimersByTime(PEER_DESTROY_DELAY_MS)
+
+            const ctxB = makeCtx('stream-b')
+            const [apiB] = mount(usePeerTransport, ctxB)
+            await apiB.setLocalPeer()
+
+            // Un id STABLE (dérivé du slug, par exemple) semblerait plus propre et serait un
+            // piège : le serveur PeerJS répondrait `ID-TAKEN` tant que la socket précédente
+            // n'est pas fauchée — jusqu'à `alive_timeout`, 60 s. On remplacerait un peer sourd
+            // par un peer mort-né.
+            expect(lastPeer().id).not.toBe(firstId)
+        })
+    })
 
     describe('configuration ICE', () => {
         const ICE = [

@@ -15,6 +15,77 @@ export default {
     },
 
     /*--------------------------
+    | Registre des contextes montés
+    |
+    | Même durée de vie que `localPeer`, parce que ce sont ses dispatchers qui le
+    | consultent — cf. le commentaire de `contextRegistry` dans state.js.
+    --------------------------*/
+
+    /**
+     * Inscrit un contexte. **Last-write-wins volontaire** : un contexte remonté reprend
+     * l'id de celui qui se démonte, et c'est le nouveau qui doit recevoir les connexions.
+     */
+    registerContext(ctx) {
+        if (!ctx?.contextId) return
+        this.contextRegistry.set(ctx.contextId, ctx)
+    },
+
+    /**
+     * Retire un contexte — **seulement si l'entrée lui appartient encore**.
+     *
+     * Sans ce garde d'identité, l'`onUnmounted` d'un contexte en cours de démontage
+     * effacerait l'entrée désormais détenue par son remplaçant (cf. le last-write-wins
+     * ci-dessus), et ce remplaçant ne recevrait plus aucune connexion entrante.
+     */
+    unregisterContext(ctx) {
+        if (!ctx?.contextId) return
+        if (this.contextRegistry.get(ctx.contextId) === ctx) {
+            this.contextRegistry.delete(ctx.contextId)
+        }
+    },
+
+    /*--------------------------
+    | Observabilité de l'état du Peer
+    --------------------------*/
+
+    /**
+     * Journalise les contradictions de l'état du Peer, s'il y en a.
+     *
+     * Le churn de peers du 24/08 a été DEVINÉ par arithmétique sur des logs Docker, faute d'un
+     * seul endroit disant « voilà l'état du Peer, et voilà en quoi il se contredit ». Cette
+     * action est cet endroit. Elle n'épingle rien et ne corrige rien : elle rend nommable ce
+     * qui ne l'était pas.
+     *
+     * Le calcul est dans `peerStateViolations` (pur, testable sans console) ; ici il n'y a
+     * que le hurlement. `console.error` à dessein : une contradiction d'invariant n'est pas
+     * une information, et c'est le seul canal que le module réserve à l'anormal.
+     *
+     * ⚠️ **Aucun garde `import.meta.env.DEV`, et c'est délibéré.** Vite ne lit pas cette
+     * expression, il la REMPLACE par sa valeur au build : un `if (!import.meta.env.DEV) return`
+     * devient `if (true) return`, et le minifieur supprime tout ce qui suit — message compris.
+     * Vérifié sur `public/build` : la chaîne `[WebRTC2][invariant]` en disparaissait
+     * entièrement. L'instrument s'éteignait donc dans le SEUL environnement où le bug se
+     * reproduit, ce qui est le piège même du hook HMR « inerte en production » qui était en
+     * réalité actif. Le coût est nul de toute façon : l'audit est appelé sur les transitions du
+     * cycle de vie du Peer (init, `open`, abandon de reconnexion, destruction), pas dans un
+     * chemin chaud, et ne journalise que s'il a quelque chose à dire.
+     *
+     * @param {string} where D'où l'audit est appelé — sans ça, un état contradictoire ne dit
+     *                       pas quelle transition l'a produit, et c'est toute l'information.
+     * @returns {Array<{code: string, message: string}>} Les violations, pour les tests.
+     */
+    auditPeerState(where = '?') {
+        const violations = this.peerStateViolations()
+        if (violations.length === 0) return violations
+
+        console.error(
+            `[WebRTC2][invariant] ${where} — ${violations.length} contradiction(s) dans l'état du Peer :`,
+            { identity: this.peerIdentity(), violations }
+        )
+        return violations
+    },
+
+    /*--------------------------
     | Runtime du Peer singleton
     |
     | Ref-counting, garde d'init et reconnexion du `localPeer`. Ces verbes sont appelés
@@ -22,21 +93,35 @@ export default {
     | peer (cf. commentaire de state.js).
     --------------------------*/
 
-    /** Un contexte de plus consomme le peer singleton. @returns {number} nouveau compte */
-    addPeerConsumer() {
-        this.peerConsumerCount += 1
-        return this.peerConsumerCount
-    },
     /**
-     * Un consommateur se démonte. Plancher à 0 comme `endShutdown` de createPeerContext :
-     * un décrément orphelin ne doit pas rendre le compteur négatif, sinon la destruction
-     * du peer ne serait plus jamais planifiée au bon moment.
+     * Un consommateur de plus pour le peer singleton. Idempotent par jeton.
      *
-     * @returns {number} nouveau compte — l'appelant planifie la destruction à 0
+     * @param {*} token Jeton propre à une instance de usePeerTransport
+     * @returns {number} nombre de consommateurs après l'ajout
      */
-    removePeerConsumer() {
-        this.peerConsumerCount = Math.max(0, this.peerConsumerCount - 1)
-        return this.peerConsumerCount
+    addPeerConsumer(token) {
+        if (token === undefined || token === null) return this.peerConsumers.size
+        this.peerConsumers.add(token)
+        return this.peerConsumers.size
+    },
+
+    /**
+     * Un consommateur se démonte.
+     *
+     * @param {*} token Le jeton reçu à l'inscription
+     * @returns {number|null} nombre de consommateurs restants, ou **`null`** si ce jeton
+     *   n'était pas inscrit — « je n'avais rien à retirer, il n'y a rien à conclure ».
+     *
+     * ⚠️ La distinction `0` / `null` est tout l'intérêt du jeton, et l'appelant DOIT
+     * tester `=== 0`. Avec l'ancien compteur planché, un retrait orphelin rendait `0` :
+     * indistinguable de « le dernier consommateur vient de partir », donc il ordonnait
+     * une destruction. C'est ce qui permettait à un Peer encore utilisé d'être détruit
+     * après un `resetPeerState` (qui remettait le compteur à zéro sous des composants
+     * toujours montés).
+     */
+    removePeerConsumer(token) {
+        if (!this.peerConsumers.delete(token)) return null
+        return this.peerConsumers.size
     },
 
     /**
@@ -130,17 +215,16 @@ export default {
     /**
      * Remet à zéro tout l'état du peer singleton (appelé à sa destruction).
      *
-     * ⚠️ `keepConsumerCount` : quand la destruction survient alors que `localPeer` est
-     * déjà absent (échec d'initialisation), les consommateurs encore montés doivent
-     * pouvoir décrémenter normalement jusqu'à 0 pour qu'un retry reparte d'un compte
-     * juste. Remettre le compteur à 0 dans ce cas fausserait le comptage : un nouveau
-     * consommateur enregistré avant le démontage des anciens verrait leurs décréments
-     * passer sous zéro et déclencherait la destruction d'un peer valide.
+     * ⚠️ **Ne touche PAS `peerConsumers`**, et c'est le point clé : un consommateur est un
+     * composant MONTÉ, pas une propriété du Peer. Détruire le Peer n'en démonte aucun, et
+     * leur inscription doit survivre pour qu'ils puissent en reconstruire un.
      *
-     * @param {Object}  [options]
-     * @param {boolean} [options.keepConsumerCount=false]
+     * L'ancien paramètre `keepConsumerCount` compensait le fait que ce reset vidait le
+     * compteur : il n'a plus d'objet, puisque le compteur n'est plus jamais vidé ici. Le
+     * seul retrait légitime est celui du consommateur lui-même, par son jeton, dans son
+     * `onUnmounted`.
      */
-    resetPeerState({ keepConsumerCount = false } = {}) {
+    resetPeerState() {
         // En tête, et exécutée plutôt que nullée : la closure référence le Peer qu'elle a
         // bindé. La nuller ici laisserait des listeners branchés sur une instance rendue
         // inatteignable à la ligne suivante — plus aucune référence pour les `off`.
@@ -155,10 +239,6 @@ export default {
         this.peerReconnectAttempts = 0
         this.clearPeerDestroyTimer()
         this.clearReconnectTimer()
-
-        if (!keepConsumerCount) {
-            this.peerConsumerCount = 0
-        }
     },
 
     prepareRoomConnection(payload) {

@@ -146,6 +146,37 @@ Seule une annonce côté **serveur** (présence Reverb) la couvrirait ; hors pé
 au-delà de lui — seul le hub enregistre les annonces de ses clients (même limite que
 `AUDIO_MUTE_TOGGLE`).
 
+### Lire l'état du Peer local
+
+Trois verbes du store, à connaître avant de diagnostiquer quoi que ce soit sur le Peer :
+
+| Verbe | Rend | À quoi il sert |
+|---|---|---|
+| `peerStore.peerIdentity()` | `{ state, id, lastId, consumers }`, `state` parmi `absent` · `creating` · `connecting` · `ready` · `disconnected` · `destroyed` | réconcilier en un seul fait les **six** prédicats qui répondent aujourd'hui à « ai-je un peer utilisable, et quel est son id ? » |
+| `peerStore.peerStateViolations()` | les contradictions présentes, chacune avec un `code` stable | nommer un état incohérent au lieu de le déduire |
+| `peerStore.auditPeerState('<transition>')` | idem, **et** hurle sur `console.error` en dev | dire quelle transition a produit la contradiction |
+
+`id` est l'identité **courante**, `lastId` l'identité **historique**, et leur divergence est le cœur
+de la panne la plus silencieuse du module : `Peer.disconnect()` met `_id` à `null` alors que
+`lastLocalPeerId` reste posé, or `waitForMeReady` ne consulte que le second. L'onglet se croit
+joignable, ne répond plus à aucune demande de peerId, et rien ne le dit — d'où le code
+`id-historique-sur-peer-inutilisable`, qui se déclenche exactement quand aucune reconnexion n'est
+plus en vol.
+
+> ⚠️ **Ces trois verbes sont des getters rendant une FONCTION**, comme `getWaitingRemotePeerId`.
+> `localPeer` porte un `Peer` `markRaw` : ses mutations internes (`_open`, `_disconnected`,
+> `_destroyed`) sont invisibles à Vue, donc un `computed` servirait un état partiellement périmé —
+> pire qu'un état absent pour un outil d'observation.
+
+C'est un **instrument de mesure, pas encore la source de vérité** : aucun lecteur n'est migré. La
+machine à états qui les remplacera est un item de [`work/`](../../../work/webrtc2-todo.md).
+
+Côté journal, toute destruction du Peer nomme sa **cause** (`_schedulePeerDestroy` /
+`_destroyPeerSingleton`) et son peerId, relevé **avant** le `destroy()` — après, `disconnect()` l'a
+déjà mis à `null`. Sans ça, une destruction volontaire, un rechargement de page et une coupure
+réseau produisent la même trace des deux côtés, et il faut croiser à la main les logs du serveur
+PeerJS avec les `GET /app` de nginx pour les distinguer.
+
 ### Où ça casse — causes racines déjà vues
 
 | Symptôme | Cause racine | Correctif en place |
@@ -159,6 +190,7 @@ au-delà de lui — seul le hub enregistre les annonces de ses clients (même li
 | Page à plusieurs providers : le contexte `stream` ne demande **jamais** le peerId de l'arrivant (les autres rooms, si) | `waitingRemotePeerId` indexé sur le slug seul : le premier contexte à demander posait un drapeau que les suivants lisaient comme « demande déjà en vol » | clé `slug\|room\|type` ([architecture.md](architecture.md#un-onglet-plusieurs-contextes--la-granularité-des-clés-du-store)) |
 | B revient après un rechargement, A rappelle son ancien peerId sans jamais redemander le nouveau | `removeRemotePeerId` conditionné à `connections`, no-op permanent dès la 2ᵉ room ; et le peerId frais jeté quand `connectToPeer` sortait par « déjà connecté » | prédicat de présence `roomMembers` + enregistrement du peerId **avant** les gardes |
 | Appel `vocal` : aucun flux ne part | pas de branche `vocal` dans `connectToPeer`, et le `return true` final annulait le retry | fusionnée avec la branche `visio` (mêmes préconditions de flux) |
+| A diffuse, B arrive, rien ; `Could not connect to peer <uuid>` chez **A** (celui qui diffuse), aléatoire et de longue date | le serveur PeerJS fauche tout pair 60 s après son dernier `HEARTBEAT` (`alive_timeout`) ; le client émet alors `disconnected`, et le `setTimeout` de reconnexion exécutait `peer.id = …` **avant** `peer.reconnect()`. Or `id` est un accesseur **sans setter** (peerjs 1.5.4) et un module ES est en mode strict : `TypeError`, `reconnect()` jamais atteint. Le peer restait mort jusqu'au rechargement de l'onglet, sans rien dire — et l'`OFFER` d'en face, mis en file pour un destinataire inconnu, revenait en `EXPIRE` après `expire_timeout` (5 s) sous la forme de ce message. Vert en test : le mock portait `id` en propriété simple | `peer._lastServerId` seul (le champ dont `reconnect()` repart), et `id` reproduit en accesseur sans setter dans `__mocks__/peerjs.js` |
 | Appel direct : le flux arrive, mais les deux vignettes affichent « Inconnu 👁 0 » (et ma voix me revient) | `usePeerMedia._acquireSlot` forçait `metadata: {}`. Les seuls champs transmis au player du pool (`nickname`, `peer`, `roomId`) ne sont pas des props déclarées de `MediaBroadcastPlayer` : ils retombaient en attributs HTML. Le player n'affichant QUE `streamData.metadata`, tout flux passé par le pool était anonyme — et `isMe` absent laissait le player local non muté | `options.metadata` transmis par le pool, construit par `useStreamManager.handleStreamReceived` (distant) et `useCallManager._enterCallSession` (local) |
 
 ---

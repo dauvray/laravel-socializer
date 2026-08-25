@@ -39,13 +39,6 @@ import { isAuthorizedPeer } from './utils/isAuthorizedPeer.js'
 import { fetchIceServers } from './utils/fetchIceServers.js'
 
 // -----------------------------------------------------------------------------
-// Registre global des contextes WebRTC actifs
-// key = contextId (ex: data-room-test, stream-room-test)
-// value = ctx complet (avec setUpConnectionListeners)
-// -----------------------------------------------------------------------------
-const contextRegistry = new Map()
-
-// -----------------------------------------------------------------------------
 // ⚠️ L'état du Peer singleton (compteur de consommateurs, promesse d'init,
 // tentatives de reconnexion, handles des deux timers) N'EST PAS ici : il vit dans
 // `peerStore` (cf. stores/peers2/state.js, section « Runtime du Peer singleton »).
@@ -59,45 +52,59 @@ const contextRegistry = new Map()
 // visible et une seconde instance Peer était créée, la première fuyant avec un
 // peerId fantôme encore enregistré côté serveur PeerJS.
 //
+// Le REGISTRE DES CONTEXTES a rejoint le store pour cette raison exacte (cf.
+// `contextRegistry` dans state.js) : les dispatchers du Peer sont des closures qui le
+// consultent, il doit donc partager sa durée de vie. Quand il vivait ici, un HMR
+// renouvelait le registre et conservait le Peer, qui devenait sourd à tous les contextes
+// — « Aucun contexte trouvé », connexion entrante fermée, recovery sur un registre mort.
+//
 // Ce qui RESTE volontairement au niveau du module :
-//   - `contextRegistry` ci-dessus : registre d'objets de contexte, pas de l'état
-//     du peer ; les tests l'isolent par `vi.resetModules()`.
 //   - `_hubRateLimiter` plus bas : fenêtre glissante du hub, dont l'arbitrage
 //     (verbe `.reset()` plutôt qu'une migration Pinia) est acté dans la TODOLIST.
 // -----------------------------------------------------------------------------
 
-function _schedulePeerDestroy(peerStore) {
+// ⚠️ `cause` n'est pas décoratif. Une destruction volontaire, un rechargement de page et une
+// coupure réseau produisent la MÊME trace côté serveur PeerJS (une WebSocket qui se ferme), et
+// côté client les messages ne se distinguaient pas non plus : il a fallu croiser les logs
+// `nginx` (`GET /app`) avec l'horodatage des morts de peer pour trancher, à la main. Nommer la
+// cause supprime ce détour.
+function _schedulePeerDestroy(peerStore, cause = 'cause non précisée') {
     // Annule tout timer en cours (ne pas empiler des destructions)
     peerStore.clearPeerDestroyTimer()
 
     if (PEER_DESTROY_DELAY_MS <= 0) {
-        _destroyPeerSingleton(peerStore)
+        _destroyPeerSingleton(peerStore, `${cause} (délai de grâce nul)`)
         return
     }
 
     console.info(
-        `[WebRTC2] Dernier consommateur parti — destruction du Peer dans ${PEER_DESTROY_DELAY_MS}ms` +
+        `[WebRTC2] Destruction du Peer programmée dans ${PEER_DESTROY_DELAY_MS}ms — cause : ${cause}` +
         ` (annulable si un composant remonte avant)`
     )
     peerStore.peerDestroyTimer = setTimeout(() => {
         peerStore.peerDestroyTimer = null
-        _destroyPeerSingleton(peerStore)
+        _destroyPeerSingleton(peerStore, `${cause} (délai de grâce écoulé)`)
     }, PEER_DESTROY_DELAY_MS)
 }
 
-function _destroyPeerSingleton(peerStore) {
+function _destroyPeerSingleton(peerStore, cause = 'cause non précisée') {
     // Cas résiduel : _destroyPeerSingleton peut être appelé après un échec
-    // d'initialisation (catch de peerInitPromise) où localPeer a déjà été remis
-    // à null. Dans ce cas, le compteur de consommateurs reflète encore les
-    // consommateurs actifs (leurs onUnmounted décrémentent normalement jusqu'à 0)
-    // — d'où `keepConsumerCount`, sans quoi le comptage serait faussé pour un
-    // éventuel retry.
+    // d'initialisation (catch de peerInitPromise) où localPeer a déjà été remis à null.
+    // Les consommateurs, eux, sont toujours montés — et `resetPeerState` ne les touche
+    // plus (il ne l'aurait jamais dû : détruire un Peer ne démonte aucun composant).
+    // C'est ce qui a rendu l'ancien `keepConsumerCount` inutile.
     if (!peerStore.localPeer) {
         // Rien à détruire ; le reset annule aussi le timer de reconnexion par précaution.
-        peerStore.resetPeerState({ keepConsumerCount: true })
-        console.info('[WebRTC2] _destroyPeerSingleton: peer déjà absent (échec init ou double-appel), skip')
+        peerStore.resetPeerState()
+        console.info(`[WebRTC2] Destruction du Peer sans objet — peer déjà absent (cause : ${cause})`)
         return
     }
+
+    // Relevé AVANT toute manipulation : `destroy()` appelle `disconnect()`, qui met `_id` à
+    // `null` (peerjs 1.5.4, `dist/bundler.mjs:1809`). Le lire après, c'est journaliser « sans
+    // id » à chaque destruction — et perdre le seul moyen de recouper avec les logs du serveur
+    // PeerJS, qui n'indexe QUE par peerId.
+    const destroyedId = peerStore.peerIdentity().id
 
     // ⚠️ AVANT `destroy()`, et ce n'est pas de la précaution : vérifié dans peerjs 1.5.4
     // (`dist/bundler.mjs`), `destroy()` ne retire QUE les listeners de son socket interne
@@ -118,8 +125,22 @@ function _destroyPeerSingleton(peerStore) {
         console.warn('[WebRTC2] Erreur lors de la destruction du Peer singleton :', e)
     }
     peerStore.resetPeerState()
-    console.info('[WebRTC2] Peer singleton détruit')
+    console.info(`[WebRTC2] Peer singleton détruit (${destroyedId ?? 'sans id'}) — cause : ${cause}`)
+    peerStore.auditPeerState('après destruction du Peer')
 }
+
+// ⚠️ PAS de hook `import.meta.hot` ici, et c'est un choix documenté.
+//
+// Une version précédente détruisait le Peer singleton dans un `hot.dispose()`, pour
+// compenser le fait que le registre des contextes ne survivait pas au rechargement du
+// module alors que le Peer, lui, survivait. C'était un contournement, et il coûtait cher :
+// seul chemin capable de détruire un Peer SANS le délai de grâce de
+// `PEER_DESTROY_DELAY_MS`, il tuait le Peer à chaque modification de code — et comme
+// `public/hot` existe dès qu'on sert depuis le dev server, le bloc réputé « inerte en
+// production » était bel et bien actif.
+//
+// La cause est traitée à la racine : le registre vit dans le store (cf. state.js), donc un
+// module rechargé retrouve les contextes du Peer survivant. Il n'y a plus rien à disposer.
 
 // ─── Rate limiting hub (topologie star) ─────────────────────────────────────
 // Fenêtre glissante par expéditeur, clé = senderIdentity (peerId PeerJS entrant
@@ -310,29 +331,26 @@ function _admitIncoming(metadata, conn, ctx) {
         .then(() => _isAuthorizedIncomingPeer(metadata, conn, ctx))
 }
 
+// Le registre et ses deux gardes (last-write-wins à l'inscription, identité au retrait)
+// vivent dans le store : ces deux fonctions ne sont plus que des points de passage, gardés
+// sur la présence du store pour rester appelables depuis un `onUnmounted` tardif.
 function registerContext(ctx) {
-    if (!ctx?.contextId) return
-    contextRegistry.set(ctx.contextId, ctx)
+    ctx?.peerStore?.registerContext?.(ctx)
 }
 
 function unregisterContext(ctx) {
-    if (!ctx?.contextId) return
-    // Ne supprimer que si l'entrée du registre appartient TOUJOURS à ce contexte.
-    // registerContext applique un last-write-wins volontaire (un contexte remonté
-    // reprend l'id d'un contexte en cours de démontage) ; sans ce garde, l'onUnmounted
-    // de l'ancien contexte effacerait l'entrée désormais détenue par le nouveau,
-    // qui ne recevrait alors plus aucune connexion entrante.
-    if (contextRegistry.get(ctx.contextId) === ctx) {
-        contextRegistry.delete(ctx.contextId)
-    }
+    ctx?.peerStore?.unregisterContext?.(ctx)
 }
 
-function resolveContextByMetadata(metadata) {
-    const callbackKey = metadata?.callbackKey
-    if (callbackKey && contextRegistry.has(callbackKey)) {
-        return contextRegistry.get(callbackKey)
-    }
-    return null
+/**
+ * Le contexte visé par une connexion entrante, d'après sa `metadata.callbackKey`.
+ *
+ * ⚠️ Le store est passé en argument : cette fonction est appelée depuis les dispatchers du
+ * Peer, qui n'ont pas de `ctx` (ils servent TOUS les contextes de l'onglet) mais ont le
+ * store dans leur closure.
+ */
+function resolveContextByMetadata(metadata, peerStore) {
+    return peerStore?.getContextById?.(metadata?.callbackKey) ?? null
 }
 
 export function usePeerTransport(ctx) {
@@ -342,13 +360,22 @@ export function usePeerTransport(ctx) {
     // onUnmounted() est appelé sans que setLocalPeer() ait jamais été invoqué.
     let _isRegisteredAsConsumer = false
 
+    // Jeton de consommation propre à CETTE instance du composable. Un objet nu suffit :
+    // seule son identité compte, et deux instances n'en partagent jamais un.
+    const _consumerToken = {}
+
     // Filet de sécurité : dépollue le registre même si l'orchestrateur ne passe pas
     // par cleanupPeerConnection() (navigation abrupte, crash de composant, etc.).
     onUnmounted(() => {
         unregisterContext(ctx)
         if (_isRegisteredAsConsumer) {
-            if (ctx.peerStore.removePeerConsumer() <= 0) {
-                _schedulePeerDestroy(ctx.peerStore)
+            // ⚠️ `=== 0`, jamais `<= 0` : `removePeerConsumer` rend `null` quand le jeton
+            // n'était pas inscrit (« rien à conclure »), et seul un vrai zéro veut dire
+            // « le dernier consommateur vient de partir ». L'ancien `<= 0` sur un compteur
+            // planché confondait les deux et pouvait ordonner la destruction d'un Peer
+            // encore utilisé.
+            if (ctx.peerStore.removePeerConsumer(_consumerToken) === 0) {
+                _schedulePeerDestroy(ctx.peerStore, `dernier consommateur parti (${ctx.contextId})`)
             }
         }
     })
@@ -367,7 +394,7 @@ export function usePeerTransport(ctx) {
         // l'annuler : le peer existant est réutilisé sans recréation.
         if (!_isRegisteredAsConsumer) {
             _isRegisteredAsConsumer = true
-            peerStore.addPeerConsumer()
+            peerStore.addPeerConsumer(_consumerToken)
             if (peerStore.clearPeerDestroyTimer()) {
                 console.info('[WebRTC2] Destruction du Peer annulée — nouveau consommateur enregistré')
             }
@@ -416,8 +443,8 @@ export function usePeerTransport(ctx) {
             // Pendant l'aller-retour ci-dessus, le store est dans un état qui n'existait pas
             // avant : `localPeer === null` ALORS QUE `peerInitPromise` est posée. Si le timer de
             // `_schedulePeerDestroy` se déclenche dans cette fenêtre, `_destroyPeerSingleton`
-            // prend sa branche « peer déjà absent » → `resetPeerState({keepConsumerCount:true})`,
-            // qui remet `peerInitPromise` à `null`. Sans ce garde, le `new Peer` ci-dessous
+            // prend sa branche « peer déjà absent » → `resetPeerState()`, qui remet
+            // `peerInitPromise` à `null`. Sans ce garde, le `new Peer` ci-dessous
             // naîtrait ORPHELIN : dans un store à 0 consommateur dont le timer a déjà été
             // consommé, donc hors d'atteinte de toute destruction future. C'est la famille du
             // « peerId fantôme » décrite plus haut, par un chemin neuf.
@@ -428,7 +455,7 @@ export function usePeerTransport(ctx) {
             //   • le timer se déclenche → `peerInitPromise` nullée par le reset → on abandonne ;
             //   • une init plus récente a pris la main → identité différente → on abandonne, et
             //     le `.finally` ci-dessous ne nullera pas la promesse de la plus récente.
-            // `peerConsumerCount === 0` serait un mauvais prédicat : il est vrai dans le premier
+            // « plus aucun consommateur » serait un mauvais prédicat : c'est vrai dans le premier
             // cas, où il faut continuer.
             //
             // ⚠️ Ne JAMAIS déplacer ce garde avant l'`await` (`initPromise` est alors en zone
@@ -443,7 +470,36 @@ export function usePeerTransport(ctx) {
                 return
             }
 
-            const peer = markRaw(new Peer({
+            // ⚠️ L'id est fourni PAR NOUS, en 1er argument, et ce n'est pas cosmétique :
+            // c'est ce qui supprime le peerId fantôme.
+            //
+            // Sans id, peerjs résout le sien par HTTP puis fait
+            // `retrieveId().then(id => this._initialize(id))` — sans AUCUN garde
+            // `destroyed` (bundler.mjs). Un `destroy()` survenu pendant cet aller-retour
+            // n'empêche donc rien : `Socket.start()` ne refuse que si `!!this._socket ||
+            // !this._disconnected`, or après un destroy précoce `_socket` est `undefined`
+            // et `_disconnected` est `true` — les deux passent. Un VRAI WebSocket s'ouvre,
+            // avec son heartbeat de 5 s, et enregistre côté serveur un peerId que le
+            // `Peer` ne connaît plus : ses listeners ont été retirés. Le pair est
+            // enregistré mais SOURD.
+            //
+            // Mesuré en production : 6 peers simultanés pour 2 navigateurs, dont trois
+            // survivants de plus de 105 s alors que leurs pages étaient rechargées. Un
+            // `peer.call()` vers un tel id réussit au niveau signalisation et l'offre part
+            // dans le vide — « rien ne se passe », sans la moindre erreur console. C'est
+            // la moitié SILENCIEUSE du symptôme « A diffuse, B arrive, rien ».
+            //
+            // En fournissant l'id, `_initialize` est appelé synchroniquement depuis le
+            // constructeur : il n'existe plus d'intervalle pendant lequel un destroy peut
+            // passer inaperçu. Un UUID neuf à chaque instance, jamais un id stable : un id
+            // réutilisé se heurterait au `ID-TAKEN` du serveur tant que la socket
+            // précédente n'est pas fauchée (jusqu'à `alive_timeout`, 60 s), ce qui
+            // remplacerait un peer sourd par un peer mort-né.
+            const peerId = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
+                ? crypto.randomUUID()
+                : `p-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+
+            const peer = markRaw(new Peer(peerId, {
                 host: import.meta.env.VITE_PEERS_SERVER_HOST,
                 port: import.meta.env.VITE_PEERS_SERVER_PORT,
                 path: import.meta.env.VITE_PEERS_SERVER_PATH,
@@ -499,11 +555,19 @@ export function usePeerTransport(ctx) {
                 // Connexion (re)établie : réinitialise le compteur de reconnexion
                 peerStore.resetReconnectAttempts()
                 // Workaround for peer.reconnect deleting previous id
+                //
+                // ⚠️ `peer._id`, JAMAIS `peer.id` : `id` est un accesseur SANS setter
+                // (peerjs 1.5.4, `get id()` dans `dist/bundler.mjs`), donc `peer.id = …`
+                // lève une TypeError — un module ES est toujours en mode strict. Le champ
+                // assignable est celui que l'accesseur lit. Cf. le garde du même nom dans
+                // le handler 'disconnected', où la levée coûtait toute la reconnexion.
                 if (id === null) {
-                    peer.id = peerStore.lastLocalPeerId
+                    peer._id = peerStore.lastLocalPeerId
                 } else {
                     peerStore.lastLocalPeerId = id
                 }
+
+                peerStore.auditPeerState('après \'open\' du Peer')
             })
 
             bind('error', (err) => {
@@ -539,7 +603,7 @@ export function usePeerTransport(ctx) {
                 // Symptôme exact : « Could not connect to peer <uuid> » une seule fois,
                 // puis plus rien, et un flux qui n'arrive jamais.
                 let targetSlug = null
-                for (const registeredCtx of contextRegistry.values()) {
+                for (const registeredCtx of peerStore.getRegisteredContexts()) {
                     for (const [slug, peerId] of (registeredCtx.peerStore.remotePeersId?.entries?.() ?? [])) {
                         if (String(peerId) === String(failedPeerId)) {
                             targetSlug = slug
@@ -550,7 +614,7 @@ export function usePeerTransport(ctx) {
                 }
                 if (!targetSlug) return
 
-                contextRegistry.forEach((registeredCtx) => {
+                peerStore.getRegisteredContexts().forEach((registeredCtx) => {
                     const room = registeredCtx.session.currentCallRoomId || registeredCtx.session.currentRoom
 
                     // 1. Retirer les connexions échouées du store (libère le guard
@@ -615,11 +679,29 @@ export function usePeerTransport(ctx) {
                 // peer courant, en écrasant au passage son handle de timer.
                 if (peerStore.localPeer !== peer || peer.destroyed) return
 
+                // Le peer n'est plus utilisable : le dire. Rien ne remettait ce drapeau à
+                // false hors destruction complète, si bien qu'un peer déconnecté continuait
+                // de se déclarer « prêt » — `setLocalPeer()` sortait alors par son premier
+                // garde, et `waitForMeReady()` (qui lit `lastLocalPeerId`, un fait
+                // HISTORIQUE) répondait oui. Pendant ce temps `getLocalPeerId` rend `null`,
+                // car `Peer.disconnect()` met `_id` à null : chaque publication du peerId
+                // local sortait donc en `warn('localPeer pas encore prêt')` — l'onglet ne
+                // répondait plus à aucune demande de peerId, sans le moindre signe visible.
+                // Remis à true par le handler 'open' dès que la reconnexion aboutit.
+                peerStore.localPeerReady = false
+
                 // Guard auto-reconnect infinie : abandon après MAX_RECONNECT_ATTEMPTS
                 if (peerStore.peerReconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
                     console.error(
                         `[WebRTC2] PeerJS: serveur injoignable après ${MAX_RECONNECT_ATTEMPTS} tentatives — abandon.`
                     )
+                    // ⚠️ L'audit est APRÈS le verdict, jamais avant : c'est l'existence d'un
+                    // backoff en vol qui distingue une coupure transitoire (l'id historique
+                    // est alors exactement ce dont `reconnect()` repart) d'un état TERMINAL.
+                    // Sur ce chemin-ci, aucune reconnexion ne viendra : `lastLocalPeerId`
+                    // continuera de faire répondre « prêt » à `waitForMeReady` sur un peer
+                    // définitivement mort — la panne silencieuse du module.
+                    peerStore.auditPeerState('après abandon de la reconnexion du Peer')
                     return
                 }
 
@@ -632,14 +714,40 @@ export function usePeerTransport(ctx) {
                     `[WebRTC2] PeerJS déconnecté — tentative ${attempt}/${MAX_RECONNECT_ATTEMPTS} dans ${delayMs}ms`
                 )
 
+                // ⚠️ Annuler AVANT d'armer : l'assignation ci-dessous ne faisait qu'écraser le
+                // handle, elle n'annulait pas le timer. Deux `disconnected` sans `open` entre
+                // les deux laissaient donc un backoff orphelin — plus aucune référence pour
+                // l'annuler, et un `reconnect()` en trop à son échéance.
+                peerStore.clearReconnectTimer()
+
                 peerStore.peerReconnectTimer = setTimeout(() => {
                     // Le handle ne mène plus nulle part : le remettre à null évite qu'un
                     // `clearReconnectTimer` ultérieur porte sur un timer déjà consommé et
                     // que le champ prétende qu'un backoff est en vol.
                     peerStore.peerReconnectTimer = null
                     if (peerStore.localPeer !== peer || peer.destroyed) return
-                    // Workaround for peer.reconnect deleting previous id
-                    peer.id = peerStore.lastLocalPeerId
+
+                    // ⚠️ `reconnect()` n'est légal QUE sur un peer déconnecté : le vrai client
+                    // LÈVE sinon (« cannot reconnect because it is not disconnected from the
+                    // server », peerjs 1.5.4, `dist/bundler.mjs:1827`). Rien ne garantissait
+                    // cette précondition à l'échéance du timer — et la levée serait une Error
+                    // non rattrapée à l'intérieur d'un `setTimeout`, donc invisible autrement
+                    // que par une entrée `unhandled` dans la console.
+                    if (!peer.disconnected) return
+                    // Workaround for peer.reconnect deleting previous id.
+                    //
+                    // ⚠️ `_lastServerId` SEUL, et c'est vital : `reconnect()` repart de ce
+                    // champ (`_initialize(this._lastServerId)`, qui réécrit `_id` lui-même),
+                    // donc le restaurer suffit. L'assignation `peer.id = …` qui vivait ici
+                    // levait une TypeError — `id` est un accesseur sans setter (peerjs 1.5.4)
+                    // et un module ES est en mode strict — et cette levée sautait le
+                    // `reconnect()` juste en dessous : AUCUNE reconnexion n'aboutissait
+                    // jamais. Un peer déconnecté une fois (le serveur PeerJS fauche à
+                    // `alive_timeout`, 60 s sans heartbeat) restait mort jusqu'au
+                    // rechargement de l'onglet, sans rien dire ; en face, tout pair qui
+                    // détenait son peerId ne récoltait plus qu'un
+                    // « Could not connect to peer <uuid> » et l'arrivant ne voyait rien.
+                    // Invisible en test : le mock portait `id` en propriété simple.
                     peer._lastServerId = peerStore.lastLocalPeerId
                     peer.reconnect()
                 }, delayMs)
@@ -661,7 +769,7 @@ export function usePeerTransport(ctx) {
                     return
                 }
 
-                const targetCtx = resolveContextByMetadata(metadata)
+                const targetCtx = resolveContextByMetadata(metadata, peerStore)
 
                 if (!targetCtx) {
                     console.warn(
@@ -705,7 +813,7 @@ export function usePeerTransport(ctx) {
                     return
                 }
 
-                const targetCtx = resolveContextByMetadata(metadata)
+                const targetCtx = resolveContextByMetadata(metadata, peerStore)
 
                 if (!targetCtx) {
                     console.warn(
@@ -790,6 +898,10 @@ export function usePeerTransport(ctx) {
 
         } // end _doInit
 
+        // Sert uniquement à nommer la transition dans l'audit du `finally` (cf. plus bas) :
+        // l'état ne devient contradictoire qu'une fois la garde d'init libérée.
+        let initFailed = false
+
         const initPromise = _doInit()
             .catch(err => {
                 // En cas d'échec : localPeerReady est encore false (on('open') n'a
@@ -800,12 +912,13 @@ export function usePeerTransport(ctx) {
                 // créerait un décalage si un nouveau composant s'enregistre avant que
                 // les anciens démontent, pouvant déclencher la destruction d'un peer
                 // valide. _destroyPeerSingleton gère explicitement le cas localPeer=null
-                // (resetPeerState avec keepConsumerCount).
+                // (resetPeerState, qui ne touche pas aux consommateurs).
                 // ⚠️ Pas de resetPeerState ici : il nullerait aussi lastLocalPeerId,
                 // dont dépend waitForMeReady.
                 console.error('[WebRTC2] Échec d\'initialisation du Peer :', err)
                 peerStore.localPeerReady = false
                 peerStore.localPeer = null
+                initFailed = true
             })
             .finally(() => {
                 // Ne nettoyer que SA propre promesse : maintenant qu'elle est partagée par
@@ -814,6 +927,19 @@ export function usePeerTransport(ctx) {
                 // laisserait un troisième consommateur créer un second Peer.
                 if (peerStore.peerInitPromise === initPromise) {
                     peerStore.setPeerInitPromise(null)
+
+                    // ⚠️ ICI et pas dans le `.catch` : tant que la garde d'init est posée,
+                    // l'état « pas de peer » est LÉGITIME (c'est `creating`). La contradiction
+                    // n'apparaît qu'à la ligne du dessus. Sur un échec, cet audit rougira sur
+                    // `id-historique-sans-peer` — et c'est voulu : le `.catch` laisse
+                    // sciemment `lastLocalPeerId` posé, parce que `waitForMeReady` en dépend.
+                    // La contradiction existe et est assumée ; elle n'était pas nommée. La
+                    // supprimer est le travail de la FSM, pas d'un patch.
+                    //
+                    // Et seulement dans ce `if` : si une init plus récente a pris la main,
+                    // l'état décrit le peer de QUELQU'UN D'AUTRE et un audit l'imputerait à
+                    // cette transition-ci.
+                    peerStore.auditPeerState(initFailed ? 'après échec d\'init du Peer' : 'après init du Peer')
                 }
             })
 

@@ -24,6 +24,7 @@
 import { ref, watch, onUnmounted } from 'vue'
 import { usePeerRetry } from '~socializer/components/WebRTC2/Composables/utils/usePeerRetry.js'
 import { isValidSlug } from '~socializer/components/WebRTC2/Composables/utils/validators.js'
+import { isAuthorizedPeer } from '~socializer/components/WebRTC2/Composables/utils/isAuthorizedPeer.js'
 import { SIGNALING_STALE_MS } from '~socializer/components/WebRTC2/webrtc2.config.js'
 
 export function useConnectionPool(ctx, { core, connections }) {
@@ -116,8 +117,44 @@ export function useConnectionPool(ctx, { core, connections }) {
         const remotePeerId = ctx.peerStore.getRemotePeerId(userSlug)
         const waiting = _myPendingRequest(userSlug, ctx.currentType.value)
 
-        // 2. Sécurité : Si on n'a plus d'ID ET plus d'intention (waiting), l'user est vraiment parti.
-        if (!remotePeerId && !waiting) return true
+        // 2. Ni peerId, ni demande en vol. DEUX situations opposées se ressemblent ici, et
+        //    les confondre coûtait le symptôme le plus cher du module :
+        //
+        //      • le pair est réellement parti      → il faut arrêter
+        //      • ma demande n'a jamais pu partir   → il faut surtout NE PAS arrêter
+        //
+        //    Le second n'est pas un cas limite, c'est le cas nominal : `requestOrConnectPeer`
+        //    lance `requestRemotePeerConnection` SANS l'attendre, puis arme ce moteur à
+        //    1 s (usePeerRetry : 1000·2^0 + jitter). Or le drapeau `waiting` n'est écrit
+        //    qu'APRÈS l'aller-retour HTTP — et pas écrit du tout quand la demande sort par
+        //    l'un de ses gardes : plafond de cadence (3 par 10 s et par `slug|room|type`,
+        //    que la boucle de recovery est justement faite pour atteindre), peerId local
+        //    pas encore prêt, ou POST en erreur. Ce tour-ci ne voyait alors ni ID ni
+        //    intention et concluait « parti » — et `return true` ne suspend pas le moteur,
+        //    il l'éteint : usePeerRetry ne replanifie rien. Plus personne ne redemandait
+        //    jamais le peerId de ce pair.
+        //
+        //    Symptôme exact, et il est aléatoire parce qu'il ne dépend que de la latence
+        //    d'un POST : A diffuse, B arrive, A logue UN « Could not connect to peer
+        //    <uuid> » puis se tait définitivement, et B ne voit même pas de spinner —
+        //    aucun contact ne lui est jamais parvenu, donc il n'a rien à annoncer.
+        //
+        //    Ce qui départage « parti » de « pas encore demandé » n'est pas l'absence d'un
+        //    drapeau de bookkeeping : c'est la PRÉSENCE. Même prédicat que les deux gardes
+        //    d'autorisation du contexte (utils/isAuthorizedPeer.js), donc même définition
+        //    de « ce pair me concerne encore ».
+        if (!remotePeerId && !waiting) {
+            if (!isAuthorizedPeer(userSlug, ctx)) return true
+
+            // Encore présent : on (re)tente la demande et on reste en vie. Borné par
+            // MAX_RETRY_ATTEMPTS et son backoff — au pire ~55 s d'insistance avant
+            // l'abandon explicite du moteur, jamais une boucle.
+            core.requestRemotePeerConnection(userSlug, ctx.currentType.value)
+            if (ctx.media.isCapturing) {
+                core.requestRemotePeerConnection(userSlug, 'screen')
+            }
+            return false
+        }
 
         // 3. Si on a un ID, on tente la connexion (même si waiting a sauté)
         if (remotePeerId) {

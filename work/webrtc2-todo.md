@@ -34,17 +34,43 @@ avant le déménagement revient à les jeter.
   ⚠️ **Écarté de la passe de régression** : une vingtaine de tests font `await api.setLocalPeer()`
   **avant** de déclencher `'open'` et se bloqueraient. C'est une refonte du harnais autant que du code.
 
-- [ ] **peerId fantôme après un `destroy()` précoce** `[M]`
-  `new Peer({ host, … })` passe un objet d'options en 1er argument, donc `userId` est `undefined`
-  (`bundler.mjs:1517`) et PeerJS résout l'id par HTTP. Or son
-  `retrieveId().then(id => this._initialize(id))` (l.1564) **n'a aucun garde `destroyed`**, et
-  `Socket.start()` (l.650) ne refuse que si `!!this._socket || !this._disconnected`. Après un
-  `destroy()` survenu avant la résolution, `_socket` est `undefined` et `_disconnected` est `true` :
-  les deux conditions passent, un **vrai WebSocket + un heartbeat 5 s** s'ouvrent et enregistrent un
-  peerId côté serveur, **invisible du `Peer`** puisque ses listeners socket ont été retirés par
-  `_cleanup()`.
-  ⚠️ **Aucun `peer.off()` ne le corrige** : il faut un garde côté appelant (ne pas initialiser un
-  peer déjà détruit) ou renoncer à la résolution HTTP en fournissant nous-mêmes l'id.
+- [ ] **La machine à états du cycle de vie du Peer** `[L]`
+  Six prédicats coexistent pour répondre à « ai-je un peer utilisable, et quel est son id ? » :
+  `localPeer`, `localPeerReady`, `lastLocalPeerId`, `peerInitPromise`, `localPeer.disconnected`,
+  `localPeer.destroyed`. Ils divergent, et c'est la cause commune de la majorité des pannes du
+  module. `peerStore.peerIdentity()` les réconcilie déjà en un fait unique
+  (`{ state, id, lastId, consumers }`) et `peerStateViolations()` nomme les six contradictions —
+  mais **aucun lecteur n'est migré** : c'est un instrument de mesure, pas encore la source de
+  vérité.
+  ⚠️ **Portée réelle mesurée : 68 cas de test**, pas 20. Deux fichiers entiers
+  (`usePeerTransport.incomingAuth`, 24 cas ; `usePeerTransport.peerUnavailable`, 12 cas)
+  **n'émettent jamais `'open'`** : leur `beforeEach` est à réécrire, pas à réordonner.
+  **Préalable obligatoire** : extraire dans `__tests__/helpers/` le motif non-bloquant qui
+  existe déjà à `createVirtualPeer.js:133-147` (dupliqué dans
+  `usePeerOrchestrator.broadcastPresence.test.js:46-52`). Et `useCallManager.test.js:45-51` +
+  `:81-89` sont la spécification de surface à renégocier, pas des dommages collatéraux.
+
+- [ ] **Le bail des peerId distants** `[M]`
+  `remotePeersId` est indexé sur le slug, global à l'onglet, et **sans contrat
+  d'invalidation** : seul `isUserInAnyRoom` autorise à oublier une entrée. Un pair qui recharge
+  sa page obtient un peerId neuf ; l'ancien reste dans le store de tous les autres, qui lui
+  envoient des offres expirant en `peer-unavailable` — c'est la signature exacte du
+  « Could not connect to peer &lt;uuid&gt; » signalé.
+
+- [ ] **Fidélité du mock : `disconnect()` ne met pas `_id` à `null`** `[S]`
+  Le vrai `Peer.disconnect()` fait `this._id = null` (`bundler.mjs:1809`) ; le mock conserve
+  l'id — écart assumé et documenté (le registre du bus est keyé sur `id`, et trois scénarios
+  appellent `destroy()` directement). Conséquence : la divergence identité courante /
+  identité historique, qui est le cœur de la panne silencieuse, n'est pas reproductible en
+  test. Fermer cet écart demande de rekeyer le bus sur une clé stable.
+
+- [ ] **Fidélité du mock : `open` des connexions est inscriptible** `[S]`
+  `peerjsMockFidelity.descriptors.test.js` couvre les **sept accesseurs du `Peer`**. Les
+  connexions (`DataConnection`, `MediaConnection`) exposent aussi `open` en lecture seule dans
+  la vraie lib, et le mock le laisse inscriptible — 12 sites de test s'appuient sur
+  `conn.open = true`. Aucun code de production n'y écrit aujourd'hui (vérifié au grep), donc la
+  classe de bug est fermée côté production ; l'étendre demande un verbe de mock et la reprise
+  des 12 sites.
 
 ---
 
