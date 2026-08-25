@@ -112,12 +112,12 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
 
       | Appelant | Ce qu'il importe |
       |---|---|
-      | `System/widgets/AlertComponent.vue:22-23` | `WebRTC/widgets/partials/AudioCallAlert.vue`, `VideoCallAlert.vue` |
-      | `AudioRoom/AudioComponent.vue:28-29` | `WebRTC/widgets/MediaBroadcastProvider.vue`, `ui/AudioDefaultUserButtonUI.vue` |
-      | `Application/ApplicationComponent.vue:44` | `WebRTC/widgets/DataUserPeerConnection.vue` |
-      | `Whiteboard/WhiteboardComponent.vue:26` | idem |
-      | `ClassRoom/ClassRoomComponent.vue:46` | idem |
-      | `AudioRoom/__AudioComponent copy.vue:16` | `WebRTC/composables/usePeers.js` — fichier déjà désactivé (`__`) |
+      | `System/widgets/AlertComponent.vue` | `WebRTC/widgets/partials/AudioCallAlert.vue`, `VideoCallAlert.vue` |
+      | `AudioRoom/AudioComponent.vue` | `WebRTC/widgets/MediaBroadcastProvider.vue`, `ui/AudioDefaultUserButtonUI.vue` |
+      | `Application/ApplicationComponent.vue` | `WebRTC/widgets/DataUserPeerConnection.vue` |
+      | `Whiteboard/WhiteboardComponent.vue` | idem |
+      | `ClassRoom/ClassRoomComponent.vue` | idem |
+      | `AudioRoom/__AudioComponent copy.vue` | `WebRTC/composables/usePeers.js` — fichier déjà désactivé (`__`) |
 
       La v1 n'est donc pas « morte en attente de confirmation » : elle est **vivante sous cinq
       composants**, dont un en `defineAsyncComponent`, invisible à une recherche d'`import`
@@ -127,10 +127,10 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
 
       Périmètre : 13 fichiers `WebRTC/`, le store `stores/peers.js`, et la migration des cinq
       appelants vers `WebRTC2/`.
-      Annotation (7 fichiers) : `CLAUDE.md:13-15` · `docs/INDEX.md:55-56` ·
-      `docs/modules/webrtc2/INDEX.md:10-12` · `docs/modules/autres-modules.md:17-24` ·
-      `docs/architecture/package.md:181-182` · `docs/modules/chat.md:27-30` ·
-      `resources/boost/guidelines/core.blade.php:10-12` · plus le `CLAUDE.md` de tout projet hôte
+      Annotation (7 fichiers) : `CLAUDE.md` · `docs/INDEX.md` ·
+      `docs/modules/webrtc2/INDEX.md` · `docs/modules/autres-modules.md` ·
+      `docs/architecture/package.md` · `docs/modules/chat.md` ·
+      `resources/boost/guidelines/core.blade.php` · plus le `CLAUDE.md` de tout projet hôte
       - [ ] Code — migrer les 5 appelants, puis supprimer `components/WebRTC/` et `stores/peers.js`
       - [ ] Doc — retirer la mention de la v1 des couches qui la portent encore, la dernière
             partant avec le code
@@ -139,15 +139,15 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
 
 - [ ] **Supprimer `WebRTC2/EventBus/webrtc2Events.js`** · effort [S]
       « N'est consommé par personne » ; la seule mention dans le code est un commentaire de
-      `Composables/utils/validators.js:17` (« le type était mort »). La doc demande de le traiter
+      `Composables/utils/validators.js` (« le type était mort »). La doc demande de le traiter
       « comme la normalisation **visée**, pas comme le chemin en vigueur » — c'est-à-dire d'entretenir
       un fichier inutilisé et de l'expliquer à chaque lecteur.
       Décision à prendre : le brancher (sortie A) ou le supprimer (B). Ne pas le laisser en l'état.
-      Annotation : `docs/modules/webrtc2/api.md:138-143`
+      Annotation : `docs/modules/webrtc2/api.md`
       - [ ] Code · - [ ] Doc · - [ ] Tests
 
 - [ ] **Vider les cinq poches mortes restantes** · effort [M]
-      `docs/architecture/package.md:172-184` liste une section « Zones mortes connues » dont
+      `docs/architecture/package.md` liste une section « Zones mortes connues » dont
       l'objet est « à savoir pour ne pas y chercher quelque chose ». Une section entière de doc pour
       compenser du code qu'il suffit de supprimer. **Vérifié**, restent vraies :
 
@@ -155,7 +155,7 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
       |---|---|
       | `src/routes/socializer/admin.php` | groupe de route vide, 6 lignes commentées |
       | `src/routes/socializer/console.php` | 16 lignes de docblock, zéro commande |
-      | `src/config/socializer.php:171` | `table_names` vide |
+      | `src/config/socializer.php` | `table_names` vide |
       | `SocializerUpgrade` | 27 lignes non commentées sur 67 — commande enregistrée, inerte |
       | `__StreamUserButton.vue`, `__CaptureUserButton.vue`, `__AudioComponent copy.vue` | désactivés par convention `__` |
 
@@ -170,7 +170,7 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
       « **`sfu` est accepté** dans `options.topology` et **branché dans le fan-out** de
       `syncUsersConnections`, **sans implémentation serveur** » — une option qui ne fait rien, mais
       qu'un intégrateur peut passer en croyant l'activer.
-      Annotation : `docs/modules/webrtc2/api.md:191`
+      Annotation : `docs/modules/webrtc2/api.md`
       - [ ] Code — refuser la valeur, ou l'implémenter · - [ ] Doc · - [ ] Tests
 
 ## Lot 3 — Noms qui mentent · sortie A
@@ -180,14 +180,14 @@ plusieurs de ces noms ont **déjà coûté des régressions**.
 
 - [ ] **`remoteStreams` exclut les partages d'écran** · effort [M]
       « Consommer `remoteStreams` seul rend tout partage d'écran **invisible** »
-      (`createPeerContext.js:201-202`). Le nom promet tous les flux distants alors que son jumeau
+      (`createPeerContext.js`). Le nom promet tous les flux distants alors que son jumeau
       `remoteScreens` existe et ne contient que les écrans. Conséquence côté tests : « asserter sur
       `remoteStreams` seul laisse passer toute régression d'écran » — le nom pourrit donc aussi le
       harnais.
       Renommer en `remoteCallStreams`, qui met les deux noms en symétrie
       (`remoteCallStreams` / `remoteScreens`) au lieu de laisser croire à un ensemble et son
       sous-ensemble. API publique du contexte : prévoir un alias de transition.
-      Annotation : `docs/modules/webrtc2/api.md:71-72` · `docs/modules/webrtc2/tests.md:193-194`
+      Annotation : `docs/modules/webrtc2/api.md` · `docs/modules/webrtc2/tests.md`
       - [ ] Code · - [ ] Doc · - [ ] Tests
 
 - [ ] **`type` vs `connectionType`** · effort [M]
@@ -196,7 +196,7 @@ plusieurs de ces noms ont **déjà coûté des régressions**.
       un repli `connectionType` absent ⇒ `type` pour rétrocompatibilité avec un backend non déployé.
       Sortie A si le repli peut être retiré (le backend est déployé partout ?) ; sinon C, avec un
       test qui épingle le repli et une doc réduite à une ligne.
-      Annotation : `docs/INDEX.md:59-60` · `docs/architecture/signalisation.md:86-105`
+      Annotation : `docs/INDEX.md` · `docs/architecture/signalisation.md`
       - [ ] Code · - [ ] Doc · - [ ] Tests
 
 - [ ] **`metadata.from` / `fromName` portent *mon* identité sur une connexion sortante** · effort [M]
@@ -204,7 +204,7 @@ plusieurs de ces noms ont **déjà coûté des régressions**.
       distant « demanderait un champ `fromUserName` dans les événements de `UserController` ».
       Le nom du champ ment sur son contenu selon le sens de la connexion — c'est-à-dire la moitié du
       temps. Renommer (`localFrom`) ou ajouter le champ manquant côté backend.
-      Annotation : `docs/modules/webrtc2/api.md:116-121` · `docs/modules/webrtc2/architecture.md:326-330`
+      Annotation : `docs/modules/webrtc2/api.md` · `docs/modules/webrtc2/architecture.md`
       - [ ] Code · - [ ] Doc · - [ ] Tests
 
 - [ ] **`canJoinRoom` / `canJoinServer` ne sont pas des prédicats d'appartenance** · effort [L]
@@ -226,25 +226,25 @@ plusieurs de ces noms ont **déjà coûté des régressions**.
       suffisent à retirer le paragraphe.
       Lié : la garde et l'idempotence de ces patchs sont une tâche du socle
       (`vendor/innovation/laravel-estarter/work/doc-rustines.md`, lot 2) — ce paquet en hérite,
-      **ne pas la dupliquer ici**. Les 7 `putInFile` sur `.env`
-      (`SocializerInstall.php:250,277,306,316,326,336,374`) sont le principal bénéficiaire.
-      Annotation : `docs/architecture/package.md:129-136`
+      **ne pas la dupliquer ici**. Les `putInFile` sur `.env`
+      de `SocializerInstall.php` sont le principal bénéficiaire.
+      Annotation : `docs/architecture/package.md`
       - [ ] Code · - [ ] Doc · - [ ] Tests
 
 - [ ] **`ACCESORS` *(sic)*** · effort [S]
       Faute de frappe figée dans les squelettes de modèles (`Post.php`, `Page.php`,
-      `DynAnswerMongo.php`), que `docs/architecture/conventions.md:20` entérine avec un « *(sic)* »
+      `DynAnswerMongo.php`), que `docs/architecture/conventions.md` entérine avec un « *(sic)* »
       au lieu de la corriger. C'est un commentaire de section : aucun risque.
       - [ ] Code · - [ ] Doc · - [ ] Tests — sans objet
 
 - [ ] **Casse de `widgets/` incohérente** · effort [S]
       9 dossiers en minuscule, 2 en majuscule (`Users/Widgets/`, `WebRTC2/Widgets/`) —
-      `conventions.md:64-65` et `autres-modules.md:42` le signalent chacun de leur côté.
+      `conventions.md` et `autres-modules.md` le signalent chacun de leur côté.
       Uniformiser ; impacte les imports front.
       - [ ] Code · - [ ] Doc · - [ ] Tests — suite JS verte
 
 - [ ] **`Feed.vue` encore en Options API** · effort [S]
-      « ne pas les prendre pour modèle » (`conventions.md:77-78`, `autres-modules.md:36`). Migrer le
+      « ne pas les prendre pour modèle » (`conventions.md`, `autres-modules.md`). Migrer le
       seul reliquat supprime les deux mentions.
       - [ ] Code · - [ ] Doc · - [ ] Tests
 
@@ -265,13 +265,13 @@ sortie C est immédiatement disponible, et elle vide beaucoup de doc.
       return`, de façon intermittente. Le code *ressemble* à une garde manquante : c'est exactement
       ce qu'un relecteur « corrige ».
       Un test nommé `routing_does_not_gate_on_readiness` le protège mieux que trois paragraphes.
-      Annotation : `docs/INDEX.md:61-62` · `docs/modules/webrtc2/architecture.md:363-378`
+      Annotation : `docs/INDEX.md` · `docs/modules/webrtc2/architecture.md`
       - [ ] Code — sans objet · - [ ] Doc — trois paragraphes → une ligne · - [ ] Tests
 
 - [ ] **`setLocalPeer` : async donc toujours truthy, et `undefined` même en succès** · effort [S]
       « Un `if (!ready) return` est **au mieux mort, au pire inversé** ». Deux tests le disent : un
       sur la valeur de retour, un sur le fait qu'aucun appelant ne la lit.
-      Annotation : `docs/modules/webrtc2/architecture.md:337-340` · `docs/modules/webrtc2/flux.md:44-48`
+      Annotation : `docs/modules/webrtc2/architecture.md` · `docs/modules/webrtc2/flux.md`
       (le fait est déjà écrit **deux fois** — la sortie C en supprime une)
       - [ ] Code — sans objet · - [ ] Doc · - [ ] Tests
 
@@ -279,7 +279,7 @@ sortie C est immédiatement disponible, et elle vide beaucoup de doc.
       Sémantique booléenne inversée par rapport à l'intuition : `true` signifie « pas d'erreur » et
       **annule** le retry — « plus aucune connexion ne se rétablit, silencieusement ».
       Sortie A envisageable (une énumération `RETRY` / `ABORT` au lieu d'un booléen) — à arbitrer.
-      Annotation : `docs/modules/webrtc2/architecture.md:341-343` · `securite.md:62-65`
+      Annotation : `docs/modules/webrtc2/architecture.md` · `securite.md`
       - [ ] Code · - [ ] Doc · - [ ] Tests
 
 - [ ] **`hasOpenConnection` ≠ `isConnectionEstablished`** · effort [M]
@@ -289,13 +289,13 @@ sortie C est immédiatement disponible, et elle vide beaucoup de doc.
       **aucune erreur nulle part**.
       Le défaut est dans la lib tierce (sortie D pour la cause), mais les deux prédicats sont à nous :
       un test par prédicat, plus des noms plus contrastés, remplacent la section entière.
-      Annotation : `docs/modules/webrtc2/architecture.md:156-182`
+      Annotation : `docs/modules/webrtc2/architecture.md`
       - [ ] Code — renommer · - [ ] Doc · - [ ] Tests
 
 - [ ] **`setTimeout(1000)` de `useStickyScroll`** · effort [S]
       Compense le chargement asynchrone des images ; « les simplifier réintroduit des sauts de
       scroll ». Cas d'école du « piège à ne PAS optimiser » — et cas d'école de sortie C.
-      Annotation : `docs/modules/chat.md:43-45`
+      Annotation : `docs/modules/chat.md`
       - [ ] Code — sans objet · - [ ] Doc · - [ ] Tests
 
 - [ ] **Les getters Pinia sont auto-déballés** · effort [S]
@@ -304,11 +304,11 @@ sortie C est immédiatement disponible, et elle vide beaucoup de doc.
       produit cette panne.
       Sortie C au niveau du **harnais** : un test de conformité du mock (le paquet en a déjà un,
       `mockFidelity.test.js` — l'étendre plutôt que documenter).
-      Annotation : `docs/architecture/conventions.md:96-98` · `docs/modules/webrtc2/tests.md:143-175`
+      Annotation : `docs/architecture/conventions.md` · `docs/modules/webrtc2/tests.md`
       - [ ] Code — étendre `mockFidelity.test.js` · - [ ] Doc · - [ ] Tests
 
 - [ ] **Les 9 « pièges de mock »** · effort [M]
-      `docs/modules/webrtc2/tests.md:143-175` énumère neuf façons dont le harnais peut verdir pour
+      `docs/modules/webrtc2/tests.md` énumère neuf façons dont le harnais peut verdir pour
       la mauvaise raison (`_pushSignal` écrivant dans une structure que `getQueueForRoom` ne lit
       pas ; `handleRemoteDeparture` qui avale ses exceptions ; `setLocalPeer` mocké en
       `vi.fn(() => true)` fabriquant un booléen que la production ne produit jamais — « deux tests
@@ -321,7 +321,7 @@ sortie C est immédiatement disponible, et elle vide beaucoup de doc.
       Le sérialiseur transforme l'aiguille : l'assertion de non-fuite de chemin « a cessé de garder
       quoi que ce soit **sans virer au rouge** ». Un test mort et indétectable, trouvé seulement en
       contre-épreuve. À épingler par une contre-épreuve permanente, pas par un paragraphe.
-      Annotation : `docs/architecture/tests.md:154-170`
+      Annotation : `docs/architecture/tests.md`
       - [ ] Code · - [ ] Doc · - [ ] Tests
 
 ## Lot 5 — À arbitrer, et assumés · sortie D
@@ -336,7 +336,7 @@ arbitrages datés.
       tierce, vérifié dans `peerjs@1.5.4` (l.1810 avant l.1781). Trois gardes empilées le
       compensent. Sortie D : décision datée, plus un test de conformité du mock (déjà partiellement
       là). Un rapport amont serait la seule sortie A.
-      Annotation : `docs/modules/webrtc2/architecture.md:240-292`
+      Annotation : `docs/modules/webrtc2/architecture.md`
 
 - [ ] **`contextRegistry` en portée module** — « c'est lui qui justifie encore le
       `vi.resetModules()` ». Dette assumée, mais elle contamine le harnais de tous les tests
@@ -373,35 +373,35 @@ arbitrages datés.
       **violation PSR-4 réelle** qui impose un `composer dump-autoload` à chaque nouvelle classe
       autochargée. Renommer le dossier casse les consommateurs ; ne pas le renommer coûte un piège
       permanent. Décision à écrire.
-      Annotation : `CLAUDE.md:22-23` · `docs/architecture/conventions.md:14-17` ·
-      `resources/boost/guidelines/core.blade.php:24-27`
+      Annotation : `CLAUDE.md` · `docs/architecture/conventions.md` ·
+      `resources/boost/guidelines/core.blade.php`
 
 - [ ] **Front en français en dur** (6 `$t()` dans tout le paquet), et
       `src/resources/lang/fr/network.php` mélangeant libellés d'UI **et slugs de routes traduits**.
       « Un chantier à part entière » — donc une décision datée, pas un avertissement récurrent dans
       trois fichiers.
-      Annotation : `CLAUDE.md:103` · `docs/architecture/conventions.md:159-168` ·
-      `resources/boost/guidelines/core.blade.php:28`
+      Annotation : `CLAUDE.md` · `docs/architecture/conventions.md` ·
+      `resources/boost/guidelines/core.blade.php`
 
 - [ ] **Pas de `package.json` dans le paquet** (tout l'outillage front vit chez l'hôte) — répété
       dans 4 fichiers. Structurel et voulu : une décision écrite une fois, et un pointeur depuis les
       trois autres.
-      Annotation : `CLAUDE.md:16-18` · `docs/INDEX.md:57-58` · `docs/architecture/tests.md:19-20` ·
-      `resources/boost/guidelines/core.blade.php:19-21`
+      Annotation : `CLAUDE.md` · `docs/INDEX.md` · `docs/architecture/tests.md` ·
+      `resources/boost/guidelines/core.blade.php`
 
 - [ ] **Dépendances implicites non déclarées** (`Dauvray\Estarter\*`, Backpack, mongodb,
       formdesigner) — « pas dans le `composer.json` mais requises », parce que les déclarer mettrait
       une URL interne dans le manifeste d'un paquet publié sur GitHub public. Contrainte réelle :
       décision datée, avec la liste maintenue à un seul endroit.
-      Annotation : `docs/architecture/package.md:142-153` · `docs/architecture/tests.md:80-86`
+      Annotation : `docs/architecture/package.md` · `docs/architecture/tests.md`
 
 - [ ] **`FakeNebulaGraph` fait du `str_contains`, il ne parse pas le nGQL** — « une requête
       syntaxiquement invalide passe au vert ». Doublure qui ment par construction ; la remplacer est
       un chantier. Décision datée, et le dire **dans le harnais** (un commentaire à l'endroit du
       `str_contains`) plutôt que dans deux fichiers de doc.
-      Annotation : `docs/architecture/tests.md:70-75` · `docs/modules/webrtc2/securite.md:329-340`
+      Annotation : `docs/architecture/tests.md` · `docs/modules/webrtc2/securite.md`
 
 - [ ] **Trous de couverture** — « **Rien** pour Feed, Comment, Server, User, System, Application,
       Page, Whiteboard, les stores Pinia hors `peers2` ». C'est un état, pas une rustine : sa place
       est dans [chat-tests-plan.md](chat-tests-plan.md) et les plans de test, pas dans `docs/`.
-      Annotation : `docs/architecture/tests.md:199-200`
+      Annotation : `docs/architecture/tests.md`

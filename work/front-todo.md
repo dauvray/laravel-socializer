@@ -31,8 +31,8 @@ sont dans
 
 Deux appels échappent à ce compteur, tous deux dans un hook de démontage :
 
-- `components/Chat/ChatComponent.vue:461` — `Echo.private(me.value.channel).whisper('leave-chat', …)`
-- `components/Feed/Feed.vue:80` — `Echo.private(this.me.channel).whisper('leave-feed', …)`
+- `components/Chat/ChatComponent.vue` — `Echo.private(me.value.channel).whisper('leave-chat', …)`
+- `components/Feed/Feed.vue` — `Echo.private(this.me.channel).whisper('leave-feed', …)`
 
 Ils **fonctionnent aujourd'hui** : le shell `System/Server.vue` monte `Notifications.vue` en
 permanence, donc le canal est toujours vivant et `Echo.private()` rend la souscription mémoïsée. Mais

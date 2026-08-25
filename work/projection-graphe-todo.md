@@ -49,7 +49,7 @@ Reste dehors, et relève du §2 : les sommets d'article déjà nés sous un id a
       `DB_NEBULA_GRAPH_SPACE` (`config/database.php`, défaut `infrastructure`) : **la ligne écrit une
       variable que personne ne lit**. Attention en corrigeant : ajouter la vraie variable en fin de
       `.env` sur une installation qui la définit déjà se marcherait dessus.
-- [ ] `SocializerInstall.php:373` appelle `createUserAndNetwork($chatbot)` alors que le
+- [ ] `SocializerInstall.php` appelle `createUserAndNetwork($chatbot)` alors que le
       `static::created` d'`EstarterUser` a déjà déclenché `UserCreatedListener` treize lignes plus
       haut. C'était une double projection ; l'idempotence la rend inoffensive, et elle vaut même
       rattrapage si le listener a échoué. **À garder**, mais à commenter sur place pour que
@@ -119,7 +119,7 @@ sommet `article` dans socializer ni dans eblogger — la projection de l'article
   dans un sens ou dans l'autre.
 - **L'auteur est déjà atteignable sans arête** : le sommet porte `identifier`, et
   `revealIdentifier(…)->author` est le motif que `Comments::notifyCommentReplyOfAuthor` emploie déjà.
-- ⚠️ **`author_id` n'est PAS nullable** — `create_articles_table.php:19`, `integer unsigned` sans
+- ⚠️ **`author_id` n'est PAS nullable** — `create_articles_table.php`, `integer unsigned` sans
   NULL, `'author_id' => 'required'` en validation. La ligne ci-dessus se trompait. La garde reste
   nécessaire, pour une **autre** raison : pas de clé étrangère, et `EstarterUser` est en
   `SoftDeletes`, donc `$article->author` rend `null` dès que l'auteur est en corbeille (rien ne

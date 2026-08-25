@@ -45,8 +45,8 @@ avant le déménagement revient à les jeter.
   (`usePeerTransport.incomingAuth`, 24 cas ; `usePeerTransport.peerUnavailable`, 12 cas)
   **n'émettent jamais `'open'`** : leur `beforeEach` est à réécrire, pas à réordonner.
   **Préalable obligatoire** : extraire dans `__tests__/helpers/` le motif non-bloquant qui
-  existe déjà à `createVirtualPeer.js:133-147` (dupliqué dans
-  `usePeerOrchestrator.broadcastPresence.test.js:46-52`). Et `useCallManager.test.js:45-51` +
+  existe déjà à `createVirtualPeer.js` (dupliqué dans
+  `usePeerOrchestrator.broadcastPresence.test.js`). Et `useCallManager.test.js` +
   `:81-89` sont la spécification de surface à renégocier, pas des dommages collatéraux.
 
 - [ ] **Le bail des peerId distants** `[M]`
