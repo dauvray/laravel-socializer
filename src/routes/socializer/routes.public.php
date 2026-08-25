@@ -40,14 +40,20 @@ Route::post('/get-total-comments',
 | une victime que les 5 routes de signalisation déclenchent) ; et le mode de panne d'un faux 429
 | est la perte silencieuse du relais TURN, c'est-à-dire « l'appel ne passe pas », sans message.
 |
-| ⚠️ L'ARGUMENT QUI TENAIT ICI EST TOMBÉ, et son remplaçant a une date de péremption. On lisait :
-| « le secret servi est STATIQUE, donc une seule requête suffit à l'obtenir et un plafond ne
-| protégerait rien ». Le credential est désormais éphémère et signé. Mais la conclusion tient
-| pour une autre raison : avec un TTL de 24 h (`turn.credential_ttl`), une seule requête suffit
-| ENCORE. Un plafond n'aurait d'objet que si le credential était court ET re-demandé.
-| CONDITION DE RÉOUVERTURE, explicite : si ce TTL descend à l'échelle de l'heure — ce que ferait
-| un mécanisme de rafraîchissement côté client —, la question du `throttle` se rouvre. La forme
-| sera alors un bucket dédié rendant `Limit::none()` pour l'invité, jamais une clé IP.
+| ⚠️ L'ARGUMENT QUI TENAIT ICI EST TOMBÉ DEUX FOIS, et la conclusion tient toujours — mais elle
+| tient de moins en moins loin. On lisait d'abord : « le secret servi est STATIQUE, donc une seule
+| requête suffit à l'obtenir ». Le credential est devenu éphémère et signé. On lisait ensuite :
+| « avec un TTL de 24 h, une seule requête suffit ENCORE, car rien ne la rejoue ». Depuis le
+| 25/08/2026, le client REJOUE : `_scheduleIceRefresh` (usePeerTransport) rafraîchit le credential
+| avant son échéance.
+|
+| Ce qui tient encore : la CADENCE. Un onglet émet une requête à l'ouverture, puis une par TTL —
+| soit deux par jour au défaut de 24 h — et les reprises sur échec sont bornées par
+| `ICE_REFRESH_MAX_RETRIES`, précisément pour que « re-demandé » ne devienne pas « en boucle ».
+| Un plafond n'aurait d'objet que si le credential était COURT et re-demandé.
+| CONDITION DE RÉOUVERTURE, explicite et désormais à un seul cran : si `turn.credential_ttl`
+| descend à l'échelle de l'heure, la question du `throttle` se rouvre. La forme sera alors un
+| bucket dédié rendant `Limit::none()` pour l'invité, jamais une clé IP.
 |
 | ⚠️ L'appelant DOIT envoyer `X-Requested-With: XMLHttpRequest` — c'est-à-dire passer par
 | `AjaxService.load` d'estarter, qui le pose. Sans cet en-tête, une session en mode restreint

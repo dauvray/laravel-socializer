@@ -290,5 +290,66 @@ export const STUN_ONLY_ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }]
  */
 export const ICE_FETCH_TIMEOUT_MS = 3000
 
+// ─── Rafraîchissement du credential TURN ────────────────────────────────────────
+// Le credential servi par `/get-ice-servers` est éphémère (TURN REST API, signé par
+// utilisateur, TTL annoncé dans `credential_ttl`). Or le `Peer` est un singleton
+// d'onglet que rien ne détruit tant que la coquille SPA vit, et il ne récupérait la
+// configuration ICE qu'une fois par cycle de vie : passé le TTL, l'appel en cours
+// tenait — coturn a déjà sa clé de session — mais TOUTE NOUVELLE ALLOCATION échouait.
+// Symptôme : « la visio ne passe plus, un F5 la répare ».
+//
+// D'où le minuteur de `_scheduleIceRefresh` (usePeerTransport), dont ces cinq
+// constantes fixent le dimensionnement.
+
+/**
+ * De combien on rafraîchit AVANT l'échéance.
+ *
+ * Il faut couvrir l'aller-retour HTTP et le fait que coturn juge le credential à l'instant de
+ * l'allocation, pas à celui du rafraîchissement : viser l'échéance pile laisserait une fenêtre où
+ * un nouvel appel part avec un credential qui vient d'expirer. Cinq minutes sur un TTL de 24 h,
+ * c'est 0,3 % de marge pour supprimer ce cas.
+ */
+export const ICE_REFRESH_MARGIN_MS = 300_000
+
+/**
+ * Plancher du délai, marge déduite.
+ *
+ * `credential_ttl` est un réglage d'hôte : rien n'empêche un déployeur d'y mettre 30 s. Sans
+ * plancher, `ttl - MARGE` deviendrait négatif et `setTimeout` déclencherait immédiatement — une
+ * boucle chaude sur `/get-ice-servers`, c'est-à-dire une panne pire que celle qu'on ferme. Le
+ * plancher préfère un rafraîchissement légèrement tardif à un martèlement.
+ */
+export const ICE_REFRESH_MIN_DELAY_MS = 60_000
+
+/**
+ * Plafond du délai — la borne 32 bits signés de `setTimeout`, soit ~24,8 jours.
+ *
+ * ⚠️ Ce n'est pas une précaution théorique : au-delà de cette valeur, `setTimeout` ne repousse pas,
+ * il **déclenche immédiatement**. Un `COTURN_CREDENTIAL_TTL` réglé sur un mois — parfaitement
+ * plausible pour qui veut « ne plus y penser » — produirait donc le martèlement que le plancher
+ * ci-dessus cherche à éviter, par l'autre extrémité.
+ */
+export const ICE_REFRESH_MAX_DELAY_MS = 2_147_483_647
+
+/**
+ * Délai avant nouvelle tentative quand un rafraîchissement n'a rien rapporté d'exploitable.
+ *
+ * Cas visé : la route répond mal (500, session expirée, proxy) pendant l'échéance. On ne réécrit
+ * alors RIEN — cf. `_refreshIceConfig` — et on retente peu après plutôt que d'attendre le TTL
+ * suivant, qui n'arrivera jamais puisque le credential est déjà en train d'expirer.
+ */
+export const ICE_REFRESH_RETRY_MS = 60_000
+
+/**
+ * Nombre de tentatives infructueuses consécutives au-delà duquel on abandonne.
+ *
+ * Borné, et pas seulement par politesse envers la route : `routes.public.php` documente que
+ * `/get-ice-servers` n'a PAS de `throttle`, et que la condition de réouverture est « un credential
+ * court ET re-demandé ». Une reprise non bornée sur une route morte serait exactement ce
+ * re-demandé-là. L'abandon rend le comportement d'avant ce mécanisme — un F5 répare — ce qui est
+ * une dégradation, pas une régression.
+ */
+export const ICE_REFRESH_MAX_RETRIES = 3
+
 // ─── Provide/inject (MediaBroadcastProvider) ────────────────────────────────────
 export const WEBRTC_API_KEY = Symbol('webrtcApi')

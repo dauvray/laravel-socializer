@@ -3,8 +3,10 @@
 > Chantier ouvert. Les items **terminés** ont été élagués : leur rationale durable est dans
 > [`docs/modules/webrtc2/`](../docs/modules/webrtc2/INDEX.md), leur récit dans `git log`.
 > Sécurité : le chantier d'audit d'août 2026 est **clos**, son durable est dans
-> [`docs/modules/webrtc2/securite.md`](../docs/modules/webrtc2/securite.md) ; la seule borne qu'il
-> laisse ouverte est reprise ci-dessous.
+> [`docs/modules/webrtc2/securite.md`](../docs/modules/webrtc2/securite.md). La dernière borne qu'il
+> laissait ouverte — rafraîchir le credential TURN avant son expiration — a été **fermée le
+> 25/08/2026** ; ses trois arbitrages sont tranchés et écrits dans
+> [`securite.md`](../docs/modules/webrtc2/securite.md#le-rafraîchissement-du-credential-turn).
 > Tests : voir [webrtc2-tests-plan.md](webrtc2-tests-plan.md).
 >
 > Effort : `[S]` `[M]` `[L]`
@@ -22,49 +24,6 @@ les régressions du 13/08 ; il attend que les scénarios servent de filet.
 
 **Bloque** les tâches 6 et 7 de [webrtc2-tests-plan.md](webrtc2-tests-plan.md) : écrire ces tests
 avant le déménagement revient à les jeter.
-
----
-
-## Rafraîchir le credential TURN avant son expiration `[M]`
-
-🟡 Seul reste du chantier de sécurité d'août 2026 (tâche D3). **Ne bloque rien** : la borne qu'elle
-ferme est assumée et écrite dans
-[`securite.md`](../docs/modules/webrtc2/securite.md#bornes-non-fermées-connues).
-
-**Le problème, mesuré en livrant les credentials éphémères.** Le navigateur ne demande la
-configuration ICE qu'**une fois par cycle de vie du `Peer`**, et le `Peer` est un singleton d'onglet
-que rien ne détruit tant que la coquille SPA vit (contexte permanent `data-app` monté au tick 0 ;
-`PEER_DESTROY_DELAY_MS` ne se déclenche qu'au départ du **dernier** consommateur ;
-`peer.reconnect()` réutilise la même instance, donc le même `_options.config`). Passé le TTL de
-24 h, l'appel en cours tient — coturn a déjà sa clé de session — mais **toute nouvelle allocation
-échoue** : nouvel appel, ICE restart, nouveau flux. Symptôme : « la visio ne passe plus, un F5 la
-répare ».
-
-**Le mécanisme est repéré, et il est petit.** `peerjs/dist/bundler.mjs` fait
-`new RTCPeerConnection(this.connection.provider.options.config)` — relu à **chaque** connexion — et
-`options` est un getter vivant sur `_options`. Réécrire `peerStore.localPeer.options.config` suffit
-donc pour toutes les connexions futures, sans `setConfiguration()` ni chirurgie sur les connexions
-ouvertes.
-
-Tout le coût est dans trois arbitrages :
-
-- [ ] **Le déclencheur** — timer aligné sur le TTL, ou paresseux avant chaque `connectToPeer` ? Le
-      paresseux ne dépend d'aucune horloge et ne travaille que si l'on appelle, mais il ajoute un
-      `await` sur un chemin d'appel. ⚠️ **Insérer un `await` dans une séquence synchrone crée un
-      état intermédiaire observable, et tout ce qui LIT cet état doit être réexaminé**, pas
-      seulement ce qui l'écrit : c'est ce qu'a coûté le passage de la config ICE en HTTP (un
-      `localPeer` nul alors que `peerInitPromise` était posée, dans lequel le timer de destruction
-      différée faisait naître un `Peer` **orphelin** hors d'atteinte de toute destruction). Ici
-      l'état en question est celui d'un `Peer` déjà vivant.
-- [ ] **`options.config` est un interne PeerJS non contractuel** — à épingler par un test qui casse
-      si une mise à jour de PeerJS le renomme, faute de quoi le rafraîchissement deviendra muet.
-- [ ] **La réouverture de la question du `throttle`**, énoncée dans `routes.public.php` : si le TTL
-      descend à l'échelle de l'heure, la route est re-appelée et le plafond redevient un sujet —
-      bucket dédié rendant `Limit::none()` pour l'invité, jamais une clé IP.
-
-**Tests :** le credential est re-demandé après expiration simulée · une connexion ouverte n'est pas
-perturbée · `options.config` existe toujours (garde anti-renommage).
-**Commit :** `secu(socializer): rafraichir le credential TURN avant expiration`
 
 ---
 

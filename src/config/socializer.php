@@ -729,20 +729,27 @@ return [
                 'static_auth_secret' => env('COTURN_STATIC_AUTH_SECRET'),
 
                 /*
-                 * Durée de vie du credential signé, en secondes. 24 h, et ce n'est pas de la
-                 * timidité : le navigateur ne récupère la configuration ICE QU'UNE FOIS par
-                 * cycle de vie du `Peer`, lequel est un singleton d'onglet monté au tick 0 par
-                 * le contexte permanent `data-app` et jamais détruit tant que la coquille SPA
-                 * vit (`usePeerTransport::_doInit`). Un TTL d'une heure expirerait donc dans le
-                 * dos d'un onglet resté ouvert, et le symptôme serait « la visio ne passe plus,
-                 * un F5 la répare ».
+                 * Durée de vie du credential signé, en secondes. Elle est ANNONCÉE au client, sous
+                 * la clé `credential_ttl` à la racine de la réponse de `/get-ice-servers` : c'est
+                 * ce qui lui permet de programmer son rafraîchissement (`_scheduleIceRefresh` dans
+                 * `usePeerTransport`). Une DURÉE et non une échéance, pour ne dépendre d'aucune
+                 * horloge partagée.
                  *
-                 * Ce que D1 achète n'est pas la brièveté mais le fait que le credential soit
-                 * par-utilisateur : `--user-quota` devient un plafond par personne, les journaux
-                 * coturn nomment l'abuseur, et une rotation du secret invalide tout l'existant
-                 * d'un coup. Raccourcir sans mécanisme de rafraîchissement ne fermerait rien de
-                 * plus et ouvrirait une panne intermittente — voir la borne écrite dans
-                 * `docs/modules/webrtc2/securite.md`.
+                 * 24 h par défaut, et ce n'est plus une contrainte technique mais un choix
+                 * conservateur : depuis que le client rafraîchit, un onglet resté ouvert ne perd
+                 * plus son relais. Ce que ce mode achète n'est pas la brièveté mais le fait que le
+                 * credential soit par-utilisateur — `--user-quota` devient un plafond par personne,
+                 * les journaux coturn nomment l'abuseur, et une rotation du secret invalide tout
+                 * l'existant d'un coup.
+                 *
+                 * ⚠️ DEUX RÉSERVES avant de descendre à l'échelle de l'heure. Le rafraîchissement
+                 * est BORNÉ (`ICE_REFRESH_MAX_RETRIES`) : sur une route en panne, il abandonne et
+                 * l'onglet retombe sur l'ancien comportement — « la visio ne passe plus, un F5 la
+                 * répare ». Et `routes.public.php` documente que cette route n'a pas de `throttle`,
+                 * avec pour condition de réouverture explicite « un credential court ET
+                 * re-demandé » : un TTL horaire rouvre donc cette question. Détail dans
+                 * `docs/modules/webrtc2/securite.md`, section « Le rafraîchissement du credential
+                 * TURN ».
                  */
                 'credential_ttl' => (int) env('COTURN_CREDENTIAL_TTL', 86400),
 

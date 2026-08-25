@@ -256,6 +256,8 @@ export function createMockContext(overrides = {}) {
         peerReconnectAttempts: overrides.peerStore?.peerReconnectAttempts ?? 0,
         peerDestroyTimer: overrides.peerStore?.peerDestroyTimer ?? null,
         peerReconnectTimer: overrides.peerStore?.peerReconnectTimer ?? null,
+        peerIceRefreshTimer: overrides.peerStore?.peerIceRefreshTimer ?? null,
+        peerIceRefreshAttempts: overrides.peerStore?.peerIceRefreshAttempts ?? 0,
         peerListenersDetach: overrides.peerStore?.peerListenersDetach ?? null,
 
         // ⚠️ Des JETONS, comme le store réel, et le `null` de retour est le point de
@@ -347,6 +349,17 @@ export function createMockContext(overrides = {}) {
             peerStore.peerReconnectTimer = null
             return true
         }),
+        clearIceRefreshTimer: vi.fn(() => {
+            if (!peerStore.peerIceRefreshTimer) return false
+            clearTimeout(peerStore.peerIceRefreshTimer)
+            peerStore.peerIceRefreshTimer = null
+            return true
+        }),
+        resetIceRefreshAttempts: vi.fn(() => { peerStore.peerIceRefreshAttempts = 0 }),
+        incrementIceRefreshAttempts: vi.fn(() => {
+            peerStore.peerIceRefreshAttempts += 1
+            return peerStore.peerIceRefreshAttempts
+        }),
         // Contrat du store réel reproduit à l'identique — sinon `mockFidelity` garantirait
         // la surface et laisserait passer le mensonge : remplacer une closure **exécute** la
         // précédente, et le détachement vide le champ AVANT d'appeler (jamais rejouer une
@@ -376,6 +389,8 @@ export function createMockContext(overrides = {}) {
             peerStore.peerReconnectAttempts = 0
             peerStore.clearPeerDestroyTimer()
             peerStore.clearReconnectTimer()
+            peerStore.clearIceRefreshTimer()
+            peerStore.peerIceRefreshAttempts = 0
         }),
 
         // File de signaux brute : lue par `useSignalingQueue` (détecteur de coalescence).

@@ -193,6 +193,75 @@ class IceServersTest extends TestCase
     }
 
     #[Test]
+    public function le_ttl_du_credential_est_annonce_au_client_et_vaut_celui_du_username(): void
+    {
+        // La raison d'être de cette clé : sans elle, le front n'a aucun moyen de savoir QUAND
+        // rafraîchir. La seule autre trace de l'expiration est l'epoch préfixant `username`, qui
+        // est ABSOLU — un poste dont l'horloge est en retard programmerait le rafraîchissement
+        // après l'expiration et la panne « la visio ne passe plus, un F5 la répare » subsisterait.
+        $user = $this->makeUser('alice');
+        $this->setIce('turn.credential_ttl', 60);
+
+        Carbon::setTestNow('2026-08-23 12:00:00');
+
+        $response = $this->actingAs($user)->getJson(self::URI);
+
+        $response->assertOk();
+        $this->assertSame(60, $response->json('credential_ttl'));
+
+        // ET la même valeur que celle qui expire l'`username` : c'est ce que garantit la lecture
+        // unique de la config dans `turnServer()`. Deux lectures se laisseraient désynchroniser, et
+        // le client programmerait alors son rafraîchissement sur une durée qui n'est pas la sienne.
+        $this->assertSame(
+            (Carbon::now()->getTimestamp() + 60).':'.$user->id,
+            $this->iceServers($response)[1]['username'],
+        );
+    }
+
+    #[Test]
+    public function aucun_ttl_n_est_annonce_en_mode_statique(): void
+    {
+        // Un couple longue durée ne s'expire pas : annoncer un TTL ferait programmer au client un
+        // rafraîchissement inutile — une requête par TTL et par onglet, pour réécrire la même
+        // configuration.
+        //
+        // ⚠️ Contre-épreuve des TROIS tests « aucun TTL » : retirer la clé du contrôleur ne les
+        // fait PAS rougir (ils sont alors vrais pour la mauvaise raison) — c'est l'émettre
+        // INCONDITIONNELLEMENT qui les rougit tous les trois, plus
+        // `un_invite_recoit_stun_seul_sans_aucun_identifiant`, dont l'`assertDontSee('credential')`
+        // attrape `credential_ttl` au passage. Vérifié le 2026-08-25.
+        $this->setIce('turn.static_auth_secret', null);
+
+        $response = $this->actingAs($this->makeUser('alice'))->getJson(self::URI);
+
+        $response->assertOk();
+        $this->assertArrayNotHasKey('credential_ttl', $response->json());
+    }
+
+    #[Test]
+    public function aucun_ttl_n_est_annonce_a_un_invite(): void
+    {
+        // Un invité ne reçoit aucune entrée TURN, donc rien à rafraîchir. La clé ABSENTE (et non
+        // `null`) est ce qui permet au front de n'avoir qu'un seul prédicat pour les trois cas.
+        $response = $this->getJson(self::URI);
+
+        $response->assertOk();
+        $this->assertArrayNotHasKey('credential_ttl', $response->json());
+    }
+
+    #[Test]
+    public function aucun_ttl_n_est_annonce_quand_aucune_entree_turn_n_est_emise(): void
+    {
+        $this->setIce('turn.host', false);
+
+        $response = $this->actingAs($this->makeUser('alice'))->getJson(self::URI);
+
+        $response->assertOk();
+        $this->assertSame([], $this->turnEntries($response));
+        $this->assertArrayNotHasKey('credential_ttl', $response->json());
+    }
+
+    #[Test]
     public function le_secret_seul_suffit_sans_couple_statique(): void
     {
         // L'état d'un déploiement propre en mode REST : plus aucune trace de `COTURN_USER` /

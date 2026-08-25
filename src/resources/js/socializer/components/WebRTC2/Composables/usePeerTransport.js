@@ -20,16 +20,21 @@
 
 import { Peer } from "peerjs"
 import { markRaw, onUnmounted, watch } from 'vue'
-import { 
-    MAX_RECONNECT_ATTEMPTS, 
+import {
+    MAX_RECONNECT_ATTEMPTS,
     HUB_RATE_WINDOW_MS,
     HUB_MAX_MESSAGES_PER_WINDOW,
     HUB_MAX_BYTES_PER_WINDOW,
+    ICE_REFRESH_MARGIN_MS,
+    ICE_REFRESH_MAX_DELAY_MS,
+    ICE_REFRESH_MAX_RETRIES,
+    ICE_REFRESH_MIN_DELAY_MS,
+    ICE_REFRESH_RETRY_MS,
     MAX_METADATA_BYTES,
     MAX_PAYLOAD_BYTES,
-    PEER_DESTROY_DELAY_MS, 
-    RECONNECT_BASE_DELAY_MS, 
-    RECONNECT_MAX_DELAY_MS, 
+    PEER_DESTROY_DELAY_MS,
+    RECONNECT_BASE_DELAY_MS,
+    RECONNECT_MAX_DELAY_MS,
     SLUG_PATTERN,
     STREAM_WAIT_TIMEOUT_MS } from '../webrtc2.config.js'
 import { getPayloadSizeBytes, isPayloadWithinLimit } from './utils/payloadSize.js'
@@ -127,6 +132,159 @@ function _destroyPeerSingleton(peerStore, cause = 'cause non précisée') {
     peerStore.resetPeerState()
     console.info(`[WebRTC2] Peer singleton détruit (${destroyedId ?? 'sans id'}) — cause : ${cause}`)
     peerStore.auditPeerState('après destruction du Peer')
+}
+
+// ─── Rafraîchissement du credential TURN ─────────────────────────────────────
+//
+// LE PROBLÈME, mesuré en livrant les credentials éphémères. La configuration ICE n'est récupérée
+// qu'UNE FOIS par cycle de vie du `Peer` (l'`await fetchIceServers` de `_doInit`), et le `Peer` est
+// un singleton d'onglet que rien ne détruit tant que la coquille SPA vit : contexte permanent
+// `data-app` monté au tick 0, `PEER_DESTROY_DELAY_MS` armé seulement au départ du DERNIER
+// consommateur, et `peer.reconnect()` qui réutilise la même instance donc le même `_options.config`.
+// Passé le TTL du credential, l'appel en cours tient — coturn a déjà sa clé de session — mais TOUTE
+// NOUVELLE ALLOCATION échoue : nouvel appel, ICE restart, nouveau flux. Symptôme : « la visio ne
+// passe plus, un F5 la répare ».
+//
+// POURQUOI C'EST PETIT. PeerJS fait `new RTCPeerConnection(this.connection.provider.options.config)`
+// à CHAQUE connexion (peerjs 1.5.4, `dist/bundler.mjs`), et `options` est un getter vivant sur
+// `_options`. Réécrire `peer.options.config` suffit donc pour toutes les connexions futures : pas de
+// `setConfiguration()`, pas de chirurgie sur les connexions ouvertes, pas de `Peer` recréé.
+// ⚠️ C'est un interne NON CONTRACTUEL de PeerJS. Un renommage amont rendrait le rafraîchissement
+// muet ; `peerjsMockFidelity.descriptors.test.js` casse ce jour-là au lieu de le laisser passer.
+//
+// POURQUOI UN MINUTEUR ET NON UN RAFRAÎCHISSEMENT PARESSEUX avant chaque `connectToPeer` : ce
+// dernier est SYNCHRONE et porte un verrou anti-TOCTOU. Y insérer un `await` créerait un état
+// intermédiaire observable, et TOUT CE QUI LIT CET ÉTAT devrait être réexaminé, pas seulement ce
+// qui l'écrit — c'est exactement ce qu'a coûté le passage de la configuration ICE en HTTP (un
+// `localPeer` nul alors que `peerInitPromise` était posée, dans lequel le timer de destruction
+// différée faisait naître un `Peer` orphelin). Le seul `await` de ce mécanisme vit donc dans le
+// callback du minuteur, sur aucun chemin d'appel.
+
+/**
+ * Arme une échéance de rafraîchissement, en millisecondes réelles.
+ *
+ * Séparée de `_scheduleIceRefresh` parce que les deux appelants n'ont pas la même donnée en main :
+ * l'un connaît un TTL et veut la marge appliquée, l'autre (la reprise sur échec) connaît le délai
+ * qu'il veut. Faire passer le second par le premier l'obligerait à fabriquer un faux TTL pour que
+ * l'arithmétique de la marge retombe sur son délai — un calcul à rebours que personne ne relit
+ * juste.
+ *
+ * @param {Object} peerStore
+ * @param {Object} ctx        Le contexte dont l'`AjaxService` a servi le fetch initial
+ * @param {Object} peer       L'instance visée — capturée, jamais relue depuis le store
+ * @param {number} delayMs
+ */
+function _armIceRefresh(peerStore, ctx, peer, delayMs) {
+    // Jamais empiler deux échéances sur le même Peer (même parti pris que `_schedulePeerDestroy`).
+    peerStore.clearIceRefreshTimer()
+
+    peerStore.peerIceRefreshTimer = setTimeout(() => {
+        // Nullé EN ENTRANT, comme `_schedulePeerDestroy` : le handle d'un minuteur déjà consommé
+        // ferait croire à `clearIceRefreshTimer` qu'une échéance est encore en vol.
+        peerStore.peerIceRefreshTimer = null
+        // `void` explicite : le callback d'un `setTimeout` ne peut pas être attendu, et
+        // `_refreshIceConfig` ne rejette jamais (cf. son contrat).
+        void _refreshIceConfig(peerStore, ctx, peer)
+    }, delayMs)
+}
+
+/**
+ * Arme le prochain rafraîchissement à partir de la durée de vie annoncée par le serveur.
+ *
+ * @param {Object}      peerStore
+ * @param {Object}      ctx
+ * @param {Object}      peer
+ * @param {number|null} ttlMs  `null` ⇒ rien à rafraîchir : aucun minuteur n'est armé
+ */
+function _scheduleIceRefresh(peerStore, ctx, peer, ttlMs) {
+    // Invité, mode statique, ou repli STUN : il n'y a pas de credential périssable, donc rien à
+    // rafraîchir et AUCUN minuteur — le comportement d'avant ce mécanisme, à l'identique.
+    //
+    // ⚠️ Le `clear` doit quand même passer : c'est le chemin par lequel un `Peer` dont le
+    // déploiement vient de repasser en mode statique cesse d'interroger la route.
+    if (ttlMs === null) {
+        peerStore.clearIceRefreshTimer()
+        return
+    }
+
+    const delayMs = Math.min(
+        Math.max(ttlMs - ICE_REFRESH_MARGIN_MS, ICE_REFRESH_MIN_DELAY_MS),
+        ICE_REFRESH_MAX_DELAY_MS,
+    )
+
+    _armIceRefresh(peerStore, ctx, peer, delayMs)
+}
+
+/**
+ * Récupère une configuration ICE fraîche et la pose sur le `Peer`, puis réarme.
+ *
+ * ⚠️ Appelée depuis un `setTimeout`, donc **rien ici ne doit pouvoir rejeter** : une exception y
+ * serait une `unhandledRejection` que personne n'observe. Ce n'est pas obtenu par un `try/catch`
+ * fourre-tout mais par deux appuis vérifiables — `fetchIceServers` ne jette jamais (contrat épinglé
+ * par son propre fichier de test), et l'objet rendu par `options` est mutable (épinglé sur la VRAIE
+ * lib par `peerjsMockFidelity.descriptors.test.js`). Si l'un des deux tombe, c'est ce test-là qui
+ * doit rougir, pas ce chemin qui doit avaler l'erreur.
+ *
+ * @param {Object} peerStore
+ * @param {Object} ctx
+ * @param {Object} peer     L'instance visée à l'armement
+ */
+async function _refreshIceConfig(peerStore, ctx, peer) {
+    // ⚠️ AUCUNE garde AVANT l'aller-retour, et c'est délibéré : elle serait INATTEIGNABLE. Toute
+    // destruction de `Peer` passe par `resetPeerState`, qui annule ce minuteur — donc un minuteur
+    // qui se réveille vise nécessairement le singleton courant. Un garde ici serait du code qu'aucun
+    // test ne peut rougir, c'est-à-dire une rustine. La fenêtre réelle est plus bas, autour de
+    // l'`await`.
+    const { iceServers, credentialTtlMs } = await fetchIceServers(ctx.AjaxService)
+
+    // Et APRÈS : c'est celle-ci qui compte. Un cycle destruction → nouvelle init a pu se produire
+    // pendant l'aller-retour, et le `Peer` neuf a armé SON minuteur avec SA configuration. Écrire
+    // ici viserait une instance périmée ; réarmer ici doublerait le minuteur du neuf. Donc sortie
+    // sèche, sans réarmement.
+    if (peerStore.localPeer !== peer || peer.destroyed) {
+        console.info('[WebRTC2] Rafraîchissement de la configuration ICE abandonné : le Peer visé n\'est plus le singleton courant.')
+        return
+    }
+
+    // ⚠️ NE RIEN ÉCRIRE quand le serveur n'annonce pas de credential périssable. `fetchIceServers`
+    // rend le repli STUN seul quand la route répond mal : l'écrire remplacerait une configuration
+    // TURN QUI MARCHE par une configuration sans relais — un rafraîchissement qui dégrade, soit le
+    // contraire de ce qu'on installe ici. Le TTL absent est le seul signal disponible, et il couvre
+    // aussi le cas légitime « le déployeur est passé en mode statique entre-temps ».
+    if (credentialTtlMs === null) {
+        const attempt = peerStore.incrementIceRefreshAttempts()
+
+        if (attempt >= ICE_REFRESH_MAX_RETRIES) {
+            console.warn(
+                `[WebRTC2] Rafraîchissement du credential TURN abandonné après ${attempt} tentatives —` +
+                ' la configuration en place est conservée. Un rechargement de la page la renouvellera.'
+            )
+            return
+        }
+
+        console.warn(
+            `[WebRTC2] Configuration ICE sans credential périssable (tentative ${attempt}/${ICE_REFRESH_MAX_RETRIES}) —` +
+            ` configuration en place conservée, nouvelle tentative dans ${ICE_REFRESH_RETRY_MS}ms.`
+        )
+        _armIceRefresh(peerStore, ctx, peer, ICE_REFRESH_RETRY_MS)
+        return
+    }
+
+    // ⚠️ `peer.options`, PAS `peer._options` : `options` est le getter que PeerJS lit lui-même
+    // (`provider.options.config`), donc le seul chemin dont la survie est vérifiable de l'extérieur.
+    // Sous test de vérité parce qu'un renommage amont le rendrait `undefined`, et qu'une
+    // `TypeError` dans un callback de minuteur ne se voit nulle part.
+    if (!peer.options || typeof peer.options !== 'object') {
+        console.warn('[WebRTC2] Rafraîchissement du credential TURN impossible : `peer.options` est absent (interne PeerJS renommé ?).')
+        return
+    }
+
+    peer.options.config = { iceServers }
+    peerStore.resetIceRefreshAttempts()
+
+    console.info('[WebRTC2] Credential TURN rafraîchi — les connexions futures utiliseront la nouvelle configuration ICE.')
+
+    _scheduleIceRefresh(peerStore, ctx, peer, credentialTtlMs)
 }
 
 // ⚠️ PAS de hook `import.meta.hot` ici, et c'est un choix documenté.
@@ -436,7 +594,7 @@ export function usePeerTransport(ctx) {
             //
             // `fetchIceServers` ne jette JAMAIS et rend toujours un tableau non vide (repli STUN
             // seul, avec timeout) : le Peer est donc créé même si `/get-ice-servers` est mort.
-            const iceServers = await fetchIceServers(ctx.AjaxService)
+            const { iceServers, credentialTtlMs } = await fetchIceServers(ctx.AjaxService)
 
             // ── Garde d'annulation ────────────────────────────────────────────────────────
             //
@@ -895,6 +1053,21 @@ export function usePeerTransport(ctx) {
                 call.answer(localStream)
                 targetCtx.setUpConnectionListeners(call)
             })
+
+            // ── Rafraîchissement du credential TURN ───────────────────────────────
+            // Armé avec le TTL du MÊME aller-retour que la configuration qu'on vient de poser sur
+            // le `Peer` : les deux décrivent le même credential. `null` (invité, mode statique,
+            // repli STUN) n'arme rien.
+            //
+            // ICI, après les `bind`, et non avant : un `Peer` sans ses listeners n'est pas encore
+            // un singleton exploitable, et une exception au milieu du branchement ne doit pas
+            // laisser derrière elle un minuteur qui interrogera la route pendant des heures.
+            //
+            // ⚠️ Pas de `resetIceRefreshAttempts()` ici : le compteur est déjà remis à zéro par
+            // `resetPeerState`, donc un Peer neuf part toujours d'un compte juste. L'ajouter
+            // masquerait une seule chose — un Peer né SANS passer par un reset — qui est
+            // précisément ce que `peerStateViolations` est là pour faire remonter.
+            _scheduleIceRefresh(peerStore, ctx, peer, credentialTtlMs)
 
         } // end _doInit
 

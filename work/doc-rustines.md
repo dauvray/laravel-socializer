@@ -25,7 +25,7 @@ composer install && vendor/bin/phpunit  # PHP — depuis ce paquet
 
 > ⚠️ **Ne pas dupliquer les chantiers déjà ouverts.** Plusieurs rustines de la doc y sont déjà
 > cadrées, avec leur analyse : [webrtc2-todo.md](webrtc2-todo.md) (renommage `usersInRoom`,
-> sémantique de `peerInitPromise`, peerId fantôme, rafraîchissement du credential TURN),
+> sémantique de `peerInitPromise`, peerId fantôme),
 > [webrtc2-tests-plan.md](webrtc2-tests-plan.md) (trous de couverture),
 > [front-todo.md](front-todo.md) (directives de resize),
 > [sass-todo.md](sass-todo.md) (thème sombre, `@extend`). Ce fichier y **renvoie** — une règle, un

@@ -167,6 +167,24 @@ export default {
         this.peerReconnectTimer = null
         return true
     },
+    /** @returns {boolean} true si un rafraîchissement de configuration ICE était bien armé */
+    clearIceRefreshTimer() {
+        if (!this.peerIceRefreshTimer) {
+            return false
+        }
+        clearTimeout(toRaw(this.peerIceRefreshTimer))
+        this.peerIceRefreshTimer = null
+        return true
+    },
+
+    resetIceRefreshAttempts() {
+        this.peerIceRefreshAttempts = 0
+    },
+    /** @returns {number} numéro de la tentative infructueuse qui vient d'être comptée */
+    incrementIceRefreshAttempts() {
+        this.peerIceRefreshAttempts += 1
+        return this.peerIceRefreshAttempts
+    },
 
     /**
      * Enregistre la closure qui débranche les listeners du Peer courant.
@@ -239,6 +257,12 @@ export default {
         this.peerReconnectAttempts = 0
         this.clearPeerDestroyTimer()
         this.clearReconnectTimer()
+        // Le minuteur de rafraîchissement vise l'instance qu'on vient d'oublier. Ne pas l'annuler
+        // ici laisserait, des heures durant, un minuteur qui se réveille pour un `Peer` disparu :
+        // sa garde d'identité le ferait sortir sans dommage, mais une requête HTTP partirait pour
+        // rien à chaque échéance, sur un onglet qui n'a peut-être plus aucun contexte WebRTC.
+        this.clearIceRefreshTimer()
+        this.peerIceRefreshAttempts = 0
     },
 
     prepareRoomConnection(payload) {

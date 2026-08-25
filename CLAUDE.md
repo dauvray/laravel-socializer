@@ -109,9 +109,11 @@ projet consommateur n'a rien à câbler à la main.
   sous le slug d'un autre — les deux chemins ont la même signature locale, ce n'est pas fermable
   côté client. Les credentials TURN sont sortis du bundle
   **et sont désormais éphémères** (TURN REST API, signés par utilisateur, TTL 24 h) : un abus est
-  attribuable et révocable. Borne restante : le navigateur ne demande la configuration ICE qu'une
-  fois par onglet, donc un onglet ouvert au-delà du TTL n'ouvre plus de nouvelle allocation. Voir
-  [docs/modules/webrtc2/securite.md](docs/modules/webrtc2/securite.md).
+  attribuable et révocable. **Le client les rafraîchit avant expiration depuis le 25/08/2026**, donc
+  un onglet ouvert indéfiniment garde un credential valide — mais un rafraîchissement ne doit
+  **jamais** écrire le repli STUN par-dessus une configuration TURN qui marche, et il repose sur un
+  interne non contractuel de PeerJS (`options.config`). Lire
+  [docs/modules/webrtc2/securite.md](docs/modules/webrtc2/securite.md) avant d'y toucher.
 - **La suite PHP couvre la signalisation WebRTC et les gardes d'autorisation de `Socializable`** —
   un socle, pas un filet.
   Ses cinq décisions de harnais (pile de middlewares réduite, aucune migration du paquet, doublures

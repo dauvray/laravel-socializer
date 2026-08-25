@@ -52,6 +52,14 @@ export default () => {
     peerReconnectAttempts: 0, // tentatives de reconnexion PeerJS (backoff + garde anti-boucle)
     peerDestroyTimer: null, // handle de la destruction différée (PEER_DESTROY_DELAY_MS)
     peerReconnectTimer: null, // handle du backoff de reconnexion en cours
+    // Rafraîchissement du credential TURN avant son expiration (cf. `_scheduleIceRefresh`).
+    // Ici pour la raison de toute cette section, et elle mord particulièrement pour ce
+    // minuteur-ci : il est armé pour des HEURES. Au niveau du module, un HMR en aurait
+    // renouvelé la référence en laissant le `Peer` vivant — donc un minuteur orphelin
+    // impossible à annuler, plus un second armé par la copie neuve. Sur un onglet de
+    // développement, ce sont deux rafraîchissements concurrents sur le même `Peer`.
+    peerIceRefreshTimer: null, // handle du rafraîchissement de la configuration ICE
+    peerIceRefreshAttempts: 0, // tentatives infructueuses consécutives (ICE_REFRESH_MAX_RETRIES)
     // Closure qui débranche les listeners du Peer courant, produite par `_doInit` (seul
     // endroit qui sait ce qui a été branché, et sur quelle instance). Ici pour la même
     // raison que le reste de cette section : le Peer est un singleton que N'IMPORTE QUEL

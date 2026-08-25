@@ -46,19 +46,44 @@ class WebRTCController extends Controller
     public function getIceServers(Request $request): JsonResponse
     {
         $iceServers = [];
+        $ttl = null;
 
         foreach (config('socializer.signaling.ice.stun_urls', ['stun:stun.l.google.com:19302']) as $url) {
             $iceServers[] = ['urls' => $url];
         }
 
         if ($turn = $this->turnServer()) {
-            $iceServers[] = $turn;
+            $iceServers[] = $turn['server'];
+            $ttl = $turn['ttl'];
+        }
+
+        $payload = ['iceServers' => $iceServers];
+
+        // `credential_ttl` — combien de SECONDES le credential ci-dessus reste valide, et le signal
+        // qui autorise le client à programmer son rafraîchissement
+        // (`_scheduleIceRefresh` dans `usePeerTransport`).
+        //
+        // ⚠️ À LA RACINE, jamais dans l'entrée TURN : celle-ci est une liste blanche de trois clés
+        // (cf. le docblock de classe), et
+        // `IceServersTest::la_charge_utile_ne_relaie_que_les_trois_cles_attendues` doit rester
+        // verte sans modification — c'est le contrôle d'inertie de cet ajout.
+        //
+        // Une DURÉE et non un horodatage d'expiration : le client n'a alors aucune horloge à
+        // partager avec le serveur. Un poste dont l'heure est en retard de deux heures
+        // programmerait un rafraîchissement deux heures après l'expiration, ce qui reproduirait
+        // exactement la panne qu'on ferme.
+        //
+        // ABSENTE plutôt que `null` quand il n'y a rien à rafraîchir — invité, mode statique, hôte
+        // TURN non configuré : côté front, `typeof payload.credential_ttl === 'number'` est alors
+        // le seul prédicat, et il couvre les trois cas d'un coup.
+        if ($ttl !== null) {
+            $payload['credential_ttl'] = $ttl;
         }
 
         // `no-store` explicite : une MÊME URL rend deux charges utiles selon la session, et celle
         // de l'authentifié porte un identifiant. Symfony pose déjà `no-cache, private` par défaut,
         // mais un reverse-proxy se configure, et ce défaut-là ne se relit pas.
-        return response()->json(['iceServers' => $iceServers], 200)
+        return response()->json($payload, 200)
             ->header('Cache-Control', 'no-store, private');
     }
 
@@ -96,7 +121,14 @@ class WebRTCController extends Controller
      * `COTURN_STATIC_AUTH_SECRET=false` serait rendu en BOOLÉEN par `env()`. `(string) false` et
      * `(string) null` valent tous deux `''`, ce qui couvre ces absences d'un coup.
      *
-     * @return array{urls: string, username: string, credential: string}|null
+     * REND LA PAIRE (entrée, durée de vie) et non l'entrée seule. Le TTL n'a de sens que dans la
+     * branche « secret posé », et c'est ici — et nulle part ailleurs — que le mode est tranché : le
+     * recalculer dans `getIceServers` demanderait d'y recopier le prédicat entier (`Auth::check()`,
+     * hôte non vide, secret non vide), soit deux copies d'une même règle, qui divergeraient. Le
+     * `ttl` est donc `null` sur le chemin de compatibilité : un couple longue durée ne se
+     * rafraîchit pas, et le client ne doit pas programmer un rafraîchissement pour lui.
+     *
+     * @return array{server: array{urls: string, username: string, credential: string}, ttl: int|null}|null
      */
     private function turnServer(): ?array
     {
@@ -128,9 +160,12 @@ class WebRTCController extends Controller
             // `now()` et non `time()` : `Carbon::setTestNow()` n'intercepte que le premier, ce qui
             // rend l'expiration assertable AU SECONDE PRÈS. Un test à fenêtre
             // (`assertGreaterThan(time(), ...)`) resterait vert sur un TTL faux d'un facteur 60.
-            $expiresAt = now()
-                ->addSeconds((int) config('socializer.signaling.ice.turn.credential_ttl', 86400))
-                ->getTimestamp();
+            // Lu UNE fois et rendu à l'appelant : ce qui expire l'`username` ci-dessous et ce que
+            // le client reçoit dans `credential_ttl` sont la même valeur par construction. Deux
+            // lectures se laisseraient désynchroniser par un `config()->set` entre les deux.
+            $ttl = (int) config('socializer.signaling.ice.turn.credential_ttl', 86400);
+
+            $expiresAt = now()->addSeconds($ttl)->getTimestamp();
 
             // `Auth::id()` et non le slug : c'est ce que coturn journalise et ce sur quoi portent
             // `--user-quota` / `--total-quota`, donc la seule chose qui rattache une allocation à
@@ -142,12 +177,15 @@ class WebRTCController extends Controller
             $username = $expiresAt.':'.Auth::id();
 
             return [
-                'urls' => $urls,
-                'username' => $username,
-                // HMAC-SHA1 BRUT (4ᵉ argument `true`) puis base64. `hash_hmac(..., false)`
-                // rendrait l'hexadécimal, que coturn base64-erait différemment : credential
-                // refusé, sans autre symptôme que « la visio ne relaie pas ».
-                'credential' => base64_encode(hash_hmac('sha1', $username, $secret, true)),
+                'server' => [
+                    'urls' => $urls,
+                    'username' => $username,
+                    // HMAC-SHA1 BRUT (4ᵉ argument `true`) puis base64. `hash_hmac(..., false)`
+                    // rendrait l'hexadécimal, que coturn base64-erait différemment : credential
+                    // refusé, sans autre symptôme que « la visio ne relaie pas ».
+                    'credential' => base64_encode(hash_hmac('sha1', $username, $secret, true)),
+                ],
+                'ttl' => $ttl,
             ];
         }
 
@@ -159,9 +197,15 @@ class WebRTCController extends Controller
         }
 
         return [
-            'urls' => $urls,
-            'username' => $username,
-            'credential' => $password,
+            'server' => [
+                'urls' => $urls,
+                'username' => $username,
+                'credential' => $password,
+            ],
+            // Aucune expiration à annoncer : ce couple est valide tant que coturn le porte dans son
+            // `--user`. Le client ne programme donc aucun rafraîchissement, et l'absence de la clé
+            // dans la réponse est ce qui le lui dit.
+            'ttl' => null,
         ];
     }
 }

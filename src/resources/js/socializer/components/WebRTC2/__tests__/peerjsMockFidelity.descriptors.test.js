@@ -28,6 +28,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { Peer as MockPeer, resetPeerMock } from './__mocks__/peerjs.js'
 import { Peer as RealPeer } from '/var/www/estarter-test/node_modules/peerjs/dist/bundler.mjs'
+import BUNDLER_SOURCE from '/var/www/estarter-test/node_modules/peerjs/dist/bundler.mjs?raw'
 
 /**
  * Les sept accesseurs du vrai `Peer` (`dist/bundler.mjs:1460-1492`).
@@ -120,6 +121,63 @@ describe('fidélité du mock PeerJS — propriétés en lecture seule', () => {
             expect(peer.connections).toEqual({})
             expect(peer.destroyed).toBe(false)
             expect(peer.disconnected).toBe(false)
+        })
+    })
+
+    describe('`options.config`, le point d\'appui du rafraîchissement TURN', () => {
+        /**
+         * Ce bloc n'épingle pas le mock : il épingle un INTERNE DE PEERJS dont dépend du code de
+         * production.
+         *
+         * `_refreshIceConfig` (usePeerTransport) renouvelle le credential TURN d'un onglet en
+         * réécrivant `peer.options.config`, et RIEN D'AUTRE — ni `setConfiguration()`, ni cycle
+         * destroy → init. Ça ne marche que grâce à deux propriétés de la lib :
+         *
+         *   1. PeerJS relit `provider.options.config` à CHAQUE nouvelle `RTCPeerConnection`, donc
+         *      une réécriture profite à toutes les connexions futures sans toucher aux ouvertes ;
+         *   2. `options` est un getter vivant sur `_options`, donc muter l'objet rendu mute bien la
+         *      source.
+         *
+         * Aucune des deux n'est contractuelle. Le jour où une mise à jour de `peerjs` renomme ce
+         * chemin, le rafraîchissement devient MUET : aucune erreur, aucun log, et la panne revient
+         * sous sa forme d'origine — « la visio ne passe plus, un F5 la répare » — des mois plus tard,
+         * chez un utilisateur qui laisse son onglet ouvert. C'est ce silence-là que ces deux tests
+         * transforment en suite rouge.
+         */
+        it('la vraie lib lit `provider.options.config` pour construire ses RTCPeerConnection', () => {
+            // Sur la SOURCE et non sur le comportement : l'observer autrement demanderait une vraie
+            // négociation ICE. Le compromis est assumé — ce test ne prouve pas que ça marche, il
+            // détecte que le chemin a bougé, ce qui est exactement ce dont on a besoin.
+            expect(BUNDLER_SOURCE.length, 'source de bundler.mjs illisible').toBeGreaterThan(1000)
+            expect(BUNDLER_SOURCE).toMatch(/provider\.options\.config/)
+        })
+
+        it('muter `options.config` est observable — l\'objet rendu par le getter n\'est pas figé', () => {
+            const detached = Object.create(RealPeer.prototype)
+            const initiale = { iceServers: [{ urls: 'stun:un.example' }] }
+            detached._options = { config: initiale }
+
+            expect(detached.options.config).toBe(initiale)
+
+            // ⚠️ On mute la PROPRIÉTÉ `config` de l'objet d'options, on ne réassigne pas `options`
+            // lui-même — qui est en lecture seule (cf. les blocs ci-dessus). C'est la distinction
+            // exacte que `_refreshIceConfig` respecte.
+            const fraiche = { iceServers: [{ urls: 'turn:deux.example' }] }
+            detached.options.config = fraiche
+
+            expect(detached.options.config).toBe(fraiche)
+            expect(detached._options.config).toBe(fraiche)
+        })
+
+        it('le mock reproduit ce point d\'appui', () => {
+            // Sans quoi `usePeerTransport.iceRefresh.test.js` mesurerait une mécanique que la vraie
+            // lib n'a pas — le mode de panne que tout ce fichier existe pour fermer.
+            const peer = new MockPeer('mock-alice', { config: { iceServers: [] } })
+            const fraiche = { iceServers: [{ urls: 'turn:deux.example' }] }
+
+            peer.options.config = fraiche
+
+            expect(peer.options.config).toBe(fraiche)
         })
     })
 

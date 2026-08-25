@@ -101,6 +101,20 @@ describe('peers2 — runtime du Peer singleton', () => {
         })
     })
 
+    describe('compteur de rafraîchissement ICE', () => {
+        it('incrémente en retournant le numéro de tentative, et se remet à zéro', () => {
+            // Compte les tentatives INFRUCTUEUSES de rafraîchissement du credential TURN. Il vit
+            // ici, et pas dans une closure du transport, pour la raison de toute cette section : le
+            // minuteur qu'il borne est armé pour des heures, donc il traverse des HMR.
+            expect(store.incrementIceRefreshAttempts()).toBe(1)
+            expect(store.incrementIceRefreshAttempts()).toBe(2)
+
+            store.resetIceRefreshAttempts()
+
+            expect(store.peerIceRefreshAttempts).toBe(0)
+        })
+    })
+
     describe('annulation des timers', () => {
         it('annule réellement la destruction différée et signale l\'annulation', () => {
             vi.useFakeTimers()
@@ -126,11 +140,24 @@ describe('peers2 — runtime du Peer singleton', () => {
             expect(store.peerReconnectTimer).toBeNull()
         })
 
+        it('annule réellement le rafraîchissement de la configuration ICE', () => {
+            vi.useFakeTimers()
+            const onFire = vi.fn()
+            store.peerIceRefreshTimer = setTimeout(onFire, 1000)
+
+            expect(store.clearIceRefreshTimer()).toBe(true)
+            vi.advanceTimersByTime(5000)
+
+            expect(onFire).not.toHaveBeenCalled()
+            expect(store.peerIceRefreshTimer).toBeNull()
+        })
+
         it('retourne false quand aucun timer n\'était armé', () => {
             // Le transport conditionne son log « destruction annulée » à ce retour : un
             // `true` complaisant annoncerait des annulations qui n'ont pas eu lieu.
             expect(store.clearPeerDestroyTimer()).toBe(false)
             expect(store.clearReconnectTimer()).toBe(false)
+            expect(store.clearIceRefreshTimer()).toBe(false)
         })
     })
 
@@ -200,25 +227,28 @@ describe('peers2 — runtime du Peer singleton', () => {
         const consumerA = {}
         const consumerB = {}
 
-        /** État d'un peer vivant, avec deux timers armés et ses listeners branchés. */
-        const armLiveState = (onDestroyFire, onReconnectFire, onDetach = vi.fn()) => {
+        /** État d'un peer vivant, avec ses trois timers armés et ses listeners branchés. */
+        const armLiveState = (onDestroyFire, onReconnectFire, onDetach = vi.fn(), onIceRefreshFire = vi.fn()) => {
             store.setPeerListenersDetach(onDetach)
             store.localPeer = { id: 'peer-alice' }
             store.localPeerReady = true
             store.lastLocalPeerId = 'peer-alice'
             store.setPeerInitPromise(Promise.resolve())
             store.incrementReconnectAttempts()
+            store.incrementIceRefreshAttempts()
             store.addPeerConsumer(consumerA)
             store.addPeerConsumer(consumerB)
             store.peerDestroyTimer = setTimeout(onDestroyFire, 1000)
             store.peerReconnectTimer = setTimeout(onReconnectFire, 1000)
+            store.peerIceRefreshTimer = setTimeout(onIceRefreshFire, 1000)
         }
 
-        it('remet tout à zéro et annule les deux timers', () => {
+        it('remet tout à zéro et annule les trois timers', () => {
             vi.useFakeTimers()
             const onDestroyFire = vi.fn()
             const onReconnectFire = vi.fn()
-            armLiveState(onDestroyFire, onReconnectFire)
+            const onIceRefreshFire = vi.fn()
+            armLiveState(onDestroyFire, onReconnectFire, vi.fn(), onIceRefreshFire)
 
             store.resetPeerState()
 
@@ -227,10 +257,19 @@ describe('peers2 — runtime du Peer singleton', () => {
             expect(store.lastLocalPeerId).toBeNull()
             expect(store.peerInitPromise).toBeNull()
             expect(store.peerReconnectAttempts).toBe(0)
+            expect(store.peerIceRefreshAttempts).toBe(0)
 
             vi.advanceTimersByTime(5000)
             expect(onDestroyFire).not.toHaveBeenCalled()
             expect(onReconnectFire).not.toHaveBeenCalled()
+            // ⭐ Le troisième compte autant que les deux autres, et pour une raison qui lui est
+            // propre : il est armé pour des HEURES (le TTL du credential TURN, moins la marge). Un
+            // minuteur de destruction oublié se réveille au bout de 10 s sur un store déjà propre ;
+            // celui-ci se réveillerait le lendemain pour interroger `/get-ice-servers` au nom d'un
+            // `Peer` que plus rien ne référence, sur un onglet qui n'a peut-être plus aucun
+            // contexte WebRTC monté.
+            expect(onIceRefreshFire).not.toHaveBeenCalled()
+            expect(store.peerIceRefreshTimer).toBeNull()
         })
 
         it('préserve les consommateurs — INCONDITIONNELLEMENT', () => {

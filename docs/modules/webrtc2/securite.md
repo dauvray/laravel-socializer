@@ -10,6 +10,7 @@
 [Sens entrant](#décisions-en-vigueur-sens-entrant-mai-2026) ·
 [Sens sortant](#décisions-en-vigueur-sens-sortant-août-2026) ·
 [Backend](#décisions-en-vigueur-backend-août-2026) ·
+[Rafraîchissement TURN](#le-rafraîchissement-du-credential-turn) ·
 [Bornes non fermées](#bornes-non-fermées-connues)
 
 ---
@@ -21,7 +22,7 @@
 | **Entrant** (`peer.on('connection')`, `peer.on('call')`) | durci **côté client**, borné côté serveur — audits du 20/05 et du 14/08/2026 | garde `_isAuthorizedIncomingPeer`, anti-usurpation inconditionnelle, gardes de taille, sanitisation. Reste aveugle au membre de room qui se présente avec un peerId neuf sous le slug d'un autre ; le garde de relation serveur borne désormais qui peut tenter |
 | **Sortant** (`connectToPeer`, `responseRemotePeerConnection`) | durci **côté client**, garde autoritatif posé côté serveur | prédicat unique `utils/isAuthorizedPeer.js` : membre de la room **ou** interlocuteur d'appel marqué — [décisions](#décisions-en-vigueur-sens-sortant-août-2026). Son jumeau serveur `Socializable::mayReach` tranche ce que le navigateur ne peut pas voir |
 | **Backend** (`UserController`, routes) | durci | `fromUserSlug` authentifié, liste blanche de champs, `throttle` par utilisateur (deux buckets), `validate()` sur les 5 payloads, **contrôle de relation** émetteur ↔ destinataire en 403 uniforme, et **liste de contacts restreinte aux joignables** sauf permission `list_users` |
-| **Credentials TURN** | servis par le serveur, **éphémères et signés par utilisateur** | `GET /get-ice-servers` : STUN seul pour un invité, STUN + TURN pour une session authentifiée. TURN REST API — `username = "<expiry>:<userId>"`, `credential = base64(HMAC-SHA1(secret, username))`, TTL 24 h. Un abus est donc attribuable, plafonnable par personne et révocable en bloc. Le mode statique partagé reste servi si aucun secret n'est configuré, pour ne pas casser un coturn encore en `--user` |
+| **Credentials TURN** | servis par le serveur, **éphémères et signés par utilisateur**, **rafraîchis côté client** | `GET /get-ice-servers` : STUN seul pour un invité, STUN + TURN pour une session authentifiée. TURN REST API — `username = "<expiry>:<userId>"`, `credential = base64(HMAC-SHA1(secret, username))`, TTL 24 h annoncé par `credential_ttl` et renouvelé avant échéance par le transport ([détail](#le-rafraîchissement-du-credential-turn)). Un abus est donc attribuable, plafonnable par personne et révocable en bloc. Le mode statique partagé reste servi si aucun secret n'est configuré, pour ne pas casser un coturn encore en `--user` |
 
 **La leçon réutilisable, et la seule qui compte : un garde d'admission ne sécurise qu'une
 direction.** Tout chemin qui *ouvre* une connexion doit porter le sien.
@@ -617,6 +618,69 @@ d'absence de relation sur `[]` revient à tester une panne.
 
 ---
 
+## Le rafraîchissement du credential TURN
+
+Le credential TURN est éphémère, mais **la configuration ICE n'était récupérée qu'une fois par cycle
+de vie du `Peer`** — et ce `Peer` est un singleton d'onglet monté au tick 0 par le contexte permanent
+`data-app`, que `PEER_DESTROY_DELAY_MS` n'arme qu'au départ du **dernier** consommateur et dont
+`peer.reconnect()` réutilise la même instance, donc le même `_options.config`. Un onglet ouvert
+au-delà du TTL gardait un credential expiré : l'appel en cours tenait — coturn a déjà sa clé de
+session — mais **toute nouvelle allocation échouait**.
+
+Le symptôme à reconnaître : « la visio ne passe plus, un F5 la répare », sur un onglet resté ouvert.
+Il ne ressemble pas à une expiration parce que rien ne casse au moment où le credential expire, mais
+au prochain appel.
+
+### Trois décisions, et la raison de chacune
+
+**Le serveur annonce une DURÉE, pas une échéance.** La réponse porte `credential_ttl` en secondes, à
+la racine — jamais dans l'entrée TURN, qui reste une liste blanche de trois clés. L'autre source
+possible était l'epoch préfixant `username`, mais il est **absolu** : un poste dont l'horloge est en
+retard de deux heures programmerait le rafraîchissement deux heures après l'expiration, c'est-à-dire
+reproduirait exactement la panne. Une durée relative n'a aucune horloge à partager. La clé est
+**absente** — et non `null` — quand il n'y a rien à rafraîchir (invité, mode statique, hôte TURN non
+configuré), ce qui donne au client un prédicat unique pour les trois cas.
+
+**Un minuteur, pas un rafraîchissement paresseux avant `connectToPeer`.** Le paresseux ne dépend
+d'aucune horloge et ne travaille que si l'on appelle, mais `connectToPeer` est **synchrone** et porte
+un verrou anti-TOCTOU. Y insérer un `await` créerait un état intermédiaire observable, et **tout ce
+qui LIT cet état devrait être réexaminé**, pas seulement ce qui l'écrit — c'est ce qu'a coûté le
+passage de la configuration ICE en HTTP. Le seul `await` du mécanisme vit donc dans le callback du
+minuteur, sur aucun chemin d'appel.
+
+**On réécrit `peer.options.config`, et rien d'autre.** PeerJS relit
+`provider.options.config` à **chaque** nouvelle `RTCPeerConnection`, et `options` est un getter
+vivant sur `_options` : une réécriture profite à toutes les connexions futures **sans toucher aux
+connexions ouvertes**. Ni `setConfiguration()`, ni cycle destroy → init.
+
+### Les deux pièges
+
+**Un rafraîchissement peut DÉGRADER.** `fetchIceServers` ne jette jamais : quand la route répond mal,
+elle rend le repli STUN seul. L'écrire remplacerait une configuration TURN qui marche par une
+configuration sans relais — l'exact contraire du but. D'où la règle : **pas de TTL dans la réponse ⇒
+aucune écriture**, la configuration en place est conservée et une reprise est armée, bornée par
+`ICE_REFRESH_MAX_RETRIES`. Le bornage n'est pas de la politesse : `routes.public.php` documente que
+`/get-ice-servers` n'a pas de `throttle` et que la condition de réouverture est « un credential court
+**et** re-demandé » — une reprise non bornée sur une route morte serait ce re-demandé-là.
+
+**`options.config` est un interne non contractuel de PeerJS.** Un renommage amont rendrait le
+rafraîchissement **muet** : aucune erreur, aucun log, et la panne reviendrait sous sa forme d'origine
+des mois plus tard. C'est pourquoi `peerjsMockFidelity.descriptors.test.js` vérifie sur la **source**
+de `bundler.mjs` que `provider.options.config` y figure encore.
+
+### Ce que ce mécanisme ne décide pas
+
+Le TTL par défaut **reste à 24 h**. Le rafraîchissement rend son raccourcissement possible sans le
+décider : `credential_ttl` est un réglage d'hôte, et la condition de réouverture du `throttle` reste
+armée pour le jour où un déployeur descend à l'échelle de l'heure.
+
+Et la suite ne prouve pas que **coturn accepte** le credential rafraîchi : elle prouve que le
+minuteur rejoue la requête et réécrit l'objet. La contre-épreuve est manuelle — un
+`COTURN_CREDENTIAL_TTL` court, un onglet laissé ouvert au-delà, puis un **nouvel** appel qui obtient
+un candidat `relay`.
+
+---
+
 ## Bornes non fermées, connues
 
 - **L'usurpation intra-room, bornée mais pas fermée.** Un membre légitime de la room qui ouvre un
@@ -643,17 +707,15 @@ d'absence de relation sur `[]` revient à tester une panne.
   et **l'énumération par la liste de contacts** — `getUsersList` rendait tous les utilisateurs
   actifs à tout authentifié, elle applique désormais le même prédicat que les cinq routes
   (ci-dessus, « La liste de contacts applique le même prédicat, en lot »).
-- **TURN, la durée de vie du credential** : il est désormais éphémère et signé par utilisateur, mais
-  le navigateur ne récupère la configuration ICE **qu'une fois par cycle de vie du `Peer`** —
-  lequel est un singleton d'onglet, monté au tick 0 par le contexte permanent `data-app`, jamais
-  détruit tant que la coquille SPA vit, et dont `peer.reconnect()` réutilise le même
-  `_options.config`. Un onglet resté ouvert au-delà de 24 h garde donc un credential expiré :
-  l'appel en cours n'est pas coupé, mais **toute nouvelle allocation échoue**, et le symptôme est
-  « la visio ne passe plus, un F5 la répare ». D'où le TTL de 24 h plutôt que l'heure du plan
-  d'origine. Le rafraîchissement est possible sans chirurgie — PeerJS relit `options.config` à
-  chaque connexion, et `options` est un getter vivant sur `_options` — mais il dépend d'un interne
-  non contractuel et demande de choisir un déclencheur — ouvert dans
-  [`work/webrtc2-todo.md`](../../../work/webrtc2-todo.md#rafraîchir-le-credential-turn-avant-son-expiration-m).
+- **TURN, la durée de vie du credential** — **fermée le 25/08/2026.** Le navigateur ne récupérait la
+  configuration ICE qu'une fois par cycle de vie du `Peer`, lequel est un singleton d'onglet monté au
+  tick 0 par le contexte permanent `data-app` et que rien ne détruit tant que la coquille SPA vit.
+  Un onglet ouvert au-delà du TTL gardait donc un credential expiré : l'appel en cours tenait, mais
+  **toute nouvelle allocation échouait** — « la visio ne passe plus, un F5 la répare ». La réponse de
+  `/get-ice-servers` porte désormais un `credential_ttl`, et le transport arme un minuteur qui
+  réécrit `peer.options.config` avant l'échéance. Épinglé par
+  `usePeerTransport.iceRefresh.test.js`, et les détails d'arbitrage sont dans
+  [le rafraîchissement du credential TURN](#le-rafraîchissement-du-credential-turn) ci-dessous.
 - **TURN, le secret de signature** : il est unique et partagé par tous les utilisateurs. Le
   compromettre ne vaut pas un relais ouvert mais **la capacité de forger le credential de
   n'importe qui**, donc la perte de la non-répudiation que ce mode achète. Ce qui l'arrête est une

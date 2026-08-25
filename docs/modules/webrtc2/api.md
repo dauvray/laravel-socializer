@@ -92,9 +92,12 @@ Ils sont implicites et cassent **silencieusement**.
 - **Variables Vite** : `VITE_PEERS_SERVER_HOST` / `_PORT` / `_PATH` / `_KEY`. Les identifiants
   TURN n'en font **plus** partie : ils sont servis à l'exécution par `GET /get-ice-servers`
   (`WebRTCController`), depuis `COTURN_STATIC_AUTH_SECRET` — une variable lue par PHP, donc
-  modifiable sans rebuild. Le credential est signé par utilisateur et expire seul ; à défaut de
-  secret, le couple statique `COTURN_USER` / `COTURN_PASS` reste servi. Une clé `VITE_*` est
-  inlinée dans le bundle public au `npm run build` ; un identifiant n'y a jamais sa place.
+  modifiable sans rebuild. Le credential est signé par utilisateur et expire seul ; le transport le
+  **rafraîchit en place avant son échéance** (la route annonce sa durée de vie dans
+  `credential_ttl`), sans recréer le `Peer` ni couper les appels en cours —
+  [détail](securite.md#le-rafraîchissement-du-credential-turn). À défaut de secret, le couple
+  statique `COTURN_USER` / `COTURN_PASS` reste servi, et n'est alors pas rafraîchi. Une clé `VITE_*`
+  est inlinée dans le bundle public au `npm run build` ; un identifiant n'y a jamais sa place.
 - **Une source de présence** pour `users` — `useReverbPresence(channel)`, voir
   [use-reverb-channel.md](../../reference/use-reverb-channel.md).
 - `window.AWN` pour certains widgets.

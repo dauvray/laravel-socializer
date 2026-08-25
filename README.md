@@ -224,11 +224,16 @@ quatre arguments, et il refuse de démarrer.
 de n'importe qui. Il ne vit que dans un fichier gitignoré ; les gabarits versionnés portent une
 valeur **vide**.
 
-⚠️ **Borne connue du TTL.** Le navigateur ne demande la configuration ICE qu'**une fois par cycle de
-vie du `Peer`**, lequel est un singleton d'onglet jamais détruit tant que la SPA vit. Un onglet
-ouvert au-delà du TTL garde un credential expiré : l'appel en cours tient, mais toute nouvelle
-allocation échoue — « la visio ne passe plus, un F5 la répare ». D'où les 24 h par défaut ; ne
-raccourcir qu'avec un mécanisme de rafraîchissement.
+ℹ️ **Le TTL est raccourcissable.** Le client rafraîchit son credential avant l'échéance : la réponse
+de `/get-ice-servers` porte un `credential_ttl` et le transport réécrit la configuration ICE du
+`Peer` avant qu'elle expire, sans rechargement de page ni coupure des appels en cours. Les 24 h par
+défaut ne sont donc plus une contrainte technique, mais un choix conservateur.
+
+⚠️ **Deux réserves avant de descendre à l'échelle de l'heure.** Le rafraîchissement est **borné** :
+après quelques tentatives infructueuses (route en panne), il abandonne et l'onglet retombe sur le
+comportement d'avant — un F5 renouvelle. Et `GET /get-ice-servers` n'a **pas** de `throttle`, par une
+décision documentée dans `routes.public.php` dont la condition de réouverture est précisément « un
+credential court **et** re-demandé ». Un TTL horaire rouvre donc cette question.
 
 ### Mode statique — couple partagé (déploiements existants)
 
