@@ -22,7 +22,7 @@ C3 ──> C4 ──> C2 ──┬─> E3     (tous sur UserController — à s�
 B3, C1                        (indépendants)
 D1 ──> D2
 E7 ──> E4.2                   (les deux ✅ — E4.2 le 24/08, arbitrage rendu : voie B)
-E1, E2, E5, E6, E8, E9        (indépendants)
+E1, E2, E5, E6, E8, E9        (tous ✅ — E6 le 25/08, périmètre estarter)
 F1                            (dernier)
 ```
 
@@ -42,8 +42,10 @@ valant rotation du secret compromis.
 Le 24/08, **E4.2** : arbitrage rendu — **les gardes cessent de lire l'appartenance dans le réplica**
 plutôt que de le re-synchroniser, parce qu'une chaîne dont l'échec est toléré par décision ne peut
 pas être resynchronisée sans laisser de fenêtre.
-Restent : la part `getUsersList` d'**E3** (arbitrage produit), **E6** (périmètre estarter), **D3**
-(rafraîchir le credential TURN, 🟡) et **F1** en clôture.
+Le 25/08, **E3** (`getUsersList` restreinte aux joignables) puis **E6** — le volume des toasts et le
+silence sur 429, seule tâche du chantier livrée **hors** de ce paquet : trois commits, dans estarter,
+dans l'hôte et ici.
+Restent : **D3** (rafraîchir le credential TURN, 🟡) et **F1** en clôture.
 
 ---
 
@@ -1726,8 +1728,9 @@ datait elle aussi d'avant C5.)
 
 ### E6 — L'interface répète la même erreur N fois, et se tait sur 429 `[M]` 🟡
 
-- [ ] **Dépend de :** rien. **Périmètre : estarter, pas socializer.** Trouvé le 16/08/2026 en
+- [x] **Dépend de :** rien. **Périmètre : estarter, pas socializer.** Trouvé le 16/08/2026 en
   cadrant E5 — écarté sciemment de sa livraison, qui devait rester un commit dans un dépôt.
+      — ✅ **livrée le 25/08/2026**, en trois dépôts (estarter, hôte, ici).
 
 E5 rend les refus lisibles ; il ne dit rien de leur **nombre**. Le toast part sur **chaque** 403,
 y compris sur les chemins automatiques : `requestRemotePeerConnection` autorise 3 demandes/10 s par
@@ -1762,9 +1765,74 @@ pages de l'application.
 `resources/js/vue.js` de l'hôte. Ça plafonne l'affichage sans dédoublonner — masque plutôt que
 corrige.
 
-**Tests :** deux toasts identiques dans la fenêtre ⇒ un seul affiché · deux messages différents
-⇒ deux affichés · un 429 produit un toast. Nécessite d'élargir `include` côté hôte.
-**Commit :** `fix(estarter): ne pas répéter le même toast, et ne plus taire un 429`
+#### Livré
+
+Dédoublonnage dans `Alert.vue::handleError` sur une fenêtre de **30 s**
+(`services/createToastDeduper.js`), doublon écarté **tracé** et non tu ; branche **429** dans
+`AjaxService`, plus une trace sur tout statut non énuméré. `include` élargi côté hôte, trois
+fichiers de tests dans estarter.
+
+**Pourquoi 30 s et pas 5 s.** La fenêtre calée sur la durée d'affichage d'AWN (`durations.global`,
+5 000 ms) donnait la sémantique la plus défendable — « jamais deux fois le même message à l'écran »,
+donc immunisée contre le reproche de C5, le bouton qui ne fait rien. Mais elle ne ferme **qu'une des
+deux cadences** : la rafale d'un tick, pas les relances espacées de ~6 s. Le problème avait deux
+échelles de temps et une seule fenêtre ne peut pas être calée sur les deux ; on choisit la plus
+large et on assume qu'un clic manuel répété dans les 30 s ne redonne pas de toast — la trace le dit
+à qui débogue.
+
+**Cinq choses qui n'étaient pas au plan.**
+
+1. **Le 4ᵉ argument d'`EmitEvent` était mort depuis toujours.** Trois branches le passaient
+   (`'Accès interdit'`, `'Element introuvable'`, `'Fichier trop volumineux'`) alors que la signature
+   n'en prenait que trois : les libellés n'ont **jamais** été affichés. Un 403 sans message serveur
+   rendait donc le défaut anglais d'AWN, **« Action has been failed »** — pas un toast vide, comme
+   E5 le supposait. La note d'E5 sur « les toasts partaient déjà, vides » était donc juste sur le
+   fond et fausse sur la lettre.
+2. **Le trou n'était pas le 429, c'était le `else`.** Aucun statut non énuméré — 400, 405, 409,
+   502, 503 — ne produisait ni toast ni trace. Traiter le 429 seul aurait refermé un cas et laissé
+   la famille ouverte ; la trace universelle coûtait trois lignes de plus.
+3. **Un écouteur qui lève décide du sort de la promesse de l'émetteur.** `errors.forEach` dans
+   `Alert.vue` attend `[{message, options}]` ; une `ValidationException` envoie
+   `{champ: [messages]}` — un objet, donc truthy, donc transmis tel quel. Le `forEach` levait sur
+   **tout** 422 de validation, *dans* le `.catch` d'axios et **avant** son `reject` : la promesse de
+   `load()` ne se réglait plus jamais. C'est un **troisième** chemin vers le mode de panne que
+   `docs/reference/services-front.md` d'estarter documentait déjà pour 401/419 et 302 — et le seul
+   qui ne soit pas dans `load()`. Consigné là-bas.
+4. **Le `$off` manquant d'`Alert.vue` est load-bearing, mais seulement une fois qu'on teste.** En
+   production le composant est monté pour la vie de la page, l'abonnement fuyant ne coûte rien.
+   Dans une suite, deux montages laissent deux `handleError` abonnés au singleton `tiny-emitter`,
+   chacun avec son propre dédoublonneur : le second test voit les toasts du premier. La contre-
+   épreuve le confirme — retirer les `$off` fait rougir **trois** tests, dont un qui ne parle pas
+   de démontage.
+5. **Un message à contenu variable désarme le dédoublonnage.** La clé est le texte. Mettre le délai
+   de `Retry-After` dans le toast de 429 — l'idée évidente, et utile pour l'utilisateur — le rendait
+   unique à chaque occurrence : le dédoublonnage aurait eu l'air de fonctionner et n'aurait rien
+   dédoublonné sur le seul chemin qui en a besoin. Le délai est allé dans la trace. C'est la
+   contrainte la moins déductible du code, donc celle qui est écrite en encadré dans la doc.
+
+**Une décision qui n'est pas un oubli.** Le corps du 429 est ignoré : Laravel y met
+« Too Many Attempts. », une constante non localisée du framework, et la précédence normale
+(serveur > appelant > libellé local) la ferait gagner. Le rang de l'appelant, lui, est conservé.
+
+**Tests :** ✅ **39 tests** dans trois fichiers d'estarter — `createToastDeduper.test.js` (9),
+`Alert.test.js` (11), `AjaxService.test.js` (19). Suite complète **45 fichiers / 816 tests** verts
+(contre 42/777 avant : les 777 de socializer sont inchangés, l'élargissement de l'`include` ne
+déplace rien chez lui). **La référence de 649/37 citée plus haut dans ce fichier était périmée.**
+
+**Contre-épreuve faite sur les 10 gardes, un par un**, par script : chacun retiré fait rougir son
+test, et le bon. Deux résultats intéressants — retirer le `$off` rougit un test qui ne parle pas de
+démontage (§4 ci-dessus), et faire suivre la fenêtre à la dernière *tentative* au lieu du dernier
+*affichage* rougit à la fois l'unitaire et le test de bout en bout des relances : le
+dédoublonnage serait devenu un bâillonnement définitif sous boucle serrée, exactement le piège que
+`createRateLimiter` documente sous « un appel bloqué ne consomme pas de jeton ».
+
+**Non fait, et volontairement :** `maxNotifications` d'AWN reste non configuré (masque au lieu de
+corriger, cf. ci-dessus) ; `FieldMixin.js:239` de formdesigner appelle `this.AWN.alert` directement
+et échappe donc au dédoublonnage — hors périmètre, à traiter dans ce paquet si le besoin se
+présente.
+
+**Commits :** `fix(estarter): ne pas répéter le même toast, et ne plus taire un 429` ·
+`test(app): collecter aussi les tests JS d'estarter` (hôte) · `doc(socializer): E6 livrée`
 
 ---
 
