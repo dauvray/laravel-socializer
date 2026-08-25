@@ -151,7 +151,7 @@ déjà été projeté. Et seule `NebulaGraphException` est rattrapée — une `T
 projection, pas une panne de réplica, elle doit remonter.
 
 Une **relance est désormais sans danger**, y compris celle de `migrate` : c'est ce que la migration
-interdisait explicitement avant E9.
+interdisait explicitement avant le correctif « un utilisateur = un mur + un feed ».
 
 ### Qui possède ce qu'une projection écrit
 
@@ -187,7 +187,7 @@ d'idempotence interroge donc le graphe (voir le tableau des adresses stables plu
    ```
    MATCH (u:user)<-[:owned_by]-(w:wall) RETURN id(u) AS uid, COUNT(w) AS murs
    ```
-   Plus de 1 ⇒ des doublons d'avant E9 subsistent : la projection ne les crée plus, mais ne les
+   Plus de 1 ⇒ des doublons antérieurs à ce correctif subsistent : la projection ne les crée plus, mais ne les
    supprime pas.
 2. **Dédoublonner** en gardant le `created_at` le plus ancien de chaque utilisateur, et supprimer
    avec `WITH EDGE` pour emporter `owned_by` et `followed_by`.
@@ -221,7 +221,7 @@ qu'aucun code ne fait aujourd'hui.
 
 **2. Une perte est définitive.** Un `dropSpace` — le `down()` de `create_nebula`, donc
 `migrate:rollback` et `migrate:fresh` — efface des données dont il n'existe aucune copie. Idem pour
-une écriture de sommet refusée : depuis E7 elle est au moins **bruyante** (journalisée, et levée sur
+une écriture de sommet refusée : elle est au moins **bruyante** (journalisée, et levée sur
 les six méthodes DML), et c'est la seule garde qui reste. Lire le journal du réplica n'est pas une
 précaution, c'est le seul filet.
 

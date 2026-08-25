@@ -86,12 +86,12 @@ manqué la seconde, et n'aurait rien dit du champ ajouté demain en amont.
   profil : `identifier`, `may_reach`, `groups`, `nb_followers` y sont lus, et c'est
   `Resources\User` qui les porte.
 
-La leçon réutilisable, jumelle de celle de C2 sur le graphe : **un garde qui dépend de
+La leçon réutilisable, jumelle de celle du graphe : **un garde qui dépend de
 `Auth::user()` ne veut plus rien dire dans un contexte où `Auth::user()` est toujours le sujet de
 la donnée.** Le périmètre d'une ressource de diffusion se décide dans la ressource, pas dans
 l'identité de la requête qui l'a fabriquée.
 
-La même règle vaut pour l'**auteur d'un message**, fermé le 22/08 par E9 : il passe par
+La même règle vaut pour l'**auteur d'un message** : il passe par
 `MessageAuthor`, même liste blanche de six champs, sur les **trois** surfaces — `receivedMsg`,
 `updatedMsg` et l'historique HTTP (`Resources\Message`), que le front rend par les mêmes bindings
 `item.author`. Deux formes divergentes rendraient vraie la plus permissive des deux. Épinglé par
@@ -179,7 +179,7 @@ faite : neutraliser la détection fait tomber 9 tests.
   hérite des défauts de l'image, non lus. C'est ce qui interdit de raisonner sur le débit de création.
 - **`socializer:nebula-clear-sessions` n'est pas un filet, c'est une grenade** : elle déconnecte tout
   ce que `SHOW SESSIONS` rend, sessions vivantes comprises — donc elle provoque à la main l'incident
-  ci-dessus. Depuis le 25/08 elle n'empoisonne au moins plus le cache (`logout()` n'évince la clé
+  ci-dessus. Elle n'empoisonne au moins plus le cache (`logout()` n'évince la clé
   partagée que si l'identifiant sortant est celui qui y est publié).
 - **Le `KILL SESSION` d'`authenticate()` est inerte** : `logout()` remet `$this->sessionId` à null
   avant que la ligne suivante s'en serve. C'est `signOut` — un appel Thrift **ONEWAY**, donc sans

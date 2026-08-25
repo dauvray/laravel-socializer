@@ -88,7 +88,7 @@ perdre une demi-journée — le détail et le pourquoi vivent dans le docblock d
        seule** colonne rend une liste **plate**, pas des lignes associatives. Un test scriptant des
        lignes associatives est vert pendant que la production lit `null` par un accès à clé sur une
        chaîne, silencieux sous `??`.
-   - **`fakeNebulaGraphConnection()`** (E7) fait l'inverse : elle instancie la **vraie**
+   - **`fakeNebulaGraphConnection()`** fait l'inverse : elle instancie la **vraie**
      `NebulaGraphConnection` et ne double que le client Thrift (`FakeThriftClient`, injecté par le
      2ᵉ argument du constructeur — sans lui la classe ouvre un socket et reste intestable). C'est le
      seul outil pour la **couture** : que le décodage distingue une erreur nGQL d'un résultat vide,
@@ -112,7 +112,7 @@ perdre une demi-journée — le détail et le pourquoi vivent dans le docblock d
    par `pretendOnline()` et couvert par `PresencePayloadTest`. Toute autre forme d'appel de cette
    même méthode continue de lever.
    ⚠️ La règle vise les doublures de **comportement**. Les doublures d'**événements**
-   (`tests/Stubs/Estarter/app/Events/`, ajoutées par E7 pour les listeners de réplica) ne lèvent
+   (`tests/Stubs/Estarter/app/Events/`, pour les listeners de réplica) ne lèvent
    pas : un événement ne porte aucun comportement, c'est un porteur de données, et le reproduire à
    l'identique ne peut mentir sur rien.
    ⚠️ **Un modèle d'une AUTRE base est un troisième cas** : `tests/Stubs/Page.php` double par un

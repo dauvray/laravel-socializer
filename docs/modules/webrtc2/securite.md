@@ -183,13 +183,13 @@ que soit le flot de connexions refusées.
 un **second** `new Peer()` (UUID neuf, donc non mappé) obtient `resolvedSlug = null` et est admis
 sur la seule foi d'un `metadata.from` déclaratif qui n'a qu'à nommer un autre membre. Il parle alors
 sous l'identité de l'usurpé : chat, `BROADCAST_STATE` et `AUDIO_MUTE_TOGGLE` lisent tous
-`resolveRemoteSlug`. Le durcissement du lot B a fait ce qu'un client peut faire — rejeter la
+`resolveRemoteSlug`. Le durcissement côté client a fait ce qu'un client peut faire — rejeter la
 résolution **contradictoire** sur les deux chemins, tracer l'admission non corroborée — mais le cas
 nominal de la présence et l'usurpation ont ici la **même signature locale** : slug déclaré membre,
 peerId inconnu. Les distinguer demande une source de vérité que le récepteur n'a pas.
 
 La fermeture appartient donc au backend, seul détenteur du lien `Auth::user()` ↔ peerId relayé
-(lot C). Ne pas lire cette règle comme une défense-en-profondeur : sur le chemin (a) elle est le
+Ne pas lire cette règle comme une défense-en-profondeur : sur le chemin (a) elle est le
 **seul** anti-usurpation, et elle est incomplète.
 
 ### Gardes de taille — trois points, une mécanique
@@ -259,7 +259,7 @@ ne pouvaient venir que du réseau. Sept champs explicites les remplacent, `roomI
 de `room` et les deux drapeaux coercés en booléens.
 
 > **Une liste noire ne ferme pas des champs, elle ferme ceux qu'on connaissait le jour où on l'a
-> écrite.** Même leçon qu'E8/E9 côté backend, ici sur le front. Les deux producteurs de
+> écrite.** Même leçon que côté backend, ici sur le front. Les deux producteurs de
 > `streamData` — `useStreamManager` et `Exemples/StreamSimple/StreamSimpleUI.vue` — doivent
 > s'accorder sur cette liste ; ajouter un champ demande de vérifier ce que le player en fait.
 
@@ -329,7 +329,7 @@ d'une régression de ce garde-ci.
 
 ### Tout chemin qui ÉCRIT dans l'allowlist en porte un aussi
 
-C'est le corollaire que le lot A avait manqué, et il vide le garde s'il manque : une allowlist ne
+C'est le corollaire que le premier durcissement avait manqué, et il vide le garde s'il manque : une allowlist ne
 vaut que ce que valent les écritures qui la remplissent.
 
 `useCallManager.openCallBetweenPeer` traite l'acceptation d'un appel. Il écrivait
@@ -337,7 +337,7 @@ vaut que ce que valent les écritures qui la remplissent.
 bien IDLE → CONNECTED, donc aucune session ne démarrait, **mais les deux écritures avaient déjà eu
 lieu**. Un POST forgé sur `/response-to-authorization-peer` avec `status: true` vers une victime qui
 n'a jamais invité personne l'inscrivait donc dans `authorizedCallPeers`, ce qui lui ouvrait ensuite
-les **deux** sorties du contexte. Les lots A et B étaient contournés par la route de réponse.
+les **deux** sorties du contexte. Les durcissements du seul chemin de connexion étaient contournés par la route de réponse.
 
 > **La FSM ne protège que ce qui la suit.** Un garde d'état placé après des écritures ne les annule
 > pas — il fait seulement croire qu'il les gouverne.
@@ -429,7 +429,7 @@ contournable en nommant une room publique.
 > serveur.
 
 ⚠️ **Ne pas généraliser de lui à ses deux sœurs, qui sont bien des prédicats d'appartenance** :
-`canJoinchatRoom` depuis le 21/08/2026, `canJoinServer` depuis le 24/08/2026 (`ChannelGuardTest`).
+`canJoinchatRoom` et `canJoinServer` en sont bien, eux (`ChannelGuardTest`).
 
 **2. L'appartenance à un groupe vit dans MariaDB, et plus aucun garde ne la lit ailleurs.**
 L'arête `user -[:registered_in]-> group` est **synchronisée** à l'attachement et au détachement : le
@@ -443,20 +443,19 @@ trop*, jamais en moins, donc personne ne s'en plaint :
 
 | Chemin | Ce qui se passe |
 |---|---|
-| **écriture de réplica refusée** | `ToleratesGraphFailure` la rattrape **par décision** — MySQL ne doit pas échouer parce qu'une copie n'a pas pu être écrite. Journalisée depuis E7, jamais réparée |
+| **écriture de réplica refusée** | `ToleratesGraphFailure` la rattrape **par décision** — MySQL ne doit pas échouer parce qu'une copie n'a pas pu être écrite. Journalisée, jamais réparée |
 | suppression de groupe hors Eloquent | ne passe pas par `deleting`, donc aucun listener |
 | `group_user` vidé par la cascade SQL | les lignes partent sans événement de pivot |
 | rattachements antérieurs aux listeners | arête jamais posée — le seul trou qui *refuse* ; `socializer:nebula-populate` le rattrape |
 
 ⚠️ **La suppression d'un groupe par Eloquent, elle, ne dérive pas** : `Users::deleteGroup` fait un
-`deleteVertex(…, WITH EDGE)` qui emporte les `registered_in` entrantes. L'annotation qui la donnait
-en exemple était fausse ; corrigée le 24/08/2026.
+`deleteVertex(…, WITH EDGE)` qui emporte les `registered_in` entrantes.
 
 ⚠️ **`socializer:nebula-populate` ne répare pas cette dérive-ci.** `projectUsers()` repose les
 arêtes manquantes mais est **purement additive** : aucune étape de `GraphProjection` ne supprime une
 arête `registered_in` orpheline.
 
-**D'où le correctif du 24/08/2026 (E4.2) : `canJoinServer` a cessé de lire l'appartenance dans le
+**D’où la décision du 24/08/2026 : `canJoinServer` a cessé de lire l'appartenance dans le
 graphe.** Il n'y demande plus que ce dont le graphe est maître — la confidentialité du sommet
 serveur et le groupe qui le possède — puis interroge `group_user`. Les quatre chemins ci-dessus
 basculent ainsi en **refus**, puisqu'une ligne pivot absente est précisément ce qu'ils produisent
@@ -479,7 +478,7 @@ le **créateur** de la room — aucune route « rejoindre une room » ne l'ajout
 > trou **accorde** au lieu de refuser, donc personne ne s'en plaint et il dérive d'autant plus que le
 > temps passe.
 >
-> **Corollaire de méthode, tranché le 24/08/2026 en arbitrant E4.2.** Face à un réplica qui dérive,
+> **Corollaire de méthode, tranché le 24/08/2026.** Face à un réplica qui dérive,
 > deux voies : le re-synchroniser, ou cesser de le lire. La seconde a été retenue, et l'argument
 > vaut au-delà de ce cas : **re-synchroniser aurait ajouté des événements à une chaîne dont l'échec
 > est toléré par décision** (`ToleratesGraphFailure`), donc n'aurait pas pu fermer le trou qui reste
