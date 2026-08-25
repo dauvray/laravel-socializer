@@ -19,12 +19,8 @@ Composable Vue 3 permettant de gérer simplement les canaux **Laravel Reverb / E
    - [Options](#options)
    - [Valeurs retournées](#valeurs-retournées)
 5. [Les 4 types de canaux](#les-4-types-de-canaux)
-6. [Exemples par type de canal](#exemples-par-type-de-canal)
-   - [Canal public](#1-canal-public)
-   - [Canal privé](#2-canal-privé)
-   - [Canal de présence](#3-canal-de-présence)
+6. [Exemples, sur les canaux réellement déclarés](#exemples-sur-les-canaux-réellement-déclarés)
    - [Présence : la liste est dédoublonnée, pas le signal](#présence--la-liste-est-dédoublonnée-pas-le-signal)
-   - [Canal chiffré](#4-canal-chiffré)
 7. [Patterns avancés](#patterns-avancés)
    - [Nom de canal réactif](#nom-de-canal-réactif)
    - [Listeners dynamiques](#listeners-dynamiques)
@@ -35,8 +31,7 @@ Composable Vue 3 permettant de gérer simplement les canaux **Laravel Reverb / E
    - [Gestion d'erreurs](#gestion-derreurs)
    - [Accès au canal natif Echo](#accès-au-canal-natif-echo)
 8. [`useReverbPresence` — sucre syntaxique](#usereverbpresence--sucre-syntaxique)
-9. [Bonnes pratiques](#bonnes-pratiques)
-10. [Pièges courants](#pièges-courants)
+9. [Pièges courants](#pièges-courants)
 
 ---
 
@@ -69,7 +64,7 @@ import { useReverbChannel, useReverbPresence } from '~socializer/components/Syst
 
 ```js
 const { isConnected, users, error, listen, whisper, leave } = useReverbChannel(
-  'chat.room.42',
+  `chat.${chatId}`,
   {
     type: 'presence',
     listeners: {
@@ -145,199 +140,51 @@ useReverbChannel(channelName, options?)
 
 ---
 
-## Exemples par type de canal
+## Exemples, sur les canaux réellement déclarés
 
-### 1. Canal public
+Le paquet déclare **cinq** canaux, tous dans `src/routes/socializer/channels.php` :
+`App.Models.User.{userId}` (privé, le `me.channel` du store), `chat.{chatId}`, `room.{roomId}`,
+`server.{serverId}` et `questionnaire.{roomId}`. Aucun n'est public, aucun n'est chiffré — les deux
+types restants sont supportés par le composable, pas employés ici.
 
-Idéal pour les diffusions ouvertes (annonces du site, mises à jour de cours en temps réel, etc.).
-
-#### Backend (Laravel)
-
-```php
-// app/Events/AnnouncementPosted.php
-class AnnouncementPosted implements ShouldBroadcast
-{
-    public function broadcastOn(): Channel
-    {
-        return new Channel('announcements');
-    }
-}
-```
-
-#### Frontend (Vue 3)
+**Privé** — le canal personnel, celui qui porte les notifications et la signalisation WebRTC2 :
 
 ```vue
 <script setup>
-import { ref } from 'vue'
 import { useReverbChannel } from '~socializer/components/System/composables/useReverbChannel.js'
+import { useMeStore } from '~socializer/stores/socialUser.js'
 
-const announcements = ref([])
+const me = useMeStore()
 
-useReverbChannel('announcements', {
-  type: 'public',
-  listeners: {
-    '.AnnouncementPosted': (event) => {
-      announcements.value.unshift(event)
-    },
-  },
-})
-</script>
-
-<template>
-  <ul>
-    <li v-for="a in announcements" :key="a.id">{{ a.title }}</li>
-  </ul>
-</template>
-```
-
----
-
-### 2. Canal privé
-
-Pour des données réservées à un utilisateur authentifié (ex. : notifications personnelles, mises à jour d'une commande).
-
-#### Backend
-
-```php
-// src/routes/socializer/channels.php (dans ce paquet)
-Broadcast::channel('orders.{orderId}', function ($user, $orderId) {
-    return $user->id === Order::find($orderId)->user_id;
-});
-```
-
-```php
-// app/Events/OrderStatusUpdated.php
-class OrderStatusUpdated implements ShouldBroadcast
-{
-    public function broadcastOn(): PrivateChannel
-    {
-        return new PrivateChannel("orders.{$this->order->id}");
-    }
-}
-```
-
-#### Frontend
-
-```vue
-<script setup>
-import { ref } from 'vue'
-import { useReverbChannel } from '~socializer/components/System/composables/useReverbChannel.js'
-
-const props = defineProps({ orderId: { type: Number, required: true } })
-const status = ref('pending')
-
-useReverbChannel(`orders.${props.orderId}`, {
+useReverbChannel(me.channel, {
   type: 'private',
   listeners: {
-    '.OrderStatusUpdated': (e) => { status.value = e.status },
+    '.AskToPeerID': (payload) => { /* … */ },
   },
-  onError: (err) => console.error('Auth canal échouée', err),
 })
 </script>
-
-<template>
-  <div>Statut commande : <strong>{{ status }}</strong></div>
-</template>
 ```
 
----
+⚠️ **Ne pas souscrire `me.channel` à la main dans un composant de plus.** Il est déjà tenu ouvert
+par la coquille SPA, et le compteur de consommateurs (§ « Un canal partagé se libère au compteur »)
+est ce qui empêche qu'une fermeture locale coupe les autres.
 
-### 3. Canal de présence
-
-Le plus riche : permet de connaître la liste des utilisateurs présents, qui rejoint, qui part. Parfait pour un chat de groupe ou une page collaborative.
-
-#### Backend
-
-```php
-// src/routes/socializer/channels.php (dans ce paquet)
-Broadcast::channel('room.{roomId}', function ($user, $roomId) {
-    if ($user->canAccessRoom($roomId)) {
-        return ['id' => $user->id, 'name' => $user->name, 'avatar' => $user->avatar];
-    }
-});
-```
-
-```php
-// Diffusion d'un message
-class MessageSent implements ShouldBroadcast
-{
-    public function broadcastOn(): PresenceChannel
-    {
-        return new PresenceChannel("room.{$this->roomId}");
-    }
-}
-```
-
-#### Frontend — chat collaboratif complet
+**Présence** — `room.{roomId}` et `server.{serverId}` sont des canaux de présence : c'est d'eux que
+vient la liste des personnes connectées.
 
 ```vue
 <script setup>
-import { ref } from 'vue'
-import { useReverbChannel } from '~socializer/components/System/composables/useReverbChannel.js'
-
-const props = defineProps({ roomId: { type: Number, required: true } })
-const messages = ref([])
-const typingUsers = ref(new Set())
-
-const { users, isConnected, whisper } = useReverbChannel(`room.${props.roomId}`, {
+const { users } = useReverbChannel(`room.${props.roomId}`, {
   type: 'presence',
-
-  // Liste statique des events « serveur » à écouter
-  listeners: {
-    '.MessageSent': (e) => messages.value.push(e),
-  },
-
-  // Whispers : events « client » (pas de round-trip serveur)
-  whispers: {
-    typing: ({ userId, name }) => {
-      typingUsers.value.add(name)
-      setTimeout(() => typingUsers.value.delete(name), 2000)
-    },
-  },
-
-  // Présence
-  onHere:    (list) => console.log('Présents au démarrage :', list),
-  onJoining: (u)    => console.log(`${u.name} a rejoint`),
-  onLeaving: (u)    => {
-    console.log(`${u.name} est parti`)
-    typingUsers.value.delete(u.name)
-  },
+  onJoining: (user) => { /* admission d'un pair WebRTC2 */ },
+  onLeaving: (user) => { /* … */ },
 })
-
-const sendTyping = () => {
-  whisper('typing', { userId: window.userId, name: window.userName })
-}
 </script>
-
-<template>
-  <aside>
-    <h3>En ligne ({{ users.length }})</h3>
-    <ul>
-      <li v-for="u in users" :key="u.id">
-        <img :src="u.avatar" :alt="u.name" /> {{ u.name }}
-      </li>
-    </ul>
-  </aside>
-
-  <main>
-    <p v-if="!isConnected">Connexion…</p>
-
-    <div class="messages">
-      <div v-for="m in messages" :key="m.id">
-        <strong>{{ m.author }} :</strong> {{ m.body }}
-      </div>
-    </div>
-
-    <p v-if="typingUsers.size">
-      {{ [...typingUsers].join(', ') }} en train d'écrire…
-    </p>
-
-    <input @input="sendTyping" placeholder="Tapez un message" />
-  </main>
-</template>
 ```
 
----
+**Public et chiffré** — `type: 'public'` mappe `Echo.channel()`, `type: 'encrypted'` mappe
+`Echo.encryptedPrivate()`. Le second exige une configuration Reverb dédiée. Aucun canal du paquet
+n'en fait usage aujourd'hui : les employer suppose d'en déclarer un dans `channels.php` d'abord.
 
 ### Présence : la liste est dédoublonnée, pas le signal
 
@@ -365,28 +212,6 @@ Corollaire côté affichage : `users` porte des `PresenceUser`, **six champs et 
 juge de « moi » ici —, et rien de ce qu'une charge utile HTTP porte en plus (`identifier`,
 `may_reach`, `groups`). Le pourquoi :
 [architecture/signalisation.md](../architecture/signalisation.md#une-charge-utile-de-présence-est-fabriquée-par-son-propre-sujet).
-
----
-
-### 4. Canal chiffré
-
-Identique au canal privé mais avec chiffrement de bout en bout (nécessite la configuration côté Reverb).
-
-```vue
-<script setup>
-import { useReverbChannel } from '~socializer/components/System/composables/useReverbChannel.js'
-
-useReverbChannel(`secure.user.${window.userId}`, {
-  type: 'encrypted',
-  listeners: {
-    '.SensitiveDataReceived': (payload) => {
-      // payload est automatiquement déchiffré par Echo
-      console.log('Données sécurisées', payload)
-    },
-  },
-})
-</script>
-```
 
 ---
 
@@ -431,11 +256,11 @@ import { useReverbChannel } from '~socializer/components/System/composables/useR
 const { listen, stopListening } = useReverbChannel('feed', { type: 'public' })
 
 const enableLikesTracking = () => {
-  listen('.PostLiked', (e) => console.log('Like reçu', e))
+  listen('.MessageSent', (e) => console.log('Like reçu', e))
 }
 
 const disableLikesTracking = () => {
-  stopListening('.PostLiked')
+  stopListening('.MessageSent')
 }
 </script>
 ```
@@ -452,22 +277,22 @@ Les *whispers* permettent de diffuser un évènement directement entre clients, 
 <script setup>
 import { useReverbChannel } from '~socializer/components/System/composables/useReverbChannel.js'
 
-const { whisper } = useReverbChannel('doc.42', {
+const { whisper } = useReverbChannel(`chat.${props.chatId}`, {
   type: 'presence',
   whispers: {
-    'cursor-move': ({ userId, x, y }) => {
-      // Met à jour la position du curseur d'un autre utilisateur
+    'typing': ({ userId }) => {
+      // Affiche « untel est en train d'écrire »
     },
   },
 })
 
-const onMouseMove = (e) => {
-  whisper('cursor-move', { userId: window.userId, x: e.clientX, y: e.clientY })
+const onInput = () => {
+  whisper('typing', { userId: me.id })
 }
 </script>
 
 <template>
-  <div @mousemove="onMouseMove" class="document">…</div>
+  <textarea @input="onInput" />
 </template>
 ```
 
@@ -507,7 +332,7 @@ import { useReverbChannel } from '~socializer/components/System/composables/useR
 
 const showChat = ref(false)
 
-const { join, leave, isConnected } = useReverbChannel('support.live', {
+const { join, leave, isConnected } = useReverbChannel(`chat.${props.chatId}`, {
   type: 'private',
   autoJoin: false,
   listeners: {
@@ -569,7 +394,7 @@ navigation.
 <script setup>
 import { useReverbChannel } from '~socializer/components/System/composables/useReverbChannel.js'
 
-const { error } = useReverbChannel('admin.metrics', {
+const { error } = useReverbChannel(`server.${props.serverId}`, {
   type: 'private',
   onError: (err) => {
     // Ex : redirection si 403, toast d'erreur, etc.
@@ -607,27 +432,13 @@ Raccourci équivalent à `useReverbChannel(name, { type: 'presence', ...rest })`
 ```js
 import { useReverbPresence } from '~socializer/components/System/composables/useReverbChannel.js'
 
-const { users, isConnected } = useReverbPresence('room.lobby', {
+const { users, isConnected } = useReverbPresence(`room.${props.roomId}`, {
   listeners: {
-    '.UserMessage': (e) => console.log(e),
+    '.MessageSent': (e) => console.log(e),
   },
   onJoining: (u) => console.log(`${u.name} rejoint`),
 })
 ```
-
----
-
-## Bonnes pratiques
-
-1. **Préfixez les events `.`** lorsque l'event est une classe Laravel non-namespacée : `'.MessageSent'`. Sans le point, Echo cherche un event avec namespace `App\Events\`.
-2. **Centralisez les noms de canaux** dans des helpers ou des constantes pour éviter les fautes de frappe :
-   ```js
-   export const roomChannel = (id) => `room.${id}`
-   ```
-3. **Préférez l'option `listeners`** pour les events connus à l'avance ; réservez `listen()` aux ajouts conditionnels.
-4. **Utilisez `useReverbPresence`** quand le type est évident pour gagner en lisibilité.
-5. **Throttle / debounce les whispers** (`cursor-move`, `typing`) côté émetteur : un event par mouvement de souris saturera le canal.
-6. **Vérifiez `isConnected`** avant d'émettre des whispers ou d'afficher la liste d'utilisateurs.
 
 ---
 

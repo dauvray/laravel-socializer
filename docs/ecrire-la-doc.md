@@ -73,9 +73,15 @@ lignes.
 
 Le vrai critère est la **scannabilité** : au-delà de ~200 lignes, ajouter un sommaire d'ancres en
 tête. Un fichier long mais navigable vaut mieux que trois fichiers qui obligent à sauter pour
-comprendre une seule règle. `modules/webrtc2/architecture.md` et `reference/use-reverb-channel.md`
-dépassent tous deux le seuil, délibérément : découper le premier séparerait l'ordre des couches de
-la table des propriétaires, et le second est une référence d'API qu'on lit par section.
+comprendre une seule règle. `modules/webrtc2/architecture.md`, `modules/webrtc2/securite.md` et
+`reference/use-reverb-channel.md` dépassent le seuil délibérément : découper le premier séparerait
+l'ordre des couches de la table des propriétaires, le deuxième perdrait le lien entre un périmètre
+et les décisions qui le fondent, et le troisième est une référence d'API qu'on lit par section.
+
+⚠️ **Un exemple de code dans `docs/` s'écrit sur des symboles qui existent.** Un exemple inventé
+paraît pédagogique et coûte deux fois : le lecteur le grep, ne trouve rien, et doute du reste du
+fichier. S'il faut illustrer une capacité que le paquet n'emploie pas encore, le dire — pas fabriquer
+un appelant.
 
 Éclaté, le découpage est celui de [WebRTC2](modules/webrtc2/INDEX.md) :
 
