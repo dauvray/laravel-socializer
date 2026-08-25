@@ -424,6 +424,24 @@ le monde**. (Effet miroir : une room publique **vide** renvoie `false`, même à
 C'est un garde de **canal Reverb** ; l'employer comme garde de relation rendrait le contrôle
 contournable en nommant une room publique.
 
+> ⚠️ **La règle générale, dont ceci n'est qu'un cas : un garde doit conditionner le résultat
+> entier, jamais l'ensemble qu'on énumère dedans.** Ici la clause de confidentialité restreint `u`
+> — la variable *énumérée* — au lieu de décider si la requête doit rendre quoi que ce soit. Deux
+> défauts en sortent, selon le sens de lecture, et **ils ont la même cause** :
+> - en **prédicat**, il accorde à tort (`privacy == 0` ⇒ vrai pour tout le monde) ;
+> - en **agrégat**, il sous-compte (une clause qui restreint le membre compté au demandeur rend
+>   toujours 1).
+>
+> Le remède est le même dans les deux cas : sortir la décision d'accès en prédicat distinct, puis
+> énumérer sans restriction. C'est ce qui a réparé `nb_users` de `Services\Server::getServer` par
+> construction, sans que le compteur soit pris pour lui-même.
+>
+> ⚠️ **Sous-évaluer n'est pas fuir.** Un agrégat sous-compté ne divulgue rien : c'est le
+> *correctif* qui touche la visibilité, en ouvrant un chiffre sur un objet privé. Un tel correctif
+> ne vaut donc qu'accompagné de son test de non-régression sur le refus — ici
+> `tests/Feature/Server/ServerAccessTest.php`, qui vérifie qu'un non-membre ne voit toujours pas le
+> serveur.
+
 ⚠️ **Ne pas généraliser de lui à ses deux sœurs, qui sont bien des prédicats d'appartenance** :
 `canJoinchatRoom` depuis le 21/08/2026, `canJoinServer` depuis le 24/08/2026 (`ChannelGuardTest`).
 

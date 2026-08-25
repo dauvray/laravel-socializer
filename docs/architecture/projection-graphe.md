@@ -1,5 +1,10 @@
 # Projection MySQL → NebulaGraph
 
+> **À quoi ça sert :** qui écrit le réplica graphe, sous quel invariant, et ce qu'il ne recréera
+> jamais.
+> **Quand le lire :** avant de toucher un `insertVertex`, un listener de réplica, ou de rejouer
+> `socializer:nebula-populate`.
+
 **MySQL est la source de vérité, le graphe en est un réplica — pour ce que la projection couvre.**
 Ce document dit qui écrit ce réplica, quel invariant il respecte, pourquoi rejouer une projection est
 sans danger, et **ce que la projection ne recréera jamais** : pour les salons, les chats et leurs
@@ -188,6 +193,12 @@ d'idempotence interroge donc le graphe (voir le tableau des adresses stables plu
    avec `WITH EDGE` pour emporter `owned_by` et `followed_by`.
 3. **Puis** relancer `socializer:nebula-populate` — deux fois d'affilée, c'est le test qui compte :
    les décomptes ne doivent plus bouger.
+
+⚠️ **Un `Session not existed!` en cours de rattrapage n'est pas un défaut de projection**, c'est
+l'expiration d'une session Thrift pendant un traitement long — le recyclage de session est décrit
+dans [signalisation.md](signalisation.md#la-session-nebulagraph-est-partagée-recyclée-et-un-processus-long-doit-y-survivre). Le
+rattrapage par item journalise et compte, la relance suffit. À savoir avant de soupçonner le code
+sur un échec isolé.
 
 ⚠️ **`migrate:rollback` n'est pas une réparation.** Son `down()` fait un `dropSpace` : il détruit
 aussi tout ce que la projection ne sait PAS recréer — voir la section suivante, qui dit pourquoi et

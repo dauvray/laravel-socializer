@@ -38,7 +38,7 @@ class ArticleRestoredListener
      * Parité stricte avec la création, qui ne l'a jamais posée non plus : seul
      * `GraphProjection::projectArticleAuthors()` le fait. Ce trou est réel mais il est celui de la
      * création, pas de la restauration — le fermer ici ferait diverger deux chemins d'écriture.
-     * Consigné dans `work/projection-graphe-todo.md`.
+     * Consigné dans `docs/architecture/projection-graphe.md`, « ne repose pas l'arête d'auteur ».
      *
      * @return void
      */

@@ -1,5 +1,10 @@
 # `useReverbChannel` — Documentation
 
+> **À quoi ça sert :** la référence d'API du composable de canaux Reverb — signature, options,
+> valeurs de retour, et les pièges du cycle de vie partagé.
+> **Quand le lire :** avant de souscrire un canal, d'ajouter un whisper, ou de soupçonner une fuite
+> de souscription.
+
 Composable Vue 3 permettant de gérer simplement les canaux **Laravel Reverb / Echo** (public, privé, présence, chiffré) au sein d'un composant, avec gestion automatique du cycle de vie, des listeners, des notifications et des *whispers*.
 
 ---

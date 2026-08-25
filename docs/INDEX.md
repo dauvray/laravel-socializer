@@ -1,5 +1,8 @@
 # Documentation — `dauvray/laravel-socializer`
 
+> **À quoi ça sert :** router vers le bon fichier de `docs/` selon l'intention.
+> **Quand le lire :** en arrivant, et chaque fois qu'on cherche où un fait est écrit.
+
 Réseau social + communication temps réel pour Laravel 13 / Vue 3.
 Point d'entrée court : [`CLAUDE.md`](../CLAUDE.md) · Installation : [`README.md`](../README.md)
 

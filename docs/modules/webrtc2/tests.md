@@ -175,6 +175,12 @@ verbe demanderait de monter `Notifications.vue`, et le scénario ne parlerait pl
 - **`setLocalPeer` mocké par `vi.fn(() => true)`** fabrique un booléen que la production ne produit
   jamais — deux tests validaient ainsi une branche inexistante. Voir
   [architecture.md](architecture.md#conventions-de-code).
+- **Un minuteur a deux versants, et le test du composable n'en exerce qu'un.** Retirer l'annulation
+  du minuteur ICE du vrai `resetPeerState` laisse `usePeerTransport.iceRefresh.test.js`
+  **entièrement vert** : ce fichier n'exerce que la doublure du store. Le versant store se teste
+  donc à part (`peers2Store.peerRuntime.test.js`). La règle vaut pour tout état vivant dans le store
+  et piloté depuis un composable : **le contrôle de harnais doit neutraliser les deux côtés**, sinon
+  il ne prouve que celui qu'on a doublé.
 
 ---
 

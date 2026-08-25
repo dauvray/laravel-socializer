@@ -80,6 +80,14 @@ perdre une demi-journée — le détail et le pourquoi vivent dans le docblock d
      `str_contains` sur le nGQL, elle ne le **parse** pas. Un test vert sur une jambe qui interroge
      le graphe prouve le câblage, jamais la requête — une requête syntaxiquement invalide passe au
      vert. Ces requêtes se contre-vérifient contre un vrai NebulaGraph.
+     ⚠️ **Le corollaire coûte plus cher que la limite : la doublure rend la FORME qu'on lui
+     script.** Elle ne compte rien et ne décode rien. Deux conséquences vécues :
+     - **Aucun chiffre rendu par le graphe n'est prouvé par la suite** — un compteur reste vert avec
+       la mauvaise requête. Seule une contre-épreuve nGQL sur un vrai cluster prouve un nombre.
+     - **Une forme de résultat scriptée à tort masque un défaut de décodage** : une requête à **une
+       seule** colonne rend une liste **plate**, pas des lignes associatives. Un test scriptant des
+       lignes associatives est vert pendant que la production lit `null` par un accès à clé sur une
+       chaîne, silencieux sous `??`.
    - **`fakeNebulaGraphConnection()`** (E7) fait l'inverse : elle instancie la **vraie**
      `NebulaGraphConnection` et ne double que le client Thrift (`FakeThriftClient`, injecté par le
      2ᵉ argument du constructeur — sans lui la classe ouvre un socket et reste intestable). C'est le
@@ -169,7 +177,7 @@ C'est le découpage validé sur WebRTC2, et le modèle à reprendre.
 L'étage bout en bout est celui qui manque toujours et sans lequel les vrais symptômes ne sont pas
 observables : ils ne sont vrais ou faux que **vus de l'autre côté**.
 
-### Cinq règles
+### Les règles
 
 1. **Un bug vécu s'écrit d'abord en repro, rouge avant le fix.** C'est le seul protocole qui n'a
    jamais produit de régression derrière lui.
@@ -181,6 +189,10 @@ observables : ils ne sont vrais ou faux que **vus de l'autre côté**.
    il faut les neutraliser tous les deux — et c'est à écrire dans le docblock du test.
 5. **Une assertion négative ne vaut que si on l'a vue rouge une fois.** Elle ne signale rien quand
    elle cesse de garder quoi que ce soit — voir juste en dessous.
+6. **Une raison plausible de ne pas tester se vérifie comme le reste.** Un « pas testable » annoté
+   dans une doc ou un docblock est une affirmation, pas un constat : les avertissements de ce type
+   trouvés ici étaient faux, et le vrai blocage était ailleurs et plus petit. Exhiber la dépendance
+   qui bloque, nommément — l'ensemble transitif réel est presque toujours plus court que le craint.
 
 ### Le sérialiseur transforme l'aiguille
 

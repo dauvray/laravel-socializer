@@ -556,7 +556,8 @@ trait Socializable
      *
      * ⚠️ Une requête nGQL à UNE colonne rend une liste PLATE de valeurs, pas des lignes
      * associatives (`NebulaGraphConnection::formatValues`). Le confondre a déjà créé un serveur
-     * en trop sur le dev, suite verte (`work/projection-graphe-todo.md`, §1).
+     * en trop sur le dev, suite verte : la doublure rend la forme qu'on lui script, cf.
+     * `docs/architecture/tests.md`, « la doublure rend la FORME qu'on lui script ».
      *
      * Refus par défaut identique à `followsMutually` : une réponse inexploitable ne rend aucun
      * joignable — la liste se resserre, elle ne s'ouvre pas. La jambe groupe, elle, tient encore.

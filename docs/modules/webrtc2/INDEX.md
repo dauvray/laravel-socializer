@@ -1,5 +1,9 @@
 # WebRTC2
 
+> **À quoi ça sert :** ce que fait le module, son arborescence, et vers quel fichier aller.
+> **Quand le lire :** en abordant WebRTC2, avant d'ouvrir `api.md`, `flux.md`, `architecture.md`,
+> `securite.md` ou `tests.md`.
+
 Communication temps réel — data, audio, vidéo, partage d'écran — construite sur **PeerJS**,
 organisée en composables Vue 3 empilés en couches strictes, avec des widgets de présentation.
 La signalisation passe par Laravel Reverb (voir

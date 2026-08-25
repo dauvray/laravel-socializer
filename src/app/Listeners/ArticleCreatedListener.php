@@ -29,7 +29,7 @@ class ArticleCreatedListener
      * `GraphProjection::projectArticles()` : le pourquoi y est écrit une fois.
      *
      * ⚠️ Ne pose PAS l'arête d'auteur, que seul `projectArticleAuthors()` écrit — cf.
-     * `work/projection-graphe-todo.md`.
+     * `docs/architecture/projection-graphe.md`, « ne repose pas l'arête d'auteur ».
      *
      * @return void
      */
