@@ -5,6 +5,13 @@
 > **Quand le lire :** avant d'ouvrir un chemin de connexion, de relayer un payload, ou de
 > conclure que « la sécu est faite ».
 
+**Sommaire** — [Périmètre réel](#périmètre-réel--à-lire-en-premier) ·
+[Modèle de confiance](#modèle-de-confiance) ·
+[Sens entrant](#décisions-en-vigueur-sens-entrant-mai-2026) ·
+[Sens sortant](#décisions-en-vigueur-sens-sortant-août-2026) ·
+[Backend](#décisions-en-vigueur-backend-août-2026) ·
+[Bornes non fermées](#bornes-non-fermées-connues)
+
 ---
 
 ## Périmètre réel — à lire en premier
@@ -12,7 +19,7 @@
 | Direction | État | Détail |
 |---|---|---|
 | **Entrant** (`peer.on('connection')`, `peer.on('call')`) | durci **côté client**, borné côté serveur — audits du 20/05 et du 14/08/2026 | garde `_isAuthorizedIncomingPeer`, anti-usurpation inconditionnelle, gardes de taille, sanitisation. Reste aveugle au membre de room qui se présente avec un peerId neuf sous le slug d'un autre ; le garde de relation serveur borne désormais qui peut tenter |
-| **Sortant** (`connectToPeer`, `responseRemotePeerConnection`) | durci **côté client**, garde autoritatif posé côté serveur | prédicat unique `utils/isAuthorizedPeer.js` : membre de la room **ou** interlocuteur d'appel marqué. Son jumeau serveur `Socializable::mayReach` tranche ce que le navigateur ne peut pas voir |
+| **Sortant** (`connectToPeer`, `responseRemotePeerConnection`) | durci **côté client**, garde autoritatif posé côté serveur | prédicat unique `utils/isAuthorizedPeer.js` : membre de la room **ou** interlocuteur d'appel marqué — [décisions](#décisions-en-vigueur-sens-sortant-août-2026). Son jumeau serveur `Socializable::mayReach` tranche ce que le navigateur ne peut pas voir |
 | **Backend** (`UserController`, routes) | durci | `fromUserSlug` authentifié, liste blanche de champs, `throttle` par utilisateur (deux buckets), `validate()` sur les 5 payloads, **contrôle de relation** émetteur ↔ destinataire en 403 uniforme, et **liste de contacts restreinte aux joignables** sauf permission `list_users` |
 | **Credentials TURN** | servis par le serveur, **éphémères et signés par utilisateur** | `GET /get-ice-servers` : STUN seul pour un invité, STUN + TURN pour une session authentifiée. TURN REST API — `username = "<expiry>:<userId>"`, `credential = base64(HMAC-SHA1(secret, username))`, TTL 24 h. Un abus est donc attribuable, plafonnable par personne et révocable en bloc. Le mode statique partagé reste servi si aucun secret n'est configuré, pour ne pas casser un coturn encore en `--user` |
 
@@ -26,12 +33,17 @@ périmètre plutôt qu'un verdict.
 
 ### La chaîne d'attaque du sens sortant (tracée statiquement, non exploitée)
 
-> **Fermée côté client** par le prédicat `utils/isAuthorizedPeer.js`, posé à l'étape 5
-> (`connectToPeer`, avant `addRemotePeerId`) et sur la livraison du peerId qui l'alimente
-> (`responseRemotePeerConnection`). Elle est conservée telle quelle parce que **les étapes 1
-> et 2 restent vraies** : le backend relaie toujours sans exiger de relation entre les deux
-> parties. Un client modifié rejoue donc la chaîne jusqu'au bout contre un pair dont le garde
-> a été retiré — c'est ce que modélise `scenarios/outgoingAuth.test.js`.
+> **Fermée à ses deux bouts, et la chaîne est conservée parce qu'elle explique les deux gardes.**
+> Côté client, le prédicat `utils/isAuthorizedPeer.js` coupe à l'étape 5 (`connectToPeer`, avant
+> `addRemotePeerId`) et sur la livraison du peerId qui l'alimente (`responseRemotePeerConnection`).
+> Côté serveur, `Socializable::mayReach` coupe à l'étape 2 : le relais exige désormais une relation
+> entre les deux parties.
+>
+> **Aucun des deux ne rend l'autre redondant.** Un attaquant *en relation* avec sa victime (même
+> groupe, ou follow réciproque) passe l'étape 2 en toute légitimité, et seul le garde client
+> l'arrête ; un client modifié retire son propre garde, et seul le serveur l'arrête. C'est un
+> attaquant du premier type que modélise `scenarios/outgoingAuth.test.js`, en désarmant le garde
+> entrant de mallory pour reproduire ce qu'un bundle patché donne.
 
 1. un utilisateur authentifié quelconque POSTe `/response-to-peer-id` avec `toUserSlug: <victime>`,
    **son propre** `peerId`, et un `type`/`room` correspondant à un contexte monté chez la victime ;
@@ -55,13 +67,13 @@ connecté, donc le canal est disponible en continu — et l'écriture inconditio
 `_isAuthorizedIncomingPeer` : l'attaquant s'auto-inscrit comme « interlocuteur d'appel direct
 vérifié » sans qu'aucun appel n'ait été autorisé.
 
-Le plan de correction (registre `authorizedCallPeers`, prédicat unique
-`utils/isAuthorizedPeer.js`, scénario « mallory ») est dans
-[`work/webrtc2-securite-2026-08-14.md`](../../../work/webrtc2-securite-2026-08-14.md).
+Ce que le correctif a posé — registre `authorizedCallPeers`, prédicat unique, garde sur les
+écritures de ce registre — est décrit ci-dessous,
+[« Décisions en vigueur (sens sortant) »](#décisions-en-vigueur-sens-sortant-août-2026).
 
-⚠️ Deux pièges à respecter en l'implémentant :
-- **Ne pas** poser le garde dans `useSignalingQueue` — l'absence de précondition dans le routage est
-  un invariant, déjà cassé une fois avec des flux disparus chez les arrivants.
+⚠️ Deux pièges à ne pas défaire en touchant à ce chemin :
+- **Ne pas** déplacer le garde dans `useSignalingQueue` — l'absence de précondition dans le routage
+  est un invariant, déjà cassé une fois avec des flux disparus chez les arrivants.
 - `return false` et **non** `true` : `true` signifie « pas d'erreur » et **annule** le retry.
 
 ---
@@ -281,6 +293,95 @@ vit dans `Composables/utils/createRateLimiter.js` : **un seul système** pour le
 star et pour `/ask-to-peer-id`, avec des clés délibérément différentes. Le budget d'octets n'y ajoute
 pas un second mécanisme : il passe un **poids** à `isLimited(key, weight)`, dont le comptage d'appels
 est le cas particulier (poids 1).
+
+---
+
+## Décisions en vigueur (sens sortant, août 2026)
+
+### Un prédicat unique, quatre lecteurs
+
+`Composables/utils/isAuthorizedPeer.js` répond à une seule question — « ai-je le droit d'ouvrir une
+connexion vers ce pair ? » — et rend `true` sur **exactement les deux chemins** de l'admission
+entrante : slug valide, **et** (membre de `connection.usersInRoom`, **ou** inscrit dans
+`session.authorizedCallPeers`). C'est un utilitaire pur, sans état, importable de partout ; la
+symétrie avec `_isAuthorizedIncomingPeer` est délibérée, une seule définition de « pair légitime »
+par contexte.
+
+Il est lu à quatre endroits, dont **deux sont des gardes** :
+
+| Lecteur | Ce qu'il décide | Refus |
+|---|---|---|
+| `usePeerConnections.connectToPeer` | ouvrir une connexion — appelé **avant** `addRemotePeerId` | `return false` (diffère) |
+| `usePeerCore.responseRemotePeerConnection` | livrer mon peerId au demandeur | `return false` (le demandeur re-demandera) |
+| `useConnectionPool` (moteur de retry) | « ce pair me concerne-t-il encore ? » quand ni peerId ni demande en vol | abandon du retry |
+| `usePeerTransport` (recovery `peer-unavailable`) | quels contextes relancent la demande de peerId | ne relance pas |
+
+Les deux derniers ne sont pas des gardes de sécurité : ils réutilisent la définition parce qu'elle
+est la bonne. Distinguer « ce pair est parti » de « je ne lui ai pas encore demandé » se fait sur la
+**présence**, pas sur un drapeau de bookkeeping — et le second chemin du prédicat
+(`authorizedCallPeers`) est précisément ce qui préserve la visio 1-à-1, qui n'a aucune room commune.
+
+**Le garde de `connectToPeer` va au plus tôt, pas dans la section critique.** Le plan d'origine le
+voulait après l'acquisition du verrou `inFlightConnections` ; c'est inutile — `connectToPeer` est
+**entièrement synchrone**, rien ne peut s'intercaler entre la lecture de `usersInRoom` et
+`peer.call()`. L'exigence réelle est « avant `addRemotePeerId` » : cette écriture vit **hors** du
+verrou, et empoisonner le mapping est la seconde moitié de la faille — le mapping sert d'allowlist
+au chemin (b) de l'admission entrante, donc un attaquant qui s'y inscrit s'auto-délivre un brevet
+d'« interlocuteur d'appel vérifié ».
+
+**Le second garde ne peut casser aucun chemin que le premier n'ait déjà fermé** : c'est le *même*
+prédicat sur le *même* contexte. Refuser de livrer son peerId à un pair vers lequel `connectToPeer`
+refuserait d'ouvrir ne retire rien. La symétrie tient parce que les deux chemins d'autorisation sont
+eux-mêmes symétriques : `usersInRoom` vient du même canal Reverb pour les deux parties, et
+`authorizedCallPeers` est marqué **des deux côtés** par `useCallManager` (`acceptCallFromPeer` chez
+l'appelé, `openCallBetweenPeer` chez l'appelant).
+
+Sur le chemin présence, ces deux gardes attendent la première synchronisation avant de **refuser** —
+voir [« Une liste vide n'est pas une réponse »](#une-liste-vide-nest-pas-une-réponse), qui est né
+d'une régression de ce garde-ci.
+
+### Tout chemin qui ÉCRIT dans l'allowlist en porte un aussi
+
+C'est le corollaire que le lot A avait manqué, et il vide le garde s'il manque : une allowlist ne
+vaut que ce que valent les écritures qui la remplissent.
+
+`useCallManager.openCallBetweenPeer` traite l'acceptation d'un appel. Il écrivait
+`addRemotePeerId` **et** `markAuthorizedCallPeer` *avant* la transition de FSM — laquelle refuse
+bien IDLE → CONNECTED, donc aucune session ne démarrait, **mais les deux écritures avaient déjà eu
+lieu**. Un POST forgé sur `/response-to-authorization-peer` avec `status: true` vers une victime qui
+n'a jamais invité personne l'inscrivait donc dans `authorizedCallPeers`, ce qui lui ouvrait ensuite
+les **deux** sorties du contexte. Les lots A et B étaient contournés par la route de réponse.
+
+> **La FSM ne protège que ce qui la suit.** Un garde d'état placé après des écritures ne les annule
+> pas — il fait seulement croire qu'il les gouverne.
+
+L'acceptation exige désormais une **invitation en vol** : `peerStore.hasWaitingRemotePeerId(slug,
+room, type)`, sur la clé composite exacte qu'a écrite `requestAuthorizationRemotePeerId`, lue avant
+toute écriture et consommée ensuite. Un garde indexé sur le slug seul passerait sans rien voir. Ce
+cas-là, le client peut le trancher **seul** — « ai-je invité ce pair ? » est un fait purement local,
+contrairement à l'usurpation intra-room.
+
+⚠️ **Le `contextId` de la demande n'est volontairement pas contrôlé**, bien que le store soit
+partagé par l'onglet. `openCallBetweenPeer` ne s'exécute que dans le contexte de `Notifications.vue`
+(seul destinataire de `.ResponseToAuthorizationPeer`), alors que `startCallWithPeer` est exposé par
+**toute** instance de `useMediaBroadcast` : une invitation partie d'un provider de room porte donc
+un autre `contextId`. L'exiger fabriquerait une régression. Le fait qui compte est « cet onglet a
+invité ce pair » — le test correspondant est **inversé** et vire au rouge si un contrôle de
+`contextId` se glisse un jour.
+
+Deux durcissements joints, même classe de défaut — le payload vient du réseau : `addRemotePeerId`
+est conditionné à la présence de `options.peerId` (l'écriture inconditionnelle mappait `undefined`,
+et un `options` absent levait un TypeError dans un handler `async`), et la branche `!payload.status`
+(refus distant) est laissée morte en connaissance de cause, `Notifications.vue` traitant le refus
+sans passer par là.
+
+> **Le piège de harnais qui a failli faire passer tout ceci pour du nominal.** Les blocs de tests
+> « nominaux » de `openCallBetweenPeer` et de `responseRemotePeerConnection` décrivaient, sans le
+> dire, le chemin que ces gardes ferment : le premier appelait bien `startCallWithPeer` mais sur un
+> `core` mocké qui n'enregistrait **aucune** demande en vol, le second répondait à `bob` avec un
+> `usersInRoom` vide. Un `beforeEach` qui pose la précondition n'est pas un assouplissement du
+> test — c'est l'inverse. Quand un garde nouvellement posé laisse une suite entière verte,
+> l'hypothèse à écarter en premier est que le harnais décrivait déjà le trou.
 
 ---
 
@@ -518,6 +619,15 @@ d'absence de relation sur `[]` revient à tester une panne.
 
 ## Bornes non fermées, connues
 
+- **L'usurpation intra-room, bornée mais pas fermée.** Un membre légitime de la room qui ouvre un
+  **second** `new Peer()` se présente sous le slug d'un autre membre : le cas nominal de la présence
+  et l'attaque ont la **même signature locale** (slug déclaré membre, peerId inconnu), donc aucun
+  client ne peut les distinguer — « Faille résiduelle connue, chemin (a) », dans
+  [« Une liste vide n'est pas une réponse »](#une-liste-vide-nest-pas-une-réponse) ci-dessus. Le
+  garde de relation serveur **borne qui peut tenter** (il faut déjà être en relation avec la
+  victime) sans supprimer le cas, puisqu'un membre de la même room l'est le plus souvent. La
+  fermer demande de lier `Auth::user()` au peerId relayé côté serveur, c'est-à-dire de faire du
+  backend le témoin de l'identité PeerJS — un chantier, pas un garde. Borne assumée.
 - **Amplification du hub star, par la somme des émetteurs.** Le produit `octets × fan-out` est
   désormais plafonné (`HUB_MAX_BYTES_PER_WINDOW`), mais **par émetteur** : N émetteurs honnêtes
   peuvent encore additionner leurs budgets. Un budget global du hub fermerait ce cas et en ouvrirait
@@ -542,7 +652,8 @@ d'absence de relation sur `[]` revient à tester une panne.
   « la visio ne passe plus, un F5 la répare ». D'où le TTL de 24 h plutôt que l'heure du plan
   d'origine. Le rafraîchissement est possible sans chirurgie — PeerJS relit `options.config` à
   chaque connexion, et `options` est un getter vivant sur `_options` — mais il dépend d'un interne
-  non contractuel et demande de choisir un déclencheur : ouvert en D3.
+  non contractuel et demande de choisir un déclencheur — ouvert dans
+  [`work/webrtc2-todo.md`](../../../work/webrtc2-todo.md#rafraîchir-le-credential-turn-avant-son-expiration-m).
 - **TURN, le secret de signature** : il est unique et partagé par tous les utilisateurs. Le
   compromettre ne vaut pas un relais ouvert mais **la capacité de forger le credential de
   n'importe qui**, donc la perte de la non-répudiation que ce mode achète. Ce qui l'arrête est une
@@ -563,5 +674,4 @@ d'absence de relation sur `[]` revient à tester une panne.
 > bundle reconstruit. Épinglé par `__tests__/noInlinedTurnSecret.test.js`, qui scanne exactement ce
 > que Vite compile (tests et commentaires exclus, puisqu'ils ne sont pas bundlés).
 
-Détail, ordre et critères de complétion :
-[`work/webrtc2-securite-2026-08-14.md`](../../../work/webrtc2-securite-2026-08-14.md).
+Ce qui reste ouvert sur ce module : [`work/webrtc2-todo.md`](../../../work/webrtc2-todo.md).

@@ -25,35 +25,39 @@ composer install && vendor/bin/phpunit  # PHP — depuis ce paquet
 
 > ⚠️ **Ne pas dupliquer les chantiers déjà ouverts.** Plusieurs rustines de la doc y sont déjà
 > cadrées, avec leur analyse : [webrtc2-todo.md](webrtc2-todo.md) (renommage `usersInRoom`,
-> sémantique de `peerInitPromise`, peerId fantôme), [webrtc2-tests-plan.md](webrtc2-tests-plan.md)
-> (trous de couverture), [webrtc2-securite-2026-08-14.md](webrtc2-securite-2026-08-14.md) (TURN,
-> `getUsersList`, faille chemin (a), dérive du réplica en E4.2, écritures muettes en
-> **E7**), [front-todo.md](front-todo.md) (directives de resize),
+> sémantique de `peerInitPromise`, peerId fantôme, rafraîchissement du credential TURN),
+> [webrtc2-tests-plan.md](webrtc2-tests-plan.md) (trous de couverture),
+> [front-todo.md](front-todo.md) (directives de resize),
 > [sass-todo.md](sass-todo.md) (thème sombre, `@extend`). Ce fichier y **renvoie** — une règle, un
 > seul endroit.
+>
+> Le **chantier de sécurité d'août 2026 est clos** : ce qu'il portait (TURN, `getUsersList`, dérive
+> du réplica, écritures muettes) est livré, et son durable est dans
+> [`docs/modules/webrtc2/securite.md`](../docs/modules/webrtc2/securite.md). Les entrées de ce
+> fichier qui lui renvoyaient renvoient désormais à cette doc.
 
 ---
 
-## ⛔ Ordre vis-à-vis du chantier WebRTC2 en cours
+## Ordre vis-à-vis du module WebRTC2
 
-**Ce fichier ne bloque pas WebRTC2, et WebRTC2 passe avant lui.** Le chantier sécurité prévoit déjà
-sa propre remontée de doc (tâche **F1**, en clôture) : les tâches ci-dessous ne la doublent pas,
-elles couvrent ce que F1 ne couvre pas — F1 liste `securite.md`, `architecture.md` et son propre
-fichier, **pas le `CLAUDE.md`**.
+**Le chantier de sécurité est clos (F1, 25/08/2026), et ses collisions avec ce fichier sont levées.**
+F1 a remonté son durable dans `securite.md`, `architecture.md` et `architecture/signalisation.md`,
+**pas dans le `CLAUDE.md`** : les tâches ci-dessous ne le doublent pas, elles couvrent ce qu'il ne
+couvrait pas.
 
 Les cinq tâches du lot 0 ont été faites du 15 au 21/08 sans jamais croiser WebRTC2 — la doctrine
 « le lot 0 se fait sans attendre » a tenu. **Le lot 0 n'a plus de tâche prête** : sa sixième entrée
 attend, comme les autres lots.
 
-### À NE PAS toucher avant la fin des lots D et E — collisions réelles
+### Collisions — toutes levées sauf une
 
-| Tâche d'ici | Entre en collision avec |
+| Tâche d'ici | État |
 |---|---|
 | ~~Renommer `canJoinRoom` / `canJoinServer` (lot 3)~~ | **Débloqué le 21/08** : E4.1 est livrée, les quatre gardes refusent par défaut et `canJoinchatRoom` exige l'appartenance. Le renommage ne touche plus au comportement, seulement aux noms et à leurs appelants |
-| Renommer `hasOpenConnection` / `isConnectionEstablished` (lot 4) | cœur de A2 et B2 — déjà source des régressions du 13/08 |
-| Renommer `remoteStreams` (lot 3) | `createPeerContext`, touché par C5 puis E5 |
-| Convertir les 9 pièges de mock en tests (lot 4) | le harnais bouge encore — [webrtc2-tests-plan.md](webrtc2-tests-plan.md) a des tâches ouvertes, dont 6 et 7 **gelées** |
-| Migrer les appelants v1 (lot 1) | touche `System/widgets/AlertComponent.vue`, et `Notifications.vue` est dans le périmètre de l'audit |
+| ~~Renommer `hasOpenConnection` / `isConnectionEstablished` (lot 4)~~ | **Débloqué** : les gardes des lots A et B sont livrés et épinglés. ⚠️ Reste un renommage sur un chemin de sécurité — les deux prédicats sont ce que lit le moteur de retry, et les confondre est la panne du 13/08 |
+| ~~Renommer `remoteStreams` (lot 3)~~ | **Débloqué** : `createPeerContext` ne bouge plus |
+| Convertir les 9 pièges de mock en tests (lot 4) | **Toujours bloqué** : le harnais bouge encore — [webrtc2-tests-plan.md](webrtc2-tests-plan.md) a des tâches ouvertes, dont 6 et 7 **gelées** |
+| ~~Migrer les appelants v1 (lot 1)~~ | **Débloqué** : plus aucun audit en cours sur `Notifications.vue` ni `AlertComponent.vue` |
 
 Le `[L]` **gelé** de [webrtc2-todo.md](webrtc2-todo.md) — déplacer le routage star dans
 `usePeerTransport` — reste gelé. Rien ici ne le dégèle.
@@ -156,7 +160,7 @@ relecture de la doc seule ne peut pas les voir. Chacune a livré sa règle de v�
       symptôme annoncé était **l'inverse** du vrai (faux négatif au lieu de faux positif).
       Annotation : `docs/modules/webrtc2/securite.md` (piège 2) ·
       `src/app/Helpers/ModelTraits/Socializable.php` (docblock de `sharesGroupWith`) ·
-      `work/webrtc2-securite-2026-08-14.md` (diagnostic de C2, et E4)   (3 couches + le plan)
+      le plan de sécurité (diagnostic de C2, et E4) — **depuis clos**, cf. `git log`   (3 couches + le plan)
       - [x] Code — sans objet : il n'y avait pas de défaut à corriger
       - [x] Doc — les trois couches réécrites ; la dérive réelle (cascade des clés étrangères) y
             remplace le motif faux, et le sens du symptôme est corrigé
@@ -437,9 +441,11 @@ sortie C est immédiatement disponible, et elle vide beaucoup de doc.
 
 ## Lot 5 — À arbitrer, et assumés · sortie D
 
-- [ ] **Faille résiduelle du chemin (a)** — déjà cadrée dans
-      [webrtc2-securite-2026-08-14.md](webrtc2-securite-2026-08-14.md). **Renvoyer, ne pas
-      dupliquer.** Son annotation disparaîtra de `securite.md` avec la tâche F1 de ce chantier.
+- [x] **Faille résiduelle du chemin (a)** — **fermée en sortie D par F1** : l'avertissement n'est
+      plus une rustine, c'est une **borne assumée** inscrite dans « Bornes non fermées » de
+      [`securite.md`](../docs/modules/webrtc2/securite.md#bornes-non-fermées-connues), avec ce qui
+      la borne (le garde de relation serveur limite qui peut tenter) et ce que coûterait sa
+      fermeture (lier `Auth::user()` au peerId relayé — un chantier, pas un garde).
       ⚠️ Les deux autres entrées de cette ligne sont **tombées sans passer par ici**, comme prévu :
       les **credentials TURN dans le bundle** (lot D, 23/08) et **`getUsersList` sans contrôle**
       (E3, 25/08). Leurs annotations de `securite.md` ont été réécrites par les lots eux-mêmes —
@@ -461,17 +467,20 @@ sortie C est immédiatement disponible, et elle vide beaucoup de doc.
       Ce qui reste à assumer ou corriger : le réplica **est** synchronisé à l'attachement et au
       détachement, mais `group_user` porte `onDelete('cascade')` — supprimer un groupe ou un compte
       retire les lignes sans événement Eloquent et **laisse l'arête**. Un garde qui lit le graphe
-      accorde alors un accès révoqué. Cadré dans
-      [webrtc2-securite-2026-08-14.md](webrtc2-securite-2026-08-14.md), **E4.2** — renvoyer, ne pas
-      dupliquer. Les deux autres moitiés de la famille en sont sorties le 21/08 : la lecture sur
-      panne est **fermée** (E4.1), l'écriture muette est **E7**. Cette entrée ne porte plus que la
-      dérive par cascade SQL.
+      accorde alors un accès révoqué. **Arbitré et clos le 24/08** : les gardes ont **cessé de lire**
+      l'appartenance dans le graphe plutôt que de le re-synchroniser — décision et raison dans
+      [`securite.md`, piège 2](../docs/modules/webrtc2/securite.md#deux-pièges-du-graphe-que-ce-garde-contourne).
+      Ce qui reste sous cette entrée n'est plus un sujet de sécurité mais de **données** :
+      `Socializable::servers()`, `Server::getServers` et le compteur `nb_users` lisent encore
+      `registered_in`.
       Annotation : `docs/modules/webrtc2/securite.md` (piège 2) ·
       `src/app/Helpers/ModelTraits/Socializable.php` (docblock de `sharesGroupWith`)
 
-- [ ] **Les écritures dans le graphe échouent en silence** — cadré dans
-      [webrtc2-securite-2026-08-14.md](webrtc2-securite-2026-08-14.md), **E7** (extraite d'E4 le
-      21/08). **Renvoyer, ne pas dupliquer.**
+- [x] **Les écritures dans le graphe échouent en silence** — **livré le 22/08** (E7) : journalisation
+      universelle, levée réservée aux 6 méthodes DML, lectures inchangées. Les trois régimes et les
+      deux arbitrages datés sont dans
+      [`securite.md`](../docs/modules/webrtc2/securite.md#deux-pièges-du-graphe-que-ce-garde-contourne),
+      corollaire « une écriture qui échoue ne se tait plus ».
 
 - [ ] **Deux listeners homonymes sur `GroupUserCreated`** — celui du socle est un `handle()`
       entièrement commenté, celui de ce paquet fait le travail. Deux avertissements ⚠️ existent

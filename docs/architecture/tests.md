@@ -225,9 +225,9 @@ testable directement, et ça se voit.
   [`work/chat-tests-plan.md`](../../work/chat-tests-plan.md), avec une décision en attente (helpers
   dédiés vs partagés — `mockEcho`, `mockRoute`, `seedChatStore`).
 - **PHP** — le socle Testbench, les routes de signalisation vues du serveur, et les gardes
-  d'autorisation de `Socializable` : gardes de canal de broadcast et garde de relation. Le lot
-  backend qui s'appuie dessus est suivi dans
-  [`work/webrtc2-securite-2026-08-14.md`](../../work/webrtc2-securite-2026-08-14.md).
+  d'autorisation de `Socializable` : gardes de canal de broadcast et garde de relation. Ce que ces
+  gardes décident, et ce que le harnais ne prouve pas d'eux :
+  [modules/webrtc2/securite.md](../modules/webrtc2/securite.md).
 - **La projection MySQL → NebulaGraph** — le contrat de `GraphProjection` (elle compte et rapporte,
   elle ne décide pas), l'idempotence du réseau d'un utilisateur, du sommet d'un article, et du
   serveur d'un groupe avec son propriétaire résolu sans acteur authentifié :

@@ -9,6 +9,7 @@ Code : `src/resources/js/socializer/components/WebRTC2/`
 
 **Sommaire** — [Ordre des couches](#ordre-des-couches) ·
 [Propriétaires uniques](#propriétaires-uniques) ·
+[Les deux sens portent chacun leur garde](#les-deux-sens-portent-chacun-leur-garde) ·
 [Un onglet, plusieurs contextes](#un-onglet-plusieurs-contextes--la-granularité-des-clés-du-store) ·
 [Départ d'un pair](#départ-dun-pair--un-fait-métier-deux-transports) ·
 [Signaux datachannel](#signaux-datachannel--trois-enveloppes-trois-consommateurs) ·
@@ -81,12 +82,31 @@ Un invariant se tient à un seul endroit, vérifiable au grep.
 | routage des signaux serveur | `useSignalingQueue` (table `routes` construite par l'orchestrateur) | exposer un verbe et l'inscrire dans la table — pas de `watch` sur `ctx.lastRoomSignal` ailleurs |
 | `media.announcedStreamsMap` | deux écrivains assumés, chacun sur la seule information qu'il voit : `useBroadcastPresence` (annonce `BROADCAST_STATE`) et `usePeerTransport` (appel one-way entrant) ; purge par `useCallManager.handleRemoteDeparture` | `ctx.markAnnouncedStream` / `ctx.clearAnnouncedStream` (jamais d'écriture directe), lecture via `ctx.announcedStreamPeers` |
 | `peerStore.roomMembers[contextId]` (index de présence) | `usePeerConnections._doGetRoomUsersDiff`, unique producteur de `usersInRoom` ; purgé par `createPeerContext.destroy` | `peerStore.isUserInAnyRoom(slug)` en lecture — c'est le prédicat de `removeRemotePeerId` |
-| `session.authorizedCallPeers` (allowlist du garde sortant) | `useCallManager`, **seul écrivain** : marque à l'acceptation (`acceptCallFromPeer`) et à l'ouverture (`openCallBetweenPeer`), purge au départ du pair et au `resetCallState` | `ctx.markAuthorizedCallPeer` / `isAuthorizedCallPeer` / `clearAuthorizedCallPeer` / `clearAllAuthorizedCallPeers` — jamais d'écriture directe, et **jamais** `session.currentCallUsers` à sa place (état d'affichage, cf. [securite.md](securite.md)) |
+| `session.authorizedCallPeers` (allowlist du garde sortant) | `useCallManager`, **seul écrivain** : marque à l'acceptation (`acceptCallFromPeer`) et à l'ouverture (`openCallBetweenPeer`) — les deux marquages sont eux-mêmes gardés, cf. ci-dessous —, purge au départ du pair et au `resetCallState` | `ctx.markAuthorizedCallPeer` / `isAuthorizedCallPeer` / `clearAuthorizedCallPeer` / `clearAllAuthorizedCallPeers` — jamais d'écriture directe, et **jamais** `session.currentCallUsers` à sa place (état d'affichage, cf. [securite.md](securite.md)) |
 
 L'état *plat* partagé (`session.currentCallUsers`, via `ctx.addCurrentCallUser` &co.) n'a
 **pas** de propriétaire unique : il n'a pas d'invariant de transition à protéger,
 contrairement à la FSM. C'est la raison de la différence de traitement — et la raison pour
 laquelle il ne doit **jamais** servir d'allowlist de sécurité (voir [securite.md](securite.md)).
+
+---
+
+## Les deux sens portent chacun leur garde
+
+**Tout chemin qui ouvre une connexion porte un garde d'autorisation — dans les deux sens.** Durcir
+l'entrant seul ne protège de rien : sur un appel média, c'est l'**émetteur** qui pousse son flux,
+donc un tiers qui obtient de sa victime un `connectToPeer(lui)` se fait livrer webcam, micro ou
+écran sans avoir eu à ouvrir quoi que ce soit. Les deux gardes lisent le même prédicat
+(`utils/isAuthorizedPeer.js` en sortie, `_isAuthorizedIncomingPeer` en entrée), sur les mêmes deux
+chemins d'autorisation.
+
+**Corollaire, et c'est celui qu'on oublie : tout chemin qui ÉCRIT dans l'allowlist en porte un
+aussi.** Une acceptation d'appel ne vaut que pour une invitation **en vol**, et la garde va **avant**
+l'écriture, jamais après — la FSM ne protège que ce qui la suit. Sans cela, un pair s'inscrit
+lui-même dans `authorizedCallPeers` et satisfait ensuite les deux gardes ci-dessus, qui n'ont pas
+bougé d'une ligne.
+
+Substance, chaîne d'attaque et deltas assumés : [securite.md](securite.md#décisions-en-vigueur-sens-sortant-août-2026).
 
 ---
 

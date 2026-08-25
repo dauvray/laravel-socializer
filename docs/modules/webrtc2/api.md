@@ -190,7 +190,7 @@ Y vivent aussi `VALID_CONNECTION_TYPES` (`data` · `stream` · `screen` · `visi
 ⚠️ **Le plafond `/ask-to-peer-id` est par cible et non global** : un join mesh émet légitimement
 jusqu'à 14 demandes dans le même tick (7 pairs × type principal + écran). Un cap global mal
 dimensionné casserait le join — c'est le même piège côté serveur, voir
-[`work/webrtc2-securite-2026-08-14.md`](../../../work/webrtc2-securite-2026-08-14.md) tâche C1.
+[signalisation.md, invariant 5](../../architecture/signalisation.md#cinq-invariants-backend).
 
 ---
 

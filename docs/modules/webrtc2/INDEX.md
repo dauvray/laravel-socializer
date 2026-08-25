@@ -22,7 +22,7 @@ l'arbre mais rien ne doit y être ajouté. Ses notes de lecture sont archivées 
 | ajouter un composable, déplacer une responsabilité, toucher au Peer singleton | [architecture.md](architecture.md) |
 | savoir qui voit quoi, ou ouvrir un nouveau chemin de connexion | [securite.md](securite.md) |
 | écrire un test, ou comprendre pourquoi un test est vert à tort | [tests.md](tests.md) |
-| savoir ce qui reste ouvert | [`work/webrtc2-todo.md`](../../../work/webrtc2-todo.md) · [`work/webrtc2-securite-2026-08-14.md`](../../../work/webrtc2-securite-2026-08-14.md) · [`work/webrtc2-tests-plan.md`](../../../work/webrtc2-tests-plan.md) |
+| savoir ce qui reste ouvert | [`work/webrtc2-todo.md`](../../../work/webrtc2-todo.md) · [`work/webrtc2-tests-plan.md`](../../../work/webrtc2-tests-plan.md) |
 
 ---
 

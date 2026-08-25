@@ -145,15 +145,18 @@ temps à chaque lecture.
 - [ ] Renommer le paramètre — et vérifier au passage ce que `feed_id` désigne vraiment dans la
       collection `posts` de Mongo
 
-## 6. Le réplica a déjà divergé de Mongo (E4.2) 🟠
+## 6. Le réplica a déjà divergé de Mongo 🟠
 
 Constaté le 22/08 sur le dev : 3 posts Mongo pointent sur un mur `e1d5c82dc5951` **qui n'existe
 plus** (probablement un `dropSpace` du 28/05), et le graphe compte 0 sommet `post` pour 3 documents.
 34 messages et 14 pages Mongo n'ont pas été audités.
 
-C'est le sujet **E4.2** de [webrtc2-securite-2026-08-14.md](webrtc2-securite-2026-08-14.md) —
-arbitrer la re-synchronisation d'un réplica —, dont ce correctif est une brique : une projection
-idempotente est ce qui rend une re-synchronisation rejouable. À traiter là-bas, pas ici.
+⚠️ **Ce n'est plus un sujet de sécurité, et le volet sécurité a été arbitré dans l'autre sens.**
+E4.2 a tranché le 24/08 : plutôt que de re-synchroniser le réplica, les gardes ont **cessé de le
+lire** ([`securite.md`, piège 2](../docs/modules/webrtc2/securite.md#deux-pièges-du-graphe-que-ce-garde-contourne)).
+Ne pas rouvrir la question de la re-synchronisation en s'appuyant sur ce §6 : ce qui reste ici est
+une divergence de **données** — des documents Mongo sans sommet — et une projection idempotente
+reste ce qui rendrait un rattrapage rejouable, si un besoin réel le demande.
 
 ## 7. Restaurer un article ne recrée pas son sommet ✅ 23/08
 

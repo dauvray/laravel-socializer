@@ -157,7 +157,7 @@ directement par `Notifications.vue`.
 
 ---
 
-## Quatre invariants backend
+## Cinq invariants backend
 
 **1. `fromUserSlug` diffusé est toujours `Auth::user()->slug`**, jamais la valeur du payload.
 `closeConnectionToPeerId` journalise tout écart (`auth_user_id`, `auth_user_slug`, `claimed_slug`,
@@ -183,6 +183,38 @@ d'énumération que le code de retour ferme. Et ce corps porte un `message`, par
 — `AjaxService` d'estarter en tire un toast, qui restait vide sans lui. Même règle pour l'échec de
 broadcast (500), dont le message est une constante : le diagnostic vit dans le `Log::error`, jamais
 dans la réponse. Voir [modules/webrtc2/securite.md](../modules/webrtc2/securite.md).
+
+**5. Le plafond serveur porte sur l'utilisateur, et il y a deux buckets.** Le limiteur de
+`usePeerCore` vit dans le bundle et se retire en une ligne : il ne plafonne rien.
+Côté serveur, **les 5 routes n'ont pas la même cadence légitime**, et l'écart est d'un ordre de
+grandeur — un join mesh émet jusqu'à 14 demandes dans le même tick, une invitation d'appel naît d'un
+clic humain (~9 requêtes en 55 s, backoff compris). Un plafond unique dimensionné pour le join
+laisse donc passer ~120 invitations par minute vers une victime : il ne ferme pas l'abus qu'il vise.
+D'où `socializer-signaling` (mesh) et `socializer-call-invite` (invitation, **deux** limites
+composées — par cible *et* par émetteur, sans quoi la limite par cible se contourne en arrosant N
+victimes). La clé est l'**utilisateur, jamais l'IP** : derrière le NAT d'une entreprise, une clé IP
+ferait que le join d'un collègue casse celui du voisin. Valeurs dans `config/socializer.php` →
+`signaling.throttle`, limiteurs dans `ServiceProvider::registerSignalingRateLimiters()`.
+
+> ⚠️ **Un plafond est un réglage, une liste blanche est un contrat.** Les plafonds vivent dans la
+> config, relus à chaque requête — ajustables en prod, et rétrécissables en test sans émettre 121
+> requêtes. Les listes de types valides, elles, sont des **constantes PHP** : en config, un hôte les
+> desserrerait sans toucher au JS qui les reflète, et `mergeConfigFrom` est un `array_merge` **peu
+> profond** — une section `signaling` partielle côté hôte écraserait celle du paquet en silence. Le
+> prix de ce choix est une duplication JS ↔ PHP que rien dans le build ne rapproche : elle est
+> épinglée par `la_liste_blanche_php_reflete_le_front`, qui relit `webrtc2.config.js`.
+
+> **Sur ce chemin, la sévérité est le risque — pas la permissivité.** Un 422 sur `/ask-to-peer-id`
+> reproduit « A diffuse, B arrive, B ne voit rien ». Chaque règle est donc calquée sur une émission
+> relue **dans le client**, jamais sur une intuition de forme, et trois `nullable` qui ressemblent à
+> des oublis n'en sont pas : `connectionType` (la v1 morte mais encore appelée ne l'envoie pas),
+> `options.action` **sur la route de réponse seulement** (un refus d'appel n'envoie que `{ type }`,
+> d'où le paramètre `actionRequired`), et `options.peerId` (l'invitation peut partir avant
+> l'ouverture du peer local). `room` est bornée en longueur **sans motif** : elle vaut tantôt un
+> UUID, tantôt `'app'`, tantôt un id de l'hôte — il n'y a pas de forme commune à exiger.
+>
+> `options` est le seul champ relayé verbatim : il est **réduit** à `RELAYED_OPTION_KEYS`, pas
+> seulement validé. Valider `options.type` sans réduire l'objet laissait passer tout le reste.
 
 ---
 
