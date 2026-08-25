@@ -103,6 +103,8 @@ La même règle vaut pour l'**auteur d'un message**, fermé le 22/08 par E9 : il
   écrite avant cet ajout, et ne pouvait donc pas le connaître. C'est la définition d'un filtre qui
   vieillit mal.
 
+### Les trois régimes de la couture graphe
+
 Les méthodes `canJoin*` viennent du trait `Socializable` (`src/app/Helpers/ModelTraits/`) et
 interrogent NebulaGraph. **Un graphe muet vaut un refus** : en LECTURE, `execute()` rend un
 `JsonResponse` *truthy* sur erreur nGQL et ne lève pas — les quatre gardes traitent donc toute

@@ -34,20 +34,16 @@ l'admission entrante).
 
 ## Le protocole
 
-1. **Un bug vécu s'écrit d'abord dans `scenarios/`**, en repro, **rouge avant le fix**. C'est le seul
-   protocole qui n'a jamais produit de régression derrière lui.
-2. **Asserter le fait métier, jamais l'implémentation.** `bob.receivedScreensFrom()`, pas « telle
-   fonction a été appelée ». C'est ce qui rend ces tests insensibles aux refactos internes. Un
-   scénario qui passe au vert **d'emblée** est un mauvais signe : il ne teste pas ce qu'on croit.
-3. **Un mock qui ment est pire qu'un test manquant** — il rend vert pour la mauvaise raison.
-4. **Rien ne se pousse en rouge** — `hooks/pre-push` lance les deux suites. **Il n'y a pas de CI** :
-   ce hook est le seul filet automatique, et son activation est une config locale, jamais
-   versionnée — cf. [architecture/tests.md](../../architecture/tests.md).
-5. **Contrôle de harnais.** Après un correctif, neutraliser la ligne de production censée le porter
-   et vérifier que les tests rougissent. C'est ce qui distingue un test qui épingle un invariant d'un
-   test qui ne tient rien. Le contrôle apprend parfois quelque chose : quand deux mécanismes
-   indépendants tiennent la même propriété, il faut les neutraliser tous les deux — et c'est à écrire
-   dans le docblock du test.
+Les règles générales — repro rouge avant le fix, asserter le fait métier, un mock qui ment est pire
+qu'un test manquant, le contrôle de harnais — sont dans
+[architecture/tests.md](../../architecture/tests.md#les-règles). Ce module en porte trois deltas :
+
+1. **Un bug vécu s'écrit d'abord dans `scenarios/`**, pas dans un test unitaire : c'est l'étage où le
+   symptôme est observable.
+2. **Le fait métier s'écrit avec les verbes du harnais** — `bob.receivedScreensFrom()`, jamais
+   « telle fonction a été appelée ». C'est ce qui rend ces tests insensibles aux refactos internes.
+3. **Rien ne se pousse en rouge** — `hooks/pre-push` lance les deux suites. Son activation est une
+   config locale, jamais versionnée : c'est le seul filet automatique du dépôt.
 
 ⚠️ **Ne jamais recopier un décompte de tests de mémoire.** Ce chiffre a divergé du réel dans trois
 documents à la fois. Il se relit dans la sortie du runner, et n'a rien à faire dans une doc durable.
