@@ -68,8 +68,9 @@ Verbes : `initialize` · `cleanup` · `watchUsers` · `sendData` · `getWebcamSt
 `isVideoEnabled` · `streamStates` · `topology` / `hubSlug` / `isHub` / `isHubConnected` ·
 `localPeerId` · `mySlug` / `myName`.
 
-⚠️ **`remoteStreams` exclut les partages d'écran** ; `remoteScreens` ne contient qu'eux
-(`createPeerContext:201-202`). Consommer `remoteStreams` seul rend tout partage d'écran invisible.
+⚠️ **`remoteStreams` exclut les partages d'écran** ; `remoteScreens` ne contient qu'eux — les deux
+sont des `computed` filtrant `remoteStreamsMap` sur `remoteType !== 'screen'` dans
+`createPeerContext.js`. Consommer `remoteStreams` seul rend tout partage d'écran invisible.
 
 ### Niveau 3 — `usePeerOrchestrator(type, room, options)`
 

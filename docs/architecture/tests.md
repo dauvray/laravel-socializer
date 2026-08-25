@@ -54,7 +54,7 @@ Testbench fabrique une application Laravel de test : **aucun serveur n'est requi
 MongoDB, ni NebulaGraph, ni Reverb. Le `vendor/` du package vit à l'intérieur de celui de l'hôte ;
 c'est sans effet (l'autoloader de l'hôte ne le voit pas) et c'est gitignoré.
 
-### Les cinq décisions du harnais
+### Les décisions du harnais
 
 Elles sont toutes contraintes par l'état réel du package. Les défaire sans lire ce qui suit fait
 perdre une demi-journée — le détail et le pourquoi vivent dans le docblock de `tests/TestCase.php`.
@@ -244,8 +244,10 @@ testable directement, et ça se voit.
   elle ne décide pas), l'idempotence du réseau d'un utilisateur, du sommet d'un article, et du
   serveur d'un groupe avec son propriétaire résolu sans acteur authentifié :
   `tests/Feature/Graph/`. Ce que ces fichiers ne prouvent pas est écrit en tête de chacun.
-- **Rien** pour Feed, Comment, User, System, Application, Whiteboard, les stores Pinia hors
-  `peers2`, ni les services PHP au-delà de l'inscription au chat et de la projection.
+- **Une amorce seulement** pour `User` (`coverCallButton`) et `System`
+  (`composables/useReverbChannel`) — un fichier chacun, hors des trois étages.
+- **Rien** pour Feed, Comment, Application, Whiteboard, les stores Pinia hors `peers2`, ni les
+  services PHP au-delà de l'inscription au chat et de la projection.
 
 Les invariants d'une doc de module (`docs/modules/*`) sont des **points de test**, pas des choses à
 contourner : quand une doc dit « ne pas optimiser ceci », le test correspondant est ce qui l'épingle.

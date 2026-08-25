@@ -52,7 +52,9 @@ personnes actives. Trois conséquences à ne pas confondre quand un compteur « 
   Distinguer présence et activité demanderait un mécanisme en plus (`visibilitychange` + whisper) —
   c'est une fonctionnalité, pas un correctif : [`work/serveur-todo.md`](../../work/serveur-todo.md).
 - **Le nombre de membres, lui, n'est pas dans la présence** : il vient de `nb_users`
-  (`Services/Server::getServer`) — aujourd'hui faux sur un serveur privé, même fichier de chantier.
+  (`Services/Server::getServer`), où la décision d'accès est prise **en amont** du comptage — la
+  confondre avec la clause qui énumère les membres est ce qui le rendait faux sur un serveur privé
+  ([securite.md](../modules/webrtc2/securite.md#deux-pièges-du-graphe-que-ce-garde-contourne)).
 
 Devant un compteur suspect, **interroger Reverb avant de soupçonner le front** :
 `GET /apps/{appId}/channels/presence-server.{id}/users`.

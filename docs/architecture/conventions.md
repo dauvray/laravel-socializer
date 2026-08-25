@@ -89,13 +89,13 @@ stores/<nom>/getters.js
 stores/<nom>/actions.js
 ```
 
-Le fichier racine est fin : il importe les trois autres et les assemble. 14 stores —
+Le fichier racine est fin : il importe les trois autres et les assemble. Les stores :
 `applicationAI`, `chat`, `comments`, `community`, `conversations`, `feed`, `likes`, `peers`,
 `peers2`, `server`, `socialUser`, `store`, `wall`.
 
 ⚠️ Les **getters Pinia sont auto-déballés** : la production lit `store.getConnections?.[room]` sans
 `.value`. Un mock qui enveloppe un getter dans un `computed()` casse silencieusement — voir
-[tests.md](tests.md).
+[modules/webrtc2/tests.md](../modules/webrtc2/tests.md#pièges-de-mock).
 
 ### Routing
 

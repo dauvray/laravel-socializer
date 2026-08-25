@@ -49,11 +49,12 @@ venir de là. Ses notes de lecture sont archivées dans
 
 ## Où chercher le reste
 
-- **Logique métier PHP** → `src/app/Services/` (13 services : Chat, Feed, Comments, Likes, Users,
-  Page, Server, Store, WhiteBoard, ApplicationIA, QuestionnaireIA, Redis, OnlineUsers). Les
-  contrôleurs sont minces.
-- **État front** → `src/resources/js/socializer/stores/` (14 stores Pinia, pattern
-  `<nom>.js` + `<nom>/{state,getters,actions}.js`).
+- **Logique métier PHP** → `src/app/Services/` : Chat, Feed, Comments, Likes, Users, Page, Server,
+  Store, WhiteBoard, ApplicationIA, QuestionnaireIA, RedisService, OnlineUsersService, et
+  **GraphProjection** (le réplica graphe — [projection-graphe.md](../architecture/projection-graphe.md)).
+  Les contrôleurs sont minces.
+- **État front** → `src/resources/js/socializer/stores/`, pattern
+  `<nom>.js` + `<nom>/{state,getters,actions}.js`.
 - **Extension par l'application hôte** → `socializer_custom_elements/` — voir
   [architecture/package.md](../architecture/package.md#points-dextension-côté-application).
 - **Canaux temps réel et présence** → [architecture/signalisation.md](../architecture/signalisation.md).

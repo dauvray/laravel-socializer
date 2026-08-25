@@ -90,14 +90,14 @@ laravel-socializer/
     │   ├── Events/           8 events broadcastés (posts, comments, likes, questionnaire)
     │   ├── Helpers/          helpers globaux + ControllerTraits/ Formaters/ ModelTraits/
     │   ├── Http/
-    │   │   ├── Controllers/  Admin/ (CRUD Backpack) · Front/ (12 contrôleurs, minces)
+    │   │   ├── Controllers/  Admin/ (CRUD Backpack) · Front/ (contrôleurs minces)
     │   │   ├── Middleware/   CloseNebulaGraphSession
-    │   │   └── Resources/    14 API Resources + Collections
+    │   │   └── Resources/    API Resources + Collections
     │   ├── Jobs/             fan-out posts/comments vers followers, bot
-    │   ├── Listeners/        14 listeners — sync SQL/Mongo → graphe Nebula
+    │   ├── Listeners/        sync SQL/Mongo → graphe Nebula
     │   ├── Models/           8 modèles (voir ci-dessus)
     │   ├── Notifications/ · Providers/ · View/Components/
-    │   └── Services/         13 services — LA couche logique métier
+    │   └── Services/         LA couche logique métier
     ├── config/               socializer.php · modules.php (presets de rooms)
     ├── database/             8 migrations (SQL + collections Mongo + espace Nebula) + seeders
     ├── public/               assets publiés (css Excalidraw, placeholder, sons)
@@ -118,12 +118,12 @@ laravel-socializer/
 
 ```
 callbacks/     8 callbacks WebRTC (screen|stream|visio|vocal × player|playerData)
-components/    19 dossiers de composants — voir modules/
+components/    un dossier par module — voir modules/
 composables/   transverses : useBreakpoints · useFileAttachments · useResizableElement · useStickyScroll
 directives/    draggable · resizable · resizable_horizontal · resizable_vertical
 routes/application.js         routes vue-router du package (lazy + meta.breadcrumb)
 services/      FormsSetting · helpers · iframe-components
-stores/        14 stores Pinia
+stores/        stores Pinia
 ```
 
 ---
