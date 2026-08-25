@@ -1,13 +1,8 @@
 # WebRTC2 — Todo
 
-> Chantier ouvert. Les items **terminés** ont été élagués : leur rationale durable est dans
+> Chantier ouvert. Les items **terminés** sont élagués : leur rationale vit dans
 > [`docs/modules/webrtc2/`](../docs/modules/webrtc2/INDEX.md), leur récit dans `git log`.
-> Sécurité : le chantier d'audit d'août 2026 est **clos**, son durable est dans
-> [`docs/modules/webrtc2/securite.md`](../docs/modules/webrtc2/securite.md). La dernière borne qu'il
-> laissait ouverte — rafraîchir le credential TURN avant son expiration — a été **fermée le
-> 25/08/2026** ; ses trois arbitrages sont tranchés et écrits dans
-> [`securite.md`](../docs/modules/webrtc2/securite.md#le-rafraîchissement-du-credential-turn).
-> Tests : voir [webrtc2-tests-plan.md](webrtc2-tests-plan.md).
+> Tests : [webrtc2-tests-plan.md](webrtc2-tests-plan.md).
 >
 > Effort : `[S]` `[M]` `[L]`
 
@@ -154,10 +149,6 @@ avant le déménagement revient à les jeter.
 ---
 
 ## Patterns proposés, non implémentés
-
-Les deux autres patterns de la liste d'origine (`createBoundedMap`, `CALL_STATES`) sont **déjà
-implémentés** — éviction LRU de `remoteStreamsMap` et `utils/useCallStateMachine.js` — et ont été
-retirés d'ici.
 
 ### Injection protective
 

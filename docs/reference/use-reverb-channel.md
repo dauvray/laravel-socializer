@@ -111,19 +111,21 @@ useReverbChannel(channelName, options?)
 | `onJoining`       | `Function`                                           | `null`      | **Presence** : appelé lorsqu'un utilisateur rejoint. Appelé **à chaque annonce, doublon compris** — voir [Présence : la liste est dédoublonnée, pas le signal](#présence--la-liste-est-dédoublonnée-pas-le-signal). |
 | `onLeaving`       | `Function`                                           | `null`      | **Presence** : appelé lorsqu'un utilisateur quitte. |
 | `onError`         | `Function`                                           | `null`      | Callback en cas d'erreur du canal. |
-| `autoJoin`        | `boolean`                                            | `true`      | Si `false`, vous devez appeler `join()` manuellement. |
+| `autoJoin`        | `boolean`                                            | `true`      | Si `false`, vous devez appeler `join()` manuellement. ⚠️ **Il conditionne aussi la réactivité du nom de canal** : le `watch` sur `channelName` n'est enregistré que si `autoJoin` est vrai. Avec `autoJoin: false`, un nom réactif ne rebascule jamais. |
 
 ### Valeurs retournées
 
 | Clé             | Type                                  | Description |
 |-----------------|---------------------------------------|-------------|
 | `users`         | `Ref<Array>`                          | Liste des utilisateurs présents (canal de présence uniquement), **dédoublonnée par `id`**. |
-| `isConnected`   | `Ref<boolean>`                        | `true` lorsque le canal est rejoint avec succès. |
+| `isConnected`   | `Ref<boolean>`                        | ⚠️ **Optimiste hors présence.** Sur `presence`, il attend `here()`. Sur `public`, `private` et `encrypted`, il est posé `true` **synchronement après la fabrique**, avant toute confirmation d'abonnement — donc il ne prouve rien avant d'émettre un whisper. |
 | `error`         | `Ref<any>`                            | Dernière erreur reçue, le cas échéant. |
 | `join()`        | `() => void`                          | Rejoint manuellement le canal. |
 | `leave()`       | `() => void`                          | Quitte le canal. Appelé automatiquement au démontage. |
 | `listen(event, cb)` | `(string, Function) => void`      | Ajoute un listener dynamique. Persiste à travers les reconnexions. |
-| `stopListening(event)` | `(string) => void`             | Supprime tous les listeners dynamiques pour cet event. |
+| `stopListening(event)` | `(string) => void`             | ⚠️ Appelle le `stopListening` d'Echo : coupe **tous** les handlers de cet event, y compris ceux déclarés dans `options.listeners`. Le retrait est donc **durable** pour un listener dynamique et **temporaire** pour un statique, que le prochain re-join réapplique. |
+| `listenForWhisper(event, cb)` | `(string, Function) => void` | Écoute un *client event*. Persiste à travers les reconnexions — c'est ce qui évite de passer par `channel().listenForWhisper()`. |
+| `stopListeningForWhisper(event)` | `(string) => void`      | Symétrique de `listenForWhisper`. |
 | `whisper(event, payload)` | `(string, any) => boolean`  | Émet un *client event* (whisper). Rend `false` — **sans jamais lever** — si la souscription n'est plus vivante. |
 | `channel()`     | `() => EchoChannel \| null`           | Retourne l'instance Echo brute (échappatoire). |
 
