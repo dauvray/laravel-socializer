@@ -27,50 +27,36 @@
 **La leçon réutilisable, et la seule qui compte : un garde d'admission ne sécurise qu'une
 direction.** Tout chemin qui *ouvre* une connexion doit porter le sien.
 
-L'audit de mai avait été marqué « clôturé — toutes les failles corrigées ». Ses correctifs sont
-réels et bien faits, mais son périmètre était le sens **entrant** ; le sens sortant n'avait jamais
-été examiné. C'est ce qui rendait la mention fausse, et c'est pourquoi ce fichier énonce un
-périmètre plutôt qu'un verdict.
+L'audit de mai portait sur le sens **entrant** seulement, tout en étant marqué « clôturé — toutes
+les failles corrigées ». **C'est pourquoi ce fichier énonce un périmètre plutôt qu'un verdict** : un
+verdict global sur « la sécurité » ne survit pas à la première direction qu'on n'a pas regardée.
 
-### La chaîne d'attaque du sens sortant (tracée statiquement, non exploitée)
+### La chaîne d'attaque du sens sortant, et pourquoi il faut DEUX gardes
 
-> **Fermée à ses deux bouts, et la chaîne est conservée parce qu'elle explique les deux gardes.**
-> Côté client, le prédicat `utils/isAuthorizedPeer.js` coupe à l'étape 5 (`connectToPeer`, avant
-> `addRemotePeerId`) et sur la livraison du peerId qui l'alimente (`responseRemotePeerConnection`).
-> Côté serveur, `Socializable::mayReach` coupe à l'étape 2 : le relais exige désormais une relation
-> entre les deux parties.
->
-> **Aucun des deux ne rend l'autre redondant.** Un attaquant *en relation* avec sa victime (même
-> groupe, ou follow réciproque) passe l'étape 2 en toute légitimité, et seul le garde client
-> l'arrête ; un client modifié retire son propre garde, et seul le serveur l'arrête. C'est un
-> attaquant du premier type que modélise `scenarios/outgoingAuth.test.js`, en désarmant le garde
-> entrant de mallory pour reproduire ce qu'un bundle patché donne.
+**La forme.** Un authentifié quelconque POSTe `/response-to-peer-id` en se donnant pour un
+interlocuteur légitime de sa victime, sur un `type`/`room` correspondant à un contexte monté chez
+elle. Le signal est relayé, routé, et `connectToPeer` appelle le peerId annoncé : **si la victime
+diffuse, c'est elle qui ouvre la connexion média** et pousse sa webcam vers l'attaquant
+(`connectionType: 'screen'` donne l'écran). Aucune appartenance à la room n'est requise, et
+`_isAuthorizedIncomingPeer` ne s'exécute pas — il ne garde que l'entrant.
 
-1. un utilisateur authentifié quelconque POSTe `/response-to-peer-id` avec `toUserSlug: <victime>`,
-   **son propre** `peerId`, et un `type`/`room` correspondant à un contexte monté chez la victime ;
-2. `UserController::responseToPeerId` relaie — `fromUserSlug` est bien authentifié, mais rien ne
-   vérifie que l'émetteur a le droit de parler à cette cible ;
-3. `Notifications.vue` dispatche `PEER_CONNECT_TO_REMOTE_PEER` sur `roomId = '<type>-<room>'` ;
-4. `useSignalingQueue` route **sans précondition** — choix délibéré et correct
-   ([pourquoi](architecture.md#le-routage-ne-pose-aucune-précondition)) — mais il n'y a de garde
-   nulle part ailleurs ;
-5. `connectToPeer` enregistre `addRemotePeerId(attaquant, peerId)` puis appelle
-   `peer.call(peerIdAttaquant, ctx.media.currentStream)`.
-
-**Conséquence :** si la victime diffuse, **c'est elle qui ouvre la connexion média** et pousse sa
-webcam / son micro vers l'attaquant. `connectionType: 'screen'` donne le partage d'écran.
-`_isAuthorizedIncomingPeer` ne s'exécute pas : il ne garde que l'entrant. Aucune appartenance à la
-room n'est requise.
-
-Variante `type: 'data'` : le contexte `data-app` est monté **en permanence** pour tout utilisateur
-connecté, donc le canal est disponible en continu — et l'écriture inconditionnelle
-`addRemotePeerId` **empoisonne le mapping qui sert d'allowlist** au chemin (b) de
-`_isAuthorizedIncomingPeer` : l'attaquant s'auto-inscrit comme « interlocuteur d'appel direct
-vérifié » sans qu'aucun appel n'ait été autorisé.
-
-Ce que le correctif a posé — registre `authorizedCallPeers`, prédicat unique, garde sur les
-écritures de ce registre — est décrit ci-dessous,
+**Pourquoi le registre `authorizedCallPeers` existe.** En variante `type: 'data'`, le contexte
+`data-app` étant monté en permanence pour tout connecté, le canal est disponible en continu — et
+l'écriture inconditionnelle d'`addRemotePeerId` **empoisonnait le mapping qui sert d'allowlist** au
+chemin (b) de `_isAuthorizedIncomingPeer` : l'attaquant s'auto-inscrivait comme « interlocuteur
+d'appel direct vérifié » sans qu'aucun appel n'ait été autorisé. D'où un registre distinct du
+mapping, décrit dans
 [« Décisions en vigueur (sens sortant) »](#décisions-en-vigueur-sens-sortant-août-2026).
+
+> **Fermée à ses deux bouts — et aucun des deux gardes ne rend l'autre redondant.** Côté client,
+> `utils/isAuthorizedPeer.js` coupe dans `connectToPeer`, avant `addRemotePeerId`, et sur la
+> livraison du peerId qui l'alimente. Côté serveur, `Socializable::mayReach` coupe au relais.
+>
+> Un attaquant **en relation** avec sa victime (même groupe, ou follow réciproque) passe le garde
+> serveur en toute légitimité, et seul le garde client l'arrête ; un client modifié retire son
+> propre garde, et seul le serveur l'arrête. C'est un attaquant du premier type que modélise
+> `scenarios/outgoingAuth.test.js`, en désarmant le garde entrant de mallory pour reproduire ce
+> qu'un bundle patché donne.
 
 ⚠️ Deux pièges à ne pas défaire en touchant à ce chemin :
 - **Ne pas** déplacer le garde dans `useSignalingQueue` — l'absence de précondition dans le routage
@@ -534,12 +520,8 @@ qui l'ont imposé.
 > `ShouldQueue` : ils tournent dans la requête HTTP du socle, et faire échouer l'attachement d'un
 > utilisateur à un groupe parce qu'une *copie* n'a pas pu être écrite inverserait le rapport entre la
 > source de vérité et son réplica. Ils rattrapent et journalisent (`ToleratesGraphFailure`,
-> `ReplicaFailureListenerTest`).
->
-> **C'est cette tolérance qui a écarté la re-synchronisation** (arbitrage du 24/08/2026, piège 2
-> ci-dessus) : tant qu'un échec d'écriture est absorbé par décision, aucune reprise ne peut fermer la
-> fenêtre de dérive — seulement la raccourcir. Router la question vers le maître ne laisse aucune
-> fenêtre. C'est le même argument que la leçon ci-dessus, vu depuis l'écriture.
+> `ReplicaFailureListenerTest`). C'est cette tolérance qui a écarté la re-synchronisation du réplica
+> — l'argument est dans [« Deux pièges du graphe »](#deux-pièges-du-graphe-que-ce-garde-contourne).
 
 ### 403 uniforme, et ce que le journal garde
 
@@ -631,16 +613,10 @@ d'absence de relation sur `[]` revient à tester une panne.
 
 ## Le rafraîchissement du credential TURN
 
-Le credential TURN est éphémère, mais **la configuration ICE n'était récupérée qu'une fois par cycle
-de vie du `Peer`** — et ce `Peer` est un singleton d'onglet monté au tick 0 par le contexte permanent
-`data-app`, que `PEER_DESTROY_DELAY_MS` n'arme qu'au départ du **dernier** consommateur et dont
-`peer.reconnect()` réutilise la même instance, donc le même `_options.config`. Un onglet ouvert
-au-delà du TTL gardait un credential expiré : l'appel en cours tenait — coturn a déjà sa clé de
-session — mais **toute nouvelle allocation échouait**.
-
-Le symptôme à reconnaître : « la visio ne passe plus, un F5 la répare », sur un onglet resté ouvert.
-Il ne ressemble pas à une expiration parce que rien ne casse au moment où le credential expire, mais
-au prochain appel.
+Le credential est éphémère alors que le `Peer` est un singleton d'onglet : la panne, son symptôme
+(« la visio ne passe plus, un F5 la répare ») et le dimensionnement des constantes sont écrits une
+fois, dans `webrtc2.config.js`, section « Rafraîchissement du credential TURN ». **Ce qui suit est ce
+que le fichier de configuration ne porte pas : les trois alternatives écartées.**
 
 ### Trois décisions, et la raison de chacune
 
@@ -669,10 +645,8 @@ connexions ouvertes**. Ni `setConfiguration()`, ni cycle destroy → init.
 **Un rafraîchissement peut DÉGRADER.** `fetchIceServers` ne jette jamais : quand la route répond mal,
 elle rend le repli STUN seul. L'écrire remplacerait une configuration TURN qui marche par une
 configuration sans relais — l'exact contraire du but. D'où la règle : **pas de TTL dans la réponse ⇒
-aucune écriture**, la configuration en place est conservée et une reprise est armée, bornée par
-`ICE_REFRESH_MAX_RETRIES`. Le bornage n'est pas de la politesse : `routes.public.php` documente que
-`/get-ice-servers` n'a pas de `throttle` et que la condition de réouverture est « un credential court
-**et** re-demandé » — une reprise non bornée sur une route morte serait ce re-demandé-là.
+aucune écriture**, la configuration en place est conservée et une reprise est armée, bornée
+(`ICE_REFRESH_MAX_RETRIES`, dont le pourquoi est sur la constante).
 
 **`options.config` est un interne non contractuel de PeerJS.** Un renommage amont rendrait le
 rafraîchissement **muet** : aucune erreur, aucun log, et la panne reviendrait sous sa forme d'origine
@@ -681,9 +655,9 @@ de `bundler.mjs` que `provider.options.config` y figure encore.
 
 ### Ce que ce mécanisme ne décide pas
 
-Le TTL par défaut **reste à 24 h**. Le rafraîchissement rend son raccourcissement possible sans le
-décider : `credential_ttl` est un réglage d'hôte, et la condition de réouverture du `throttle` reste
-armée pour le jour où un déployeur descend à l'échelle de l'heure.
+**Il ne raccourcit pas le TTL, il rend son raccourcissement possible.** `credential_ttl` est un
+réglage d'hôte, et la condition de réouverture du `throttle` reste armée pour le jour où un déployeur
+descend à l'échelle de l'heure.
 
 Et la suite ne prouve pas que **coturn accepte** le credential rafraîchi : elle prouve que le
 minuteur rejoue la requête et réécrit l'objet. La contre-épreuve est manuelle — un
@@ -694,39 +668,20 @@ un candidat `relay`.
 
 ## Bornes non fermées, connues
 
-- **L'usurpation intra-room, bornée mais pas fermée.** Un membre légitime de la room qui ouvre un
-  **second** `new Peer()` se présente sous le slug d'un autre membre : le cas nominal de la présence
-  et l'attaque ont la **même signature locale** (slug déclaré membre, peerId inconnu), donc aucun
-  client ne peut les distinguer — « Faille résiduelle connue, chemin (a) », dans
-  [« Une liste vide n'est pas une réponse »](#une-liste-vide-nest-pas-une-réponse) ci-dessus. Le
-  garde de relation serveur **borne qui peut tenter** (il faut déjà être en relation avec la
-  victime) sans supprimer le cas, puisqu'un membre de la même room l'est le plus souvent. La
-  fermer demande de lier `Auth::user()` au peerId relayé côté serveur, c'est-à-dire de faire du
-  backend le témoin de l'identité PeerJS — un chantier, pas un garde. Borne assumée.
+Ce qui a été **fermé** n'est pas ici : c'est la table du
+[périmètre réel](#périmètre-réel--à-lire-en-premier), en tête de fichier.
+
+- **L'usurpation intra-room, bornée mais pas fermée.** Le mécanisme est décrit dans
+  [« Une liste vide n'est pas une réponse »](#une-liste-vide-nest-pas-une-réponse) — chemin (a).
+  Le garde de relation serveur **borne qui peut tenter** (il faut déjà être en relation avec la
+  victime) sans supprimer le cas, puisqu'un membre de la même room l'est le plus souvent. La fermer
+  demande de lier `Auth::user()` au peerId relayé côté serveur, c'est-à-dire de faire du backend le
+  témoin de l'identité PeerJS — un chantier, pas un garde. Borne assumée.
 - **Amplification du hub star, par la somme des émetteurs.** Le produit `octets × fan-out` est
   désormais plafonné (`HUB_MAX_BYTES_PER_WINDOW`), mais **par émetteur** : N émetteurs honnêtes
   peuvent encore additionner leurs budgets. Un budget global du hub fermerait ce cas et en ouvrirait
   un pire — le premier à dépenser priverait les autres, soit un déni de service sur les pairs
   légitimes. Arbitrage assumé.
-- **Backend** — fermés depuis l'audit : le `throttle` des 5 routes, la validation des payloads
-  relayés, le `catch (\Exception $ex) { return $ex; }` qui renvoyait chemins de fichiers et trace au
-  client indépendamment d'`APP_DEBUG`, le contrôle de relation émetteur ↔ destinataire,
-  l'énumération par `firstOrFail()` sur ces cinq routes, et le bloc privé de chaque membre
-  (`email`, `roles`, `permissions`, `groups`) que les quatre canaux de présence diffusaient à toute
-  la room — désormais une liste blanche de six champs
-  ([signalisation.md](../../architecture/signalisation.md#une-charge-utile-de-présence-est-fabriquée-par-son-propre-sujet)),
-  et **l'énumération par la liste de contacts** — `getUsersList` rendait tous les utilisateurs
-  actifs à tout authentifié, elle applique désormais le même prédicat que les cinq routes
-  (ci-dessus, « La liste de contacts applique le même prédicat, en lot »).
-- **TURN, la durée de vie du credential** — **fermée le 25/08/2026.** Le navigateur ne récupérait la
-  configuration ICE qu'une fois par cycle de vie du `Peer`, lequel est un singleton d'onglet monté au
-  tick 0 par le contexte permanent `data-app` et que rien ne détruit tant que la coquille SPA vit.
-  Un onglet ouvert au-delà du TTL gardait donc un credential expiré : l'appel en cours tenait, mais
-  **toute nouvelle allocation échouait** — « la visio ne passe plus, un F5 la répare ». La réponse de
-  `/get-ice-servers` porte désormais un `credential_ttl`, et le transport arme un minuteur qui
-  réécrit `peer.options.config` avant l'échéance. Épinglé par
-  `usePeerTransport.iceRefresh.test.js`, et les détails d'arbitrage sont dans
-  [le rafraîchissement du credential TURN](#le-rafraîchissement-du-credential-turn) ci-dessous.
 - **TURN, le secret de signature** : il est unique et partagé par tous les utilisateurs. Le
   compromettre ne vaut pas un relais ouvert mais **la capacité de forger le credential de
   n'importe qui**, donc la perte de la non-répudiation que ce mode achète. Ce qui l'arrête est une
