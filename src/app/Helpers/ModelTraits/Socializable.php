@@ -6,6 +6,7 @@ use Cviebrock\EloquentSluggable\Sluggable;
 use Cviebrock\EloquentSluggable\SluggableScopeHelpers;
 use Dauvray\Socializer\app\Notifications\CommentReplyOf;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -478,6 +479,110 @@ trait Socializable
         }
 
         return (bool) $result[0];
+    }
+
+    /**
+     * Version EN LOT de `mayReach` : les vertexids de tous ceux que cet utilisateur peut
+     * atteindre. Sert la liste de contacts (`Users::visibleUsers`), qui filtre N candidats — N
+     * appels à `mayReach` coûteraient N allers-retours Thrift sur cache froid, un par jambe
+     * follow.
+     *
+     * ⚠️ MÊME RÈGLE, MÊMES SOURCES QUE `mayReach`, et c'est l'invariant à tenir : groupe commun
+     * dans MariaDB OU follow réciproque dans le graphe, plus soi-même (multi-onglet). Une
+     * divergence entre le lot et l'unitaire referait ce que C5 puis E5 ont corrigé ailleurs —
+     * une interface qui propose ce que le serveur refuse, ou qui cache ce qu'il accorde.
+     * `UserListScopeTest::le_lot_dit_la_meme_chose_que_le_predicat_unitaire` la surveille.
+     *
+     * ⚠️ N'utilise PAS le cache de `mayReach` et ne l'alimente pas : ses entrées sont des
+     * verdicts de PAIRE, oubliés à l'unité par `Users::followUser`. Y verser un lot obligerait
+     * à savoir quelles paires invalider quand une seule relation change.
+     *
+     * @return array<string, true> indexé par vertexid — la liste se lit à l'`isset`.
+     */
+    public function reachableVertexIds(): array
+    {
+        $reachable = [$this->vertexid => true];
+
+        foreach ($this->groupPeers() as $peer) {
+            $reachable[$peer->vertexid] = true;
+        }
+
+        foreach ($this->mutualFollowVertexIds() as $vertexid) {
+            $reachable[$vertexid] = true;
+        }
+
+        return $reachable;
+    }
+
+    /**
+     * Jambe MariaDB en lot : les utilisateurs partageant au moins un groupe.
+     *
+     * ⚠️ Deux requêtes et non une, parce que **le vertexid ne se déduit pas d'un `user_id`** :
+     * `getVertexId()` rend la colonne `vertexid` quand elle existe et retombe sinon sur
+     * `<tag><id>`. La production n'a pas cette colonne, le stub du harnais l'a — reconstruire
+     * `'user'.$id` à la main marcherait donc en production et mentirait en test. Passer par le
+     * modèle prend le même chemin que partout ailleurs.
+     *
+     * Requête directe sur le pivot pour la même raison que `sharesGroupWith` : `groups()` vit
+     * sur `EstarterUser`, d'un paquet que le harnais remplace par un stub qui lève.
+     *
+     * @return Collection<int, static>
+     */
+    private function groupPeers(): Collection
+    {
+        $table = config('socializer.signaling.relation.group_user_table', 'group_user');
+
+        $peer_ids = DB::table($table.' as a')
+            ->join($table.' as b', 'a.group_id', '=', 'b.group_id')
+            ->where('a.user_id', $this->getKey())
+            ->where('b.user_id', '!=', $this->getKey())
+            ->distinct()
+            ->pluck('b.user_id');
+
+        if ($peer_ids->isEmpty()) {
+            return collect();
+        }
+
+        return static::query()->whereIn($this->getKeyName(), $peer_ids)->get();
+    }
+
+    /**
+     * Jambe graphe en lot : les follows réciproques, en une requête.
+     *
+     * Même motif que `followsMutually`, la contrainte sur `b` en moins — donc la même direction
+     * d'arête, décrite dans son docblock. Pas de `RETURN DISTINCT` : seul `count(DISTINCT x)`
+     * est attesté en production, et l'indexation par vertexid de `reachableVertexIds` dédoublonne
+     * de toute façon.
+     *
+     * ⚠️ Une requête nGQL à UNE colonne rend une liste PLATE de valeurs, pas des lignes
+     * associatives (`NebulaGraphConnection::formatValues`). Le confondre a déjà créé un serveur
+     * en trop sur le dev, suite verte (`work/projection-graphe-todo.md`, §1).
+     *
+     * Refus par défaut identique à `followsMutually` : une réponse inexploitable ne rend aucun
+     * joignable — la liste se resserre, elle ne s'ouvre pas. La jambe groupe, elle, tient encore.
+     *
+     * @return array<int, string>
+     */
+    private function mutualFollowVertexIds(): array
+    {
+        $from = $this->vertexid;
+
+        $result = app('nebulaGraph')->execute("
+            MATCH (wa:wall)-[:owned_by]->(a:user), (wa)-[:followed_by]->(b:user),
+                  (wb:wall)-[:owned_by]->(b), (wb)-[:followed_by]->(a)
+            WHERE id(a) == '$from'
+            RETURN id(b) AS reachable_vertexid
+        ");
+
+        if (! is_array($result)) {
+            Log::warning('reachableVertexIds : le graphe n\'a pas répondu, jambe follow ignorée', [
+                'from_vertexid' => $from,
+            ]);
+
+            return [];
+        }
+
+        return array_filter($result, 'is_string');
     }
 
     /*

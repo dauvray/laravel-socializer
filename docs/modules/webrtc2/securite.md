@@ -13,7 +13,7 @@
 |---|---|---|
 | **Entrant** (`peer.on('connection')`, `peer.on('call')`) | durci **côté client**, borné côté serveur — audits du 20/05 et du 14/08/2026 | garde `_isAuthorizedIncomingPeer`, anti-usurpation inconditionnelle, gardes de taille, sanitisation. Reste aveugle au membre de room qui se présente avec un peerId neuf sous le slug d'un autre ; le garde de relation serveur borne désormais qui peut tenter |
 | **Sortant** (`connectToPeer`, `responseRemotePeerConnection`) | durci **côté client**, garde autoritatif posé côté serveur | prédicat unique `utils/isAuthorizedPeer.js` : membre de la room **ou** interlocuteur d'appel marqué. Son jumeau serveur `Socializable::mayReach` tranche ce que le navigateur ne peut pas voir |
-| **Backend** (`UserController`, routes) | durci | `fromUserSlug` authentifié, liste blanche de champs, `throttle` par utilisateur (deux buckets), `validate()` sur les 5 payloads, et **contrôle de relation** émetteur ↔ destinataire en 403 uniforme |
+| **Backend** (`UserController`, routes) | durci | `fromUserSlug` authentifié, liste blanche de champs, `throttle` par utilisateur (deux buckets), `validate()` sur les 5 payloads, **contrôle de relation** émetteur ↔ destinataire en 403 uniforme, et **liste de contacts restreinte aux joignables** sauf permission `list_users` |
 | **Credentials TURN** | servis par le serveur, **éphémères et signés par utilisateur** | `GET /get-ice-servers` : STUN seul pour un invité, STUN + TURN pour une session authentifiée. TURN REST API — `username = "<expiry>:<userId>"`, `credential = base64(HMAC-SHA1(secret, username))`, TTL 24 h. Un abus est donc attribuable, plafonnable par personne et révocable en bloc. Le mode statique partagé reste servi si aucun secret n'est configuré, pour ne pas casser un coturn encore en `--user` |
 
 **La leçon réutilisable, et la seule qui compte : un garde d'admission ne sécurise qu'une
@@ -464,6 +464,43 @@ devient silencieux.
 > verdict mémorisé (`Users::forgetRelationVerdict`), mais le bouton n'apparaîtra qu'au rechargement
 > de la page.
 
+### La liste de contacts applique le même prédicat, en lot
+
+`POST /get-user-list` rendait **tous les utilisateurs actifs à tout authentifié** : son contrôle de
+permission était commenté dans le contrôleur. C'était une énumération plus directe que le sondage de
+slugs fermé par le 403 uniforme ci-dessus — nom, slug, image et statut de connexion de toute la base,
+en une requête.
+
+**Décision produit du 25/08/2026** : `list_users` voit tout le monde ; sans la permission, la liste
+se restreint aux utilisateurs **joignables au sens de `mayReach`**. Le périmètre se décide dans
+`Users::visibleUsers()` et non dans le contrôleur, parce que la permission ne refuse pas la route :
+elle en change l'étendue.
+
+L'alignement est celui que réclame la règle du bouton d'appel, un cran plus haut : la liste de
+contacts est elle-même une **action proposée par l'UI**. Y faire figurer quelqu'un que la
+signalisation refusera, c'est proposer un appel qui partira en 403.
+
+> ⚠️ **Le lot et l'unitaire doivent dire la même chose, et c'est un invariant fragile.**
+> `Socializable::reachableVertexIds()` est la version en lot de `mayReach` — mêmes deux jambes,
+> mêmes sources, plus soi-même (multi-onglet). Elle existe pour une raison de coût : N appels à
+> `mayReach` coûteraient N allers-retours Thrift sur cache froid, là où le lot en coûte deux pour
+> toute la liste. Elle **n'utilise pas** le cache de `mayReach` et ne l'alimente pas : ses entrées
+> sont des verdicts de *paire*, oubliés à l'unité par `Users::followUser`.
+> `UserListScopeTest::le_lot_dit_la_meme_chose_que_le_predicat_unitaire` compare les deux verdicts
+> candidat par candidat — c'est la seule chose qui empêche les deux implémentations de diverger.
+
+Deux détails que la lecture seule ne donne pas :
+
+- **Le vertexid ne se déduit pas d'un `user_id`.** `getVertexId()` rend la colonne `vertexid` quand
+  elle existe et retombe sinon sur `<tag><id>` : la production n'a pas cette colonne, le stub du
+  harnais l'a. Reconstruire `'user'.$id` à la main marche donc en production et ment en test — d'où
+  deux requêtes SQL et non une pour la jambe groupe.
+- **Une panne du graphe sur la requête de liste rendait un 500**, pas une liste vide. `execute()`
+  rend un `JsonResponse` sur une lecture qui échoue ; le `foreach` itérait alors l'unique attribut
+  public de la réponse Symfony (`$headers`) et levait « Cannot use object of type
+  ResponseHeaderBag as array ». Constaté en retirant le garde, pas déduit — la lecture seule
+  concluait « zéro propriété, donc liste vide ».
+
 ### Ce que les tests ne prouvent pas
 
 `FakeNebulaGraph` fait du `str_contains` sur le nGQL, **il ne le parse pas**. Les cas « follow » de
@@ -492,9 +529,10 @@ d'absence de relation sur `[]` revient à tester une panne.
   l'énumération par `firstOrFail()` sur ces cinq routes, et le bloc privé de chaque membre
   (`email`, `roles`, `permissions`, `groups`) que les quatre canaux de présence diffusaient à toute
   la room — désormais une liste blanche de six champs
-  ([signalisation.md](../../architecture/signalisation.md#une-charge-utile-de-présence-est-fabriquée-par-son-propre-sujet)).
-  **Reste ouvert** : la même énumération sur `getUsersList`, qui liste tous les utilisateurs actifs
-  sans contrôle.
+  ([signalisation.md](../../architecture/signalisation.md#une-charge-utile-de-présence-est-fabriquée-par-son-propre-sujet)),
+  et **l'énumération par la liste de contacts** — `getUsersList` rendait tous les utilisateurs
+  actifs à tout authentifié, elle applique désormais le même prédicat que les cinq routes
+  (ci-dessus, « La liste de contacts applique le même prédicat, en lot »).
 - **TURN, la durée de vie du credential** : il est désormais éphémère et signé par utilisateur, mais
   le navigateur ne récupère la configuration ICE **qu'une fois par cycle de vie du `Peer`** —
   lequel est un singleton d'onglet, monté au tick 0 par le contexte permanent `data-app`, jamais

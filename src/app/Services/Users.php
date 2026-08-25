@@ -75,27 +75,78 @@ class Users
 
     public function getUsersList($route_name = '')
     {
+        $paginator = makePaginationCollection(collect($this->visibleUsers()), route($route_name));
+
+        return new UserCollection($paginator);
+    }
+
+    /**
+     * Les utilisateurs que l'appelant a le droit de voir listés, avant pagination.
+     *
+     * **Périmètre tranché le 25/08/2026 (E3)** : `list_users` voit tout le monde, les autres ne
+     * voient que les JOIGNABLES au sens de `mayReach` — la règle même que les 5 routes de
+     * signalisation appliquent. Jusqu'ici la route rendait tous les utilisateurs actifs à tout
+     * authentifié, son contrôle de permission étant commenté : une énumération plus directe que
+     * le sondage de slugs, fermé par C2.
+     *
+     * ⚠️ Le périmètre se décide ICI et non dans le contrôleur : la permission ne refuse pas la
+     * route, elle en change l'étendue. `UserController::getUsersList` n'a donc rien à trancher.
+     *
+     * ⚠️ Publique et séparée de `getUsersList` pour une raison de harnais, pas de style :
+     * `makePaginationCollection()` est un helper d'`innovation/laravel-estarter`, paquet absent
+     * de la suite PHP d'ici (cf. `tests/TestCase`) — appeler `getUsersList()` en test lèverait
+     * « undefined function », alors que c'est le périmètre qu'il faut épingler.
+     *
+     * @return array<int, object>
+     */
+    public function visibleUsers(): array
+    {
         $formated = [];
-        
+
         $results = app('nebulaGraph')->execute("
-            MATCH (u:user {active: 1}) 
+            MATCH (u:user {active: 1})
             MATCH (current_user:user) where id(current_user) == '".$this->user->vertexid."'
-            OPTIONAL MATCH (u)<-[:owned_by]-(:wall)-[f:followed_by]->(current_user) 
+            OPTIONAL MATCH (u)<-[:owned_by]-(:wall)-[f:followed_by]->(current_user)
             OPTIONAL MATCH (u)<-[:owned_by]-(:wall)-[nbf:followed_by]->(:user)
             RETURN u AS user, CASE WHEN f IS NULL THEN NULL ELSE 'followed' END AS follow_status, COUNT(nbf) as nb_followers
         ");
 
-        foreach( $results as $res) {
+        // `execute()` rend un JsonResponse — un objet, donc truthy — quand nGQL échoue sur une
+        // LECTURE (cf. E4.1). Sans ce garde, le `foreach` ci-dessous itère le seul attribut
+        // PUBLIC de la réponse Symfony (`$headers`) et `$res['user']` lève « Cannot use object
+        // of type ResponseHeaderBag as array » : une panne du graphe rendait donc un 500 opaque,
+        // ce qu'E4.1 a fermé partout ailleurs. Elle rend désormais une liste vide et une ligne
+        // de journal. ⚠️ Constaté en retirant le garde, pas déduit : la lecture seule concluait
+        // « il itère zéro propriété, donc liste vide ».
+        if (! is_array($results)) {
+            Log::warning('getUsersList : le graphe n\'a pas répondu, liste vide', [
+                'user_vertexid' => $this->user->vertexid,
+            ]);
+
+            return [];
+        }
+
+        // `null` = aucun filtre. Calculé AVANT la boucle et une seule fois : deux requêtes pour
+        // toute la liste, là où `mayReach` par candidat en coûterait deux par ligne. Et pas
+        // calculé du tout pour un privilégié, qui ne paie donc pas le prédicat.
+        $reachable = $this->user->can('list_users') ? null : $this->user->reachableVertexIds();
+
+        foreach ($results as $res) {
             $user = $res['user'];
+
+            // Sur le vertexid, avant que la ligne suivante ne l'écrase par l'id MySQL : c'est la
+            // clé que le graphe et `reachableVertexIds` ont en commun.
+            if ($reachable !== null && ! isset($reachable[$user['id']])) {
+                continue;
+            }
+
             $user['id'] = getRealIdFromVertexId($user['id']);
             $user['follow_status'] = $res['follow_status'];
             $user['nb_followers'] = $res['nb_followers'];
-            $formated[] = (object)$user;
+            $formated[] = (object) $user;
         }
 
-        $paginator = makePaginationCollection(collect($formated), route($route_name));
-
-        return new UserCollection($paginator);
+        return $formated;
     }
 
     /**

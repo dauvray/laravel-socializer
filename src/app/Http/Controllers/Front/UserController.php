@@ -27,15 +27,18 @@ class UserController extends Controller
         return response()->json(['user' => new UserResource($user)]);
     }
 
+    /**
+     * ⚠️ Aucun garde ici, et c'est voulu depuis E3 (25/08/2026) : `list_users` ne REFUSE pas
+     * cette route, elle en élargit le périmètre. Sans la permission, la liste est restreinte
+     * aux utilisateurs joignables au sens de `mayReach` — la décision est dans
+     * `Users::visibleUsers()`, avec les deux requêtes qui la calculent.
+     *
+     * Le contrôle commenté qui vivait ici rendait 403 à tout le monde ou rien à personne : il
+     * était commenté, donc la route énumérait tous les utilisateurs actifs.
+     */
     public function getUsersList(Request $request, UserService $service)
     {
-        $user = Auth::user();
-
-        // if(!$user->can('list_users')) {
-        //     return response()->json(['message' => 'Vous n\'avez pas la permission de lister les utilisateurs'], 403);
-        // }
-
-        return response()->json( $service->getUsersList($request->route()->getName()), 200);
+        return response()->json($service->getUsersList($request->route()->getName()), 200);
     }
 
     public function followUser(Request $request, UserService $service)

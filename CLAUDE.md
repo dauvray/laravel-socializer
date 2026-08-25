@@ -101,9 +101,13 @@ projet consommateur n'a rien à câbler à la main.
   le graphe en est un réplica qui dérive **dans le sens qui accorde**, MariaDB en est le maître.
   Arbitrage écrit dans [securite.md](docs/modules/webrtc2/securite.md), piège 2 — le lire avant de
   proposer d'y ajouter une re-synchronisation.
-  **Restent ouverts** : l'usurpation intra-room par un membre qui se présente avec un peerId neuf
+  **La liste de contacts applique le même prédicat depuis le 25/08/2026** : `getUsersList` rendait
+  tous les utilisateurs actifs à tout authentifié, elle est restreinte aux **joignables** sauf
+  permission `list_users`. Son prédicat en lot (`reachableVertexIds`) doit dire exactement ce que
+  `mayReach` dit à l'unité — un test compare les deux, ne pas les faire diverger.
+  **Reste ouvert** : l'usurpation intra-room par un membre qui se présente avec un peerId neuf
   sous le slug d'un autre — les deux chemins ont la même signature locale, ce n'est pas fermable
-  côté client —, et l'énumération via `getUsersList`. Les credentials TURN sont sortis du bundle
+  côté client. Les credentials TURN sont sortis du bundle
   **et sont désormais éphémères** (TURN REST API, signés par utilisateur, TTL 24 h) : un abus est
   attribuable et révocable. Borne restante : le navigateur ne demande la configuration ICE qu'une
   fois par onglet, donc un onglet ouvert au-delà du TTL n'ouvre plus de nouvelle allocation. Voir

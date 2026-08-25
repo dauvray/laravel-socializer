@@ -35,6 +35,9 @@ puis suivre sa table de routage vers `docs/INDEX.md`. Ne pas explorer le code au
 - **`config('socializer.signaling.ice.turn')` porte le secret de signature HMAC de TOUS les
   utilisateurs.** Ne jamais rendre ce bloc tel quel à un client : `WebRTCController::turnServer()`
   nomme trois clés une par une, liste blanche et jamais liste noire.
+- **`Socializable::mayReach()` a un jumeau EN LOT, `reachableVertexIds()`** — même règle et mêmes
+  sources, l'un pour un candidat, l'autre pour une liste (`Users::visibleUsers`). Les faire diverger
+  rouvre l'énumération ou masque des contacts légitimes : `UserListScopeTest` compare les deux.
 - Contribution documentaire : **`docs/` = définitif, `work/` = chantier**. Une case à cocher ou un
   décompte de tests ⇒ le fichier appartient à `work/`. Détail dans `docs/ecrire-la-doc.md`.
 - Installation / mise à jour dans une app hôte : `{{ $assist->artisanCommand('socializer:build') }}`.

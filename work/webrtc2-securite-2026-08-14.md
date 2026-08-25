@@ -1330,24 +1330,56 @@ seuls les tests visés rougissent. Suite complète **694 tests / 38 fichiers**, 
 
 ---
 
-### E3 — Ne plus énumérer les utilisateurs `[S]`
+### E3 — Ne plus énumérer les utilisateurs `[S]` ✅ 25/08/2026
 
-- [ ] **Dépend de :** C2 (✅ 16/08). **Périmètre réduit** — voir ci-dessous.
+- [x] **Dépend de :** C2 (✅ 16/08). **Les 5 routes le 16/08, la liste de contacts le 25/08.**
 
 > ✅ **Fait sur les 5 routes de signalisation** (16/08, avec C2) : `firstOrFail()` y est
 > remplacé par `first()`, et un slug inexistant reçoit le **même 403, même corps**
 > (`{"ok": false}`) qu'un slug existant hors relation. Couvert par
 > `RelationGuardTest::un_slug_inexistant_repond_403_et_non_404`.
 
-**Reste à faire** : `getUsersList` ([`UserController.php`](../src/app/Http/Controllers/Front/UserController.php)),
-qui liste **tous** les utilisateurs actifs — son contrôle de permission `list_users` est
-commenté. C'est une énumération bien plus directe que le sondage de slugs, et elle ne partage
-ni le garde ni le fichier avec ce qui vient d'être fait : elle sert la liste de contacts du
-produit, donc son arbitrage est produit, pas technique.
+**Arbitrage produit rendu le 25/08/2026** — c'était le seul blocage, la partie technique
+n'en était pas une : **`list_users` voit tout le monde, les autres ne voient que les
+joignables** au sens de `mayReach`.
 
-**Tests :** ✅ pour les 5 routes. Reste : la liste ne renvoie que les utilisateurs joignables,
-ou exige `list_users`.
-**Commit :** `secu(socializer): réponse uniforme sur slug inexistant ou non autorisé`
+- [x] `Users::visibleUsers()` porte la décision, **pas le contrôleur** : la permission ne
+      refuse pas la route, elle en change l'étendue. Le contrôle commenté est retiré, un
+      docblock dit pourquoi il n'est pas remis.
+- [x] `Socializable::reachableVertexIds()` — jumeau **en lot** de `mayReach`, deux requêtes
+      pour toute la liste au lieu de deux par ligne. N'utilise pas le cache de `mayReach` :
+      ses entrées sont des verdicts de *paire*, oubliés à l'unité par `followUser`.
+- [x] Tests : `Feature/Profile/UserListScopeTest`, 5 cas — **6 contre-épreuves par mutation**,
+      toutes rouges (filtre neutralisé, permission ignorée, soi-même retiré du lot, les deux
+      gardes `is_array` retirés, jambe groupe retirée du lot seul).
+- [x] Doc : `docs/modules/webrtc2/securite.md` (nouvelle section + périmètre + bornes),
+      `CLAUDE.md` du paquet, `resources/boost/guidelines/core.blade.php`, puis `boost:update`
+      côté hôte et contrôle que la section a survécu.
+
+#### Trois choses qui n'étaient pas au plan
+
+**1. Le vrai risque n'est pas la liste, c'est la divergence.** Un lot et un unitaire qui
+répondent la même question sont deux implémentations de la même règle : la première fois que
+l'une bouge sans l'autre, la liste propose des appels qui partent en 403 (C5 à l'envers) ou
+cache des contacts légitimes. D'où un test qui **compare les deux verdicts candidat par
+candidat**, et non deux jeux d'assertions indépendants. C'est la seule assertion du fichier qui
+ne teste pas un comportement mais un **rapport entre deux codes**.
+
+**2. Le vertexid ne se déduit PAS d'un `user_id`.** La jambe groupe rend des `user_id` MySQL, la
+liste est indexée sur des vertexids : reconstruire `'user'.$id` marcherait en production —
+`getVertexId()` retombe sur `<tag><id>` faute de colonne — et **mentirait dans le harnais**, dont
+le stub porte une vraie colonne `vertexid` valant `'user'.$name`. Deux requêtes SQL, donc, et
+jamais de vertexid fabriqué à la main.
+
+**3. Une contre-épreuve a démoli un commentaire écrit dix minutes plus tôt.** J'avais écrit que
+sans le garde `is_array`, le `foreach` sur la réponse d'erreur « itérerait zéro propriété et
+rendrait une liste vide ». Faux : `JsonResponse` expose `$headers` en public, donc `$res['user']`
+lève « Cannot use object of type ResponseHeaderBag as array » — **une panne du graphe rendait un
+500**, pas une liste vide. Le garde ne fait donc pas qu'ajouter du journal, il ramène la panne au
+contrat d'E4.1. Même leçon que le 23/08, appliquée un cran plus tôt : **une affirmation sur ce
+que fait le code se vérifie en cassant le code.**
+
+**Commit :** `secu(socializer): la liste de contacts cesse d'énumérer les utilisateurs`
 
 ---
 
@@ -1897,12 +1929,13 @@ message diffusé.
 
 ## Vérification globale
 
-- `npx vitest run` après **chaque** tâche. Référence relue le 23/08/2026, après E1 et E2 :
-  **694 tests / 38 fichiers, ~3,9 s**. ⚠️ Relire la référence au runner, ne jamais la déduire d'un
+- `npx vitest run` après **chaque** tâche. Référence relue le 25/08/2026, après E3 :
+  **777 tests / 42 fichiers, ~5,2 s**. ⚠️ Relire la référence au runner, ne jamais la déduire d'un
   delta : celle qui figurait ici (655, « après E8 ») était déjà fausse de 7 tests avant E1.
 - **Backend** : `vendor/bin/phpunit` **depuis le paquet** (Orchestra Testbench, aucun serveur
   requis) — cf. [docs/architecture/tests.md](../docs/architecture/tests.md). Socle posé avec C3
-  le 15/08/2026, référence après E9 : **139 tests / 335 assertions, ~7 s**. ⚠️ Le décompte qui
+  le 15/08/2026, référence relue au runner le 25/08/2026, après E3 : **230 tests / 518
+  assertions, ~11 s**. ⚠️ Le décompte qui
   figurait ici (81/210, « après E5 ») n'avait pas été remis à jour par E4.1 : relire la référence,
   ne pas la déduire d'un delta.
 - `hooks/pre-push` rejoue **les deux** suites. ⚠️ Il n'y a **pas** de CI : la mention d'un

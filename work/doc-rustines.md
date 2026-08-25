@@ -437,11 +437,13 @@ sortie C est immédiatement disponible, et elle vide beaucoup de doc.
 
 ## Lot 5 — À arbitrer, et assumés · sortie D
 
-- [ ] **Faille résiduelle du chemin (a)**, **`getUsersList` sans contrôle**, **credentials TURN dans
-      le bundle** — déjà cadrés dans
-      [webrtc2-securite-2026-08-14.md](webrtc2-securite-2026-08-14.md) (lots D, E3, E). **Renvoyer,
-      ne pas dupliquer.** Ces annotations disparaîtront de `securite.md` quand ces lots seront
-      terminés — c'est déjà prévu par la tâche F1 de ce chantier.
+- [ ] **Faille résiduelle du chemin (a)** — déjà cadrée dans
+      [webrtc2-securite-2026-08-14.md](webrtc2-securite-2026-08-14.md). **Renvoyer, ne pas
+      dupliquer.** Son annotation disparaîtra de `securite.md` avec la tâche F1 de ce chantier.
+      ⚠️ Les deux autres entrées de cette ligne sont **tombées sans passer par ici**, comme prévu :
+      les **credentials TURN dans le bundle** (lot D, 23/08) et **`getUsersList` sans contrôle**
+      (E3, 25/08). Leurs annotations de `securite.md` ont été réécrites par les lots eux-mêmes —
+      c'est le fonctionnement nominal de ce chantier, pas un raccourci.
 
 - [ ] **`destroy()` de PeerJS émet `disconnected` avant de poser `_destroyed`** — bug de dépendance
       tierce, vérifié dans `peerjs@1.5.4` (l.1810 avant l.1781). Trois gardes empilées le
