@@ -61,65 +61,33 @@ git config core.hooksPath hooks
 
 ## `docs/` vs `work/`
 
-**`docs/` ne contient que du définitif** : architecture, conventions, référence, rationale.
-**`work/` contient le suivi de chantier** : todo, audits, plans de tests.
-
-> **Une case à cocher ⇒ le fichier appartient à `work/`.**
-> **Aucun chiffre volatil dans `docs/`** — décomptes de tests, occurrences, avancement.
-
-Ces règles et le modèle de doc de module : [docs/ecrire-la-doc.md](docs/ecrire-la-doc.md).
-Quand un chantier se termine, remonter le durable dans `docs/` et supprimer le reste — l'historique
-est dans git.
+`docs/` = définitif · `work/` = suivi de chantier. **Une case à cocher ou un chiffre volatil ⇒ le
+fichier appartient à `work/`.** La règle entière, le modèle de doc de module et le geste de clôture
+d'un chantier : [docs/ecrire-la-doc.md](docs/ecrire-la-doc.md).
 
 ---
 
 ## Ce que le paquet dit de lui-même aux projets hôtes
 
-`resources/boost/guidelines/core.blade.php` est **livré avec le tag** et injecté par
-`php artisan boost:update` dans le `CLAUDE.md` de chaque projet qui installe le paquet. Il ne contient
-qu'un routeur — 5 lignes toujours visibles (v1 morte, alias `~socializer`, « lire ce fichier ») et un
-bloc `@scoped(['vendor/dauvray/laravel-socializer/**'])` avec les pièges qui ne mordent qu'une fois
-dans le paquet.
-
-> **La substance reste ici, dans `docs/`.** Le routeur ne doit jamais grossir : deux copies d'un même
-> fait divergent. Si une règle mérite d'être connue de tous les projets hôtes, elle est courte, ou
-> elle est un pointeur.
-
-`socializer:build` déclare le paquet auprès de Boost (`boost.json`) puis relance `boost:update` : un
-projet consommateur n'a rien à câbler à la main.
+`resources/boost/guidelines/core.blade.php` est **livré avec le tag** et injecté par `boost:update`
+dans le `CLAUDE.md` de chaque projet hôte. C'est un **routeur** : une coupe dedans retire le fait de
+tous les projets qui installeront ce tag, et il ne doit jamais grossir — la substance reste dans
+`docs/`. `socializer:build` déclare le paquet auprès de Boost puis relance `boost:update`.
 
 ---
 
 ## À savoir avant de conclure quoi que ce soit
 
-- **La sécurité WebRTC2 n'est pas « faite », mais le backend l'est désormais en grande partie** :
-  les deux sens sont durcis côté client, et le backend porte un `throttle` à **deux buckets**
-  (les 5 routes n'ont pas la même cadence légitime), un `validate()` sur les 5 payloads et un
-  contrôle de relation émetteur ↔ destinataire en 403 uniforme — épinglés par
-  `tests/Feature/Signaling/` et `tests/Feature/Profile/`.
-  **Les gardes de canal ne lisent plus l'appartenance à un groupe dans NebulaGraph** (24/08/2026) :
-  le graphe en est un réplica qui dérive **dans le sens qui accorde**, MariaDB en est le maître.
-  Arbitrage écrit dans [securite.md](docs/modules/webrtc2/securite.md), piège 2 — le lire avant de
-  proposer d'y ajouter une re-synchronisation.
-  **La liste de contacts applique le même prédicat depuis le 25/08/2026** : `getUsersList` rendait
-  tous les utilisateurs actifs à tout authentifié, elle est restreinte aux **joignables** sauf
-  permission `list_users`. Son prédicat en lot (`reachableVertexIds`) doit dire exactement ce que
-  `mayReach` dit à l'unité — un test compare les deux, ne pas les faire diverger.
-  **Reste ouvert** : l'usurpation intra-room par un membre qui se présente avec un peerId neuf
-  sous le slug d'un autre — les deux chemins ont la même signature locale, ce n'est pas fermable
-  côté client. Les credentials TURN sont sortis du bundle
-  **et sont désormais éphémères** (TURN REST API, signés par utilisateur, TTL 24 h) : un abus est
-  attribuable et révocable. **Le client les rafraîchit avant expiration depuis le 25/08/2026**, donc
-  un onglet ouvert indéfiniment garde un credential valide — mais un rafraîchissement ne doit
-  **jamais** écrire le repli STUN par-dessus une configuration TURN qui marche, et il repose sur un
-  interne non contractuel de PeerJS (`options.config`). Lire
-  [docs/modules/webrtc2/securite.md](docs/modules/webrtc2/securite.md) avant d'y toucher.
-- **La suite PHP couvre la signalisation WebRTC et les gardes d'autorisation de `Socializable`** —
-  un socle, pas un filet.
-  Ses cinq décisions de harnais (pile de middlewares réduite, aucune migration du paquet, doublures
-  qui lèvent) sont dans [docs/architecture/tests.md](docs/architecture/tests.md#suite-php--dans-le-package-via-orchestra-testbench) : les
-  ignorer coûte une demi-journée.
-- **Le front est en français en dur**, sans `$t()`. Introduire l'i18n est un chantier à part entière.
-- Plusieurs zones sont mortes ou vides (`admin.php` commenté, `console.php` vide, `table_names`
-  vide, `socializer:upgrade` quasi entièrement commenté) —
+- **La sécurité WebRTC2 n'est pas « faite »** — mais elle n'est pas non plus ouverte : le périmètre
+  réel, ce qui est durci **dans quel sens**, les bornes assumées et ce qui reste ouvert sont dans
+  [securite.md](docs/modules/webrtc2/securite.md), qui ouvre sur une table faite pour ça. **Ne rien
+  conclure de l'état de la sécurité sans l'avoir lue** : c'est le seul endroit qui distingue « durci
+  en sortie » de « durci en entrée », et deux propositions naturelles y sont explicitement écartées
+  (re-synchroniser le réplica graphe ; contrôler le `contextId` d'une invitation en vol).
+- **La suite PHP est un socle, pas un filet** : elle couvre la signalisation WebRTC et les gardes
+  d'autorisation de `Socializable`. Ses décisions de harnais sont contraintes par l'état réel du
+  paquet et les défaire sans les lire coûte une demi-journée —
+  [tests.md](docs/architecture/tests.md#suite-php--dans-le-package-via-orchestra-testbench).
+- **Zones mortes ou vides** (`admin.php` commenté, `console.php` vide, `table_names` vide,
+  `socializer:upgrade` quasi entièrement commenté) :
   [liste](docs/architecture/package.md#zones-mortes-connues).

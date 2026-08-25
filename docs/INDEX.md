@@ -56,15 +56,17 @@ docs/
 
 ---
 
-## Les cinq choses qui coûtent le plus cher à réapprendre
+## Ce qui coûte le plus cher à réapprendre
 
-1. **`components/WebRTC/` (sans le 2) est mort.** L'implémentation vivante est `WebRTC2/`. Un
-   symbole trouvé au grep peut venir de la v1.
-2. **Les tests JS se lancent depuis la racine du projet hôte**, pas depuis le package — il n'a ni
-   `package.json` ni `node_modules`.
-3. **`type` ≠ `connectionType`** dans la signalisation. Le premier est une clé de routage ; les
-   confondre envoie la réponse dans une file que personne n'observe.
-4. **Le routage des signaux ne pose aucune précondition** — c'est un invariant, pas un oubli. En
-   ajouter une a déjà fait disparaître des flux, de façon intermittente.
-5. **L'audit sécurité de mai n'était pas « clôturé »** : son périmètre était le sens entrant. Le sens
-   sortant n'a aucun contrôle d'autorisation.
+Les pièges d'arrivée — v1 morte, où lancer les tests, l'alias `~socializer`, la casse des
+namespaces — sont dans [`CLAUDE.md`](../CLAUDE.md), qui mène ici. Ce qui suit ne s'y trouve pas :
+
+- **`type` ≠ `connectionType`** dans la signalisation. Le premier est une clé de routage ; les
+  confondre envoie la réponse dans une file que personne n'observe —
+  [signalisation.md](architecture/signalisation.md#type-vs-connectiontype--ne-jamais-les-confondre).
+- **Le routage des signaux ne pose aucune précondition** — c'est un invariant, pas un oubli. En
+  ajouter une a déjà fait disparaître des flux, de façon intermittente.
+- **Ne rien conclure de l'état de la sécurité WebRTC2 sans lire son périmètre réel.** Les deux sens
+  portent un garde d'autorisation, mais ils n'ont pas la même histoire et pas la même couverture, et
+  plusieurs bornes sont assumées plutôt que fermées :
+  [securite.md](modules/webrtc2/securite.md).

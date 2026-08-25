@@ -12,8 +12,18 @@ La signalisation passe par Laravel Reverb (voir
 Code : `src/resources/js/socializer/components/WebRTC2/`
 
 ⚠️ **`components/WebRTC/` (sans le 2) est l'implémentation v1, morte.** Elle est toujours dans
-l'arbre mais rien ne doit y être ajouté. Ses notes de lecture sont archivées dans
-[`work/webrtc-v1-notes.md`](../../../work/webrtc-v1-notes.md).
+l'arbre, avec des fichiers **homonymes** de ceux de WebRTC2 (`MediaBroadcastProvider.vue`) : un
+symbole trouvé au grep peut venir de là. Rien ne doit y être ajouté.
+
+**Elle n'est pas orpheline, et c'est ce qui empêche de la supprimer** : cinq composants vivants
+l'importent encore, chacun dans un autre module — `Application/ApplicationComponent.vue`,
+`AudioRoom/AudioComponent.vue`, `ClassRoom/ClassRoomComponent.vue`,
+`Whiteboard/WhiteboardComponent.vue` et `System/widgets/AlertComponent.vue` (en
+`defineAsyncComponent`, donc invisible à une recherche d'`import` statique). Les symboles concernés
+sont `usePeers`, `DataUserPeerConnection`, `MediaBroadcastProvider` et les deux alertes d'appel.
+Les fichiers préfixés `__` sont déjà désactivés. La supprimer suppose donc de migrer ces cinq
+appelants, pas seulement d'effacer un dossier — le recompte se fait par
+`grep -rn "WebRTC/" src/resources/js/socializer/components/ | grep -v WebRTC2`.
 
 ---
 

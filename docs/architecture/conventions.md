@@ -16,6 +16,11 @@ minuscules : `Dauvray\Socializer\app\Models\Post`,
 `Dauvray\Socializer\app\console\Commands\SocializerInstall`. Non-idiomatique PSR-4, mais
 **systématique** — le reproduire, ne pas « corriger » au coup par coup.
 
+⚠️ **La casse du dossier et celle du namespace divergent sur `console/`** : le dossier est
+`src/app/console/` (minuscule) là où le namespace écrit `…\app\Console\…`. Créer une classe
+autochargée sous cet arbre demande donc un `composer dump-autoload` — sans lui, elle reste
+introuvable, sans erreur qui le dise.
+
 **Modèles** — squelette commenté figé, blocs conservés même vides :
 `GLOBAL VARIABLES` / `FUNCTIONS` / `RELATIONS` / `SCOPES` / `ACCESORS` *(sic)* / `MUTATORS`.
 

@@ -14,14 +14,12 @@ Documentés à part : **[WebRTC2](webrtc2/INDEX.md)** · **[Chat](chat.md)**
 
 ---
 
-## ⚠️ Le piège n°1 du package
+## ⚠️ La v1 WebRTC est morte, et elle est encore dans l'arbre
 
-**`components/WebRTC/` (sans le 2) est l'implémentation WebRTC v1, morte.** Elle coexiste avec
-`components/WebRTC2/` dans l'arbre : `composables/usePeers.js`, `widgets/CallUserButton.vue`,
-`VideoComponent.vue`, `MediaBroadcastProvider.vue` (homonyme de celui de WebRTC2), les fichiers
-préfixés `__` étant déjà désactivés. Rien ne doit y être ajouté, et un symbole trouvé au grep peut
-venir de là. Ses notes de lecture sont archivées dans
-[`work/webrtc-v1-notes.md`](../../work/webrtc-v1-notes.md).
+`components/WebRTC/` (sans le 2) coexiste avec `components/WebRTC2/`, avec des fichiers homonymes :
+rien ne doit y être ajouté, et un symbole trouvé au grep peut venir de là. Le détail — ce qui y vit
+encore, ce qui l'appelle encore — est dans
+[modules/webrtc2/INDEX.md](webrtc2/INDEX.md).
 
 ---
 
