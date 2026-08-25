@@ -109,7 +109,20 @@ class ServiceProvider extends \Illuminate\Support\ServiceProvider
 
             $this->loadRoutesFrom(__DIR__ . $this->routeFilePath);
 
-            $this->loadRoutesFrom(__DIR__ . $this->routeChannelsFilePath);
+            // ⚠️ `require`, JAMAIS `loadRoutesFrom` : un `Broadcast::channel()` n'est pas une
+            // route et n'entre PAS dans le cache de `route:cache` — or `loadRoutesFrom` ne fait
+            // RIEN dès que les routes sont cachées. Ce fichier était donc purement sauté partout
+            // où `route:cache` tourne (l'entrypoint Docker le fait à chaque démarrage) : plus
+            // AUCUN canal privé ni de présence déclaré, `verifyUserCanAccessChannel` ne trouvant
+            // alors aucun motif et refusant TOUT `/broadcasting/auth` en 403. Notifications, chat,
+            // salons et serveurs muets d'un coup, sans une ligne de journal côté serveur — seule
+            // la console du navigateur parlait. Épinglé par
+            // tests/Feature/Channels/ChannelsSurviveRouteCacheTest.php.
+            //
+            // `require` et non `require_once` : un même process peut faire naître plusieurs
+            // applications (la suite de tests en fabrique une par test), et chacune a son propre
+            // broadcaster à garnir.
+            require __DIR__ . $this->routeChannelsFilePath;
 
             $this->loadRoutesFrom(__DIR__ . $this->routeApiFilePath);
 
