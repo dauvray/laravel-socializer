@@ -34,7 +34,7 @@
                 ref="chat"
                 class="room-chat"
                 :style="{ width: `${chatWidth}px` }"
-                v-resizable="{
+                v-resizable-width="{
                     min: 400,
                     max: 800,
                     handle: 'left',
@@ -65,7 +65,7 @@
     import { useReverbChannel } from '~socializer/components/System/composables/useReverbChannel.js'
 
     // UTILS & DIRECTIVES
-    import vResizable from '~socializer/directives/resizable_vertical.js'
+    import vResizableWidth from '~socializer/directives/resizable_width.js'
 
     // COMPOSANTS ASYNCHRONES
     const LockedRoom = defineAsyncComponent(() => import('./widgets/LockedRoom.vue'))

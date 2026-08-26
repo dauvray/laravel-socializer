@@ -1,10 +1,10 @@
 /**
  * Pilote la dimension d'un élément redimensionnable via une variable CSS.
  *
- * Pensé pour collaborer avec les directives `resizable_horizontal` (hauteur)
- * et `resizable_vertical` (largeur) : le suffixe de la directive décrit
- * l'orientation de la poignée, pas l'axe. On lui fournit l'objet `resizeOptions`
- * prêt à brancher sur `v-resizable`, le callback étant déjà câblé.
+ * Pensé pour collaborer avec la directive `resizable_height` : on lui fournit
+ * l'objet `resizeOptions` prêt à brancher sur `v-resizable-height`, le callback
+ * étant déjà câblé. Sans objet pour `resizable_width`, qui écrit `style.width`
+ * en dur et n'a donc pas de variable CSS à piloter.
  *
  * Réutilisable par tout composant qui veut une dimension pilotée par variable
  * CSS avec clamp min/max + mise à jour programmatique (auto-grow, reset, etc.).
@@ -15,7 +15,7 @@
  * @param {number}  config.min       Taille minimale (px).
  * @param {number}  config.max       Taille maximale (px).
  * @param {number} [config.initial]  Taille initiale (défaut: min).
- * @param {('top'|'bottom'|'left'|'right')} [config.position]  Position de la poignée (transmise à la directive).
+ * @param {('top'|'bottom')} [config.position]  Côté de la poignée (transmis à la directive).
  */
 import { ref } from 'vue'
 
@@ -45,7 +45,7 @@ export function useResizableElement(elementRef, {
     return applySize(initial)
   }
 
-  // Objet à binder directement : v-resizable="resizeOptions"
+  // Objet à binder directement : v-resizable-height="resizeOptions"
   const resizeOptions = {
     min,
     max,

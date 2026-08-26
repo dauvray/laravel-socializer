@@ -1,3 +1,20 @@
+/**
+ * Redimensionne la HAUTEUR de l'élément — poignée horizontale (`ns-resize`),
+ * posée en haut ou en bas selon `options.position`.
+ *
+ * Écrit une variable CSS (`options.cssVarName`), jamais `style.height` : c'est
+ * la feuille de style qui décide quoi en faire.
+ *
+ * binding.value = {
+ *   min: 100,                        // px
+ *   max: 600,                        // px
+ *   position: 'top' | 'bottom',      // côté de la poignée (défaut: 'bottom')
+ *   cssVarName: '--messenger-height',// défaut: '--resizable-height'
+ *   callback: (newHeight) => {},
+ * }
+ *
+ * `useResizableElement()` produit cet objet prêt à brancher.
+ */
 export default {
   mounted(el, binding) {
     const options = binding.value || {};

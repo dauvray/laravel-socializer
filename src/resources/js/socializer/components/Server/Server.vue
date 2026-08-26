@@ -11,7 +11,7 @@
         <template v-if="breakpoints.up.lg">
             <section v-if="!isLoading" id="room-sidebar" 
                 ref="sidebar"
-                v-resizable="{
+                v-resizable-width="{
                     min: initialSidebarWidth,
                     max: 600,
                     callback: updateSidebarWidth
@@ -112,7 +112,7 @@
     import { useReverbChannel } from '~socializer/components/System/composables/useReverbChannel.js'
 
     // UTILS & DIRECTIVES
-    import vResizable from "~socializer/directives/resizable_vertical.js"
+    import vResizableWidth from "~socializer/directives/resizable_width.js"
     import FormsSettingHelper from '~socializer/services/FormsSetting.js'
     import IconWidget from '~estarter/components/widgets/IconWidget.vue'
     import Gravatar from '~estarter/components/widgets/Gravatar.vue'

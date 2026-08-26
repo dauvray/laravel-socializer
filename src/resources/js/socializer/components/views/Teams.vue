@@ -5,7 +5,7 @@
             <div id="room-header-tools"></div>
 
             <div class="conversations-list-wrapper"
-                v-resizable="{
+                v-resizable-width="{
                     min: initialSidebarWidth,
                     max: 600,
                     callback: updateSidebarWidth
@@ -47,7 +47,7 @@
     import { mapActions, mapState } from 'pinia'
     import { useChatStore } from '~socializer/stores/chat.js'
     import { useConversationsStore } from '~socializer/stores/conversations.js'
-    import resizable from "~socializer/directives/resizable_vertical.js"
+    import resizableWidth from "~socializer/directives/resizable_width.js"
     import ConversationCreatorButton from '~socializer/components/Chat/widgets/ConversationCreatorButton.vue'
 
     export default {
@@ -58,7 +58,7 @@
             ChatComponent,
         },
         directives: {
-            resizable,
+            resizableWidth,
         },
         data() {
             return {

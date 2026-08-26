@@ -1,13 +1,18 @@
-/*
-    binding.value = {
-        min: 200,
-        max: 600,
-    callback: updateSidebarWidth,
-    handle: 'right',      // 'left' | 'right' (default: 'right')
-    handleWidth: 3,       // visual line width in px
-    handleHitArea: 10     // draggable zone width in px
-    }        
-*/
+/**
+ * Redimensionne la LARGEUR de l'élément — poignée verticale (`ew-resize`),
+ * posée à gauche ou à droite selon `options.handle`.
+ *
+ * Écrit `el.style.width` en dur (et force `position: relative` sur l'élément).
+ *
+ * binding.value = {
+ *     min: 200,
+ *     max: 600,
+ *     callback: updateSidebarWidth,
+ *     handle: 'right',      // 'left' | 'right' (default: 'right')
+ *     handleWidth: 3,       // visual line width in px
+ *     handleHitArea: 10     // draggable zone width in px
+ * }
+ */
 
 export default {
     mounted(el, binding) {

@@ -5,7 +5,7 @@
              <ChatComponent
                 v-if="chatId && showChat"
                 ref="chat"
-                v-resizable="{
+                v-resizable-width="{
                     min: 400,
                     max: 800,
                     callback: updateChatWidth
@@ -49,7 +49,7 @@
     import { mapActions, mapState } from 'pinia'
     import { usePeerStore } from '~socializer/stores/peers.js'
     import { useMeStore } from '~estarter/stores/me.js'
-    import resizable from "~socializer/directives/resizable_vertical.js";
+    import resizableWidth from "~socializer/directives/resizable_width.js";
 
     export default {
         name: 'ClassRoomComponent',
@@ -76,7 +76,7 @@
             DataUserPeerConnection,
         },
         directives: {
-            resizable,
+            resizableWidth,
         },
         data() {
             return {

@@ -120,7 +120,7 @@ laravel-socializer/
 callbacks/     8 callbacks WebRTC (screen|stream|visio|vocal × player|playerData)
 components/    un dossier par module — voir modules/
 composables/   transverses : useBreakpoints · useFileAttachments · useResizableElement · useStickyScroll
-directives/    draggable · resizable · resizable_horizontal · resizable_vertical
+directives/    draggable · resizable (grip 2D, players média) · resizable_height · resizable_width
 routes/application.js         routes vue-router du package (lazy + meta.breadcrumb)
 services/      FormsSetting · helpers · iframe-components
 stores/        stores Pinia

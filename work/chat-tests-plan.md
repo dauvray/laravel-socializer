@@ -220,7 +220,7 @@ et des propriétés de dimension.
 - stubs globaux `Echo`, `vue-router` (`useRoute`), `eventBus` (provide) — cf. section infra
 - stores réels seedés (`useChatStore`, `useMeStore`) via helper
 - composants asynchrones (`RoomUsersList`, `ModalWidget`, `UploadFilesTable`) en `stubs`
-- directive `v-resizable` : la fournir en `global.directives` ou stub no-op
+- directive `v-resizable-height` : la fournir en `global.directives` (clé `resizableHeight`) ou stub no-op
 - `mount(ChatComponent, { global: { plugins:[pinia], provide:{eventBus}, stubs, directives }, props })`
 
 ---

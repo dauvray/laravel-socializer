@@ -63,7 +63,7 @@
                 <div class="chat-messenger-ghost"></div>
                 <div class="chat-messenger"
                     ref="messenger"
-                    v-resizable="resizeOptions">
+                    v-resizable-height="resizeOptions">
                     <div v-if="actors.length"
                         class="chat-messenger-writting">
                         <SpinnerTextWriting></SpinnerTextWriting>
@@ -135,7 +135,7 @@
 
     // UTILS & DIRECTIVES
     import { shouldShowDateSeparator as computeDateSeparator } from '~socializer/components/Chat/utils/dateSeparator.js'
-    import resizable from "~socializer/directives/resizable_horizontal.js"
+    import vResizableHeight from "~socializer/directives/resizable_height.js"
     import IntersectionObserver from '~socializer/components/widgets/IntersectionObserver.vue'
 
     // COMPOSANTS
@@ -148,9 +148,6 @@
     const RoomUsersList = defineAsyncComponent(() => import('~socializer/components/Server/widgets/RoomUsersList.vue'))
     const ModalWidget = defineAsyncComponent(() => import('~estarter/components/widgets/ModalLazy.js'))
     const UploadFilesTable = defineAsyncComponent(() => import('~socializer/components/Chat/widgets/partials/UploadFilesTable.vue'))
-
-    // Directive locale (template : v-resizable)
-    const vResizable = resizable
 
     const props = defineProps({
         vertexId: {
@@ -224,7 +221,7 @@
 
     /*------ RESIZE HAUTEUR DU MESSENGER ----------*/
     // Comportement générique (clamp + variable CSS + reset) délégué au composable.
-    // `resizeOptions` est branché tel quel sur la directive v-resizable.
+    // `resizeOptions` est branché tel quel sur la directive v-resizable-height.
     const {
         applySize: updateElHeight,
         reset: resetMessengerHeight,

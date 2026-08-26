@@ -68,7 +68,7 @@ Seul `useTypingIndicator` est local.
 |---------|----------------|
 | `~socializer/composables/useFileAttachments.js` | `attachedFiles`, `onFileAdded`, `removeFromList`, `clear` |
 | `~socializer/composables/useStickyScroll.js` | auto-scroll + pagination infinie |
-| `~socializer/composables/useResizableElement.js` | resize générique via variable CSS ; `resizeOptions` à brancher sur `v-resizable`. ⚠️ directive `resizable_horizontal` = poignée horizontale ⇒ resize **hauteur** (pas un bug) |
+| `~socializer/composables/useResizableElement.js` | resize générique via variable CSS (clamp min/max + reset) ; `resizeOptions` à brancher sur `v-resizable-height`, qui écrit `--messenger-height` |
 | `Chat/composables/useTypingIndicator.js` | indicateur « écrit… » ; transport **unifié Reverb** (whisper `typing` entre users + signal serveur pour Agent Bot) |
 | `Chat/utils/dateSeparator.js` | fonction pure `shouldShowDateSeparator(messages, index, displaySeparator)` |
 
@@ -88,7 +88,7 @@ rétrocompatibles). Région volontairement laissée hors slots : `IntersectionOb
 | `message` | `{ item, index, conversationId, onSelectedEmoji, onDeleteMessage, onUpdateMessage, onShowFile }` | `MessageWidget` |
 | `input` | `{ startWritting, stopWritting, onSendMessage, onWysiwyg, updateHeight, onRecorded, onFileAdded, removeFromList }` | `TextareaMessage` |
 
-**Contrat `#input`** : le `messenger` ref + `v-resizable` restent sur le `<div.chat-messenger>`
+**Contrat `#input`** : le `messenger` ref + `v-resizable-height` restent sur le `<div.chat-messenger>`
 (non slotté) → resize OK quel que soit le contenu. En revanche, un input custom **riche**
 (pièces jointes + WYSIWYG) doit exposer `removeFile(id)` et `scrollHeight` (utilisés par
 `onRemoveFile`/`onWysiwyg`). Pour un input **simple** (champ + bouton), il suffit d'appeler
