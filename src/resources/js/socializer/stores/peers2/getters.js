@@ -1,4 +1,9 @@
 import { waitingPeerIdKey } from '~socializer/stores/peers2/keys.js'
+// La politique du bail vit avec les autres réglages du module, où elle porte son
+// dimensionnement. L'alternative — passer la durée en argument depuis les deux sites
+// d'appel — dupliquerait la POLITIQUE sur deux lecteurs : la classe de divergence
+// silencieuse contre laquelle keys.js a été extrait.
+import { REMOTE_PEER_ID_LEASE_MS } from '~socializer/components/WebRTC2/webrtc2.config.js'
 
 export default {
 
@@ -203,8 +208,73 @@ export default {
     hasRemotePeerId: (state) => (userSlug) => {
         return state.remotePeersId.has(userSlug)
     },
+    /**
+     * Le peerId connu de ce pair — **aveugle au bail**, et ça n'est pas négociable.
+     *
+     * C'est ce que lisent les gardes d'admission : le chemin (b) de
+     * `_isAuthorizedIncomingPeer` (allowlist de l'appel direct, `getRemotePeerId(from)
+     * === conn.peer`) et l'anti-usurpation par résolution inverse. Y brancher une
+     * péremption transformerait une expiration en REFUS — refermant la visio 1-à-1 hors
+     * room, que `securite.md` désigne comme la non-régression à ne jamais casser.
+     *
+     * Rend `undefined` quand l'entrée manque, comme le `Map.get` qu'il remplace.
+     */
     getRemotePeerId: (state) => (userSlug) => {
-        return state.remotePeersId.get(userSlug)
+        return state.remotePeersId.get(userSlug)?.peerId
+    },
+    /**
+     * Le peerId de ce pair **si le bail court encore** — sinon rien.
+     *
+     * Seuls lecteurs autorisés : les deux points de décision d'appel de
+     * `useConnectionPool` (`requestOrConnectPeer` et `_handleConnectionAttempt`). Aucun
+     * garde d'admission ne doit lire ceci (cf. `getRemotePeerId` ci-dessus).
+     *
+     * ⚠️ **Ne supprime rien.** « Je ne compose plus » n'est pas « je ne reconnais plus » :
+     * l'entrée reste l'allowlist du chemin (b). L'appelant redemande la signalisation, et
+     * la réponse ré-estampille l'entrée.
+     *
+     * ⚠️ **Fonction, pas `computed`** — même raison que les getters du haut de ce fichier,
+     * par un troisième chemin : un `computed` mettrait en cache le VERDICT de fraîcheur,
+     * qui dépend de l'horloge et d'aucune dépendance réactive. Il ne se réévaluerait
+     * jamais.
+     *
+     * **Fail-closed** : une entrée sans estampille numérique n'est pas composable. C'est
+     * ce qu'écrirait un double de test qui aurait oublié le tampon, et composer sur la foi
+     * d'une entrée dont on ignore l'âge est exactement ce que ce getter interdit.
+     */
+    getDialableRemotePeerId: (state) => (userSlug) => {
+        const entry = state.remotePeersId.get(userSlug)
+        if (!entry?.peerId || typeof entry.learnedAt !== 'number') return undefined
+
+        return (Date.now() - entry.learnedAt) < REMOTE_PEER_ID_LEASE_MS
+            ? entry.peerId
+            : undefined
+    },
+    /**
+     * La résolution inverse peerId → slug — **aveugle au bail**, et c'est un point de
+     * sécurité, pas d'ergonomie.
+     *
+     * Deux lecteurs en dépendent, et tous deux casseraient en silence :
+     * - la recovery `peer-unavailable` de `usePeerTransport`, qui ne retrouverait plus le
+     *   slug à invalider et sortirait sur `if (!targetSlug) return` — le bail détruirait
+     *   le filet qu'il est censé soulager ;
+     * - l'anti-usurpation de `_isAuthorizedIncomingPeer` (`resolvedSlug !== declaredFrom`),
+     *   qui cesserait de mordre dès l'expiration. Une péremption temporelle sur une lecture
+     *   anti-usurpation est un contournement planifiable par l'attaquant.
+     *
+     * Rend le PREMIER slug qui matche : l'ordre d'insertion de la `Map`, à l'identique des
+     * deux boucles écrites à la main qu'elle remplace. Un peerId mappé sur deux slugs est
+     * la signature d'une usurpation, que l'admission refuse sur la contradiction.
+     */
+    getSlugByRemotePeerId: (state) => (peerId) => {
+        if (!peerId) return null
+        const wanted = String(peerId)
+
+        for (const [slug, entry] of state.remotePeersId.entries()) {
+            if (entry?.peerId && String(entry.peerId) === wanted) return slug
+        }
+
+        return null
     },
 
     /*--------------------------

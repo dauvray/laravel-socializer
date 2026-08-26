@@ -18,6 +18,7 @@ import { createMockContext } from './helpers/createMockContext.js'
 import { withSetup } from './helpers/withSetup.js'
 import { resetPeerMock, getLastPeerInstance } from './__mocks__/peerjs.js'
 import { usePeerTransport } from '~socializer/components/WebRTC2/Composables/usePeerTransport.js'
+import { REMOTE_PEER_ID_LEASE_MS } from '~socializer/components/WebRTC2/webrtc2.config.js'
 
 const CTX_ID = 'stream-live'
 const ROOM = 'live'
@@ -112,6 +113,25 @@ describe('usePeerTransport — recovery peer-unavailable', () => {
 
         expect(ctx.peerStore.getRemotePeerId('bob')).toBeNull()
         expect(ctx.peerUnavailableSignal.value).toBe('bob')
+    })
+
+    it('⭐ retrouve le slug d\'un peerId dont le BAIL a expiré', () => {
+        // La recovery résout peerId → slug par `getSlugByRemotePeerId`, qui doit être
+        // aveugle au bail (REMOTE_PEER_ID_LEASE_MS) : un peerId mort est justement le cas
+        // où le bail a le plus de chances d'avoir expiré. Rendre cette résolution
+        // périmable ferait sortir la recovery sur `if (!targetSlug) return` — le bail
+        // détruirait le filet qu'il est censé soulager, en silence.
+        //
+        // Ce fichier tourne en timers réels : `setSystemTime` seul avance l'horloge (il ne
+        // mocke que `Date`), d'où le `useRealTimers` en fin de test.
+        vi.setSystemTime(Date.now() + REMOTE_PEER_ID_LEASE_MS + 1)
+
+        peerInstance._triggerEvent('error', peerUnavailableError())
+
+        expect(ctx.peerStore.getRemotePeerId('bob')).toBeNull()
+        expect(ctx.peerUnavailableSignal.value).toBe('bob')
+
+        vi.useRealTimers()
     })
 
     it('invalide même quand aucune instance de connexion n\'a été stockée', () => {

@@ -24,6 +24,7 @@ import { createPeerBus } from '../__mocks__/peerjs.js'
 import { createFakeSignalingServer } from '../helpers/fakeSignalingServer.js'
 import { createVirtualPeer, connectRoom, settle } from '../helpers/createVirtualPeer.js'
 import { installFakeMedia } from '../helpers/fakeMedia.js'
+import { ENDPOINTS, REMOTE_PEER_ID_LEASE_MS } from '~socializer/components/WebRTC2/webrtc2.config.js'
 
 describe("départ d'un pair", () => {
     let bus
@@ -162,5 +163,67 @@ describe("départ d'un pair", () => {
         aliceV2.api.sendDataToPeer({ message: 'me revoilà' })
         await settle()
         expect(received).toContainEqual({ message: 'me revoilà' })
+    })
+
+    it("⭐ le bail évite l'appel mort : B redemande au lieu de composer (mode data)", async () => {
+        // Même mise en place que le test précédent, à UN détail près : le mapping périmé
+        // est vieux de plus d'un bail. La différence porte donc entièrement sur ce que le
+        // bail change — et ce n'est pas l'issue (la recovery `peer-unavailable` guérissait
+        // déjà, cf. le test précédent) mais son COÛT : un appel vers un numéro mort, une
+        // erreur console, un tour de backoff, et une MediaConnection à moitié ouverte que
+        // `hasOpenConnection` compte comme ouverte.
+        const received = []
+        const aliceV1 = await spawn({ slug: 'alice', type: 'data', peerId: 'peer-alice-v1' })
+        const bob = await spawn({
+            slug: 'bob',
+            type: 'data',
+            callbacks: { onDataReceived: (data) => received.push(data) },
+        })
+
+        await connectRoom([aliceV1, bob])
+        expect(bob.peerStore.getRemotePeerId('alice')).toBe('peer-alice-v1')
+
+        server.goOffline('alice')
+        aliceV1.peerInstance.destroy()
+        await bob.api.syncUsersConnections([{ slug: 'bob' }])
+        await settle()
+
+        // Le veto de présence, reproduit comme au test précédent : un autre contexte de
+        // l'onglet référence encore alice, donc `removeRemotePeerId` ne fait rien et le
+        // mapping mort survit au départ.
+        bob.peerStore.addRemotePeerId('alice', 'peer-alice-v1')
+
+        // ⚠️ `setSystemTime` SANS `useFakeTimers` : il ne mocke que `Date`, donc le
+        // `setTimeout(…, 0)` du faux serveur et le drainage de `settle()` continuent de
+        // tourner. `useFakeTimers` les gèlerait et bloquerait le scénario.
+        // Deux effets de bord, tous deux dans le sens du test : la fenêtre de cadence
+        // d'`/ask-to-peer-id` repart à zéro, et les demandes en vol deviennent stale —
+        // c'est bien un vrai POST qu'on exige ici.
+        vi.setSystemTime(Date.now() + REMOTE_PEER_ID_LEASE_MS + 1)
+        bob.peerInstance.connect.mockClear()
+
+        server.goOnline('alice')
+        const aliceV2 = await spawn({ slug: 'alice', type: 'data', peerId: 'peer-alice-v2' })
+        await connectRoom([aliceV2, bob])
+
+        // ⭐ Le fait qui compte, et le seul qui rougisse sans le bail : bob n'a jamais
+        // composé le numéro mort. Mesuré sur le `Peer` lui-même — un log console
+        // dépendrait du texte d'un message d'erreur de PeerJS.
+        const appelsMorts = bob.peerInstance.connect.mock.calls
+            .filter(([peerId]) => peerId === 'peer-alice-v1')
+        expect(appelsMorts).toHaveLength(0)
+
+        // Il a redemandé la signalisation à la place.
+        const demandes = server.requestsTo(ENDPOINTS.ASK_TO_PEER_ID)
+            .filter((request) => request.from === 'bob' && request.data?.toUserSlug === 'alice')
+        expect(demandes.length).toBeGreaterThan(0)
+
+        // Et l'issue reste la même qu'avec la recovery : le canal vit sur le peerId frais.
+        expect(bob.peerStore.getRemotePeerId('alice')).toBe('peer-alice-v2')
+        aliceV2.api.sendDataToPeer({ message: 'me revoilà' })
+        await settle()
+        expect(received).toContainEqual({ message: 'me revoilà' })
+
+        vi.useRealTimers()
     })
 })

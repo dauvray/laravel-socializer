@@ -20,8 +20,9 @@
  *   inconditionnel, et purge toutes les demandes en vol pour que la re-demande qui suit
  *   ne soit pas étranglée par le throttle SIGNALING_STALE_MS.
  */
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { usePeer2Store } from '~socializer/stores/peers2.js'
+import { REMOTE_PEER_ID_LEASE_MS } from '~socializer/components/WebRTC2/webrtc2.config.js'
 
 describe('peers2 — cycle de vie des peerId distants', () => {
     let store
@@ -159,6 +160,111 @@ describe('peers2 — cycle de vie des peerId distants', () => {
             const entry = store.getWaitingRemotePeerId('bob', 'room-test', 'stream')
             expect(entry.createdAt).toBeTypeOf('number')
             expect(entry.userSlug).toBe('bob')
+        })
+    })
+
+    /**
+     * Le bail — REMOTE_PEER_ID_LEASE_MS.
+     *
+     * Un troisième régime, à ne pas confondre avec les deux verbes ci-dessus : l'existence
+     * de l'entrée est gouvernée par la présence (`removeRemotePeerId`) et par le fait de
+     * mort (`invalidateRemotePeerId`) ; le bail ne gouverne que la CONFIANCE accordée à
+     * l'entrée pour composer un appel.
+     *
+     * Il ne supprime donc rien, et c'est structurel : le même mapping sert d'allowlist au
+     * chemin (b) de `_isAuthorizedIncomingPeer` et d'index anti-usurpation par résolution
+     * inverse. Une péremption qui supprimerait refermerait la visio 1-à-1 hors room, et une
+     * résolution inverse périmable serait un contournement planifiable par l'attaquant.
+     */
+    describe('le bail (REMOTE_PEER_ID_LEASE_MS)', () => {
+        beforeEach(() => {
+            vi.useFakeTimers()
+            // Ré-appris SOUS l'horloge factice : l'estampille du beforeEach parent a été
+            // posée avec l'horloge réelle.
+            store.addRemotePeerId('bob', 'peer-bob')
+        })
+
+        afterEach(() => {
+            vi.useRealTimers()
+        })
+
+        it('horodate l\'entrée à l\'apprentissage', () => {
+            expect(store.remotePeersId.get('bob').learnedAt).toBeTypeOf('number')
+        })
+
+        it('getRemotePeerId rend la chaîne nue, jamais l\'entrée', () => {
+            // Garde de forme : c'est ce que lisent les deux gardes d'admission et une
+            // trentaine d'assertions d'identité de la suite.
+            expect(store.getRemotePeerId('bob')).toBeTypeOf('string')
+            expect(store.getRemotePeerId('bob')).toBe('peer-bob')
+        })
+
+        it('autorise à composer tant que le bail court', () => {
+            vi.advanceTimersByTime(REMOTE_PEER_ID_LEASE_MS - 1)
+
+            expect(store.getDialableRemotePeerId('bob')).toBe('peer-bob')
+        })
+
+        it('n\'autorise plus à composer une fois le bail échu', () => {
+            vi.advanceTimersByTime(REMOTE_PEER_ID_LEASE_MS + 1)
+
+            expect(store.getDialableRemotePeerId('bob')).toBeFalsy()
+        })
+
+        it('⭐ un bail échu ne SUPPRIME rien — l\'entrée reste reconnue', () => {
+            vi.advanceTimersByTime(REMOTE_PEER_ID_LEASE_MS + 1)
+
+            // « Je ne compose plus » n'est pas « je ne reconnais plus » : l'entrée est
+            // l'allowlist du chemin (b) de l'admission entrante.
+            expect(store.hasRemotePeerId('bob')).toBe(true)
+            expect(store.getRemotePeerId('bob')).toBe('peer-bob')
+        })
+
+        it('ré-apprendre la MÊME valeur renouvelle le bail', () => {
+            // C'est ce qui fait qu'une room saine ne paie pas un aller-retour de
+            // signalisation par minute : `connectToPeer` écrit à chaque preuve reçue.
+            vi.advanceTimersByTime(REMOTE_PEER_ID_LEASE_MS - 1)
+            store.addRemotePeerId('bob', 'peer-bob')
+
+            vi.advanceTimersByTime(REMOTE_PEER_ID_LEASE_MS - 1)
+            expect(store.getDialableRemotePeerId('bob')).toBe('peer-bob')
+        })
+
+        it('rend falsy sur un slug inconnu', () => {
+            expect(store.getDialableRemotePeerId('inconnu')).toBeFalsy()
+        })
+
+        it('fail-closed : une entrée sans estampille n\'est pas composable', () => {
+            // Ce qu'écrirait un double de test qui aurait oublié le tampon. Composer sur
+            // la foi d'une entrée dont on ne sait pas l'âge est exactement ce que le bail
+            // interdit.
+            store.remotePeersId.set('carol', { peerId: 'peer-carol' })
+
+            expect(store.getDialableRemotePeerId('carol')).toBeFalsy()
+            expect(store.getRemotePeerId('carol')).toBe('peer-carol')
+        })
+
+        it('⭐ getSlugByRemotePeerId est AVEUGLE au bail', () => {
+            vi.advanceTimersByTime(REMOTE_PEER_ID_LEASE_MS + 1)
+
+            // Deux lecteurs en dépendent, et les deux casseraient en silence : la recovery
+            // `peer-unavailable` (qui ne retrouverait plus le slug à invalider) et
+            // l'anti-usurpation par résolution inverse de `_isAuthorizedIncomingPeer` —
+            // qu'un attaquant n'aurait plus qu'à attendre pour la contourner.
+            expect(store.getSlugByRemotePeerId('peer-bob')).toBe('bob')
+        })
+
+        it('getSlugByRemotePeerId rend null sur un peerId inconnu', () => {
+            expect(store.getSlugByRemotePeerId('peer-fantome')).toBeNull()
+        })
+
+        it('getSlugByRemotePeerId rend le premier slug quand un peerId est mappé deux fois', () => {
+            // Cas réel, et testé côté admission : deux slugs pour un même peerId est la
+            // signature d'une usurpation, que `_isAuthorizedIncomingPeer` refuse sur la
+            // contradiction. L'ordre d'insertion est celui de la Map.
+            store.addRemotePeerId('mallory', 'peer-bob')
+
+            expect(store.getSlugByRemotePeerId('peer-bob')).toBe('bob')
         })
     })
 })

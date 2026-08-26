@@ -511,9 +511,20 @@ export default {
         if (this.isUserInAnyRoom(userSlug)) return
         this.remotePeersId.delete(userSlug)
     },
-    // Enregistrer l’id d’un peer distant lorsqu’il est reçu
+    /**
+     * Enregistrer l'id d'un peer distant lorsqu'il est reçu.
+     *
+     * Estampille l'entrée : c'est le **renouvellement du bail**
+     * (`REMOTE_PEER_ID_LEASE_MS`), et il n'est pas conditionné à un changement de valeur.
+     * Ré-apprendre le même peerId est une preuve fraîche que ce peerId est le bon — c'est
+     * ce qui fait qu'une room saine ne paie jamais d'aller-retour de signalisation
+     * supplémentaire, `connectToPeer` écrivant à chaque réponse reçue.
+     *
+     * @param {string} userSlug
+     * @param {string} peerId
+     */
     addRemotePeerId(userSlug, peerId) {
-        this.remotePeersId.set(userSlug, peerId)
+        this.remotePeersId.set(userSlug, { peerId, learnedAt: Date.now() })
     },
 
     /**

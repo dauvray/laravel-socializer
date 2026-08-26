@@ -69,6 +69,9 @@
                     <ul>
                         <li v-for="entry in remotePeerIds" :key="entry.slug">
                             {{ entry.slug }} → <code>{{ entry.peerId }}</code>
+                            <span :class="stateClass(entry.ageMs < REMOTE_PEER_ID_LEASE_MS)">
+                                (bail {{ entry.ageMs }} ms)
+                            </span>
                         </li>
                         <li v-if="!remotePeerIds.length"><em>aucun</em></li>
                     </ul>
@@ -115,6 +118,7 @@
      */
     import { computed } from 'vue'
     import { usePeer2Store } from '~socializer/stores/peers2.js'
+    import { REMOTE_PEER_ID_LEASE_MS } from '~socializer/components/WebRTC2/webrtc2.config.js'
 
     const props = defineProps({
         api: Object,
@@ -126,9 +130,20 @@
 
     const _room = computed(() => props.api?.currentCallRoomId?.value || props.api?.onAirRoom?.value)
 
-    /** Mapping slug → peerId : partagé par tout l'onglet, d'où l'absence de filtre. */
+    /**
+     * Mapping slug → peerId : partagé par tout l'onglet, d'où l'absence de filtre.
+     *
+     * `ageMs` est l'âge du bail (`REMOTE_PEER_ID_LEASE_MS`) : au-delà, on ne compose plus
+     * sur cette entrée, on redemande la signalisation. C'est l'information qui manquait
+     * pour diagnostiquer un « Could not connect to peer <uuid> » — comme pour
+     * `pendingRequests`, l'âge ne se rafraîchit qu'au changement de la Map.
+     */
     const remotePeerIds = computed(() =>
-        [...(peerStore.remotePeersId?.entries?.() ?? [])].map(([slug, peerId]) => ({ slug, peerId }))
+        [...(peerStore.remotePeersId?.entries?.() ?? [])].map(([slug, entry]) => ({
+            slug,
+            peerId: entry?.peerId,
+            ageMs: Date.now() - (entry?.learnedAt ?? Date.now()),
+        }))
     )
 
     /** Demandes émises par CE contexte et encore sans réponse. */

@@ -24,7 +24,7 @@ détectable : ils ne sont vrais ou faux que **vus du pair d'en face**.
 `scenarios/` couvre aujourd'hui `harness.smoke` (le harnais lui-même — sans lui, un scénario rouge
 serait indistinguable d'un harnais cassé), `lateJoiner` (le symptôme), `broadcastLifecycle` (arrêter
 un flux n'en emporte pas un autre), `peerDeparture` (coupure brutale, peerId oublié, retour avec
-un nouveau peerId), `multiContext` (plusieurs contextes dans le même onglet — la forme réelle
+un nouveau peerId, et le bail qui évite l'appel mort), `multiContext` (plusieurs contextes dans le même onglet — la forme réelle
 d'une page, cf. [ci-dessous](#un-onglet-plusieurs-contextes), et l'ordre de montage réel :
 `data-app` d'abord, diffusion ensuite), `outgoingAuth` (un tiers ne peut pas se faire pousser un
 flux) et `incomingMappingInvariant` (à quel instant le mapping slug→peerId est posé, relativement à
@@ -159,13 +159,30 @@ verbe demanderait de monter `Notifications.vue`, et le scénario ne parlerait pl
   changement d'identité) alors que `getQueueForRoom` lit `_signalQueueRooms` (objet nu, non réactif) :
   deux structures déconnectées. **Tout test de drain de file serait un faux positif** avant
   correction du mock.
+- **Le bail se lit avec la constante, jamais avec un littéral**, et le mock stocke la même FORME
+  de valeur que le store (`{ peerId, learnedAt }`). `createMockContext` importe donc
+  `REMOTE_PEER_ID_LEASE_MS` pour la raison exacte qui lui fait importer `waitingPeerIdKey` : une
+  seconde implémentation d'un contrat partagé diverge sans jamais lever. Corollaire **fail-closed**
+  des deux côtés : une entrée sans estampille numérique n'est **pas** composable — le choix inverse
+  rendrait verts, pour la mauvaise raison, tous les tests de composition dès qu'un double
+  oublierait le tampon.
+- **Un bail a deux versants, et les tests du transport n'en exercent qu'un.** Rendre
+  `getRemotePeerId` / `getSlugByRemotePeerId` sensibles au temps dans le **vrai** store laisse
+  `usePeerTransport.incomingAuth` et `.peerUnavailable` **entièrement verts** : ils lisent le
+  mock. Ces fichiers épinglent donc la cécité au bail du *harnais* ; celle du store est épinglée à
+  part, sur Pinia réel, par `peers2Store.remotePeerId.test.js`. Même règle que le minuteur ICE
+  ci-dessous — **le contrôle de harnais doit neutraliser les deux côtés**, sinon il ne prouve que
+  celui qu'on a doublé. (Contre-épreuve faite dans les deux sens le 26/08/2026.)
 - **`hasOpenConnection` ne peut pas servir de prédicat côté récepteur** : `usePeerTransport`
   n'enregistre **jamais** de connexion dans le store (aucun `prepareRoomConnection` /
   `storePeerConnection` dans tout le fichier ; seul `usePeerConnections._saveRoomConnection` en
   écrit, côté **initiateur**). Pour un appel one-way entrant, le récepteur se contente de
   `call.answer()` + `setUpConnectionListeners()`. Un correctif conditionné à ce prédicat est **inerte**
   côté récepteur — et son test vert uniquement parce que le mock fournit une information que le vrai
-  store ne peut pas donner. C'est arrivé.
+  store ne peut pas donner. C'est arrivé. C'est aussi ce qui a fait écarter la variante « fraîcheur
+  du bail par preuve de connexion » : la preuve qu'elle chercherait est **produite par le bug** —
+  une `MediaConnection` à moitié ouverte compte comme ouverte, c'est-à-dire exactement l'état d'un
+  pair qui vient de recharger sa page.
 - **`handleRemoteDeparture` avale ses exceptions** : une purge qui jette avant d'atteindre l'entrée
   visée rend le test vert. Poser un garde `console.error` dans le test.
 - **`setLocalPeer` mocké par `vi.fn(() => true)`** fabrique un booléen que la production ne produit
@@ -201,6 +218,18 @@ verbe demanderait de monter `Notifications.vue`, et le scénario ne parlerait pl
   peer n'est pas détruit » serait vert pour rien.
 - **`getLastPeerInstance()` / `resetPeerMock()` / `instance._triggerEvent('open', 'peer-id')`** sont
   les entrées du mock PeerJS ; `vi.useFakeTimers()` pour le délai de destruction et le backoff.
+- **Faire vieillir une horloge : `vi.setSystemTime()`, et surtout pas une avance de minuteurs.**
+  Deux pièges distincts, tous deux rencontrés en posant le bail des peerId :
+  - Dans un **scénario**, `vi.useFakeTimers()` gèlerait le `setTimeout(…, 0)` du faux serveur de
+    signalisation et bloquerait le test. `setSystemTime` seul ne mocke que `Date` : `settle()` et la
+    règle « une tâche par signal » continuent de tourner. Restaurer par `vi.useRealTimers()`.
+  - Dans un test **à minuteurs factices**, `advanceTimersByTime(REMOTE_PEER_ID_LEASE_MS)` jouerait
+    toute la chaîne de retry (le bail est dimensionné **au-dessus** de son horizon, ≈55 s) : le
+    moteur aurait abandonné avant la première assertion. `setSystemTime` décale l'horloge **et** les
+    échéances en vol du même delta — le temps a passé, rien ne s'est exécuté.
+
+  Deux effets de bord assumés, dans le bon sens : la fenêtre glissante d'`/ask-to-peer-id` repart à
+  zéro, et les `createdAt` des demandes en vol deviennent stale.
 
 ---
 

@@ -119,6 +119,48 @@ export const AWAITED_STREAM_TIMEOUT_MS = 20_000
  */
 export const SIGNALING_STALE_MS = 12_000
 
+// ─── Bail des peerId distants ─────────────────────────────────────────────
+/**
+ * Durée (ms) pendant laquelle un peerId distant appris est jugé assez frais pour qu'on
+ * COMPOSE dessus. Passé ce délai, `peerStore.getDialableRemotePeerId` ne le rend plus et
+ * les deux points de décision de `useConnectionPool` redemandent la signalisation au lieu
+ * d'appeler un numéro dont plus rien n'atteste qu'il existe encore.
+ *
+ * ⚠️ **Le bail ne gouverne que la confiance, jamais l'existence de l'entrée.** Le même
+ * mapping sert d'allowlist au chemin (b) de `_isAuthorizedIncomingPeer` et d'index
+ * anti-usurpation par résolution inverse : `getRemotePeerId` et `getSlugByRemotePeerId`
+ * sont donc aveugles au bail, par construction (cf. `securite.md`). Une expiration qui
+ * supprimerait refermerait la visio 1-à-1 hors room ; une résolution inverse périmable
+ * serait un contournement qu'un attaquant n'aurait qu'à attendre.
+ *
+ * Le bail est **renouvelé sur preuve** : `connectToPeer` écrit le mapping à chaque réponse
+ * de signalisation reçue (et avant ses gardes, à dessein), donc une room saine ne paie
+ * jamais d'aller-retour supplémentaire.
+ *
+ * Dimensionnement — quatre relations, la première étant une contrainte d'ordre dure :
+ * - **> l'horizon du moteur de retry (≈ 55 s)** : `MAX_RETRY_ATTEMPTS` = 8 avec
+ *   `min(1000·2^n, 10_000)` place les tentatives à t = 1, 3, 7, 15, 25, 35, 45, 55 s. Un
+ *   bail plus court ferait changer d'avis le moteur EN COURS de chaîne, alors que son
+ *   contrat est d'insister sur cet id jusqu'à l'abandon.
+ * - **≈ `alive_timeout` du serveur PeerJS (60 s)** : passé ce délai la socket de l'ancien
+ *   `Peer` distant n'existe plus côté serveur — un id plus vieux que le bail n'a donc plus
+ *   de contrepartie, même dans l'hypothèse la plus optimiste. C'est ce qui rend 60 s
+ *   signifiant plutôt qu'arbitraire (cf. la violation `peer-orphelin` de
+ *   `peerStateViolations`).
+ * - **5 × `SIGNALING_STALE_MS`** : la re-demande qui suit l'expiration est elle-même
+ *   cadencée par ce throttle ; à quelques multiples près, expiration et étranglement
+ *   deviendraient indiscernables.
+ * - **6 × `PEER_DESTROY_DELAY_MS`** : le bail doit survivre à un démontage/remontage
+ *   ordinaire de provider (navigation SPA), sinon il coûte un aller-retour pour rien.
+ *
+ * Il n'étrangle pas le plafond de cadence : le bail ne change pas le NOMBRE de tentatives,
+ * seulement la branche qu'une tentative prend. Au pire (chaque POST échoue, donc aucun
+ * drapeau `waiting` posé), les tentatives de la première fenêtre sont t = 1, 3, 7 s, soit
+ * exactement les 3 de `ASK_PEER_MAX_REQUESTS_PER_WINDOW` ; ensuite les tentatives sont
+ * espacées de 10 s.
+ */
+export const REMOTE_PEER_ID_LEASE_MS = 60_000
+
 // ─── Backoff exponentiel reconnexion PeerJS ───────────────────────────────
 /**
  * Délai de base (ms) pour le backoff exponentiel sur l'événement 'disconnected'.

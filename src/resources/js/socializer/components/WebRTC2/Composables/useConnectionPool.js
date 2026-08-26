@@ -114,7 +114,12 @@ export function useConnectionPool(ctx, { core, connections }) {
         // 1. Succès ultime : la connexion attendue est réellement ÉTABLIE.
         if (isEstablished()) return true
 
-        const remotePeerId = ctx.peerStore.getRemotePeerId(userSlug)
+        // ⚠️ Le peerId SOUS BAIL, jamais `getRemotePeerId` : passé
+        // REMOTE_PEER_ID_LEASE_MS sans preuve fraîche, l'entrée du store ne vaut plus
+        // qu'on compose dessus — un pair qui a rechargé sa page a un peerId neuf, et rien
+        // ici ne l'a appris. Le tour tombe alors dans la branche 2 (redemander) ou 4
+        // (relancer la demande en vol), et la réponse ré-estampille l'entrée.
+        const remotePeerId = ctx.peerStore.getDialableRemotePeerId(userSlug)
         const waiting = _myPendingRequest(userSlug, ctx.currentType.value)
 
         // 2. Ni peerId, ni demande en vol. DEUX situations opposées se ressemblent ici, et
@@ -242,7 +247,10 @@ export function useConnectionPool(ctx, { core, connections }) {
         const effectiveType = type || ctx.currentType.value
         if (connections.hasOpenConnection(userSlug, null, effectiveType)) return
 
-        const remotePeerId = ctx.peerStore.getRemotePeerId(userSlug)
+        // Sous bail uniquement — cf. _handleConnectionAttempt. Le garde
+        // `hasOpenConnection` ci-dessus reste AVANT cette lecture : un bail échu ne doit
+        // jamais déranger une connexion en place.
+        const remotePeerId = ctx.peerStore.getDialableRemotePeerId(userSlug)
         const waiting = _myPendingRequest(userSlug, effectiveType)
 
         if (remotePeerId) {

@@ -150,6 +150,29 @@ Conséquence de conception : « peerId non résolu » ne vaut **pas** refus, sou
 diffusion en room. L'admission est accordée et tracée (`console.debug`, « Admission entrante non
 corroborée ») — la trace mesure la surface que le contrôle backend devra couvrir.
 
+### Le bail des peerId ne touche pas l'allowlist
+
+Le mapping `remotePeersId` porte depuis le 26/08/2026 un **bail** (`REMOTE_PEER_ID_LEASE_MS`,
+cf. [architecture.md](architecture.md#un-onglet-plusieurs-contextes--la-granularité-des-clés-du-store)).
+Trois faits, à ne pas relire de travers :
+
+1. **Le bail ne concerne qu'un seul des trois lecteurs du mapping.** Composer un appel
+   (`getDialableRemotePeerId`, lu uniquement par `useConnectionPool`) est sous bail ;
+   l'allowlist du chemin (b) (`getRemotePeerId`) et la résolution inverse anti-usurpation
+   (`getSlugByRemotePeerId`) sont **aveugles au temps**.
+2. **Un anti-usurpation périmable serait un contournement planifiable par l'attaquant** : il
+   n'aurait qu'à attendre l'expiration du bail pour que `resolvedSlug` revienne `null` et que
+   le refus sur contradiction cesse de mordre. C'est la raison pour laquelle une expiration ne
+   supprime jamais l'entrée — elle filtre une **lecture**, elle ne purge pas.
+3. **Le bail n'ajoute aucun écrivain du mapping.** En particulier, aucune annonce du type
+   « j'ai rechargé, voici mon peerId neuf » : ce serait l'auto-inscription décrite plus haut
+   remise en service. Les trois écrivains restent `usePeerConnections.connectToPeer` et les
+   deux de `useCallManager`, chacun derrière son garde.
+
+Épinglé par `usePeerTransport.incomingAuth.test.js` (« admet encore un interlocuteur d'appel
+direct dont le bail a expiré », « refuse encore une usurpation dont le bail a expiré ») et par
+`peers2Store.remotePeerId.test.js` (« `getSlugByRemotePeerId` est AVEUGLE au bail »).
+
 ⚠️ **`ctx.session.currentCallUsers` ne peut pas servir d'allowlist.** C'est un état **UI** (qui voir,
 qui raccrocher) ; le réutiliser comme politique de sécurité couplerait affichage et autorisation.
 Cet usage a été explicitement retiré. Le chemin (b) l'a remplacé.

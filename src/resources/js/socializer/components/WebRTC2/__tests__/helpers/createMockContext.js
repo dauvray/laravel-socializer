@@ -24,6 +24,8 @@ import { isValidSlug } from '~socializer/components/WebRTC2/Composables/utils/va
 // ⚠️ Importée du store, jamais réécrite ici : la clé est un contrat partagé, une
 // seconde implémentation dans le mock divergerait en silence.
 import { waitingPeerIdKey } from '~socializer/stores/peers2/keys.js'
+// Même raison : le bail est une politique, elle a un seul domicile.
+import { REMOTE_PEER_ID_LEASE_MS } from '~socializer/components/WebRTC2/webrtc2.config.js'
 import { mockEventBus } from './mockEventBus.js'
 
 export function createMockContext(overrides = {}) {
@@ -115,9 +117,11 @@ export function createMockContext(overrides = {}) {
     // ── peerStore mock ────────────────────────────────────────────────────────
     const _connections = {}
     const _players = []
-    // ⚠️ De vraies Map, comme dans peers2/state.js : la recovery `peer-unavailable`
-    // de usePeerTransport fait une recherche inverse en itérant
-    // `peerStore.remotePeersId.entries()` — un objet nu la rendrait inerte.
+    // ⚠️ De vraies Map, comme dans peers2/state.js — et la même FORME DE VALEUR pour
+    // `remotePeersId` : `{ peerId, learnedAt }`. Le tampon n'est pas décoratif, c'est ce
+    // que lit le bail (`getDialableRemotePeerId`) ; un mock qui stockerait la chaîne nue
+    // rendrait toute entrée non composable et ferait rougir des tests pour la mauvaise
+    // raison. `Debug.vue` itère aussi directement ces entrées.
     const _remotePeerIds = new Map()
     const _waitingRemotePeerIds = new Map()
     const _roomMembers = {}
@@ -169,9 +173,36 @@ export function createMockContext(overrides = {}) {
         // sur une collection `markRaw`, un getter Pinia mis en cache figerait le registre.
         getRegisteredContexts: vi.fn(() => [..._contextRegistry.values()]),
 
-        getRemotePeerId: vi.fn((slug) => _remotePeerIds.get(slug) ?? null),
+        getRemotePeerId: vi.fn((slug) => _remotePeerIds.get(slug)?.peerId ?? null),
         hasRemotePeerId: vi.fn((slug) => _remotePeerIds.has(slug)),
-        addRemotePeerId: vi.fn((slug, peerId) => { _remotePeerIds.set(slug, peerId) }),
+        addRemotePeerId: vi.fn((slug, peerId) => {
+            _remotePeerIds.set(slug, { peerId, learnedAt: Date.now() })
+        }),
+        // Le bail, avec la constante du module et jamais un littéral — même doctrine que
+        // `waitingPeerIdKey` importée plus haut : une seconde implémentation d'un contrat
+        // partagé diverge sans jamais lever.
+        //
+        // ⚠️ Fail-closed comme le vrai getter : une entrée sans estampille numérique n'est
+        // pas composable. Le choix inverse rendrait verts pour la mauvaise raison tous les
+        // tests de composition dès qu'un double oublierait le tampon.
+        getDialableRemotePeerId: vi.fn((slug) => {
+            const entry = _remotePeerIds.get(slug)
+            if (!entry?.peerId || typeof entry.learnedAt !== 'number') return undefined
+
+            return (Date.now() - entry.learnedAt) < REMOTE_PEER_ID_LEASE_MS
+                ? entry.peerId
+                : undefined
+        }),
+        // Aveugle au bail, comme le vrai : la recovery `peer-unavailable` et
+        // l'anti-usurpation par résolution inverse en dépendent.
+        getSlugByRemotePeerId: vi.fn((peerId) => {
+            if (!peerId) return null
+            const wanted = String(peerId)
+            for (const [slug, entry] of _remotePeerIds.entries()) {
+                if (entry?.peerId && String(entry.peerId) === wanted) return slug
+            }
+            return null
+        }),
         // Fidèle au store réel : le mapping n'est oublié que si le pair n'est déclaré
         // présent dans AUCUNE room de l'onglet. Le prédicat porte sur `roomMembers`
         // (présence), jamais sur `connections` (connexions PeerJS) — s'en écarter ici

@@ -49,13 +49,6 @@ avant le déménagement revient à les jeter.
   `usePeerOrchestrator.broadcastPresence.test.js`). Et `useCallManager.test.js` +
   `:81-89` sont la spécification de surface à renégocier, pas des dommages collatéraux.
 
-- [ ] **Le bail des peerId distants** `[M]`
-  `remotePeersId` est indexé sur le slug, global à l'onglet, et **sans contrat
-  d'invalidation** : seul `isUserInAnyRoom` autorise à oublier une entrée. Un pair qui recharge
-  sa page obtient un peerId neuf ; l'ancien reste dans le store de tous les autres, qui lui
-  envoient des offres expirant en `peer-unavailable` — c'est la signature exacte du
-  « Could not connect to peer &lt;uuid&gt; » signalé.
-
 - [ ] **Fidélité du mock : `disconnect()` ne met pas `_id` à `null`** `[S]`
   Le vrai `Peer.disconnect()` fait `this._id = null` (`bundler.mjs:1809`) ; le mock conserve
   l'id — écart assumé et documenté (le registre du bus est keyé sur `id`, et trois scénarios
@@ -70,6 +63,35 @@ avant le déménagement revient à les jeter.
   `conn.open = true`. Aucun code de production n'y écrit aujourd'hui (vérifié au grep), donc la
   classe de bug est fermée côté production ; l'étendre demande un verbe de mock et la reprise
   des 12 sites.
+
+---
+
+## Chaîne de présence — deux défauts en amont du bail
+
+> Trouvés en posant **le bail des peerId** (livré le 26/08/2026), qui les rend non fatals sans les
+> corriger : un mapping périmé n'est plus composé, mais une composition de room perdue reste perdue.
+> D'où deux items séparés — mélanger les deux mécanismes dans une même passe rendrait indécidable
+> lequel a fait le travail.
+
+- [ ] **`syncUsersConnections` perd la liste quand son verrou est tenu** `[M]`
+  `useConnectionPool.js:289-291` : appel concurrent ⇒ `return` sec, la composition reçue est
+  **jetée**. Une mise à jour perdue, donc : ni purge des partants, ni connexion aux arrivants. Le
+  correctif juste est une coalescence (retenir la dernière liste, la rejouer à la libération), ce qui
+  touche le contrat de concurrence de tout le pool — à peser avec l'item `[L]` gelé.
+  À voir aussi : l'early-return sur liste vide de `useMediaBroadcast.js:132`.
+
+- [ ] **Le diff de présence ne voit pas un départ+retour coalescés** `[M]`
+  `usePeerConnections.js:45-46` : si `member_removed` et `member_added` tombent dans le même flush
+  Vue, le slug est dans `previousSlugs` **et** `nextSlugs` — `removedUsers` et `newUsers` sont donc
+  tous deux vides. Rien ne purge, rien ne recompose : le contexte ne fait **rien du tout** du
+  rechargement d'un pair. C'est le trou que le bail borne côté composition.
+
+- [ ] **`roomMembers` n'a pas de contrat de fraîcheur** `[M]`
+  `getters.js:180` (`isUserInAnyRoom`) : un contexte monté qui ne reçoit plus de `props.users` frais
+  épingle le slug pour l'onglet entier, et `removeRemotePeerId` devient un no-op permanent. Même
+  question de conception un étage au-dessus — à traiter avec « Migrer `usersInRoom` vers Pinia »
+  ci-dessous, pas avant. Le préjudice résiduel se limite désormais à la longévité de l'entrée
+  d'allowlist, qui reste gardée par l'égalité `conn.peer`.
 
 ---
 

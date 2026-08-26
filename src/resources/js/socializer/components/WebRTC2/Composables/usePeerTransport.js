@@ -342,13 +342,11 @@ function _resolveSenderSlugFromIncomingConn(conn, ctx) {
     }
 
     // Fallback défensif: parcourt la map complète si usersInRoom est temporairement vide.
-    for (const [slug, peerId] of (ctx?.peerStore?.remotePeersId?.entries?.() ?? [])) {
-        if (peerId && String(peerId) === senderPeerId) {
-            return slug
-        }
-    }
-
-    return null
+    // ⚠️ Via le getter, jamais à la main : l'entrée du store est `{ peerId, learnedAt }`,
+    // et une comparaison écrite ici sur la valeur brute rendrait `'[object Object]'` —
+    // donc jamais d'égalité, et aucune erreur levée. Le getter est aveugle au bail à
+    // dessein : cette résolution alimente l'anti-usurpation.
+    return ctx?.peerStore?.getSlugByRemotePeerId?.(senderPeerId) ?? null
 }
 
 // ─── Authentification des connexions/appels entrants ─────────────────────────
@@ -760,14 +758,16 @@ export function usePeerTransport(ctx) {
                 // contexte de diffusion — le seul concerné — n'était jamais relancé.
                 // Symptôme exact : « Could not connect to peer <uuid> » une seule fois,
                 // puis plus rien, et un flux qui n'arrive jamais.
+                //
+                // ⚠️ La résolution passe par le getter, jamais par une comparaison écrite
+                // ici : l'entrée du store est `{ peerId, learnedAt }`, et comparer la
+                // valeur brute rendrait `'[object Object]'` — jamais d'égalité, aucune
+                // erreur levée, et TOUTE cette recovery deviendrait inerte. Le getter est
+                // aveugle au bail à dessein : un peerId mort est justement le cas où il
+                // aurait expiré.
                 let targetSlug = null
                 for (const registeredCtx of peerStore.getRegisteredContexts()) {
-                    for (const [slug, peerId] of (registeredCtx.peerStore.remotePeersId?.entries?.() ?? [])) {
-                        if (String(peerId) === String(failedPeerId)) {
-                            targetSlug = slug
-                            break
-                        }
-                    }
+                    targetSlug = registeredCtx.peerStore.getSlugByRemotePeerId?.(failedPeerId) ?? null
                     if (targetSlug) break
                 }
                 if (!targetSlug) return

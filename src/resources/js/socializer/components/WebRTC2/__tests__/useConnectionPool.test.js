@@ -10,7 +10,7 @@ import { nextTick } from 'vue'
 import { createMockContext } from './helpers/createMockContext.js'
 import { withSetup } from './helpers/withSetup.js'
 import { useConnectionPool } from '~socializer/components/WebRTC2/Composables/useConnectionPool.js'
-import { SIGNALING_STALE_MS } from '~socializer/components/WebRTC2/webrtc2.config.js'
+import { REMOTE_PEER_ID_LEASE_MS, SIGNALING_STALE_MS } from '~socializer/components/WebRTC2/webrtc2.config.js'
 
 // Délai suffisant pour couvrir la 1re tentative de retry (1000ms + jitter < 300ms)
 const FIRST_RETRY_MS = 1400
@@ -676,6 +676,123 @@ describe('useConnectionPool', () => {
             await vi.advanceTimersByTimeAsync(FIRST_RETRY_MS)
             await vi.advanceTimersByTimeAsync(SECOND_RETRY_MS)
 
+            expect(core.requestRemotePeerConnection).not.toHaveBeenCalled()
+        })
+    })
+
+    // ── Le bail des peerId distants ─────────────────────────────────────────
+
+    /**
+     * Le bail (`REMOTE_PEER_ID_LEASE_MS`) : passé le délai, on ne compose plus sur une
+     * entrée du store, on redemande la signalisation. Sans lui, un pair qui recharge sa
+     * page laissait son ancien peerId dans le store de tous les autres — qui appelaient un
+     * numéro mort et n'apprenaient le neuf qu'au retour du `peer-unavailable`.
+     *
+     * Ce sont les DEUX points de décision d'appel qui portent le bail, et eux seuls.
+     */
+    describe('le bail des peerId (REMOTE_PEER_ID_LEASE_MS)', () => {
+
+        /**
+         * Faire vieillir le bail SANS exécuter la chaîne de retry.
+         *
+         * ⚠️ `advanceTimersByTime(REMOTE_PEER_ID_LEASE_MS)` ne convient pas : le bail est
+         * dimensionné au-dessus de l'horizon du moteur (≈55 s), donc l'avance jouerait les
+         * huit tentatives — chacune sous un bail encore valide — et le moteur aurait
+         * abandonné avant la première assertion. `setSystemTime` décale l'horloge et les
+         * échéances en vol du même delta : le temps a passé, rien ne s'est exécuté.
+         */
+        const ageLease = () => vi.setSystemTime(Date.now() + REMOTE_PEER_ID_LEASE_MS + 1)
+
+        it('requestOrConnectPeer redemande au lieu de composer un peerId hors bail', () => {
+            ctx.peerStore.addRemotePeerId('alice', 'peer-alice')
+            ageLease()
+
+            pool.requestOrConnectPeer('alice')
+
+            expect(connections.connectToPeer).not.toHaveBeenCalled()
+            expect(core.requestRemotePeerConnection).toHaveBeenCalledWith('alice', ctx.session.currentType)
+        })
+
+        it('ne redemande pas si CE contexte a déjà une demande en vol, et reste armé', async () => {
+            ctx.connection.usersInRoom = ['alice']
+            ctx.peerStore.addRemotePeerId('alice', 'peer-alice')
+            ageLease()
+            // APRÈS le saut d'horloge : posée avant, la demande serait stale elle aussi et le
+            // garde d'âge SIGNALING_STALE_MS la relancerait — le test ne prouverait rien.
+            ctx.peerStore.addWaitingRemotePeerId('alice', { room: 'app', type: 'data' })
+
+            pool.requestOrConnectPeer('alice')
+
+            // Ni composer, ni redemander : le tour ne conclut pas, il diffère.
+            expect(connections.connectToPeer).not.toHaveBeenCalled()
+            expect(core.requestRemotePeerConnection).not.toHaveBeenCalled()
+
+            // Et la surveillance a bien été armée — c'est elle qui reprendra la main.
+            await vi.advanceTimersByTimeAsync(FIRST_RETRY_MS)
+            expect(connections.hasOpenConnection).toHaveBeenCalled()
+        })
+
+        it('⭐ le moteur de retry bascule de « composer » à « demander » sans s\'éteindre', async () => {
+            ctx.connection.usersInRoom = ['alice']
+            ctx.peerStore.addRemotePeerId('alice', 'peer-alice')
+
+            pool.requestOrConnectPeer('alice')
+            expect(connections.connectToPeer).toHaveBeenCalledTimes(1)
+            core.requestRemotePeerConnection.mockClear()
+
+            // Saut d'horloge AVANT le premier tour, et non en comptant les tours : avec un
+            // bail dimensionné au-dessus de l'horizon de retry, l'expiration tomberait
+            // sinon à la dernière tentative et le test dépendrait de MAX_RETRY_ATTEMPTS.
+            ageLease()
+            await vi.advanceTimersByTimeAsync(FIRST_RETRY_MS)
+
+            expect(core.requestRemotePeerConnection).toHaveBeenCalledWith('alice', ctx.session.currentType)
+            // Le peerId mort n'est plus composé…
+            expect(connections.connectToPeer).toHaveBeenCalledTimes(1)
+            // …et le moteur est toujours vivant au tour suivant (`return false`).
+            core.requestRemotePeerConnection.mockClear()
+            await vi.advanceTimersByTimeAsync(SECOND_RETRY_MS)
+            expect(core.requestRemotePeerConnection).toHaveBeenCalled()
+        })
+
+        it('⭐ un bail échu ne contourne PAS le garde d\'autorisation', async () => {
+            // La branche « ni ID, ni demande » est désormais atteignable par une voie
+            // nouvelle. Elle doit rester gardée : un bail échu n'autorise pas à redemander
+            // le peerId d'un pair que plus rien ne concerne.
+            ctx.connection.usersInRoom = []
+            ctx.isAuthorizedCallPeer.mockReturnValue(false)
+            ctx.peerStore.addRemotePeerId('alice', 'peer-alice')
+            ageLease()
+
+            pool.requestOrConnectPeer('alice')
+            core.requestRemotePeerConnection.mockClear()
+
+            await vi.advanceTimersByTimeAsync(FIRST_RETRY_MS)
+            await vi.advanceTimersByTimeAsync(SECOND_RETRY_MS)
+
+            expect(core.requestRemotePeerConnection).not.toHaveBeenCalled()
+            expect(connections.connectToPeer).not.toHaveBeenCalled()
+        })
+
+        it('⭐ une connexion ÉTABLIE est indifférente au bail échu', async () => {
+            // Garde de structure, et la démonstration exécutable du dessin retenu : la
+            // preuve de vie est lue AVANT le bail (`hasOpenConnection` dans
+            // requestOrConnectPeer, `isEstablished()` dans le moteur), donc une session
+            // saine plus longue que le bail ne paie aucun aller-retour. C'est aussi
+            // pourquoi le bail n'a pas besoin de consulter `connections` lui-même —
+            // `hasOpenConnection` est optimiste sur une MediaConnection morte, soit
+            // exactement l'état d'un pair qui vient de recharger sa page.
+            ctx.peerStore.addRemotePeerId('alice', 'peer-alice')
+            connectionsThatSucceed()
+            pool.requestOrConnectPeer('alice')
+            connections.connectToPeer.mockClear()
+            core.requestRemotePeerConnection.mockClear()
+
+            ageLease()
+            pool.requestOrConnectPeer('alice')
+            await vi.advanceTimersByTimeAsync(FIRST_RETRY_MS)
+
+            expect(connections.connectToPeer).not.toHaveBeenCalled()
             expect(core.requestRemotePeerConnection).not.toHaveBeenCalled()
         })
     })

@@ -16,7 +16,7 @@ import { createMockContext } from './helpers/createMockContext.js'
 import { withSetup } from './helpers/withSetup.js'
 import { resetPeerMock, getLastPeerInstance } from './__mocks__/peerjs.js'
 import { usePeerTransport } from '~socializer/components/WebRTC2/Composables/usePeerTransport.js'
-import { MAX_METADATA_BYTES } from '~socializer/components/WebRTC2/webrtc2.config.js'
+import { MAX_METADATA_BYTES, REMOTE_PEER_ID_LEASE_MS } from '~socializer/components/WebRTC2/webrtc2.config.js'
 
 describe('usePeerTransport — authentification des connexions entrantes', () => {
     let ctx
@@ -192,6 +192,50 @@ describe('usePeerTransport — authentification des connexions entrantes', () =>
         await vi.waitFor(() => expect(call.answer).toHaveBeenCalled())
         expect(ctx.setUpConnectionListeners).toHaveBeenCalledWith(call)
         expect(call.close).not.toHaveBeenCalled()
+    })
+
+    // ── Le bail ne touche pas l'admission ──────────────────────────────────────
+    // Le mapping a trois classes de lecteurs : composer un appel (sous bail), servir
+    // d'allowlist au chemin (b) ci-dessus, et résoudre peerId → slug pour
+    // l'anti-usurpation. Seul le PREMIER est sous bail. Ces deux tests le tiennent des
+    // deux côtés : ce qui doit rester admis, et ce qui doit rester refusé.
+    //
+    // Ce fichier tourne en timers réels : `setSystemTime` seul suffit à avancer l'horloge
+    // (il ne mocke que `Date`), et `restoreAllMocks` de l'afterEach ne la rend pas — d'où
+    // le `useRealTimers` explicite.
+
+    it("⭐ admet encore un interlocuteur d'appel direct dont le bail a expiré", () => {
+        // Sans quoi une visio 1-à-1 plus longue que REMOTE_PEER_ID_LEASE_MS commencerait à
+        // refuser les reconnexions de son interlocuteur — et un refus d'admission n'est
+        // rattrapable par personne (PeerJS ne notifie pas le `close()` d'un appel jamais
+        // répondu).
+        ctx.peerStore.addRemotePeerId('mallory', 'peer-mallory')
+        vi.setSystemTime(Date.now() + REMOTE_PEER_ID_LEASE_MS + 1)
+
+        const conn = incomingConn({ from: 'mallory' }, 'peer-mallory')
+        peerInstance._triggerEvent('connection', conn)
+
+        expect(ctx.setUpConnectionListeners).toHaveBeenCalledWith(conn)
+        expect(conn.close).not.toHaveBeenCalled()
+
+        vi.useRealTimers()
+    })
+
+    it("⭐ refuse encore une usurpation dont le bail a expiré", () => {
+        // Le pendant, et c'est celui qui compte : une résolution inverse périmable serait
+        // un contournement PLANIFIABLE — il suffirait à l'attaquant d'attendre l'expiration
+        // du bail pour que `resolvedSlug` revienne null et que le refus sur contradiction
+        // cesse de mordre.
+        ctx.peerStore.addRemotePeerId('alice', 'peer-alice')
+        vi.setSystemTime(Date.now() + REMOTE_PEER_ID_LEASE_MS + 1)
+
+        const conn = incomingConn({ from: 'bob' }, 'peer-alice')
+        peerInstance._triggerEvent('connection', conn)
+
+        expect(ctx.setUpConnectionListeners).not.toHaveBeenCalled()
+        expect(conn.close).toHaveBeenCalled()
+
+        vi.useRealTimers()
     })
 
     it("rejette une connexion data d'un slug dans currentCallUsers mais SANS mapping peerId (l'état UI ne fait pas autorité)", () => {

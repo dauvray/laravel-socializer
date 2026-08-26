@@ -78,6 +78,14 @@ export default () => {
     //   - un peerId est un fait par ONGLET distant : un seul `Peer` PeerJS par onglet,
     //     donc une entrée par slug. Ce qui est propre au contexte, ce n'est pas la
     //     valeur, c'est sa DURÉE DE VIE — d'où `roomMembers` plus bas.
+    //     L'entrée porte AUSSI la date de son apprentissage : « le peerId de X est id »
+    //     et « je l'ai appris à t » sont le même fait, donc la même entrée et la même
+    //     écriture. Deux structures parallèles se désynchroniseraient sans jamais lever
+    //     (cf. l'en-tête de keys.js), et le harnais a déjà ce piège en réserve
+    //     (`_signalQueue` vs `_signalQueueRooms`). Précédent : `waitingRemotePeerId`
+    //     porte son `createdAt` DANS l'entrée. Ce que la date gouverne est la CONFIANCE
+    //     (composer ou redemander : `getDialableRemotePeerId`), jamais l'existence de
+    //     l'entrée — cf. REMOTE_PEER_ID_LEASE_MS.
     //   - une demande de peerId est un fait par CONTEXTE : « j'ai demandé le peerId de
     //     X pour la room R en type T ». D'où la clé composite `slug|room|type`.
     //
@@ -86,7 +94,7 @@ export default () => {
     // peerId posait un drapeau que les autres lisaient comme « demande déjà en vol »,
     // et n'émettaient donc jamais la leur — le contexte `stream` restait muet et
     // l'arrivant ne voyait aucun flux.
-    remotePeersId: new Map(), // peerId distants (clé: userSlug)
+    remotePeersId: new Map(), // peerId distants (clé: userSlug, valeur: { peerId, learnedAt })
     waitingRemotePeerId: new Map(), // demandes de peerId en vol (clé: `slug|room|type`, valeur: { room, type, createdAt, … })
 
     // Composition des rooms, par contexte (clé: contextId, valeur: string[] de slugs).

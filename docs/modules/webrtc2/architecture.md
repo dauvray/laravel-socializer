@@ -123,27 +123,62 @@ lit ou détruit l'état d'un autre.
 
 | Fait | Granularité | Clé |
 |---|---|---|
-| « le peerId de X est *id* » | l'**onglet distant** (un seul `Peer` par onglet) | `remotePeersId[slug]` |
+| « le peerId de X est *id*, **appris à** *t* » | l'**onglet distant** (un seul `Peer` par onglet) | `remotePeersId[slug] = { peerId, learnedAt }` |
 | « X est présent dans ma room » | le **contexte** | `roomMembers[contextId]` |
 | « j'ai demandé le peerId de X » | le **contexte** *et* le type de connexion | `waitingRemotePeerId[slug\|room\|type]` |
 
-Le peerId est le seul fait par slug — et c'est pour ça que sa **durée de vie**, elle, est
-gouvernée par les autres : on ne l'oublie (`removeRemotePeerId`) qu'une fois le pair absent
-de **toutes** les rooms déclarées. Ce prédicat porte sur `roomMembers`, jamais sur
-`connections` : cette map décrit des connexions PeerJS, pas une présence, et chaque contexte
-appelle le verbe avant ou après avoir purgé sa propre entrée — le prédicat était donc vrai
-pour tout le monde et le verbe un no-op permanent dès la deuxième room. Le peerId d'un
-onglet fermé survivait alors indéfiniment : au retour du pair on rappelait un peer mort
-(`Could not connect to peer <uuid>`) sans jamais redemander le frais, puisqu'on croyait déjà
-en avoir un.
+Le peerId est le seul fait par slug, et **deux régimes distincts gouvernent sa durée de
+vie** — les confondre est l'erreur que ce paragraphe existe pour empêcher :
 
-Quatre corollaires à ne pas défaire :
+**1. Son existence est gouvernée par les autres faits.** On ne l'oublie
+(`removeRemotePeerId`) qu'une fois le pair absent de **toutes** les rooms déclarées. Ce
+prédicat porte sur `roomMembers`, jamais sur `connections` : cette map décrit des connexions
+PeerJS, pas une présence, et chaque contexte appelle le verbe avant ou après avoir purgé sa
+propre entrée — le prédicat était donc vrai pour tout le monde et le verbe un no-op permanent
+dès la deuxième room. Le peerId d'un onglet fermé survivait alors indéfiniment : au retour du
+pair on rappelait un peer mort (`Could not connect to peer <uuid>`) sans jamais redemander le
+frais, puisqu'on croyait déjà en avoir un. L'autre sortie est `invalidateRemotePeerId`, sur
+le fait de mort (`peer-unavailable`), inconditionnelle.
+
+**2. La confiance qu'on lui accorde POUR COMPOSER est gouvernée par un bail** —
+`REMOTE_PEER_ID_LEASE_MS`, lu par `getDialableRemotePeerId`. Passé le bail sans preuve
+fraîche, les deux points de décision d'appel de `useConnectionPool`
+(`requestOrConnectPeer` et `_handleConnectionAttempt`) redemandent la signalisation au lieu
+d'appeler. Le bail est **renouvelé sur preuve** : `connectToPeer` réécrit le mapping à chaque
+réponse reçue, donc une room saine ne paie jamais d'aller-retour supplémentaire. Il
+**ne supprime rien** — cf. le cinquième corollaire.
+
+> **Ce que le bail ferme, et ce qu'il ne fait que borner.** Il ferme une **impasse** : « je
+> crois avoir un peerId, donc je ne redemande jamais », qui n'avait aucune borne de temps dès
+> lors qu'un contexte en retard vetotait la purge ou qu'un départ+retour se coalesçait en un
+> seul diff. Il ne ferme pas la divergence : entre l'instant où le pair change d'identité et
+> l'expiration de mon bail, je compose encore un mort. La fenêtre passe de « à vie » à
+> `REMOTE_PEER_ID_LEASE_MS` ; elle n'est pas supprimée. C'est la même forme d'argument que le
+> réplica du graphe ([securite.md](securite.md), corollaire de méthode du 24/08/2026) :
+> **ajouter une horloge raccourcit la fenêtre entre dérive et réparation, elle ne la supprime
+> pas.** La supprimer demanderait de router la question vers le maître à chaque composition,
+> c'est-à-dire un rafraîchissement paresseux dans `connectToPeer` — écarté : la fonction est
+> **synchrone** et porte un verrou anti-TOCTOU, y insérer un `await` créerait un état
+> intermédiaire observable dont tout ce qui LIT cet état devrait être réexaminé. Et faire
+> demander le peerId à chaque tentative ferait passer les 8 tentatives du moteur de retry par
+> `/ask-to-peer-id`, contre un plafond de 3 par 10 s : l'étranglement de la reconnexion
+> légitime.
+>
+> **Décision, 26/08/2026** : fenêtre résiduelle assumée, adossée à la recovery
+> `peer-unavailable`, **inchangée**. Le bail lui retire son rôle de *seul* filet, il ne la
+> remplace pas. Coût borné de la fenêtre résiduelle : un appel perdu, une erreur console, un
+> tour de backoff, une `MediaConnection` à moitié ouverte que `hasOpenConnection` compte comme
+> ouverte. Épinglé par `scenarios/peerDeparture.test.js` (« le bail évite l'appel mort ») et
+> par `peers2Store.remotePeerId.test.js` (§ le bail).
+
+Cinq corollaires à ne pas défaire :
 
 - **`connectToPeer` enregistre le peerId AVANT ses gardes.** Un peerId de signalisation
   décrit l'état courant du pair, que la connexion s'ouvre ou non derrière. Placé après,
   il est perdu à chaque sortie par « déjà connecté » — or `hasOpenConnection` considère
   ouverte une `MediaConnection` dont le `RTCPeerConnection` n'est plus lisible, c'est-à-dire
-  exactement le cas du pair qui vient de recharger sa page.
+  exactement le cas du pair qui vient de recharger sa page. C'est aussi le point de
+  **renouvellement du bail** : chaque preuve reçue re-estampille l'entrée.
 - **Une demande en vol appartient à son émetteur** (`contextId` stocké dans l'entrée), et
   meurt avec lui : `cleanupPeerConnection` la purge explicitement, hors de
   `closePeerConnection` qui sort par un early-return quand la room n'a aucune connexion.
@@ -166,6 +201,16 @@ Quatre corollaires à ne pas défaire :
   **invalider est global** (c'est un fait constaté sur l'onglet distant), **relancer est une
   intention de contexte** — donc filtré par `isAuthorizedPeer`, ce qui préserve la visio 1-à-1,
   qui n'a aucune room commune et ne tient qu'à `authorizedCallPeers`.
+- **Le bail ne s'applique qu'à la décision de composer.** Le mapping a trois classes de
+  lecteurs — composer, servir d'allowlist au chemin (b) de `_isAuthorizedIncomingPeer`,
+  résoudre `peerId → slug` pour l'anti-usurpation — et **seul le premier est sous bail**
+  (`getDialableRemotePeerId`). Les deux autres lisent `getRemotePeerId` et
+  `getSlugByRemotePeerId`, aveugles au temps par construction. Y brancher une péremption
+  transformerait une expiration en **refus**, refermant la visio 1-à-1 hors room ; et surtout
+  elle ferait de l'anti-usurpation un contournement **planifiable** — il suffirait d'attendre
+  l'expiration pour que la résolution inverse rende `null` et que le refus sur contradiction
+  cesse de mordre. Corollaire : une expiration ne **supprime** jamais l'entrée. On cesse de
+  composer, on ne cesse pas de reconnaître.
 
 ⚠️ **Un test à un seul contexte par onglet ne peut pas voir ces pannes.** Le harnais monte
 donc plusieurs contextes par pair virtuel (`peer.mountContext()`), et les scénarios leur
