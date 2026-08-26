@@ -397,6 +397,12 @@ scénarios) et `_hubRateLimiter` (arbitrage « verbe `.reset()` plutôt que Pini
   `_buildPeerConnectionConfig`), et le flux distant arrive bien sur cette connexion : filtrer sur
   `metadata.from` ne matche donc rien côté initiateur. `remoteSlug` / `remoteType` sont normalisés
   à l'écriture par `handleStreamReceived`
+- **Les deux attentes du contexte ne se ressemblent pas.** `waitForPresenceSync` est **mémoïsée** :
+  une promesse et un timer pour la vie du contexte, ce qui la rend sûre à appeler depuis un garde
+  d'admission (cf. [securite.md](securite.md)). `waitForMeReady` **ne l'est pas** — chaque appel
+  ouvre son propre `effectScope` et arme sa propre alarme de 15 s. Tout code qui la rappelle en
+  boucle paie donc l'attente à chaque tour, et un flot d'appels sur un contexte jamais prêt accumule
+  autant de timers. Ne pas déduire le comportement de l'une de celui de l'autre
 - **Verrou de `syncUsersConnections`** : il **coalesce**, il ne jette pas. Un `return` sec sur
   verrou tenu ne perdait pas qu'une action : `getRoomUsersDiff` est l'unique écrivain de
   `usersInRoom`, `presenceSynced` et `roomMembers`, donc un tour sauté laissait **trois** états

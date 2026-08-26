@@ -155,6 +155,14 @@ verbe demanderait de monter `Notifications.vue`, et le scénario ne parlerait pl
   Pinia sont auto-déballés et la production lit `ctx.peerStore.getConnections?.[room]` **sans
   `.value`** → `hasOpenConnection` renverrait *toujours* `false` en test, faux négatif silencieux.
   `mockFidelity.test.js` épingle ce cas nommément.
+- **Une barrière de test se construit UNE fois, pas à chaque appel.** Le motif naturel pour tenir
+  un verrou ouvert — `waitForMeReady: vi.fn(() => new Promise((resolve) => { release = resolve }))`
+  — fabrique une promesse **neuve à chaque invocation**, et `release` ne désigne que la dernière.
+  Tout ce qui rappelle l'attente derrière le premier appel (le rejeu de `syncUsersConnections`, un
+  moteur de retry) se bloque alors sur une barrière que le test croit avoir levée, et le symptôme
+  est un **timeout**, pas une assertion rouge — donc muet sur sa cause. Une seule barrière partagée,
+  `vi.fn(() => gate.then(() => true))`, résout instantanément après ouverture et laisse le drain
+  s'exercer. `useConnectionPool.test.js` (§ `syncUsersConnections`) en porte le helper.
 - **`createMockContext._pushSignal` écrit dans `_signalQueue`** (un `ref` réassigné, donc réactif par
   changement d'identité) alors que `getQueueForRoom` lit `_signalQueueRooms` (objet nu, non réactif) :
   deux structures déconnectées. **Tout test de drain de file serait un faux positif** avant

@@ -122,8 +122,19 @@ avant le déménagement revient à les jeter.
 - [ ] **Migrer `usersInRoom` vers Pinia** `[M]`
   `ctx.connection.usersInRoom` est un tableau mutable partagé hors store. Le déplacer dans
   `peerStore` avec une action `computeRoomDiff(newSlugs)` synchrone (lecture + écriture atomique)
-  supprimerait le mutex `_diffLock` devenu inutile et rendrait la liste réactive dans les composants.
+  supprimerait le mutex `_diffLock` et rendrait la liste réactive dans les composants.
   Dépend du renommage ci-dessus.
+  ℹ️ **`_diffLock` n'attend plus cette migration pour être sans emploi** (constaté le 27/08/2026) :
+  depuis que le verrou du pool coalesce, son drain sérialise déjà les tours, et c'est le **seul
+  appelant de production** de `getRoomUsersDiff`. Le mutex ne garde donc plus qu'un export public
+  que personne n'exerce en parallèle — coût nul, à retirer avec la migration, pas avant ni
+  séparément.
+
+- [ ] **`getNewUsersInRoom` est un export mort** `[S]`
+  Zéro appelant de production dans le paquet **et** dans l'hôte (vérifié au grep le 27/08/2026) :
+  seul `usePeerConnections.test.js:123` le maintient en vie, et ce test n'épingle donc rien
+  d'observable. Sortie B (supprimer) ou C (assumer comme surface publique documentée) — pas les
+  deux. Le retirer emporte son test.
   ℹ️ Une **projection** existe déjà : `peerStore.roomMembers[contextId]`, écrite par
   `_doGetRoomUsersDiff` et lue par le prédicat de `removeRemotePeerId` (cf.
   [architecture.md](../docs/modules/webrtc2/architecture.md#un-onglet-plusieurs-contextes--la-granularité-des-clés-du-store)).
