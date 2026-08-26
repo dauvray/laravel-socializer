@@ -420,8 +420,8 @@ la souscription, `whisper()` rend `false`, et **rien ne le signale** puisqu'il n
 
 ⚠️ **Corollaire Options API :** `applyOptions()` tourne **après** `setup()`, donc un
 `beforeUnmount()` d'options part **après** tous les hooks de `setup()`. Un whisper laissé là serait
-perdu. C'est pourquoi `Feed/Feed.vue`, resté en Options API, porte quand même son câblage Reverb
-dans un `setup()`.
+perdu. Un composant encore en Options API doit donc porter tout son câblage Reverb dans un
+`setup()` — c'est vrai de tout hook de démontage qui touche à un canal.
 
 Les trois cas — l'ordre correct, l'ordre inversé, et le composant mixte `setup()` + options — sont
 épinglés par `components/System/composables/__tests__/useReverbChannel.test.js`.

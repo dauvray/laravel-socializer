@@ -18,169 +18,170 @@
     </section>
 </template>
 
-<script>
+<script setup>
+    // VUE & LIBS
+    import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, onUnmounted, ref, watch } from 'vue'
+    import { storeToRefs } from 'pinia'
 
-    import { mapActions, mapState, storeToRefs } from 'pinia'
+    // STORES
     import { useFeedStore } from '~socializer/stores/feed.js'
-    import { useMeStore } from '~estarter/stores/me.js'
-    import PostList from './PostList.vue'
     import { useLikesStore } from '~socializer/stores/likes.js'
+    import { useMeStore } from '~estarter/stores/me.js'
+
+    // COMPOSABLES
     import { useReverbChannel } from '~socializer/components/System/composables/useReverbChannel.js'
-    import { computed, defineAsyncComponent, onBeforeUnmount, ref } from 'vue'
 
-    export default {
-        name: 'Feed',
-        emits: [
-            'feed-loaded',
-        ],
-        components: {
-            PostList,
-            PublishButton: defineAsyncComponent(() => import('~socializer/components/User/widgets/PublishButton.vue')),
-        },
-        props: {
-            user: {
-                type: Object,
-                required: true
-            },
-            type : {
-               type: String,
-               required: false,
-               default: 'feed' // or wall 
-            },
-            owner: {
-                type: String,
-                required: false,
-                default: undefined // user by default ( can be room ...)
-            },
-            canPublish: {
-                type: Boolean,
-                required: false,
-                default: false,
-            },
-        },
-        /**
-         * Tout le câblage Reverb vit ici, et pas dans les options : Vue exécute les hooks de
-         * démontage dans leur ordre d'ENREGISTREMENT, et `applyOptions()` tourne APRÈS `setup()`.
-         * Un whisper laissé dans `beforeUnmount()` partirait donc après le `leave()` auto du
-         * composable — c'est-à-dire jamais.
-         */
-        setup() {
-            const feedStore = useFeedStore()
-            const { getMe } = storeToRefs(useMeStore())
+    // COMPOSANTS
+    import PostList from './PostList.vue'
 
-            // Remonté de data() : le hook de démontage ci-dessous en a besoin, et setup() ne voit
-            // pas `data`. Retourné en fin de setup() → le reste des options le lit via `this.feedId`.
-            const feedId = ref(null)
+    // COMPOSANTS ASYNCHRONES
+    const PublishButton = defineAsyncComponent(() => import('~socializer/components/User/widgets/PublishButton.vue'))
 
-            const meChannelName = computed(() => getMe.value?.channel ?? null)
-            const feedChannelName = computed(() => feedId.value ? `${feedId.value}.feed` : null)
+    defineOptions({ name: 'Feed' })
 
-            // S'exécute avant les leave() auto enregistrés par les useReverbChannel ci-dessous.
-            onBeforeUnmount(() => {
-                whisperMe('leave-feed', {
-                    feedId: feedId.value,
-                    userId: getMe.value.id,
-                })
-            })
+    const props = defineProps({
+        user: {
+            type: Object,
+            required: true,
+        },
+        type: {
+            type: String,
+            required: false,
+            default: 'feed', // or wall
+        },
+        owner: {
+            type: String,
+            required: false,
+            default: undefined, // user by default ( can be room ...)
+        },
+        canPublish: {
+            type: Boolean,
+            required: false,
+            default: false,
+        },
+    })
 
-            const { whisper: whisperMe } = useReverbChannel(meChannelName, {
-                type: 'private',
-            })
+    const emit = defineEmits([
+        'feed-loaded',
+    ])
 
-            // Nom réactif : le composable quitte l'ancien feed et rejoint le nouveau tout seul.
-            useReverbChannel(feedChannelName, {
-                type: 'public',
-                listeners: {
-                    '.Dauvray\\Socializer\\app\\Events\\FeedActivity': (event) => feedStore.manageFeedActivity(event),
-                    '.Dauvray\\Socializer\\app\\Events\\PostCreatedEvent': (event) => feedStore.insertPost(event.post),
-                    '.Dauvray\\Socializer\\app\\Events\\PostDeletedEvent': (event) => feedStore.removePost(event.post_id),
-                    '.Dauvray\\Socializer\\app\\Events\\ItemLiked': (event) => feedStore.updatePostLikes(event.likes, event.vertexid, event.storeid),
-                },
-            })
+    /*------ STORES ----------*/
+    const feedStore = useFeedStore()
+    const { getPostFeed: posts } = storeToRefs(feedStore)
+    const {
+        loadFeed,
+        loadFeedPost,
+        resetFeed,
+        deleteFeedPost,
+        removePost,
+        insertPost,
+        triggerFeedActivity,
+        updatePostLikes,
+        sharePost,
+        setSharedPost,
+        manageFeedActivity,
+    } = feedStore
 
-            return { feedId }
+    const { submitLike } = useLikesStore()
+    const { getMe } = storeToRefs(useMeStore())
+
+    /*------ STATE ----------*/
+    const feedId = ref(null)
+    const feed = ref(null)
+    const loaded = ref(false)
+
+    /*------ COMPUTED ----------*/
+    const meChannelName = computed(() => getMe.value?.channel ?? null)
+    const feedChannelName = computed(() => feedId.value ? `${feedId.value}.feed` : null)
+
+    /*------ ECHO / REVERB ----------*/
+    // S'exécute avant les leave() auto enregistrés par les useReverbChannel ci-dessous. Le `const`
+    // lu par une closure déclarée au-dessus est volontaire : elle ne le lit qu'au démontage.
+    onBeforeUnmount(() => {
+        whisperMe('leave-feed', {
+            feedId: feedId.value,
+            userId: getMe.value.id,
+        })
+    })
+
+    const { whisper: whisperMe } = useReverbChannel(meChannelName, {
+        type: 'private',
+    })
+
+    // Nom réactif : le composable quitte l'ancien feed et rejoint le nouveau tout seul.
+    useReverbChannel(feedChannelName, {
+        type: 'public',
+        listeners: {
+            '.Dauvray\\Socializer\\app\\Events\\FeedActivity': (event) => manageFeedActivity(event),
+            '.Dauvray\\Socializer\\app\\Events\\PostCreatedEvent': (event) => insertPost(event.post),
+            '.Dauvray\\Socializer\\app\\Events\\PostDeletedEvent': (event) => removePost(event.post_id),
+            '.Dauvray\\Socializer\\app\\Events\\ItemLiked': (event) => updatePostLikes(event.likes, event.vertexid, event.storeid),
         },
-        data() {
-            return {
-                feed: null,
-                loaded: false,
-            }
-        },
-        mounted() {
-            this.loadFeed(this.user.identifier, this.type, this.owner)
-            .then(resp => {
-                this.feedId = resp.id
-                setTimeout(() => {
-                    this.loaded = true
-                }, 100)
-                this.feed = resp
-               // this.$emit('feed-loaded', resp)
-            })
-        },
-        beforeUnmount() {
-            // Le whisper `leave-feed` et le leave() des deux canaux sont dans setup().
-            this.resetFeed()
-        },
-        watch: {
-            feedId(newFeedId, oldFeedId) {
-                if(newFeedId !== oldFeedId) {
-                    this.loadFeedPost(`/get-feed-posts/${newFeedId}`)
-                }
-            },
-        },
-        computed: {
-            ...mapState(useFeedStore, {
-                posts: 'getPostFeed',
-            }),
-        },
-        methods: {
-            ...mapActions(useFeedStore, [
-                'loadFeed',
-                'loadFeedPost',
-                'resetFeed',
-                'deleteFeedPost',
-                'removePost',
-                'triggerFeedActivity',
-                'updatePostLikes',
-                'sharePost',
-                'setSharedPost',
-            ]),
-            ...mapActions(useLikesStore, [
-                'submitLike',
-            ]),
-            onLoadFeedPost(url) {
-                this.loadFeedPost(url)
-            },
-            async onPostDelete(postId) {
-                const result = await this.deleteFeedPost(postId, this.feedId)
-                this.removePost(postId)
-            },
-            onLikeItem(payload) {
-                this.submitLike(payload, this.feedId, 'feed')
-                .then((likes) => {
-                    this.updatePostLikes(likes, payload.itemVid, this.feedId)
-                })
-            },
-            onShareItem(postVid) {
-                this.sharePost(postVid, this.feedId)
-                .then( post => {
-                    this.setSharedPost(post)
-                })
-            },
-            onCommentCreated(comment) {
-                this.triggerFeedActivity({
-                    feed_id : this.feedId,
-                    action : 'comment.created',
-                    element: comment,
-                })
-            },
-            onCommentDeleted(comment) {
-                this.triggerFeedActivity({
-                    feed_id : this.feedId,
-                    action : 'comment.deleted',
-                    element: comment,
-                })
-            },
-        }
+    })
+
+    /*------ METHODS ----------*/
+    function onLoadFeedPost(url) {
+        loadFeedPost(url)
     }
+
+    async function onPostDelete(postId) {
+        await deleteFeedPost(postId, feedId.value)
+        removePost(postId)
+    }
+
+    function onLikeItem(payload) {
+        submitLike(payload, feedId.value, 'feed')
+        .then((likes) => {
+            updatePostLikes(likes, payload.itemVid, feedId.value)
+        })
+    }
+
+    function onShareItem(postVid) {
+        sharePost(postVid, feedId.value)
+        .then(post => {
+            setSharedPost(post)
+        })
+    }
+
+    function onCommentCreated(comment) {
+        triggerFeedActivity({
+            feed_id: feedId.value,
+            action: 'comment.created',
+            element: comment,
+        })
+    }
+
+    function onCommentDeleted(comment) {
+        triggerFeedActivity({
+            feed_id: feedId.value,
+            action: 'comment.deleted',
+            element: comment,
+        })
+    }
+
+    /*------ WATCHERS ----------*/
+    // SOUS les appels au composable : les watchers partent dans leur ordre de création, et on veut
+    // le join du canal du feed avant le chargement HTTP des posts.
+    watch(feedId, (newFeedId) => {
+        loadFeedPost(`/get-feed-posts/${newFeedId}`)
+    })
+
+    /*------ LIFECYCLE ----------*/
+    onMounted(() => {
+        loadFeed(props.user.identifier, props.type, props.owner)
+        .then(resp => {
+            feedId.value = resp.id
+            setTimeout(() => {
+                loaded.value = true
+            }, 100)
+            feed.value = resp
+            emit('feed-loaded', resp)
+        })
+    })
+
+    // Le whisper `leave-feed` et le leave() des deux canaux sont enregistrés plus haut, en
+    // onBeforeUnmount : le reset du store ne doit jamais les précéder.
+    onUnmounted(() => {
+        resetFeed()
+    })
 </script>

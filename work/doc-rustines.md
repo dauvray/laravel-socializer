@@ -64,7 +64,7 @@ Le `[L]` **gelé** de [webrtc2-todo.md](webrtc2-todo.md) — déplacer le routag
 ### Faisable en parallèle sans aucun risque
 
 Aucun de ces éléments n'est dans l'arbre WebRTC2 : `EventBus/webrtc2Events.js` (mort), `sfu`,
-`ACCESORS`, `Feed.vue` en Options API, la casse de `Widgets/`, et les quatre zones mortes
+`ACCESORS`, la casse de `Widgets/`, et les quatre zones mortes
 (`admin.php`, `console.php`, `table_names`, `SocializerUpgrade`).
 
 ### Le vrai risque de désynchronisation : les ancres, pas le code
@@ -242,14 +242,32 @@ plusieurs de ces noms ont **déjà coûté des régressions**.
       Uniformiser ; impacte les imports front.
       - [ ] Code · - [ ] Doc · - [ ] Tests — suite JS verte
 
-- [ ] **`Feed.vue` encore en Options API** · effort [S]
-      « ne pas les prendre pour modèle » (`conventions.md`, `autres-modules.md`). Migrer le
-      seul reliquat supprime les deux mentions.
-      ⚠️ **Le fichier est désormais mixte** : son câblage Reverb (whisper `leave-feed` + canal
-      public du feed) vit dans un `setup()`, et il y vit pour une raison —
-      [ordre des hooks de démontage](../docs/reference/use-reverb-channel.md#un-whisper-de-départ-senregistre-avant-le-composable).
-      La migration consiste à finir de vider les options dans ce `setup()`, pas à le défaire.
-      - [ ] Code · - [ ] Doc · - [ ] Tests
+- [x] **`Feed.vue` encore en Options API** — migré en `<script setup>`, sur le modèle de
+      `Chat/ChatComponent.vue`. Les options ont été vidées **dans** le `setup()` existant, sans le
+      défaire : le whisper `leave-feed` reste enregistré AVANT l'appel à `useReverbChannel`, le
+      `watch(feedId)` reste SOUS les deux appels, et `resetFeed()` est passé en `onUnmounted`
+      (position de dernier qu'il tenait en Options API).
+      - [x] Code · - [x] Doc — les trois mentions « Feed.vue en Options API » sont retirées de
+      `conventions.md`, `autres-modules.md` et `use-reverb-channel.md`, la règle qu'elles portaient
+      étant reformulée sans exemple nommé · - [x] Tests — `components/Feed/__tests__/feedLifecycle.test.js`
+      (13 cas) épingle le câblage : ordre de démontage (whisper `leave-feed` → `leave()` → reset),
+      join du canal avant le chargement des posts, routage des quatre listeners Reverb vers les
+      actions du store, `feed-loaded`, et `feedId` porté par les actions de la liste. Les quatre
+      invariants ont été vérifiés par mutation — chacun casse son test et seulement le sien.
+      La doublure d'`Echo` est passée en helper partagé
+      (`System/composables/__tests__/helpers/createEchoDouble.js`) plutôt que dupliquée, et la
+      docstring de `mountOptionsApiLeaver` dans `useReverbChannel.test.js` ne cite plus `Feed.vue`
+      (ce test monte un composant synthétique et reste un garde valide pour tout composant non migré).
+
+- [ ] **Le `PublishButton` téléporté d'une room recevait `feedId: null`** · effort [S] — **à
+      vérifier à l'écran**
+      L'`emit('feed-loaded')` de `Feed.vue` était **commenté** alors que `User/Wall.vue` et
+      `WallRoom/WallComponent.vue` branchent tous deux `@feed-loaded` : le `onFeedLoaded` de
+      `WallComponent.vue` ne partait jamais, donc son `PublishButton` téléporté dans
+      `#room-header-tools` gardait `feedId: null` / `feedFormId: null`. L'emit a été réactivé
+      pendant la migration ci-dessus. `Wall.vue` était indemne — son `feedOptions` et son `loaded`
+      ne sont lus par rien.
+      - [ ] Ouvrir une room, onglet mur, et publier depuis le bouton de l'en-tête.
 
 - [x] **Directives de resize : le suffixe décrit la poignée, pas l'axe** — fait par `989b360`
       (`resizable_height.js` / `resizable_width.js`, épinglé par

@@ -18,78 +18,10 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createApp, defineComponent, h, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useReverbChannel } from '~socializer/components/System/composables/useReverbChannel.js'
 import { withSetup } from '~socializer/components/WebRTC2/__tests__/helpers/withSetup.js'
+import { createEchoDouble } from './helpers/createEchoDouble.js'
 
 const ALICE = { id: 1, name: 'Alice' }
 const BOB = { id: 2, name: 'Bob' }
-
-const createFakePrivateChannel = () => ({
-    subscribed: true,
-    listen: vi.fn(),
-    stopListening: vi.fn(),
-    listenForWhisper: vi.fn(),
-    stopListeningForWhisper: vi.fn(),
-    error: vi.fn(),
-    whisper: vi.fn(function () {
-        if (!this.subscribed) {
-            throw new TypeError("Cannot read properties of undefined (reading 'trigger')")
-        }
-    }),
-})
-
-/** Partie présence de la doublure : chaînable comme Echo, et sans désabonnement possible. */
-const withPresenceApi = (channel) => {
-    const callbacks = { here: [], joining: [], leaving: [] }
-
-    return Object.assign(channel, {
-        here(cb) { callbacks.here.push(cb); return this },
-        joining(cb) { callbacks.joining.push(cb); return this },
-        leaving(cb) { callbacks.leaving.push(cb); return this },
-
-        emitHere(users) { callbacks.here.forEach(cb => cb(users)) },
-        emitJoining(user) { callbacks.joining.forEach(cb => cb(user)) },
-        emitLeaving(user) { callbacks.leaving.forEach(cb => cb(user)) },
-    })
-}
-
-/**
- * Doublure d'`Echo` fidèle sur les deux points qui comptent ici : elle **mémoïse** ses canaux par
- * nom préfixé (deux `Echo.private('user.7')` rendent le MÊME objet), et son `leave()` ratisse les
- * trois préfixes d'un nom — l'objet canal survit dans les closures qui le tiennent, mais sa
- * souscription est morte, comme `PusherPrivateChannel.whisper()` qui déréférence
- * `pusher.channels.channels[name]` sans garde.
- *
- * @returns {{channels: Map<string, object>, Echo: object}} la table des canaux vivants et la doublure
- */
-const createEchoDouble = () => {
-    const channels = new Map()
-
-    const memoize = (prefix, decorate = (channel) => channel) => vi.fn((name) => {
-        const key = `${prefix}${name}`
-        if (!channels.has(key)) {
-            channels.set(key, decorate(createFakePrivateChannel()))
-        }
-        return channels.get(key)
-    })
-
-    return {
-        channels,
-        Echo: {
-            channel: memoize(''),
-            private: memoize('private-'),
-            encryptedPrivate: memoize('private-encrypted-'),
-            join: memoize('presence-', withPresenceApi),
-            leave: vi.fn((name) => {
-                ['', 'private-', 'presence-'].forEach((prefix) => {
-                    const channel = channels.get(`${prefix}${name}`)
-                    if (channel) {
-                        channel.subscribed = false
-                        channels.delete(`${prefix}${name}`)
-                    }
-                })
-            }),
-        },
-    }
-}
 
 /**
  * Doublure du canal de présence Echo. `here/joining/leaving` sont chaînables comme
@@ -395,9 +327,10 @@ describe("useReverbChannel — ordre du whisper de départ et du leave()", () =>
     }
 
     /**
-     * La disposition de Feed.vue : un `setup()` qui porte le câblage Reverb, et un
+     * La disposition d'un composant mixte : un `setup()` qui porte le câblage Reverb, et un
      * `beforeUnmount()` d'Options API dans le même composant. `applyOptions()` tourne APRÈS
-     * `setup()`, donc le hook des options passe en second — trop tard pour whisperer.
+     * `setup()`, donc le hook des options passe en second — trop tard pour whisperer. C'est ce qui
+     * interdit de câbler Reverb dans les options d'un composant qui n'est pas encore migré.
      */
     const mountOptionsApiLeaver = () => {
         const app = createApp(defineComponent({
