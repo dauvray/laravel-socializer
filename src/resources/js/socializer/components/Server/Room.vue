@@ -112,7 +112,19 @@
 
     const isOwner = computed(() => ownerId.value === getMe.value.vertexid)
 
+    /**
+     * L'entrée `content` du fil d'Ariane s'écrit APRÈS la confirmation de la navigation, jamais
+     * depuis une garde : le watcher `$route` de l'`App.vue` du projet hôte reconstruit tout le
+     * tableau depuis `route.meta.breadcrumb` à chaque changement de route, donc une écriture faite
+     * avant est écrasée. C'est ce qui laissait l'entrée vide — et ce qui donnait l'illusion qu'un
+     * second clic « réparait » le fil d'Ariane : ce second clic ne navigue pas, donc rien ne vient
+     * plus écraser l'écriture.
+     */
     const onUpdateBreadcrumb = () => {
+        if (!currentRoom.value) {
+            return
+        }
+
         breadcrumbService.updateBreadcrumb({
             name: currentRoom.value.name,
             id: 'content',
@@ -120,12 +132,23 @@
         })
     }
 
-    const loadDefaultContent = () => {
-        if (currentRoom.value.hasOwnProperty('content')) {
-            const defaultContent = currentRoom.value.content[0]
-            router.push({ name: defaultContent.content_type, params: { vertexId: defaultContent.id } })
+    /** Cible du contenu par défaut du salon **chargé**, ou `undefined` s'il n'en a aucun. */
+    const defaultContentLocation = () => {
+        const defaultContent = currentRoom.value?.content?.[0]
+
+        if (!defaultContent) {
+            return undefined
         }
-        onUpdateBreadcrumb()
+
+        return { name: defaultContent.content_type, params: { vertexId: defaultContent.id } }
+    }
+
+    const loadDefaultContent = () => {
+        const location = defaultContentLocation()
+
+        if (location) {
+            router.push(location)
+        }
     }
 
     const updateChatWidth = (newWidth) => {
@@ -138,12 +161,28 @@
         }
     })
 
+    /**
+     * Une URL de salon sans contenu (`…/room/{id}`) doit ouvrir le contenu par défaut du salon.
+     * Deux règles, chacune payée par un bug :
+     *
+     * 1. **On RETOURNE la cible, on ne la pousse pas.** `router.push()` depuis une garde écrase le
+     *    `pendingLocation` du routeur : la navigation en vol meurt en `NAVIGATION_CANCELLED`, et
+     *    `RouterLink` avale l'échec (`.catch(noop)`) — le clic reste sans effet ET sans erreur.
+     * 2. **Un salon différent passe sans redirection.** Tant que la navigation n'est pas confirmée,
+     *    `currentRoom` porte encore l'ANCIEN salon : rediriger ici renvoyait vers le contenu du
+     *    salon qu'on quitte, donc on ne pouvait plus changer de salon sans repasser par l'accueil
+     *    du serveur. Le `<router-view :key="$route.params.roomId">` de `Server.vue` remonte ce
+     *    composant, et c'est `initRoom()` qui charge le nouveau salon puis son contenu.
+     */
     onBeforeRouteUpdate((to, from) => {
-        // is stay on same server
-        if (to.params.hasOwnProperty('serverId') && to.params.serverId === from.params.serverId
-                && !to.params.hasOwnProperty('vertexId')) {
-            loadDefaultContent()
+        if (to.params.vertexId || to.params.roomId !== from.params.roomId) {
+            return
         }
+
+        return defaultContentLocation()
+    })
+
+    watch(route, () => {
         onUpdateBreadcrumb()
     })
 
@@ -174,6 +213,7 @@
     const initRoom = async () => {
         await loadRoom(route.params.roomId)
         loadDefaultContent()
+        onUpdateBreadcrumb()
     }
     initRoom()
 </script>

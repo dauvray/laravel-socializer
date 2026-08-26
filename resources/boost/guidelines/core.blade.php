@@ -46,3 +46,17 @@ puis suivre sa table de routage vers `docs/INDEX.md`. Ne pas explorer le code au
   décompte de tests ⇒ le fichier appartient à `work/`. Détail dans `docs/ecrire-la-doc.md`.
 - Installation / mise à jour dans une app hôte : `{{ $assist->artisanCommand('socializer:build') }}`.
 @endscoped
+
+@scoped(['vendor/dauvray/laravel-socializer/src/resources/js/socializer/components/Server/**'])
+# Navigation serveur → salon → contenu
+
+- **Ne jamais `router.push()` depuis une garde de navigation : ça ANNULE la navigation en vol**, et
+  `RouterLink` avale l'échec — le clic ne fait rien, sans erreur ni log. Retourner la cible.
+- **Dans une garde, `currentRoom` porte encore l'ANCIEN salon.** Il ne bascule qu'au `initRoom()` du
+  composant remonté par le `:key="$route.params.roomId"` du `<router-view>` de `Server.vue` — clé
+  porteuse, pas décorative.
+- **Le fil d'Ariane s'écrit depuis un `watch(route)`, jamais depuis une garde** : l'`App.vue` du
+  projet hôte reconstruit tout le tableau depuis `route.meta.breadcrumb` après chaque navigation.
+- Le détail et la non-régression : `docs/modules/serveurs-et-salons.md` et
+  `components/Server/__tests__/roomNavigation.test.js`.
+@endscoped

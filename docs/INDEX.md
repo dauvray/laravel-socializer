@@ -27,6 +27,7 @@ Point d'entrée court : [`CLAUDE.md`](../CLAUDE.md) · Installation : [`README.m
 | savoir qui voit quoi (hub star, E2E, périmètre des audits) | [modules/webrtc2/securite.md](modules/webrtc2/securite.md) |
 | écrire un test WebRTC2, ou comprendre un test vert à tort | [modules/webrtc2/tests.md](modules/webrtc2/tests.md) |
 | toucher au ChatComponent | [modules/chat.md](modules/chat.md) |
+| **naviguer entre serveur, salon et contenu** — gardes, fil d'Ariane, « le clic ne fait rien » | [modules/serveurs-et-salons.md](modules/serveurs-et-salons.md) |
 | situer un autre module front | [modules/autres-modules.md](modules/autres-modules.md) |
 | **souscrire à un canal Reverb** dans un composable | [reference/use-reverb-channel.md](reference/use-reverb-channel.md) |
 | savoir ce qui reste à faire | [`work/README.md`](../work/README.md) |
@@ -49,6 +50,7 @@ docs/
 ├── modules/
 │   ├── webrtc2/                    INDEX · architecture · flux · api · securite · tests
 │   ├── chat.md
+│   ├── serveurs-et-salons.md       arbre de routes, gardes de navigation, fil d'Ariane
 │   └── autres-modules.md           fiches courtes des 15 autres modules front
 └── reference/
     └── use-reverb-channel.md       API de useReverbChannel / useReverbPresence
