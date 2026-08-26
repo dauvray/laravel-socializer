@@ -31,6 +31,13 @@ export function useConnectionPool(ctx, { core, connections }) {
 
     const syncUsersConnectionsLock = ref(false)
 
+    // La dernière composition reçue pendant qu'un tour de synchronisation était en vol, et
+    // les appelants qui attendent qu'elle soit traitée. Internes : rien de tout cela n'est
+    // exposé — la surface de debug ne grossit pas, `syncUsersConnectionsLock` continue de
+    // dire « un tour est en cours » et rien d'autre.
+    let _pendingUsers = null
+    const _syncWaiters = []
+
     // Moteur de retry des connexions, propriété du pool.
     // (usePeerCore garde le sien, dédié aux invitations d'appel.)
     const retryManager = usePeerRetry(ctx)
@@ -288,78 +295,136 @@ export function useConnectionPool(ctx, { core, connections }) {
     })
 
     /**
-     * Synchronise les connexions avec la liste des utilisateurs présents dans la room.
+     * UN tour de synchronisation, sans verrou : la boucle de drain de
+     * `syncUsersConnections` est seule à l'appeler, et elle garantit la sérialisation.
+     *
      * @param {Array} users - Liste des utilisateurs (objets avec un slug) présents dans la room.
+     * @returns {Promise<void>}
+     */
+    const _doSyncUsersConnections = async (users) => {
+        // on attend d’avoir les infos de contexte nécessaires (meStore ready) avant de faire quoi que ce soit.
+        const ready = await ctx.waitForMeReady()
+        if (!ready) {
+            return
+        }
+
+        const { newUsers, removedUsers } = await connections.getRoomUsersDiff(users)
+
+        // Nettoyage des peers qui ne sont plus dans la room.
+        removedUsers.forEach(userSlug => {
+            const activeRoom = ctx.session.currentCallRoomId || ctx.currentRoom.value
+            retryManager.clearRetry(userSlug)
+
+            // Mes demandes en vol pour ce pair (type principal ET 'screen') tombent
+            // avec son départ. Scopées sur ma room : celles des autres contextes,
+            // qui le voient peut-être encore, ne me regardent pas.
+            ctx.peerStore.clearWaitingRemotePeerIds(userSlug, ctx.session.onAirRoom)
+
+            ctx.peerStore.clearConnectionsRoom(activeRoom, userSlug, ctx.currentType.value)
+
+            // Fermer aussi la connexion 'screen' si elle existe
+            if (ctx.media.isCapturing) {
+                ctx.peerStore.clearConnectionsRoom(activeRoom, userSlug, 'screen')
+            }
+
+            // En DERNIER : le prédicat de présence a déjà été mis à jour par
+            // getRoomUsersDiff ci-dessus, donc ce verbe oubliera le peerId dès que
+            // le pair aura disparu de la dernière room qui le déclarait. L'ordre
+            // n'est plus déterminant (le prédicat ne dépend plus de `connections`),
+            // mais l'intention se lit mieux ainsi : on purge, puis on oublie.
+            ctx.peerStore.removeRemotePeerId(userSlug)
+        })
+
+        // Mesh: tout le monde se connecte à tout le monde.
+        if (ctx.topology.value === 'mesh') {
+            newUsers.forEach(user => {
+                requestOrConnectPeer(user.slug)
+
+                // Si on est en train de partager l'écran, initier aussi la connexion 'screen'
+                if (ctx.media.isCapturing) {
+                    requestOrConnectPeer(user.slug, 'screen')
+                }
+            })
+        }
+        // Star: le hub se connecte à tout le monde, les clients seulement au hub.
+        else if (ctx.topology.value === 'star' && ctx.hubSlug.value) {
+            if (ctx.isHub.value) {
+                newUsers.forEach(user => {
+                    requestOrConnectPeer(user.slug)
+                })
+            } else {
+                requestOrConnectPeer(ctx.hubSlug.value)
+            }
+        }
+        // SFU: pas de maillage pair à pair côté client.
+    }
+
+    /**
+     * Synchronise les connexions avec la liste des utilisateurs présents dans la room.
+     *
+     * ⚠️ Le verrou COALESCE, il ne jette pas. Un `return` sec sur verrou tenu perdait la
+     * composition reçue — et pas seulement une action : `getRoomUsersDiff` est l'unique
+     * écrivain de `usersInRoom`, `presenceSynced` et `roomMembers`. Un tour sauté laissait
+     * donc trois états périmés d'un coup, dont l'allowlist de présence que lisent les deux
+     * gardes d'autorisation. La fenêtre est celle de `waitForMeReady` (jusqu'à 15 s au
+     * démarrage), c'est-à-dire le moment où la composition bouge le plus.
+     *
+     * On retient donc la DERNIÈRE liste reçue pendant le tour et on la rejoue à la
+     * libération. Les intermédiaires sont écrasées sans être traitées : une liste de
+     * présence n'a pas d'historique, seule la plus récente est vraie.
+     *
+     * Coût assumé du rejeu : `waitForMeReady` n'est PAS mémoïsée (contrairement à
+     * `waitForPresenceSync`), donc chaque tour arme sa propre alarme de 15 s. Un contexte
+     * qui n'est jamais prêt paie l'attente une seconde fois — borné, warné, et sans
+     * conséquence : sans identité locale, rien ne peut se connecter de toute façon. Dans le
+     * cas nominal l'identité est arrivée entre les deux tours, `waitForMeReady` résout de
+     * façon synchrone et le rejeu ne coûte rien.
+     *
+     * @param {Array} users - Liste des utilisateurs (objets avec un slug) présents dans la room.
+     * @returns {Promise<void>} Résout quand ce tour — ou, pour un appel coalescé, le rejeu
+     *                          qui l'absorbe — est terminé.
      */
     const syncUsersConnections = async (users) => {
         if (!Array.isArray(users)) return
 
         if (syncUsersConnectionsLock.value) {
-            return
+            // ⚠️ Retenue par RÉFÉRENCE, sans copie défensive : le tableau vient du canal de
+            // présence et peut être muté en place d'ici le rejeu. C'est voulu — la lecture
+            // au rejeu est alors la plus fraîche, là où une copie figerait un état déjà
+            // périmé.
+            _pendingUsers = users
+            return new Promise((resolve) => { _syncWaiters.push(resolve) })
         }
 
         syncUsersConnectionsLock.value = true
 
         try {
+            let batch = users
 
-            // on attend d’avoir les infos de contexte nécessaires (meStore ready) avant de faire quoi que ce soit.
-            const ready = await ctx.waitForMeReady()
-            if (!ready) {
-                return
+            while (batch !== null) {
+                // ⚠️ Remis à null AVANT le tour, jamais après : un appel arrivé PENDANT
+                // `_doSyncUsersConnections` doit survivre au tour qu'il chevauche.
+                _pendingUsers = null
+
+                await _doSyncUsersConnections(batch)
+
+                // Le drain s'arrête net sur un arrêt en cours : rejouer après
+                // `beginShutdown()` rouvrirait des connexions que le teardown vient de
+                // fermer. Le tour DÉJÀ commencé, lui, va jusqu'au bout.
+                batch = ctx.isShuttingDown.value ? null : _pendingUsers
             }
-
-            const { newUsers, removedUsers } = await connections.getRoomUsersDiff(users)
-
-            // Nettoyage des peers qui ne sont plus dans la room.
-            removedUsers.forEach(userSlug => {
-                const activeRoom = ctx.session.currentCallRoomId || ctx.currentRoom.value
-                retryManager.clearRetry(userSlug)
-
-                // Mes demandes en vol pour ce pair (type principal ET 'screen') tombent
-                // avec son départ. Scopées sur ma room : celles des autres contextes,
-                // qui le voient peut-être encore, ne me regardent pas.
-                ctx.peerStore.clearWaitingRemotePeerIds(userSlug, ctx.session.onAirRoom)
-
-                ctx.peerStore.clearConnectionsRoom(activeRoom, userSlug, ctx.currentType.value)
-
-                // Fermer aussi la connexion 'screen' si elle existe
-                if (ctx.media.isCapturing) {
-                    ctx.peerStore.clearConnectionsRoom(activeRoom, userSlug, 'screen')
-                }
-
-                // En DERNIER : le prédicat de présence a déjà été mis à jour par
-                // getRoomUsersDiff ci-dessus, donc ce verbe oubliera le peerId dès que
-                // le pair aura disparu de la dernière room qui le déclarait. L'ordre
-                // n'est plus déterminant (le prédicat ne dépend plus de `connections`),
-                // mais l'intention se lit mieux ainsi : on purge, puis on oublie.
-                ctx.peerStore.removeRemotePeerId(userSlug)
-            })
-
-            // Mesh: tout le monde se connecte à tout le monde.
-            if (ctx.topology.value === 'mesh') {
-                newUsers.forEach(user => {
-                    requestOrConnectPeer(user.slug)
-
-                    // Si on est en train de partager l'écran, initier aussi la connexion 'screen'
-                    if (ctx.media.isCapturing) {
-                        requestOrConnectPeer(user.slug, 'screen')
-                    }
-                })
-            }
-            // Star: le hub se connecte à tout le monde, les clients seulement au hub.
-            else if (ctx.topology.value === 'star' && ctx.hubSlug.value) {
-                if (ctx.isHub.value) {
-                    newUsers.forEach(user => {
-                        requestOrConnectPeer(user.slug)
-                    })
-                } else {
-                    requestOrConnectPeer(ctx.hubSlug.value)
-                }
-            }
-            // SFU: pas de maillage pair à pair côté client.
-
         } finally {
+            _pendingUsers = null
             syncUsersConnectionsLock.value = false
+
+            // Réveillés APRÈS la libération : un waiter qui rappellerait
+            // syncUsersConnections depuis son `.then()` doit trouver le verrou libre, pas
+            // se re-coalescer sur lui-même.
+            //
+            // ⚠️ Ils résolvent TOUJOURS — drain coupé par l'arrêt, ou tour qui lève. Une
+            // promesse qui ne résout jamais est pire que le rejeu manqué ; l'exception,
+            // elle, continue de se propager au premier appelant.
+            _syncWaiters.splice(0).forEach(resolve => resolve())
         }
     }
 

@@ -397,6 +397,16 @@ scénarios) et `_hubRateLimiter` (arbitrage « verbe `.reset()` plutôt que Pini
   `_buildPeerConnectionConfig`), et le flux distant arrive bien sur cette connexion : filtrer sur
   `metadata.from` ne matche donc rien côté initiateur. `remoteSlug` / `remoteType` sont normalisés
   à l'écriture par `handleStreamReceived`
+- **Verrou de `syncUsersConnections`** : il **coalesce**, il ne jette pas. Un `return` sec sur
+  verrou tenu ne perdait pas qu'une action : `getRoomUsersDiff` est l'unique écrivain de
+  `usersInRoom`, `presenceSynced` et `roomMembers`, donc un tour sauté laissait **trois** états
+  périmés d'un coup — dont l'allowlist de présence que lisent les deux gardes d'autorisation. Et la
+  fenêtre est celle de `waitForMeReady` (jusqu'à 15 s au démarrage), c'est-à-dire le moment où la
+  composition bouge le plus. On retient donc la **dernière** liste reçue pendant le tour et on la
+  rejoue à la libération ; les intermédiaires sont écrasées sans être traitées, une liste de
+  présence n'ayant pas d'historique. Le drain s'arrête sur `isShuttingDown` — rejouer après
+  `beginShutdown()` rouvrirait ce que le teardown vient de fermer — mais les appelants coalescés
+  résolvent **toujours**. Épinglé par `useConnectionPool.test.js` (§ `syncUsersConnections`)
 - **Garde de teardown** : `beginShutdown`/`endShutdown` est un **compteur** ré-entrant, jamais un
   booléen (deux arrêts concurrents se volaient le garde). Toujours dans un `try/finally` : une
   exception laissant `shutdownCount ≥ 1` fait sortir `_handleConnectionAttempt` par `return true`,

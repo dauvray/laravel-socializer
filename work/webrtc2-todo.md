@@ -66,19 +66,30 @@ avant le déménagement revient à les jeter.
 
 ---
 
-## Chaîne de présence — deux défauts en amont du bail
+## Chaîne de présence — ce qui reste en amont du bail
 
 > Trouvés en posant **le bail des peerId** (livré le 26/08/2026), qui les rend non fatals sans les
 > corriger : un mapping périmé n'est plus composé, mais une composition de room perdue reste perdue.
-> D'où deux items séparés — mélanger les deux mécanismes dans une même passe rendrait indécidable
-> lequel a fait le travail.
+> D'où des items séparés — mélanger deux mécanismes dans une même passe rendrait indécidable lequel
+> a fait le travail.
+>
+> **Le verrou de `syncUsersConnections` est fermé** (27/08/2026) : il coalesce désormais au lieu de
+> jeter la composition reçue. L'invariant vit dans
+> [architecture.md § Conventions de code](../docs/modules/webrtc2/architecture.md#conventions-de-code).
+> Ce qui suit ne s'en déduit pas : un tour qui a bien lieu peut encore ne rien voir.
 
-- [ ] **`syncUsersConnections` perd la liste quand son verrou est tenu** `[M]`
-  `useConnectionPool.js:289-291` : appel concurrent ⇒ `return` sec, la composition reçue est
-  **jetée**. Une mise à jour perdue, donc : ni purge des partants, ni connexion aux arrivants. Le
-  correctif juste est une coalescence (retenir la dernière liste, la rejouer à la libération), ce qui
-  touche le contrat de concurrence de tout le pool — à peser avec l'item `[L]` gelé.
-  À voir aussi : l'early-return sur liste vide de `useMediaBroadcast.js:132`.
+- [ ] **Une room qui se vide n'est jamais purgée** `[M]`
+  `useMediaBroadcast.watchUsers` sort par un early-return sur `newVal.length === 0` : le dernier
+  partant n'est donc jamais purgé, et `usersInRoom` garde son fantôme.
+  ⚠️ **Ce n'est pas une ligne à supprimer.** Le montage câble
+  `watch(() => props.users, api.watchUsers, { immediate: true })` : sans ce garde, un premier tour
+  sur liste vide ferait passer `presenceSynced` à `true` alors que la présence n'est pas encore
+  connue. Or ce drapeau est ce qui distingue « je ne sais pas encore » de « tu n'es pas membre »
+  pour `_admitIncoming` (`usePeerTransport`) et pour la réponse de `usePeerCore` — le refus
+  deviendrait une ignorance déguisée, sur le chemin de sécurité. Le correctif suppose de dissocier
+  « synchroniser » de « déclarer la présence connue » dans `_doGetRoomUsersDiff`, pas de retirer le
+  garde. Trouvé en fermant la coalescence du verrou, laissé ouvert délibérément : deux mécanismes
+  dans une même passe rendent indécidable lequel a fait le travail.
 
 - [ ] **Le diff de présence ne voit pas un départ+retour coalescés** `[M]`
   `usePeerConnections.js:45-46` : si `member_removed` et `member_added` tombent dans le même flush

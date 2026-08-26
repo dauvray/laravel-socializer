@@ -151,7 +151,7 @@ direct hors room. Et il doit être posé **avant** que `sendAuthorizationRemoteP
 useReverbPresence(channel)          ← liste `users` (canal de présence Reverb)
   └─ MediaBroadcastProvider.vue : watch(() => props.users, api.watchUsers, { immediate: true })
 useMediaBroadcast.watchUsers
-  └─ useConnectionPool.syncUsersConnections(users)
+  └─ useConnectionPool.syncUsersConnections(users)  ← verrou COALESCENT : la dernière liste gagne
        ├─ await ctx.waitForMeReady()
        ├─ connections.getRoomUsersDiff(users)      ← mutex à chaîne de promesses (anti-TOCTOU)
        ├─ nettoyage des removedUsers

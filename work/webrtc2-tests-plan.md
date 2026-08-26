@@ -158,7 +158,10 @@ ferait passer le test à côté de ce qu'il croit exercer.
 - [ ] `syncUsersConnections` topologie mesh : `_requestOrConnectPeer` appelé pour chaque new user
 - [ ] `syncUsersConnections` topologie star hub : se connecte à tous les new users
 - [ ] `syncUsersConnections` topologie star client : se connecte uniquement au hub
-- [ ] `syncUsersConnections` lock : appels parallèles sérialisés (le 2e attend la fin du 1er)
+- [✅] ~~`syncUsersConnections` lock~~ : couvert un étage plus bas, dans `useConnectionPool.test.js`
+  — et pas sous le contrat prévu ici. Le verrou ne sérialise pas (« le 2e attend la fin du 1er »),
+  il **coalesce** : la dernière liste reçue pendant le tour est rejouée, les intermédiaires sont
+  écrasées. Six cas, dont l'arrêt du drain sur `isShuttingDown`
 - [ ] `_requestOrConnectPeer` : connexion directe si `remotePeerId` connu ; sinon `requestRemotePeerConnection` ; retry `scheduleRetry` lancé dans tous les cas
 - [ ] `handleStreamReceived` mode `stream` : peuple `remoteStreamsMap` (clé `${slug}-${type}`) **sans** appeler `createVideoElement` — l'UI consomme `remoteStreams` via le slot
 - [ ] `handleStreamReceived` autres modes (visio, vocal…) : peuple `remoteStreamsMap` **et** crée le player DOM via `createVideoElement`, transition RECEIVING→CONNECTED

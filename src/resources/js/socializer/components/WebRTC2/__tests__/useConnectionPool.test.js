@@ -471,6 +471,28 @@ describe('useConnectionPool', () => {
 
     describe('syncUsersConnections', () => {
 
+        /**
+         * Monte le pool sur un contexte dont `waitForMeReady` est tenu ouvert : c'est la
+         * seule façon d'observer le verrou, puisqu'il n'est détenu que le temps de cette
+         * attente et du diff.
+         *
+         * ⚠️ Une SEULE barrière pour tous les appels, à la différence d'un
+         * `new Promise` reconstruit à chaque invocation : le rejeu rappelle
+         * `waitForMeReady`, et une barrière neuve à ce moment-là bloquerait le drain qu'on
+         * cherche justement à mesurer.
+         */
+        const mountGatedPool = () => {
+            let openGate
+            const gate = new Promise((resolve) => { openGate = resolve })
+            const gatedCtx = createMockContext({
+                waitForMeReady: vi.fn(() => gate.then(() => true)),
+            })
+            app.unmount()
+            mountPool(gatedCtx)
+
+            return { gatedCtx, openGate }
+        }
+
         it('ignore un argument non-tableau', async () => {
             await pool.syncUsersConnections(null)
             await pool.syncUsersConnections('alice')
@@ -487,25 +509,121 @@ describe('useConnectionPool', () => {
             expect(pool.syncUsersConnectionsLock.value).toBe(false)
         })
 
-        it('ignore un second appel concurrent (lock)', async () => {
-            let releaseReady
-            const gatedCtx = createMockContext({
-                waitForMeReady: vi.fn(() => new Promise((resolve) => { releaseReady = resolve })),
-            })
-            app.unmount()
-            mountPool(gatedCtx)
+        it('rejoue la liste reçue pendant que le verrou est tenu', async () => {
+            const { openGate } = mountGatedPool()
 
             const first = pool.syncUsersConnections([{ slug: 'alice' }])
-            // Deuxième appel pendant que le premier est encore en vol
-            await pool.syncUsersConnections([{ slug: 'bob' }])
+            // Deuxième appel pendant que le premier est encore en vol : sa liste n'est
+            // plus jetée, elle est retenue et rejouée à la libération.
+            const coalesced = pool.syncUsersConnections([{ slug: 'bob' }])
 
             expect(connections.getRoomUsersDiff).not.toHaveBeenCalled()
 
-            releaseReady(true)
+            openGate()
             await first
+            await coalesced
+
+            expect(connections.getRoomUsersDiff).toHaveBeenCalledTimes(2)
+            expect(connections.getRoomUsersDiff).toHaveBeenNthCalledWith(1, [{ slug: 'alice' }])
+            expect(connections.getRoomUsersDiff).toHaveBeenNthCalledWith(2, [{ slug: 'bob' }])
+            expect(pool.syncUsersConnectionsLock.value).toBe(false)
+        })
+
+        it('ne retient que la DERNIÈRE liste reçue pendant le tour', async () => {
+            const { openGate } = mountGatedPool()
+
+            const first = pool.syncUsersConnections([{ slug: 'alice' }])
+            const superseded = pool.syncUsersConnections([{ slug: 'bob' }])
+            const kept = pool.syncUsersConnections([{ slug: 'carol' }])
+
+            openGate()
+            await Promise.all([first, superseded, kept])
+
+            // Une liste de présence n'a pas d'historique : la composition intermédiaire
+            // n'est pas rejouée, elle est écrasée.
+            expect(connections.getRoomUsersDiff).toHaveBeenCalledTimes(2)
+            expect(connections.getRoomUsersDiff).toHaveBeenNthCalledWith(1, [{ slug: 'alice' }])
+            expect(connections.getRoomUsersDiff).toHaveBeenNthCalledWith(2, [{ slug: 'carol' }])
+            expect(connections.getRoomUsersDiff).not.toHaveBeenCalledWith([{ slug: 'bob' }])
+        })
+
+        it('la promesse de l\'appel coalescé ne résout qu\'une fois sa liste traitée', async () => {
+            const { openGate } = mountGatedPool()
+
+            let settled = false
+            const first = pool.syncUsersConnections([{ slug: 'alice' }])
+            const coalesced = pool.syncUsersConnections([{ slug: 'bob' }])
+                .then(() => { settled = true })
+
+            // Toutes les microtâches en attente sont drainées : rien ne peut avancer tant
+            // que la barrière tient, et la promesse coalescée ne ment donc pas.
+            await vi.advanceTimersByTimeAsync(0)
+            expect(settled).toBe(false)
+
+            openGate()
+            await first
+            await coalesced
+
+            expect(settled).toBe(true)
+            expect(connections.getRoomUsersDiff).toHaveBeenCalledWith([{ slug: 'bob' }])
+        })
+
+        it('absorbe dans le MÊME drain un appel arrivé pendant le rejeu', async () => {
+            const { openGate } = mountGatedPool()
+
+            connections.getRoomUsersDiff.mockImplementation(async (users) => {
+                // Une nouvelle composition tombe pendant le rejeu de bob.
+                if (users[0]?.slug === 'bob') {
+                    pool.syncUsersConnections([{ slug: 'carol' }])
+                }
+                return { newUsers: [], removedUsers: [] }
+            })
+
+            const first = pool.syncUsersConnections([{ slug: 'alice' }])
+            pool.syncUsersConnections([{ slug: 'bob' }])
+
+            openGate()
+            // `first` est le propriétaire du verrou : qu'il ne résolve qu'après les trois
+            // tours est la preuve que le drain les a enchaînés sans relâcher.
+            await first
+
+            expect(connections.getRoomUsersDiff).toHaveBeenCalledTimes(3)
+            expect(connections.getRoomUsersDiff).toHaveBeenNthCalledWith(3, [{ slug: 'carol' }])
+            expect(pool.syncUsersConnectionsLock.value).toBe(false)
+        })
+
+        it('ne rejoue rien si le contexte est en train de s\'arrêter', async () => {
+            const { gatedCtx, openGate } = mountGatedPool()
+
+            const first = pool.syncUsersConnections([{ slug: 'alice' }])
+            const coalesced = pool.syncUsersConnections([{ slug: 'bob' }])
+
+            gatedCtx.beginShutdown()
+            openGate()
+
+            await first
+            // Résout quand même : une promesse pendante serait pire que le rejeu manqué.
+            await coalesced
 
             expect(connections.getRoomUsersDiff).toHaveBeenCalledTimes(1)
             expect(connections.getRoomUsersDiff).toHaveBeenCalledWith([{ slug: 'alice' }])
+            expect(pool.syncUsersConnectionsLock.value).toBe(false)
+        })
+
+        it('rejoue même quand le tour précédent est sorti sur un contexte non prêt', async () => {
+            // L'early-return sur `!ready` termine le tour, il n'annule pas le drain : la
+            // liste retenue est bien rejouée, et ne reste pas coincée derrière un tour
+            // stérile.
+            ctx.waitForMeReady.mockResolvedValue(false)
+
+            const first = pool.syncUsersConnections([{ slug: 'alice' }])
+            const coalesced = pool.syncUsersConnections([{ slug: 'bob' }])
+
+            await first
+            await coalesced
+
+            expect(ctx.waitForMeReady).toHaveBeenCalledTimes(2)
+            expect(connections.getRoomUsersDiff).not.toHaveBeenCalled()
             expect(pool.syncUsersConnectionsLock.value).toBe(false)
         })
 
