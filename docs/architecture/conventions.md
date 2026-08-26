@@ -81,6 +81,13 @@ components/<Domaine>/
 `<script setup>` majoritaire avec `defineProps` / `defineEmits`. Quelques reliquats en Options API
 (`Feed/Feed.vue`) — ne pas les prendre pour modèle.
 
+⚠️ **`Feed/Feed.vue` porte malgré tout un `setup()`**, qui possède tout son câblage Reverb. Ce n'est
+pas une migration à moitié faite mais une contrainte : `applyOptions()` tourne **après** `setup()`,
+donc un `beforeUnmount()` d'options s'exécute après les hooks de `setup()` — trop tard pour
+whisperer sur un canal que le composable vient de libérer
+([le détail](../reference/use-reverb-channel.md#un-whisper-de-départ-senregistre-avant-le-composable)).
+Tout hook de démontage qui touche à un canal appartient au `setup()`.
+
 **Imports toujours via l'alias `~socializer`**, jamais en relatif profond. L'alias est défini côté
 hôte dans `vite.config.js` **et** `vitest.config.js` — un import relatif casserait l'un des deux.
 Alias disponibles : `~` (app), `~socializer`, `~estarter`, `~formdesigner`, `~eblogger`.

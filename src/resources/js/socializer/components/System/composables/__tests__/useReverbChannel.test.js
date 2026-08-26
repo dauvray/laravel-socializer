@@ -15,11 +15,81 @@
  * `watch` immédiat, donc il exige une vraie instance de composant.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { createApp, defineComponent, h, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useReverbChannel } from '~socializer/components/System/composables/useReverbChannel.js'
 import { withSetup } from '~socializer/components/WebRTC2/__tests__/helpers/withSetup.js'
 
 const ALICE = { id: 1, name: 'Alice' }
 const BOB = { id: 2, name: 'Bob' }
+
+const createFakePrivateChannel = () => ({
+    subscribed: true,
+    listen: vi.fn(),
+    stopListening: vi.fn(),
+    listenForWhisper: vi.fn(),
+    stopListeningForWhisper: vi.fn(),
+    error: vi.fn(),
+    whisper: vi.fn(function () {
+        if (!this.subscribed) {
+            throw new TypeError("Cannot read properties of undefined (reading 'trigger')")
+        }
+    }),
+})
+
+/** Partie présence de la doublure : chaînable comme Echo, et sans désabonnement possible. */
+const withPresenceApi = (channel) => {
+    const callbacks = { here: [], joining: [], leaving: [] }
+
+    return Object.assign(channel, {
+        here(cb) { callbacks.here.push(cb); return this },
+        joining(cb) { callbacks.joining.push(cb); return this },
+        leaving(cb) { callbacks.leaving.push(cb); return this },
+
+        emitHere(users) { callbacks.here.forEach(cb => cb(users)) },
+        emitJoining(user) { callbacks.joining.forEach(cb => cb(user)) },
+        emitLeaving(user) { callbacks.leaving.forEach(cb => cb(user)) },
+    })
+}
+
+/**
+ * Doublure d'`Echo` fidèle sur les deux points qui comptent ici : elle **mémoïse** ses canaux par
+ * nom préfixé (deux `Echo.private('user.7')` rendent le MÊME objet), et son `leave()` ratisse les
+ * trois préfixes d'un nom — l'objet canal survit dans les closures qui le tiennent, mais sa
+ * souscription est morte, comme `PusherPrivateChannel.whisper()` qui déréférence
+ * `pusher.channels.channels[name]` sans garde.
+ *
+ * @returns {{channels: Map<string, object>, Echo: object}} la table des canaux vivants et la doublure
+ */
+const createEchoDouble = () => {
+    const channels = new Map()
+
+    const memoize = (prefix, decorate = (channel) => channel) => vi.fn((name) => {
+        const key = `${prefix}${name}`
+        if (!channels.has(key)) {
+            channels.set(key, decorate(createFakePrivateChannel()))
+        }
+        return channels.get(key)
+    })
+
+    return {
+        channels,
+        Echo: {
+            channel: memoize(''),
+            private: memoize('private-'),
+            encryptedPrivate: memoize('private-encrypted-'),
+            join: memoize('presence-', withPresenceApi),
+            leave: vi.fn((name) => {
+                ['', 'private-', 'presence-'].forEach((prefix) => {
+                    const channel = channels.get(`${prefix}${name}`)
+                    if (channel) {
+                        channel.subscribed = false
+                        channels.delete(`${prefix}${name}`)
+                    }
+                })
+            }),
+        },
+    }
+}
 
 /**
  * Doublure du canal de présence Echo. `here/joining/leaving` sont chaînables comme
@@ -162,35 +232,6 @@ describe('useReverbChannel — canal partagé entre composants', () => {
     let channels
     let apps
 
-    const createFakePrivateChannel = () => ({
-        subscribed: true,
-        listen: vi.fn(),
-        stopListening: vi.fn(),
-        listenForWhisper: vi.fn(),
-        stopListeningForWhisper: vi.fn(),
-        error: vi.fn(),
-        whisper: vi.fn(function () {
-            if (!this.subscribed) {
-                throw new TypeError("Cannot read properties of undefined (reading 'trigger')")
-            }
-        }),
-    })
-
-    /** Partie présence de la doublure : chaînable comme Echo, et sans désabonnement possible. */
-    const withPresenceApi = (channel) => {
-        const callbacks = { here: [], joining: [], leaving: [] }
-
-        return Object.assign(channel, {
-            here(cb) { callbacks.here.push(cb); return this },
-            joining(cb) { callbacks.joining.push(cb); return this },
-            leaving(cb) { callbacks.leaving.push(cb); return this },
-
-            emitHere(users) { callbacks.here.forEach(cb => cb(users)) },
-            emitJoining(user) { callbacks.joining.forEach(cb => cb(user)) },
-            emitLeaving(user) { callbacks.leaving.forEach(cb => cb(user)) },
-        })
-    }
-
     const mount = (type, options = {}) => {
         const [api, app] = withSetup(() => useReverbChannel(CHANNEL, { type, ...options }))
         apps.push(app)
@@ -206,34 +247,8 @@ describe('useReverbChannel — canal partagé entre composants', () => {
     }
 
     beforeEach(() => {
-        channels = new Map()
         apps = []
-
-        const memoize = (prefix, decorate = (channel) => channel) => vi.fn((name) => {
-            const key = `${prefix}${name}`
-            if (!channels.has(key)) {
-                channels.set(key, decorate(createFakePrivateChannel()))
-            }
-            return channels.get(key)
-        })
-
-        globalThis.Echo = {
-            channel: memoize(''),
-            private: memoize('private-'),
-            encryptedPrivate: memoize('private-encrypted-'),
-            join: memoize('presence-', withPresenceApi),
-            // Echo.leave() ratisse les trois préfixes d'un nom, et la souscription pusher meurt
-            // avec : l'objet canal survit dans les closures, mais son `trigger` a disparu.
-            leave: vi.fn((name) => {
-                ['', 'private-', 'presence-'].forEach((prefix) => {
-                    const channel = channels.get(`${prefix}${name}`)
-                    if (channel) {
-                        channel.subscribed = false
-                        channels.delete(`${prefix}${name}`)
-                    }
-                })
-            }),
-        }
+        ;({ channels, Echo: globalThis.Echo } = createEchoDouble())
     })
 
     afterEach(() => {
@@ -328,5 +343,223 @@ describe('useReverbChannel — canal partagé entre composants', () => {
 
         expect(channels.get(`private-${CHANNEL}`).stopListening)
             .toHaveBeenCalledWith('.MessageSent', expect.any(Function))
+    })
+})
+
+/**
+ * Quatre composants préviennent de leur départ par un whisper posé dans un hook de démontage :
+ * `leave-server` (Server.vue), `leave-room` (Room.vue), `leave-chat` (ChatComponent.vue) et
+ * `leave-feed` (Feed.vue). Côté serveur, `UserOnlineWhisperListener` en fait un
+ * `removeUserItem(...)` : un whisper perdu laisse une présence fantôme que rien n'efface.
+ *
+ * Or ce whisper ne part que si son hook a été enregistré AVANT l'appel au composable. Vue exécute
+ * les hooks `beforeUnmount` dans leur ordre d'ENREGISTREMENT, et `useReverbChannel` enregistre le
+ * sien (`leave`) au moment de l'appel. Enregistré après, le hook trouve `subscriptionToken` déjà
+ * révoqué et `whisper()` rend `false` — sans lever, donc sans rien signaler.
+ *
+ * C'est un ordre de LIGNES, qu'aucun type ni aucun lint ne protège : d'où ces tests.
+ */
+describe("useReverbChannel — ordre du whisper de départ et du leave()", () => {
+    const CHANNEL = 'user.7'
+    const PAYLOAD = { chatId: 42, userId: 7 }
+
+    let channels
+    let apps
+    let trace
+
+    /** `true` → whisper parti. Tracé pour pouvoir l'ordonner avec le `Echo.leave()`. */
+    const traceWhisper = (label, sent) => trace.push(`${label}:${sent ? 'parti' : 'perdu'}`)
+
+    /** La disposition de ChatComponent.vue / Server.vue / Room.vue : le hook AVANT le composable. */
+    const mountHookFirst = () => {
+        const [, app] = withSetup(() => {
+            // `whisperMe` est déclaré plus bas : la closure ne le lit qu'au démontage. C'est la
+            // disposition exacte du code de production, et elle est volontaire.
+            onBeforeUnmount(() => traceWhisper('hook', whisperMe('leave-chat', PAYLOAD)))
+
+            const { whisper: whisperMe } = useReverbChannel(CHANNEL, { type: 'private' })
+        })
+        apps.push(app)
+        return app
+    }
+
+    /** Le piège symétrique : le composable AVANT le hook. */
+    const mountComposableFirst = () => {
+        const [, app] = withSetup(() => {
+            const { whisper: whisperMe } = useReverbChannel(CHANNEL, { type: 'private' })
+
+            onBeforeUnmount(() => traceWhisper('hook', whisperMe('leave-chat', PAYLOAD)))
+        })
+        apps.push(app)
+        return app
+    }
+
+    /**
+     * La disposition de Feed.vue : un `setup()` qui porte le câblage Reverb, et un
+     * `beforeUnmount()` d'Options API dans le même composant. `applyOptions()` tourne APRÈS
+     * `setup()`, donc le hook des options passe en second — trop tard pour whisperer.
+     */
+    const mountOptionsApiLeaver = () => {
+        const app = createApp(defineComponent({
+            setup() {
+                onBeforeUnmount(() => traceWhisper('setup', whisperMe('leave-feed', PAYLOAD)))
+
+                const { whisper: whisperMe } = useReverbChannel(CHANNEL, { type: 'private' })
+
+                return { whisperMe }
+            },
+            beforeUnmount() {
+                traceWhisper('options', this.whisperMe('leave-feed', PAYLOAD))
+            },
+            render: () => h('div'),
+        }))
+
+        app.mount(document.createElement('div'))
+        apps.push(app)
+        return app
+    }
+
+    const unmountNow = (app) => {
+        app.unmount()
+        apps = apps.filter(other => other !== app)
+    }
+
+    beforeEach(() => {
+        apps = []
+        trace = []
+
+        const double = createEchoDouble()
+        channels = double.channels
+
+        // Instrumenté pour ordonner `Echo.leave()` avec les whispers dans une seule trace.
+        const leave = double.Echo.leave
+        globalThis.Echo = {
+            ...double.Echo,
+            leave: vi.fn((name) => {
+                trace.push('echo.leave')
+                leave(name)
+            }),
+        }
+    })
+
+    afterEach(() => {
+        apps.forEach(app => app.unmount())
+        delete globalThis.Echo
+    })
+
+    it('part avant la libération du canal, même en dernier consommateur', () => {
+        const app = mountHookFirst()
+        const { whisper } = channels.get(`private-${CHANNEL}`)
+
+        unmountNow(app)
+
+        expect(trace).toEqual(['hook:parti', 'echo.leave'])
+        expect(whisper).toHaveBeenCalledWith('leave-chat', PAYLOAD)
+    })
+
+    /** LE test de l'invariant : inverser les deux lignes suffit à perdre le whisper. */
+    it('serait perdu si le composable était appelé avant le hook', () => {
+        const app = mountComposableFirst()
+        const { whisper } = channels.get(`private-${CHANNEL}`)
+
+        unmountNow(app)
+
+        expect(trace).toEqual(['echo.leave', 'hook:perdu'])
+        expect(whisper).not.toHaveBeenCalled()
+    })
+
+    it("part depuis setup(), jamais depuis le beforeUnmount() d'un composant Options API", () => {
+        unmountNow(mountOptionsApiLeaver())
+
+        expect(trace).toEqual(['setup:parti', 'echo.leave', 'options:perdu'])
+    })
+})
+
+/**
+ * Même invariant que le describe précédent, sur un autre mécanisme : non plus des hooks de
+ * démontage, mais des **watchers**. Le cas vivant est `System/Notifications.vue`, qui whispere son
+ * battement de présence (`ping`) depuis un `watch(me)`.
+ *
+ * `me` y est null au montage — `loadMe()` est asynchrone — donc la transition null → valeur a
+ * toujours lieu, et le `watch` du composant comme celui du composable y réagissent dans le MÊME
+ * flush, ordonnés par leur ordre de création. Le composable doit avoir joint avant que le whisper
+ * ne parte, sans quoi `whisper()` rend `false` : l'utilisateur reste hors ligne jusqu'au battement
+ * suivant, soit deux minutes — exactement le TTL Redis de la présence.
+ */
+describe('useReverbChannel — whisper émis depuis un watcher externe', () => {
+    const CHANNEL = 'user.7'
+    const PING = { timestamp: 0, userId: 7 }
+
+    let apps
+    let trace
+
+    /** Le nom part à `null`, comme `userChannel` tant que le store `me` n'est pas chargé. */
+    const mountPinger = ({ composableFirst }) => {
+        const channelName = ref(null)
+
+        const [, app] = withSetup(() => {
+            let whisperPing
+
+            // Le watcher du composant. `whisperPing` n'est lu qu'au flush, jamais à la création :
+            // les deux branches ci-dessous ne diffèrent QUE par l'ordre des deux appels.
+            const startWatching = () => watch(channelName, (value) => {
+                if (value) trace.push(whisperPing('ping', PING) ? 'ping:parti' : 'ping:perdu')
+            })
+
+            const join = () => {
+                ;({ whisper: whisperPing } = useReverbChannel(channelName, { type: 'private' }))
+            }
+
+            if (composableFirst) {
+                join()
+                startWatching()
+            } else {
+                startWatching()
+                join()
+            }
+        })
+
+        apps.push(app)
+        return channelName
+    }
+
+    beforeEach(() => {
+        apps = []
+        trace = []
+
+        const double = createEchoDouble()
+
+        // `private` est instrumenté pour situer le join vis-à-vis du whisper dans une seule trace.
+        globalThis.Echo = {
+            ...double.Echo,
+            private: vi.fn((name) => {
+                trace.push('join')
+                return double.Echo.private(name)
+            }),
+        }
+    })
+
+    afterEach(() => {
+        apps.forEach(app => app.unmount())
+        delete globalThis.Echo
+    })
+
+    it('part quand le watcher est créé après le composable', async () => {
+        const channelName = mountPinger({ composableFirst: true })
+
+        channelName.value = CHANNEL
+        await nextTick()
+
+        expect(trace).toEqual(['join', 'ping:parti'])
+    })
+
+    /** LE test de l'invariant : remonter le watcher au-dessus de l'appel suffit à perdre le ping. */
+    it('serait perdu si le watcher était créé avant le composable', async () => {
+        const channelName = mountPinger({ composableFirst: false })
+
+        channelName.value = CHANNEL
+        await nextTick()
+
+        expect(trace).toEqual(['ping:perdu', 'join'])
     })
 })

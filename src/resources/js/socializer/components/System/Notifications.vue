@@ -70,12 +70,7 @@ const heartbeatIntervalId = ref(null)
 const userChannel = computed(() => me.value?.channel)
 const callStatus = computed(() => peers.callStatus())
 
-// Watchers
-watch(me, (value) => {
-    if (value) setOnlineStatus()
-})
-
-useReverbChannel(userChannel, {
+const { whisper: whisperPing } = useReverbChannel(userChannel, {
     type: 'private',
     // Laravel notifications
     onNotification: () => {
@@ -148,6 +143,17 @@ useReverbChannel(userChannel, {
     },
 })
 
+// Watchers
+// ⚠️ Enregistré APRÈS le composable, et c'est ce qui fait partir le ping d'ouverture de session.
+// `me` est null au montage (loadMe() est asynchrone, et ce composant n'attend pas), donc la
+// transition null → valeur a toujours lieu et les deux watchers y réagissent dans leur ordre de
+// création. Au-dessus de l'appel, setOnlineStatus() courrait avant le join() : whisper() rendrait
+// false, et l'utilisateur resterait hors ligne jusqu'au battement suivant — deux minutes, soit
+// exactement le TTL Redis de la présence.
+watch(me, (value) => {
+    if (value) setOnlineStatus()
+})
+
 // Méthodes
 async function onResponseAlert(fromUserSlug, options, status) {
     notificationComponent.value = null
@@ -166,7 +172,7 @@ async function onResponseAlert(fromUserSlug, options, status) {
 
 function setOnlineStatus() {
     if (!me.value) return
-    Echo.private(me.value.channel).whisper('ping', {
+    whisperPing('ping', {
         timestamp: Date.now(),
         userId: me.value.id,
     })
@@ -204,7 +210,8 @@ onUnmounted(async () => {
             await peers.stopCallWithPeers([...currentUsers], false)
         }
     } finally {
-        // if (userChannel.value) Echo.leave(userChannel.value)
+        // Le canal privé personnel est libéré au compteur par useReverbChannel : pas d'Echo.leave()
+        // ici, il couperait les autres composants qui le tiennent encore.
         eventBus.$off('call-user', onStartCall)
 
         peers.clearAllCallInviteRetries()

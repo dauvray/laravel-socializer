@@ -27,7 +27,6 @@ composer install && vendor/bin/phpunit  # PHP — depuis ce paquet
 > cadrées, avec leur analyse : [webrtc2-todo.md](webrtc2-todo.md) (renommage `usersInRoom`,
 > sémantique de `peerInitPromise`, peerId fantôme),
 > [webrtc2-tests-plan.md](webrtc2-tests-plan.md) (trous de couverture),
-> [front-todo.md](front-todo.md) (directives de resize),
 > [sass-todo.md](sass-todo.md) (thème sombre, `@extend`). Ce fichier y **renvoie** — une règle, un
 > seul endroit.
 >
@@ -246,10 +245,15 @@ plusieurs de ces noms ont **déjà coûté des régressions**.
 - [ ] **`Feed.vue` encore en Options API** · effort [S]
       « ne pas les prendre pour modèle » (`conventions.md`, `autres-modules.md`). Migrer le
       seul reliquat supprime les deux mentions.
+      ⚠️ **Le fichier est désormais mixte** : son câblage Reverb (whisper `leave-feed` + canal
+      public du feed) vit dans un `setup()`, et il y vit pour une raison —
+      [ordre des hooks de démontage](../docs/reference/use-reverb-channel.md#un-whisper-de-départ-senregistre-avant-le-composable).
+      La migration consiste à finir de vider les options dans ce `setup()`, pas à le défaire.
       - [ ] Code · - [ ] Doc · - [ ] Tests
 
-- [ ] **Directives de resize : le suffixe décrit la poignée, pas l'axe** — déjà cadré dans
-      [front-todo.md](front-todo.md). **Ne pas dupliquer** ; cocher là-bas.
+- [x] **Directives de resize : le suffixe décrit la poignée, pas l'axe** — fait par `989b360`
+      (`resizable_height.js` / `resizable_width.js`, épinglé par
+      `directives/__tests__/resizableNaming.test.js`).
 
 - [ ] **`usersInRoom`** — déjà cadré dans [webrtc2-todo.md](webrtc2-todo.md) (150 occurrences /
       33 fichiers). **Ne pas dupliquer.**

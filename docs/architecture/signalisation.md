@@ -22,9 +22,15 @@ TURN coturn).
 | `server.{serverId}` | présence | `canJoinServer()` | liste des membres d'un serveur |
 | `questionnaire.{roomId}` | **privé** | `canJoinRoom()` ou `isCreator()` | questionnaires |
 
-⚠️ **`App.Models.User.{userId}` — le `me.channel` du store — est souscrit par trois composants à la
-fois** (`System/Notifications.vue`, `Server/Server.vue`, `Server/Room.vue`), dont un qui ne se
-démonte jamais. Echo mémoïse ses canaux, donc c'est **une** souscription pour les trois, et
+⚠️ **`App.Models.User.{userId}` — le `me.channel` du store — est souscrit par cinq composants à la
+fois** (`System/Notifications.vue`, `Server/Server.vue`, `Server/Room.vue`, `Chat/ChatComponent.vue`,
+`Feed/Feed.vue`), dont un qui ne se démonte jamais. Les quatre derniers ne s'en servent que pour
+whisperer leur départ (`leave-server`, `leave-room`, `leave-chat`, `leave-feed`) ; `Notifications.vue`
+y whispere en plus le battement de présence (`ping`, toutes les 2 min). **Ces cinq whispers portent
+tous une contrainte d'ordre dans le code qui les émet**, et elle n'est pas la même selon qu'ils
+partent d'un hook de démontage ou d'un watcher :
+[les deux règles](../reference/use-reverb-channel.md#un-whisper-de-départ-senregistre-avant-le-composable).
+Echo mémoïse ses canaux, donc c'est **une** souscription pour les cinq, et
 `Echo.leave()` la coupe pour tout le monde : elle n'est libérée qu'au compteur, par
 `useReverbChannel`
 ([le pourquoi, et le gel de navigation que ça a coûté](../reference/use-reverb-channel.md#un-canal-partagé-se-libère-au-compteur)).

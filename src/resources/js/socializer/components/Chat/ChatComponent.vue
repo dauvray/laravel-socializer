@@ -127,7 +127,7 @@
     import { useMeStore } from '~estarter/stores/me.js'
 
     // COMPOSABLES
-    import { useReverbPresence } from '~socializer/components/System/composables/useReverbChannel.js'
+    import { useReverbChannel, useReverbPresence } from '~socializer/components/System/composables/useReverbChannel.js'
     import { useResizableElement } from '~socializer/composables/useResizableElement.js'
     import { useFileAttachments } from '~socializer/composables/useFileAttachments.js'
     import { useStickyScroll } from '~socializer/composables/useStickyScroll.js'
@@ -263,6 +263,10 @@
         }
         return null
     })
+
+    // Canal privé personnel, partagé avec d'autres composants montés en même temps : il ne se
+    // souscrit et ne se libère qu'au compteur de useReverbChannel, jamais par un Echo.* direct.
+    const meChannelName = computed(() => me.value?.channel ?? null)
 
     /*------ TYPING INDICATOR ----------*/
     // Transport unique Reverb : whisper 'typing' entre users + signal serveur bot.
@@ -452,13 +456,18 @@
         intersectionObserver.value = true
     })
 
+    // S'exécute avant le leave() auto enregistré par le useReverbChannel ci-dessous.
     onBeforeUnmount(() => {
         // Le canal de présence du chat est quitté automatiquement par useReverbPresence.
         // On notifie le canal privé personnel de l'utilisateur de la sortie du chat.
-        Echo.private(me.value.channel).whisper('leave-chat', {
+        whisperMe('leave-chat', {
             chatId: currentConversationIdBackup.value,
             userId: me.value.id,
         })
+    })
+
+    const { whisper: whisperMe } = useReverbChannel(meChannelName, {
+        type: 'private',
     })
 
     onUnmounted(() => {

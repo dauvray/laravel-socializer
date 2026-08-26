@@ -3,23 +3,36 @@
 > **Chantier ouvert.** Items front qui ne relèvent d'aucun module. Les faits durables
 > correspondants sont déjà dans `docs/` — ce fichier ne porte que ce qui reste à faire.
 
-## Deux whispers écrits en direct contre Echo, hors du composable (22/08/2026)
+## Le ping d'ouverture de session court contre la confirmation d'abonnement (26/08/2026)
 
-`useReverbChannel` compte désormais ses consommateurs par canal, parce que `me.channel` est partagé
-par trois composants et qu'un `Echo.leave()` le coupait pour tous — le correctif et son incident
-sont dans
-[`docs/reference/use-reverb-channel.md`](../docs/reference/use-reverb-channel.md#un-canal-partagé-se-libère-au-compteur).
+Les quatre whispers de départ et le battement de présence passent désormais tous par
+`useReverbChannel` — la contrainte d'ordre qui les fait partir est dans
+[`docs/reference/use-reverb-channel.md`](../docs/reference/use-reverb-channel.md#un-whisper-de-départ-senregistre-avant-le-composable),
+épinglée par deux `describe` de `components/System/composables/__tests__/useReverbChannel.test.js`.
 
-Deux appels échappent à ce compteur, tous deux dans un hook de démontage :
+Reste une course **antérieure et indépendante**, trouvée en vérifiant ce routage.
 
-- `components/Chat/ChatComponent.vue` — `Echo.private(me.value.channel).whisper('leave-chat', …)`
-- `components/Feed/Feed.vue` — `Echo.private(this.me.channel).whisper('leave-feed', …)`
+`System/Notifications.vue` whispere `ping` depuis un `watch(me)` placé sous l'appel au composable :
+le `join()` passe donc bien en premier. Mais **joindre n'est pas être abonné.** `Echo.private(name)`
+rend l'objet canal tout de suite ; pusher, lui, confirme l'abonnement par un aller-retour. Entre les
+deux, `Channel.trigger` journalise `Client event triggered before channel 'subscription_succeeded'`
+et **émet quand même** — et Reverb rejette un client event sur un canal non confirmé.
 
-Ils **fonctionnent aujourd'hui** : le shell `System/Server.vue` monte `Notifications.vue` en
-permanence, donc le canal est toujours vivant et `Echo.private()` rend la souscription mémoïsée. Mais
-sur un hôte qui n'aurait pas ce shell, le même appel **crée** une souscription que personne ne tient
-au compteur et que personne ne libérera — à l'instant précis où le composant meurt.
+Ce que ça coûte quand la course est perdue : le ping d'ouverture ne compte pas, et l'utilisateur
+n'apparaît en ligne qu'au battement suivant. Or l'intervalle du heartbeat (120 000 ms,
+`Notifications.vue`) **égale** le TTL Redis de la présence (`now()->addMinutes(2)`,
+`app/Services/OnlineUsersService.php`) : il n'y a aucune marge, la fenêtre est de deux minutes
+pleines.
 
-- [ ] Router ces deux whispers par `useReverbChannel(meChannelName, { type: 'private' })`, comme
-      `Server/Server.vue` et `Server/Room.vue`. `Feed.vue` est en Options API : soit le composable
-      dans un `setup()`, soit un `try/catch` en attendant.
+Le piège à connaître avant d'y toucher : **`PusherChannel.subscribed(cb)` est un écouteur
+d'événement, pas une promesse.** Branché après coup sur un canal déjà confirmé, le rappel ne part
+**jamais** — un correctif naïf transformerait une course perdue une fois sur deux en ping jamais
+émis. Il faut tester l'état d'abord, puis s'abonner.
+
+- [ ] Faire partir le ping d'ouverture **à** la confirmation d'abonnement, en gardant le cas
+      déjà-confirmé. Deux voies : un `channel()?.subscribed(…)` gardé côté `Notifications.vue`, ou
+      une option `onSubscribed` dans `useReverbChannel` — la seconde profiterait aux quatre autres
+      consommateurs et éviterait de rouvrir l'échappatoire `channel()`.
+- [ ] **La vérification est sur un vrai Reverb**, pas en test : aucune doublure ne prouve un
+      aller-retour d'abonnement. Se connecter, et regarder si l'utilisateur apparaît en ligne
+      immédiatement ou au bout de deux minutes.

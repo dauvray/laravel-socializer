@@ -28,6 +28,8 @@ Composable Vue 3 permettant de gérer simplement les canaux **Laravel Reverb / E
    - [Notifications Laravel](#notifications-laravel)
    - [Contrôle manuel du cycle de vie](#contrôle-manuel-du-cycle-de-vie)
    - [Un canal partagé se libère au compteur](#un-canal-partagé-se-libère-au-compteur)
+   - [Un whisper de départ s'enregistre AVANT le composable](#un-whisper-de-départ-senregistre-avant-le-composable)
+   - [Un whisper émis depuis un watcher s'enregistre APRÈS le composable](#un-whisper-émis-depuis-un-watcher-senregistre-après-le-composable)
    - [Gestion d'erreurs](#gestion-derreurs)
    - [Accès au canal natif Echo](#accès-au-canal-natif-echo)
 8. [`useReverbPresence` — sucre syntaxique](#usereverbpresence--sucre-syntaxique)
@@ -167,9 +169,12 @@ useReverbChannel(me.channel, {
 </script>
 ```
 
-⚠️ **Ne pas souscrire `me.channel` à la main dans un composant de plus.** Il est déjà tenu ouvert
-par la coquille SPA, et le compteur de consommateurs (§ « Un canal partagé se libère au compteur »)
-est ce qui empêche qu'une fermeture locale coupe les autres.
+⚠️ **`me.channel` se souscrit par le composable, jamais par un `Echo.private()` écrit à la main.**
+Cinq composants le tiennent aujourd'hui, dont un qui ne se démonte jamais : seul le compteur de
+consommateurs (§ « Un canal partagé se libère au compteur ») empêche qu'une fermeture locale coupe
+les autres. Un `Echo.private()` direct **crée** une souscription hors compteur que personne ne
+libérera — c'est bénin tant que la coquille SPA tient le canal, et c'est une fuite dès qu'un hôte
+n'a pas cette coquille.
 
 **Présence** — `room.{roomId}` et `server.{serverId}` sont des canaux de présence : c'est d'eux que
 vient la liste des personnes connectées.
@@ -362,8 +367,8 @@ const closeChat = () => {
 
 **Echo mémoïse ses canaux par nom.** Deux `useReverbChannel('user.7', …)` dans deux composants
 différents partagent donc **un** objet canal et **une** souscription pusher — mais `Echo.leave()`,
-lui, la coupe pour tout le monde. Le cas n'est pas théorique : `Notifications.vue`, `Server.vue` et
-`Room.vue` souscrivent tous les trois au canal privé `me.channel`.
+lui, la coupe pour tout le monde. Le cas n'est pas théorique : `Notifications.vue`, `Server.vue`,
+`Room.vue`, `ChatComponent.vue` et `Feed.vue` souscrivent tous les cinq au canal privé `me.channel`.
 
 Le composable tient donc un **compteur de consommateurs par nom de canal** : `leave()` retire les
 handlers du partant, et n'appelle `Echo.leave()` que si plus personne ne tient le canal. Deux
@@ -387,6 +392,80 @@ whisper n'est pas parti. Un client event perdu est un incident bénin ; il ne do
 navigation.
 
 Épinglé par `components/System/composables/__tests__/useReverbChannel.test.js`.
+
+---
+
+### Un whisper de départ s'enregistre AVANT le composable
+
+Quatre composants préviennent de leur départ par un whisper posé dans un hook de démontage :
+`leave-server`, `leave-room`, `leave-chat`, `leave-feed`. Côté serveur, `UserOnlineWhisperListener`
+en fait un `removeUserItem(…)` — **un whisper perdu laisse une présence fantôme que rien n'efface.**
+
+Or `useReverbChannel` enregistre son propre `onBeforeUnmount(leave)` **au moment de l'appel**, et
+Vue exécute les hooks de démontage dans leur ordre d'**enregistrement**. D'où la règle, qui porte
+sur un ordre de lignes que ni type ni lint ne protègent :
+
+```js
+// S'exécute avant le leave() auto enregistré par le useReverbChannel ci-dessous.
+onBeforeUnmount(() => {
+    whisperMe('leave-chat', { chatId: …, userId: … })
+})
+
+const { whisper: whisperMe } = useReverbChannel(meChannelName, { type: 'private' })
+```
+
+Le `const` lu par une closure déclarée au-dessus est **volontaire** : elle ne le lit qu'au
+démontage. Inverser les deux blocs ne casse rien de visible — `leave()` a simplement déjà révoqué
+la souscription, `whisper()` rend `false`, et **rien ne le signale** puisqu'il ne lève jamais.
+
+⚠️ **Corollaire Options API :** `applyOptions()` tourne **après** `setup()`, donc un
+`beforeUnmount()` d'options part **après** tous les hooks de `setup()`. Un whisper laissé là serait
+perdu. C'est pourquoi `Feed/Feed.vue`, resté en Options API, porte quand même son câblage Reverb
+dans un `setup()`.
+
+Les trois cas — l'ordre correct, l'ordre inversé, et le composant mixte `setup()` + options — sont
+épinglés par `components/System/composables/__tests__/useReverbChannel.test.js`.
+
+➡️ **Un whisper qui ne part pas d'un hook de démontage obéit à l'ordre INVERSE** — § suivant. Ne pas
+appliquer celui-ci par analogie.
+
+---
+
+### Un whisper émis depuis un watcher s'enregistre APRÈS le composable
+
+**L'ordre inverse du précédent, et c'est la même règle.** Elle ne porte pas sur « avant » ou
+« après » mais sur une seule exigence : *quand le whisper part, le composable doit avoir joint et
+pas encore libéré.* Deux mécanismes en découlent, symétriques :
+
+| Le whisper part depuis… | Il s'enregistre… | Parce que le composable y enregistre… |
+|---|---|---|
+| un hook de démontage | **avant** l'appel | son `onBeforeUnmount(leave)` — les hooks partent dans l'ordre d'enregistrement |
+| un watcher | **après** l'appel | son `watch(channelName)` qui joint — les watchers partent dans l'ordre de création |
+
+Le cas vivant est `System/Notifications.vue`, qui whispere son battement de présence (`ping`) depuis
+un `watch(me)` :
+
+```js
+const { whisper: whisperPing } = useReverbChannel(userChannel, { type: 'private', … })
+
+// APRÈS l'appel : sur le flush où `me` arrive, le join() du composable doit passer en premier.
+watch(me, (value) => {
+    if (value) setOnlineStatus()
+})
+```
+
+Ce n'est pas théorique : `me` est **null au montage** — `loadMe()` est asynchrone et le composant ne
+l'attend pas —, donc la transition `null → valeur` a toujours lieu, et les deux watchers y
+réagissent dans le même flush. Le watcher au-dessus de l'appel, `whisper()` rend `false` et
+l'utilisateur reste hors ligne jusqu'au battement suivant : deux minutes, soit exactement le TTL
+Redis de la présence.
+
+Les deux cas sont épinglés par le même fichier de test.
+
+⚠️ **Joindre n'est pas être abonné.** `Echo.private(name)` rend l'objet canal tout de suite, mais
+pusher confirme l'abonnement par un aller-retour, et Reverb rejette un client event émis avant. Un
+whisper émis juste après le `join()` est donc encore une course — ouverte, et suivie dans
+[`work/front-todo.md`](../../work/front-todo.md).
 
 ---
 
@@ -457,6 +536,8 @@ const { users, isConnected } = useReverbPresence(`room.${props.roomId}`, {
 | Whisper ignoré                              | Canal public utilisé                                    | Les whispers nécessitent private / presence / encrypted |
 | L'URL change, l'écran reste sur la page précédente | Une exception levée dans un `onBeforeUnmount` avorte le flush de Vue — typiquement un `whisper` sur une souscription déjà libérée | Le composable ne lève plus (`whisper` rend `false`) ; si le symptôme revient, chercher l'exception dans les autres hooks de démontage de la route quittée |
 | Notifications temps réel muettes après avoir quitté une page | Un composant a libéré un canal **partagé** avec un autre encore monté | Souscrire via le composable (compteur de consommateurs), jamais par un `Echo.leave()` écrit à la main |
+| Whisper de départ jamais reçu — présence fantôme côté serveur, l'utilisateur reste « dans » un chat/feed qu'il a quitté | Le hook qui whispere est enregistré **après** l'appel au composable, ou dans le `beforeUnmount()` d'un composant Options API : `leave()` est déjà passé, `whisper()` rend `false` en silence | L'enregistrer **avant** l'appel — [§ Un whisper de départ s'enregistre AVANT le composable](#un-whisper-de-départ-senregistre-avant-le-composable) |
+| L'utilisateur n'apparaît en ligne que deux minutes après s'être connecté | Le watcher qui whispere le `ping` est créé **avant** l'appel au composable : le `join()` n'a pas encore eu lieu, `whisper()` rend `false` | Le créer **après** — [§ Un whisper émis depuis un watcher s'enregistre APRÈS le composable](#un-whisper-émis-depuis-un-watcher-senregistre-après-le-composable). Si l'ordre est bon et le symptôme demeure, c'est la course d'abonnement : [`work/front-todo.md`](../../work/front-todo.md) |
 | Listeners perdus après changement de canal  | Listener ajouté manuellement via `channel().listen()`    | Utiliser `listen()` du composable (persistant) |
 | `Echo is not defined`                       | Echo non exposé globalement                             | Vérifier que l'hôte fait bien `window.Echo = new Echo(...)` — le paquet ne l'initialise pas |
 | Double abonnement                           | `join()` appelé deux fois sans `leave()`                | Le composable filtre déjà si `currentName === newName` ; vérifier le code applicatif |

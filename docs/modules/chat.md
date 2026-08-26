@@ -19,7 +19,10 @@ a été retirée une fois terminée — c'est le modèle à suivre, cf. [ecrire-
 - `onRemoveFile` reste **dans le composant** : il croise la ref `messengerInput`
   (appelle `messengerInput.value.removeFile(id)`).
 - Hooks `onBeforeUnmount` (whisper `leave-chat`) et `onUnmounted` (`resetConversation`)
-  restent dans le composant.
+  restent dans le composant. ⚠️ Le `leave-chat` part par `whisperMe`, la poignée du
+  `useReverbChannel(meChannelName, …)` déclaré **juste en dessous** du hook : cet ordre de lignes
+  est ce qui fait partir le whisper, et l'inverser le perd en silence
+  ([pourquoi](../reference/use-reverb-channel.md#un-whisper-de-départ-senregistre-avant-le-composable)).
 - `useReverbPresence` est déjà un composable partagé : **ne pas y toucher** depuis ici.
 - **`item.author` est une liste blanche de six champs** (`MessageAuthor`) : `id`, `name`, `slug`,
   `image`, `function`, `connected` — identique en diffusion et sur l'historique HTTP. Un composant

@@ -20,12 +20,13 @@
 
 <script>
 
-    import { mapActions, mapState } from 'pinia'
+    import { mapActions, mapState, storeToRefs } from 'pinia'
     import { useFeedStore } from '~socializer/stores/feed.js'
     import { useMeStore } from '~estarter/stores/me.js'
     import PostList from './PostList.vue'
     import { useLikesStore } from '~socializer/stores/likes.js'
-    import { defineAsyncComponent } from 'vue'
+    import { useReverbChannel } from '~socializer/components/System/composables/useReverbChannel.js'
+    import { computed, defineAsyncComponent, onBeforeUnmount, ref } from 'vue'
 
     export default {
         name: 'Feed',
@@ -57,10 +58,51 @@
                 default: false,
             },
         },
+        /**
+         * Tout le câblage Reverb vit ici, et pas dans les options : Vue exécute les hooks de
+         * démontage dans leur ordre d'ENREGISTREMENT, et `applyOptions()` tourne APRÈS `setup()`.
+         * Un whisper laissé dans `beforeUnmount()` partirait donc après le `leave()` auto du
+         * composable — c'est-à-dire jamais.
+         */
+        setup() {
+            const feedStore = useFeedStore()
+            const { getMe } = storeToRefs(useMeStore())
+
+            // Remonté de data() : le hook de démontage ci-dessous en a besoin, et setup() ne voit
+            // pas `data`. Retourné en fin de setup() → le reste des options le lit via `this.feedId`.
+            const feedId = ref(null)
+
+            const meChannelName = computed(() => getMe.value?.channel ?? null)
+            const feedChannelName = computed(() => feedId.value ? `${feedId.value}.feed` : null)
+
+            // S'exécute avant les leave() auto enregistrés par les useReverbChannel ci-dessous.
+            onBeforeUnmount(() => {
+                whisperMe('leave-feed', {
+                    feedId: feedId.value,
+                    userId: getMe.value.id,
+                })
+            })
+
+            const { whisper: whisperMe } = useReverbChannel(meChannelName, {
+                type: 'private',
+            })
+
+            // Nom réactif : le composable quitte l'ancien feed et rejoint le nouveau tout seul.
+            useReverbChannel(feedChannelName, {
+                type: 'public',
+                listeners: {
+                    '.Dauvray\\Socializer\\app\\Events\\FeedActivity': (event) => feedStore.manageFeedActivity(event),
+                    '.Dauvray\\Socializer\\app\\Events\\PostCreatedEvent': (event) => feedStore.insertPost(event.post),
+                    '.Dauvray\\Socializer\\app\\Events\\PostDeletedEvent': (event) => feedStore.removePost(event.post_id),
+                    '.Dauvray\\Socializer\\app\\Events\\ItemLiked': (event) => feedStore.updatePostLikes(event.likes, event.vertexid, event.storeid),
+                },
+            })
+
+            return { feedId }
+        },
         data() {
             return {
                 feed: null,
-                feedId: null,
                 loaded: false,
             }
         },
@@ -76,17 +118,12 @@
             })
         },
         beforeUnmount() {
+            // Le whisper `leave-feed` et le leave() des deux canaux sont dans setup().
             this.resetFeed()
-            Echo.private(this.me.channel).whisper('leave-feed', {
-                feedId: this.feedId,
-                userId: this.me.id,
-            });
-            Echo.leave(this.channel) 
         },
         watch: {
             feedId(newFeedId, oldFeedId) {
                 if(newFeedId !== oldFeedId) {
-                    this.iniFeedEvents()
                     this.loadFeedPost(`/get-feed-posts/${newFeedId}`)
                 }
             },
@@ -95,15 +132,6 @@
             ...mapState(useFeedStore, {
                 posts: 'getPostFeed',
             }),
-            ...mapState(useMeStore, {
-                me: 'getMe',
-            }),
-            channel: function() {
-                if(this.feedId) {
-                    return `${this.feedId}.feed`
-                }
-                return null
-            },
         },
         methods: {
             ...mapActions(useFeedStore, [
@@ -116,32 +144,10 @@
                 'updatePostLikes',
                 'sharePost',
                 'setSharedPost',
-                'manageFeedActivity',
-                'insertPost',
             ]),
             ...mapActions(useLikesStore, [
                 'submitLike',
             ]),
-            iniFeedEvents() {
-                Echo.leave(this.channel)
-                Echo.channel(this.channel)
-                    // Feed activity
-                    .listen('.Dauvray\\Socializer\\app\\Events\\FeedActivity', (event) => {
-                    this.manageFeedActivity(event)
-                    })
-                    // Submit post
-                    .listen('.Dauvray\\Socializer\\app\\Events\\PostCreatedEvent', (event) => {
-                        this.insertPost(event.post)
-                    })
-                    // Delete post
-                    .listen('.Dauvray\\Socializer\\app\\Events\\PostDeletedEvent', (event) => {
-                        this.removePost(event.post_id)
-                    })
-                    // likes / dislikes
-                    .listen('.Dauvray\\Socializer\\app\\Events\\ItemLiked', (event) => {
-                        this.updatePostLikes(event.likes, event.vertexid, event.storeid)
-                    })
-            },
             onLoadFeedPost(url) {
                 this.loadFeedPost(url)
             },
