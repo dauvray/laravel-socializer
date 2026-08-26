@@ -7,19 +7,19 @@
         <button
             class="btn p-0"
             type="button"
-            :title="presenceLabel"
+            :title="connectionLabel"
             data-bs-toggle="dropdown"
             aria-expanded="false">
             <IconWidget icon="user-friends"></IconWidget> {{ serverUsersTotal }}
         </button>
         <div class="dropdown-menu">
-            <h6 class="dropdown-header">Présents sur ce serveur ({{ serverUsersTotal }})</h6>
+            <h6 class="dropdown-header">Connectés à ce serveur ({{ serverUsersTotal }})</h6>
             <ServerUsersList
                 v-if="serverUsersTotal"
                 :users="serverUsers"
             ></ServerUsersList>
             <p v-else class="dropdown-item-text mb-0">
-                Connexion au canal de présence…
+                Connexion en cours…
             </p>
         </div>
     </div>
@@ -95,6 +95,11 @@
              * cardinal : un nombre nu et non auditable a déjà fait passer une information
              * correcte pour un bug.
              *
+             * ⚠️ Une souscription est un **onglet ouvert**, pas une personne active : un onglet
+             * d'arrière-plan est compté. C'est l'arbitrage retenu — les libellés de ce composant
+             * disent donc « connecté » et jamais « présent »
+             * (`docs/architecture/signalisation.md#ce-que-la-présence-mesure--un-onglet-ouvert`).
+             *
              * @type {import('vue').PropType<Array<{id: number, name: string, slug: string}>>}
              */
             serverUsers: {
@@ -123,36 +128,45 @@
              *
              * @return {boolean}
              */
-            isMePresent: function() {
+            isMeConnected: function() {
                 return this.serverUsers.some(user => user.id === this.getMe?.id)
             },
             /**
-             * Dit ce que le chiffre compte, en distinguant « vous » des autres. Le cas
-             * « je ne suis pas dans la liste » est traité à part : la présence n'est pas encore
-             * synchronisée, et parler de « vous et N autres » y serait faux.
+             * Dit ce que le chiffre compte, en distinguant « vous » des autres.
+             *
+             * Le vocabulaire est **« connecté », jamais « présent »** : ce qui est compté, ce sont
+             * les souscriptions au canal `server.{id}`, donc des onglets ouverts — un onglet
+             * d'arrière-plan compte. L'infobulle nomme cette borne au lieu de la laisser deviner ;
+             * c'est un compteur juste pris pour un bug qui a coûté ce détour.
+             *
+             * Le cas zéro ne dit pas « personne » : on est toujours dans sa propre liste de
+             * présence dès que la souscription tient, donc zéro signifie que le `here` de Reverb
+             * n'est pas encore arrivé — et l'affirmer vide serait faux.
              *
              * @return {string}
              */
-            presenceLabel: function() {
+            connectionLabel: function() {
                 if(!this.serverUsersTotal) {
-                    return "Personne n'est présent sur ce serveur"
+                    return 'Connexion en cours…'
                 }
 
-                if(!this.isMePresent) {
-                    return this.serverUsersTotal === 1
-                        ? '1 personne présente sur ce serveur'
-                        : `${this.serverUsersTotal} personnes présentes sur ce serveur`
+                const withNuance = sentence => `${sentence} — un onglet ouvert suffit à être compté`
+
+                if(!this.isMeConnected) {
+                    return withNuance(this.serverUsersTotal === 1
+                        ? '1 personne connectée à ce serveur'
+                        : `${this.serverUsersTotal} personnes connectées à ce serveur`)
                 }
 
                 const others = this.serverUsersTotal - 1
 
                 if(!others) {
-                    return 'Vous êtes seul présent sur ce serveur'
+                    return withNuance('Vous êtes seul connecté à ce serveur')
                 }
 
-                return others === 1
-                    ? 'Vous et 1 autre personne présente sur ce serveur'
-                    : `Vous et ${others} autres personnes présentes sur ce serveur`
+                return withNuance(others === 1
+                    ? 'Vous et 1 autre personne connectée à ce serveur'
+                    : `Vous et ${others} autres personnes connectées à ce serveur`)
             },
         },
         methods: {

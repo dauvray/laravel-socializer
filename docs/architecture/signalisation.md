@@ -48,9 +48,24 @@ personnes actives. Trois conséquences à ne pas confondre quand un compteur « 
   qu'un consommateur, donc le compteur de `useReverbChannel` tombe à zéro. Un canal partagé, lui,
   survit au démontage d'un seul de ses consommateurs — c'est voulu, et un `leave()` peut donc ne
   rien fermer.
-- **Un onglet d'arrière-plan compte.** Une fenêtre oubliée sur la page serveur est « présente ».
-  Distinguer présence et activité demanderait un mécanisme en plus (`visibilitychange` + whisper) —
-  c'est une fonctionnalité, pas un correctif : [`work/serveur-todo.md`](../../work/serveur-todo.md).
+- **Un onglet d'arrière-plan compte — et l'UI le dit.** Une fenêtre oubliée sur la page serveur est
+  comptée. L'arbitrage produit a été tranché en faveur de ce comportement : compter les
+  souscriptions est gratuit et exact, **le libellé était le seul défaut**. `ServerParamsButton` parle
+  donc de membres **connectés**, jamais de « présents », et son infobulle nomme la borne (« un
+  onglet ouvert suffit à être compté ») au lieu de la laisser deviner. Épinglé par
+  `components/Server/__tests__/serverConnectionLabel.test.js`.
+  - **Son cas zéro ne dit pas « personne ».** Dès que la souscription tient, on est dans sa propre
+    liste de présence : zéro signifie que le `here` de Reverb n'est pas encore arrivé. Tout libellé
+    qui affirme le vide y est faux, quel que soit le sens retenu pour « présent ».
+  - Distinguer activité et connexion resterait une **fonctionnalité, pas un correctif** :
+    `visibilitychange` côté client, un whisper d'inactivité via le `whisper()` de `useReverbChannel`
+    (jamais `Echo.whisper()` en direct — [pourquoi](../reference/use-reverb-channel.md#un-canal-partagé-se-libère-au-compteur)),
+    et un état `away` dans la liste. Deux bornes seraient à assumer, et c'est ce qui a fait préférer
+    le comportement actuel : un onglet fermé brutalement n'émet aucun `away` — la sortie resterait
+    celle du canal ; et l'état ne vivant qu'en mémoire client, un membre qui arrive après un `away`
+    verrait son auteur actif jusqu'au battement suivant. **Un chiffre ne doit pas dépendre d'un
+    signal non garanti** : si la nuance est un jour construite, elle alimente un badge dans la
+    liste, pas le compteur.
 - **Le nombre de membres, lui, n'est pas dans la présence** : il vient de `nb_users`
   (`Services/Server::getServer`), où la décision d'accès est prise **en amont** du comptage — la
   confondre avec la clause qui énumère les membres est ce qui le rendait faux sur un serveur privé
