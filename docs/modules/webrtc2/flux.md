@@ -69,10 +69,33 @@ chemin qui retire le participant et ramène la FSM à IDLE. Ni le toast ni `clos
 `callStatus` bloqué sur `calling`, donc le spinner de `CallManagerBtn` (`v-if="status !== 'idle'"`)
 affiché jusqu'au rechargement de la page. Gardé par `components/System/__tests__/Notifications.test.js`.
 
-**Ce que ce chemin ne couvre pas** : si le destinataire n'a aucun onglet ouvert, *aucun*
-`.ResponseToAuthorizationPeer` ne part. Le moteur de retry d'invitation abandonne en silence après
-`MAX_RETRY_ATTEMPTS`, sans `onAbandoned`, et l'appelant reste en `calling` — même spinner, sans
-toast cette fois. Item de [`work/`](../../../work/webrtc2-todo.md).
+### Personne ne répond : l'abandon du retry est le seul signal
+
+Si le destinataire n'a **aucun onglet ouvert**, *aucun* `.ResponseToAuthorizationPeer` ne part : il
+n'y a pas de refus à recevoir. Le seul événement disponible est l'épuisement du moteur de retry
+d'invitation — `MAX_RETRY_ATTEMPTS` tentatives, backoff plafonné à 10 s, soit ≈55 s.
+
+```
+usePeerRetry épuisé → usePeerCore.onAbandoned
+  ├─ stopCallInviteRetryForUser(slug)                      ← purge l'entrée slug → inviteId
+  └─ ctx.inviteAbandonedSignal = { userSlug, type }
+watch dans Notifications.vue
+  ├─ remise du signal à null, AVANT l'await                ← un second abandon doit repasser
+  ├─ toast « <slug> n'a pas répondu » + eventBus close-call   ← UI seule, n'AGIT PAS sur la FSM
+  └─ peers.openCallBetweenPeer({ status: false })             ← la branche du refus, réutilisée
+```
+
+⚠️ **Un signal réactif, pas un callback.** `usePeerCore` est la couche la plus basse : elle ne
+connaît ni la FSM ni l'UI, et recevoir `stopCallWithPeers` serait un callback vers une couche
+supérieure, ce que [l'ordre des couches](architecture.md) interdit. Le signal vit donc sur
+`createPeerContext`, comme `peerUnavailableSignal`, et remonte par `usePeerOrchestrator` puis
+`useMediaBroadcast`. Le `type` transporté est `session.currentType`, que `startCallWithPeer` pose
+**avant** d'émettre l'invitation — la même valeur que celle de la clé de retry.
+
+Le libellé du toast diffère de celui du refus (« n'a pas répondu » vs « est injoignable ») : sur une
+capture d'écran, il dit lequel des deux chemins s'est produit. Gardé par
+`__tests__/usePeerCore.test.js` (le signal, et son absence tant qu'il reste des tentatives) et
+`components/System/__tests__/Notifications.test.js` (les trois gestes, et la consommation du signal).
 
 ---
 

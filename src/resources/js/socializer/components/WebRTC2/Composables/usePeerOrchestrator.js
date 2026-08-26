@@ -391,6 +391,10 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
         callState: context.callStatus,
         callInprogress: context.callInprogress,
 
+        // Invitation restée sans réponse : signal écrit par usePeerCore, consommé par l'UI
+        // (Notifications.vue), qui le remet à null. Aucune couche intermédiaire ne l'observe.
+        inviteAbandonedSignal: context.inviteAbandonedSignal,
+
         // session
         localPeerId: context.localPeerId,
         currentType: context.currentType,

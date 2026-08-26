@@ -669,6 +669,50 @@ describe('usePeerCore', () => {
             expect(ctx.AjaxService.load).toHaveBeenCalledTimes(21)
         })
 
+        // ── Abandon du retry : le seul signal quand personne ne répond ────────
+        //
+        // Si le destinataire n'a AUCUN onglet ouvert, aucun `.ResponseToAuthorizationPeer`
+        // ne partira jamais : l'épuisement des tentatives est le seul événement qui puisse
+        // dire à l'appelant que c'est fini. `usePeerCore` ne connaît ni la FSM ni l'UI —
+        // il pose un signal réactif sur le contexte, et `Notifications.vue` l'observe.
+
+        it('ne signale rien tant que les tentatives ne sont pas épuisées', async () => {
+            await core.requestAuthorizationRemotePeerId(buildPayload())
+
+            await vi.advanceTimersByTimeAsync(1300)
+
+            expect(ctx.inviteAbandonedSignal.value).toBeNull()
+        })
+
+        it('signale l\'abandon avec le slug et le type de l\'appel', async () => {
+            vi.spyOn(console, 'warn').mockImplementation(() => {})
+            // `startCallWithPeer` pose `session.currentType` AVANT d'émettre l'invitation
+            // (useCallManager) : c'est cette valeur-là que le signal transporte, et c'est
+            // aussi celle que `usePeerRetry` utilise déjà dans sa clé de retry.
+            ctx.session.currentType = 'visio'
+
+            await core.requestAuthorizationRemotePeerId(buildPayload())
+
+            // 8 tentatives, backoff plafonné à 10s : 1+2+4+8+10+10+10+10 ≈ 55s (+ jitter)
+            await vi.advanceTimersByTimeAsync(60_000)
+
+            expect(ctx.inviteAbandonedSignal.value).toEqual({
+                userSlug: 'alice',
+                type: 'visio',
+            })
+        })
+
+        it('ne signale aucun abandon si l\'invitation a été arrêtée avant', async () => {
+            const inviteId = await core.requestAuthorizationRemotePeerId(buildPayload())
+
+            core.stopCallInviteRetry(inviteId)
+            await vi.advanceTimersByTimeAsync(60_000)
+
+            // Un raccrochage, une réponse reçue, un démontage : aucun de ces trois cas n'est
+            // un abandon, et aucun ne doit donc faire surgir un toast chez l'appelant.
+            expect(ctx.inviteAbandonedSignal.value).toBeNull()
+        })
+
         // ── Le garde de peerId local, qui manquait ici ────────────────────────
         //
         // Les deux autres émetteurs (`requestRemotePeerConnection`,

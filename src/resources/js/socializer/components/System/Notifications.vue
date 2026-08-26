@@ -161,6 +161,31 @@ watch(me, (value) => {
     if (value) setOnlineStatus()
 })
 
+// L'invitation n'a jamais reçu de réponse : le destinataire n'a aucun onglet ouvert, donc
+// aucun `.ResponseToAuthorizationPeer` n'arrivera — jamais. L'abandon du moteur de retry est
+// le seul événement disponible, et on en rejoue le chemin du refus : c'est la même issue,
+// sans le signal distant pour l'annoncer.
+watch(() => peers.inviteAbandonedSignal.value, async (abandoned) => {
+    if (!abandoned) return
+
+    // Consommé AVANT l'await : un second abandon doit pouvoir repasser par ici.
+    peers.inviteAbandonedSignal.value = null
+
+    const { userSlug } = abandoned
+    const type = abandoned.type || 'visio'
+
+    window.AWN.info(`${userSlug} n'a pas répondu`)
+    eventBus.$emit('close-call', [{ userSlug, type }])
+
+    // ⚠️ Comme sur un refus : seule la branche `!status` d'`openCallBetweenPeer` retire le
+    // participant et ramène la FSM à IDLE. Ni le toast ni `close-call` n'y touchent.
+    await peers.openCallBetweenPeer({
+        fromUserSlug: userSlug,
+        status: false,
+        options: { type },
+    })
+})
+
 // Méthodes
 async function onResponseAlert(fromUserSlug, options, status) {
     notificationComponent.value = null

@@ -29,6 +29,7 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
         // machine d'état d'appel
         callState,       // état courant : 'idle' | 'calling' | 'receiving' | 'connected' | 'closing'
         callInprogress,  // computed : vrai dès que l'appel n'est plus à l'état IDLE
+        inviteAbandonedSignal, // { userSlug, type } quand une invitation n'a jamais reçu de réponse — à consommer (remise à null)
 
         // session
         localPeerId, // id du peer local (null tant que le peer n'est pas prêt)
@@ -217,6 +218,7 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
 
         callState,
         callInprogress,
+        inviteAbandonedSignal,
         remoteStopCall,
 
         handleStreamReceived,

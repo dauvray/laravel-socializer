@@ -64,7 +64,8 @@ Verbes : `initialize` · `cleanup` · `watchUsers` · `sendData` · `getWebcamSt
 
 État exposé : `currentStream` · `screenStream` · `remoteStreams` · `remoteScreens` ·
 `announcedStreamPeers` · `usersInRoom` · `isStreaming` · `isCapturing` · `isAudioStream` ·
-`callState` · `callStatus` · `isCallInProgress` · `currentCallUsers` · `isMuted` ·
+`callState` · `callStatus` · `isCallInProgress` · `currentCallUsers` · `inviteAbandonedSignal` ·
+`isMuted` ·
 `isVideoEnabled` · `streamStates` · `topology` / `hubSlug` / `isHub` / `isHubConnected` ·
 `localPeerId` · `mySlug` / `myName`.
 

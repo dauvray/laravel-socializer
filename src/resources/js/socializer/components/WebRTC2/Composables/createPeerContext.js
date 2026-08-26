@@ -687,6 +687,14 @@ export function createPeerContext({ type, room, options = {} }) {
     // usePeerOrchestrator l'observe via watch() et déclenche la recovery.
     // Remplace l'ancienne mutation implicite de hooks.onPeerUnavailable.
     const peerUnavailableSignal = ref(null)
+
+    // Signal réactif : communication inverse usePeerCore → UI (Notifications.vue).
+    // usePeerCore y écrit `{ userSlug, type }` quand le moteur de retry d'invitation
+    // épuise ses tentatives — c'est-à-dire quand le destinataire n'a aucun onglet ouvert
+    // et qu'aucun `.ResponseToAuthorizationPeer` n'arrivera jamais. Un signal, et non un
+    // callback vers `stopCallWithPeers` : usePeerCore est la couche la plus basse, elle ne
+    // connaît ni la FSM d'appel ni l'UI. Le consommateur le remet à null.
+    const inviteAbandonedSignal = ref(null)
         
     return {
         contextId,
@@ -733,6 +741,9 @@ export function createPeerContext({ type, room, options = {} }) {
 
         // signal réactif (usePeerTransport → usePeerOrchestrator)
         peerUnavailableSignal,
+
+        // signal réactif (usePeerCore → UI)
+        inviteAbandonedSignal,
 
         // destruction explicite (cleanup manuel si nécessaire hors lifecycle)
         destroy,

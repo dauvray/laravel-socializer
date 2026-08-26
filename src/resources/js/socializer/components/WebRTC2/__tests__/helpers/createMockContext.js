@@ -519,6 +519,9 @@ export function createMockContext(overrides = {}) {
     // ── Signal peerUnavailable ────────────────────────────────────────────────
     const peerUnavailableSignal = ref(null)
 
+    // ── Signal inviteAbandoned ────────────────────────────────────────────────
+    const inviteAbandonedSignal = ref(null)
+
     // ── waitForMeReady ────────────────────────────────────────────────────────
     // Dans les tests on résout immédiatement sauf override explicite (ex: tester le timeout)
     const waitForMeReady = overrides.waitForMeReady
@@ -692,8 +695,9 @@ export function createMockContext(overrides = {}) {
         clearAuthorizedCallPeer,
         clearAllAuthorizedCallPeers,
 
-        // signal réactif
+        // signaux réactifs
         peerUnavailableSignal,
+        inviteAbandonedSignal,
 
         // destroy
         destroy,

@@ -11,8 +11,14 @@
  * retire le participant et ramène la FSM à IDLE. L'appelant restait donc en 'calling',
  * spinner de CallManagerBtn compris, jusqu'au rechargement de la page — y compris sur
  * l'auto-refus émis par VideoCallAlert au bout de 10 s sans réponse.
+ *
+ * Deuxième régression, le même symptôme par l'autre bout : quand le destinataire n'a
+ * AUCUN onglet ouvert, il n'y a pas de refus à recevoir. Le seul événement disponible est
+ * l'abandon du moteur de retry, remonté par `ctx.inviteAbandonedSignal` — ce composant est
+ * son unique consommateur, et il en rejoue le chemin du refus.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { nextTick, ref } from 'vue'
 import { mount } from '@vue/test-utils'
 
 // ─── Doubles ─────────────────────────────────────────────────────────────────
@@ -35,6 +41,8 @@ const peersDouble = {
     startCallWithPeer: vi.fn(async () => {}),
     stopCallWithPeers: vi.fn(async () => {}),
     currentCallUsers: { value: [] },
+    // Un VRAI ref : le composant l'observe par `watch`, et c'est lui qui le remet à null.
+    inviteAbandonedSignal: ref(null),
 }
 
 vi.mock('~socializer/components/WebRTC2/Composables/useMediaBroadcast.js', () => ({
@@ -100,6 +108,9 @@ beforeEach(() => {
     vi.clearAllMocks()
     reverbListeners = {}
     window.AWN = { info: vi.fn(), alert: vi.fn() }
+    // `clearAllMocks` ne touche pas un ref : à remettre à null AVANT le montage, sinon le
+    // watcher du test suivant démarrerait sur la valeur laissée par le précédent.
+    peersDouble.inviteAbandonedSignal.value = null
     wrapper = mountNotifications()
 })
 
@@ -146,5 +157,57 @@ describe('Notifications — .ResponseToAuthorizationPeer', () => {
 
         await reverbListeners['.ResponseToAuthorizationPeer'](answer(true))
         expect(peersDouble.stopCallInviteRetry).toHaveBeenCalledWith('invite-1')
+    })
+})
+
+describe('Notifications — abandon du retry d\'invitation', () => {
+
+    it('rejoue le chemin du refus : toast, close-call, puis openCallBetweenPeer', async () => {
+        peersDouble.inviteAbandonedSignal.value = { userSlug: 'bob', type: 'visio' }
+        await nextTick()
+
+        // Le libellé distingue le silence du refus explicite (« est injoignable ») : sur une
+        // capture d'écran, il dit lequel des deux chemins s'est produit.
+        expect(window.AWN.info).toHaveBeenCalledWith('bob n\'a pas répondu')
+        expect(eventBus.$emit).toHaveBeenCalledWith('close-call', [
+            { userSlug: 'bob', type: 'visio' },
+        ])
+        // ⭐ Le fait qui compte : sans cet appel, la FSM reste en 'calling' et le spinner
+        // tourne jusqu'au rechargement — exactement la régression du refus, par l'autre bout.
+        expect(peersDouble.openCallBetweenPeer).toHaveBeenCalledWith({
+            fromUserSlug: 'bob',
+            status: false,
+            options: { type: 'visio' },
+        })
+    })
+
+    it('consomme le signal, donc un second abandon redéclenche', async () => {
+        peersDouble.inviteAbandonedSignal.value = { userSlug: 'bob', type: 'visio' }
+        await nextTick()
+
+        expect(peersDouble.inviteAbandonedSignal.value).toBeNull()
+
+        peersDouble.inviteAbandonedSignal.value = { userSlug: 'carol', type: 'vocal' }
+        await nextTick()
+
+        expect(peersDouble.openCallBetweenPeer).toHaveBeenLastCalledWith({
+            fromUserSlug: 'carol',
+            status: false,
+            options: { type: 'vocal' },
+        })
+    })
+
+    it('type absent : retombe sur visio, comme le chemin du refus', async () => {
+        peersDouble.inviteAbandonedSignal.value = { userSlug: 'bob' }
+        await nextTick()
+
+        expect(eventBus.$emit).toHaveBeenCalledWith('close-call', [
+            { userSlug: 'bob', type: 'visio' },
+        ])
+        expect(peersDouble.openCallBetweenPeer).toHaveBeenCalledWith({
+            fromUserSlug: 'bob',
+            status: false,
+            options: { type: 'visio' },
+        })
     })
 })

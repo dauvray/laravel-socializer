@@ -43,7 +43,30 @@ export function usePeerCore(ctx) {
     /*------  Retry invitation pour calls ----------*/
 
     // Moteur de retry dédié aux invitations (séparé du retryManager connexions de l'orchestrateur)
-    const inviteRetryManager = usePeerRetry(ctx)
+    const inviteRetryManager = usePeerRetry(ctx, {
+        /**
+         * Tentatives épuisées = le destinataire n'a jamais répondu, et n'a très
+         * probablement aucun onglet ouvert : aucun `.ResponseToAuthorizationPeer` ne
+         * partira jamais, donc rien d'autre ne viendra sortir l'appelant de `calling`.
+         *
+         * Cette couche ne connaît ni la FSM d'appel ni l'UI — elle pose un signal sur le
+         * contexte (comme `peerUnavailableSignal`) et laisse `Notifications.vue` rejouer
+         * le chemin du refus. Un callback vers `stopCallWithPeers` serait un callback vers
+         * une couche supérieure, ce que l'ordre des couches interdit.
+         *
+         * @param {string} userSlug - Destinataire dont l'invitation est abandonnée.
+         */
+        onAbandoned: (userSlug) => {
+            // `usePeerRetry` n'a effacé que son minuteur : l'entrée slug → inviteId, elle,
+            // n'est connue que d'ici.
+            stopCallInviteRetryForUser(userSlug)
+
+            ctx.inviteAbandonedSignal.value = {
+                userSlug,
+                type: ctx.session.currentType,
+            }
+        },
+    })
 
     // Mapping userSlug → inviteId (pour annulation par inviteId)
     const userSlugToInviteId = new Map()
