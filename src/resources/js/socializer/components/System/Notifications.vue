@@ -113,8 +113,15 @@ const { whisper: whisperPing } = useReverbChannel(userChannel, {
                 eventBus.$emit('close-call', [
                     { userSlug: event.fromUserSlug, type: event?.options?.type || 'visio' },
                 ])
-                return
             }
+
+            // ⚠️ Appelé AUSSI sur refus, et surtout pas derrière un `return` : la branche
+            // `!status` d'`openCallBetweenPeer` est la SEULE qui retire le participant et
+            // ramène la FSM à IDLE (CALLING → CLOSING → IDLE) quand il était le dernier.
+            // Ni le toast ni `close-call` ne touchent à l'état d'appel — le `return` qui
+            // était ici laissait donc `callStatus` bloqué sur 'calling' après un refus,
+            // y compris l'auto-refus de VideoCallAlert au bout de 10 s sans réponse : le
+            // spinner de CallManagerBtn restait affiché jusqu'au rechargement de la page.
             await peers.openCallBetweenPeer({
                 ...event,
                 options: { ...event.options },

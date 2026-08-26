@@ -118,6 +118,15 @@ avant le déménagement revient à les jeter.
       Partiellement en place (`createPeerContext` pose un no-op et warn) — reste à vérifier les
       widgets qui l'injectent directement.
 - [ ] **Cleanup `AbortController`** : annuler les opérations longues à la destruction du contexte.
+- [ ] **Invitation jamais répondue : l'appelant reste en `calling`** `[S]`
+      Un refus (y compris l'auto-refus de `VideoCallAlert` à 10 s) ramène bien la FSM à IDLE depuis
+      que `Notifications.vue` ne court-circuite plus `openCallBetweenPeer`. Mais si le destinataire
+      n'a **aucun onglet ouvert**, aucun `.ResponseToAuthorizationPeer` ne part : `inviteRetryManager`
+      abandonne en silence après `MAX_RETRY_ATTEMPTS` (`usePeerCore.usePeerRetry(ctx)` est construit
+      **sans `onAbandoned`**), et l'appelant garde le spinner de `CallManagerBtn` jusqu'au
+      rechargement de la page. Le crochet existe déjà côté `usePeerRetry` — il reste à le brancher
+      sur un `stopCallWithPeers` + toast. Chemin décrit dans
+      [docs/modules/webrtc2/flux.md](../docs/modules/webrtc2/flux.md#appel-sortant-visio--vocal).
 
 ---
 

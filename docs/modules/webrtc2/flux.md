@@ -47,6 +47,33 @@ quand le peer est déjà prêt**. L'attente de l'identité locale se fait en ava
 `waitForMeReady`. Un `const ready = setLocalPeer(); if (!ready) return` est un garde mort — et
 inversé dans le cas nominal.
 
+### Refus du distant : le même chemin, jamais un raccourci
+
+Un refus arrive par **le même signal** que l'acceptation, avec `status: false` — c'est aussi la
+forme que prend une **non-réponse** : `VideoCallAlert` s'auto-refuse au bout de 10 s.
+
+```
+Reverb .ResponseToAuthorizationPeer (status: false) → Notifications.vue
+  ├─ toast « <slug> est injoignable » + eventBus close-call     ← UI seule, n'AGIT PAS sur la FSM
+  └─ peers.openCallBetweenPeer(event)                           ← branche !status
+useCallManager.openCallBetweenPeer
+  ├─ core.stopCallInviteRetryForUser(...)
+  ├─ ctx.removeCurrentCallUser(fromUserSlug)
+  └─ dernier participant ? → stopCallWithPeers([], false, {mode:'full'})
+                               → CALLING → CLOSING → IDLE
+```
+
+⚠️ **`openCallBetweenPeer` doit être appelé AUSSI sur refus** : sa branche `!status` est le seul
+chemin qui retire le participant et ramène la FSM à IDLE. Ni le toast ni `close-call` ne touchent
+à l'état d'appel. Un `return` posé après le toast — ce qu'a fait `Notifications.vue` — laisse
+`callStatus` bloqué sur `calling`, donc le spinner de `CallManagerBtn` (`v-if="status !== 'idle'"`)
+affiché jusqu'au rechargement de la page. Gardé par `components/System/__tests__/Notifications.test.js`.
+
+**Ce que ce chemin ne couvre pas** : si le destinataire n'a aucun onglet ouvert, *aucun*
+`.ResponseToAuthorizationPeer` ne part. Le moteur de retry d'invitation abandonne en silence après
+`MAX_RETRY_ATTEMPTS`, sans `onAbandoned`, et l'appelant reste en `calling` — même spinner, sans
+toast cette fois. Item de [`work/`](../../../work/webrtc2-todo.md).
+
 ---
 
 ## Appel entrant
