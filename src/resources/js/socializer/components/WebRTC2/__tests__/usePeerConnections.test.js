@@ -125,6 +125,58 @@ describe('usePeerConnections', () => {
 
             expect(newUsers.map((u) => u.slug)).toEqual(['alice'])
         })
+
+        // ── Synchroniser n'est pas savoir ─────────────────────────────────────
+        //
+        // `usersInRoom` et `presenceSynced` ont le même écrivain — celui-ci — mais plus le
+        // même rythme. Un tour sur liste vide purge (c'est le seul qui puisse rendre le
+        // dernier partant) sans déclarer la présence connue : le déclarer ferait basculer
+        // les gardes d'admission de « je ne sais pas encore » à « tu n'es pas membre » sur
+        // une ignorance. Le contexte de test naissant `presenceSynced: true`, les cas qui
+        // visent le drapeau le remettent explicitement à false.
+        const unsyncedConnections = () => {
+            ctx = makeCtx({ connection: { presenceSynced: false } })
+            return usePeerConnections(ctx)
+        }
+
+        it('un tour vide purge la room et rend tous les membres partants', async () => {
+            await connections.getRoomUsersDiff([{ slug: 'alice' }, { slug: 'bob' }])
+
+            const diff = await connections.getRoomUsersDiff([])
+
+            expect(diff.removedUsers).toEqual(['alice', 'bob'])
+            expect(diff.newUsers).toEqual([])
+            expect(ctx.connection.usersInRoom).toEqual([])
+            expect(ctx.peerStore.setRoomMembers).toHaveBeenLastCalledWith(ctx.contextId, [])
+        })
+
+        it('un tour vide ne déclare PAS la présence connue', async () => {
+            const unsynced = unsyncedConnections()
+
+            await unsynced.getRoomUsersDiff([])
+
+            expect(ctx.connection.presenceSynced).toBe(false)
+        })
+
+        it('un tour non vide déclare la présence connue', async () => {
+            const unsynced = unsyncedConnections()
+
+            await unsynced.getRoomUsersDiff([{ slug: 'alice' }])
+
+            expect(ctx.connection.presenceSynced).toBe(true)
+        })
+
+        it('une liste réduite à mon seul slug déclare la présence connue', async () => {
+            // ⭐ Le cas qui condamne le prédicat naïf : mesuré sur la liste FILTRÉE, ce tour
+            // serait indistinguable d'un tour qui n'a rien reçu. Or il porte l'information
+            // la plus précise qui soit — « je sais, je suis seul ».
+            const unsynced = unsyncedConnections()
+
+            await unsynced.getRoomUsersDiff([{ slug: ME }])
+
+            expect(ctx.connection.usersInRoom).toEqual([])
+            expect(ctx.connection.presenceSynced).toBe(true)
+        })
     })
 
     // ── hasOpenConnection ─────────────────────────────────────────────────────

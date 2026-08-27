@@ -11,9 +11,12 @@ Code : `src/resources/js/socializer/components/WebRTC2/`
 [Propriétaires uniques](#propriétaires-uniques) ·
 [Les deux sens portent chacun leur garde](#les-deux-sens-portent-chacun-leur-garde) ·
 [Un onglet, plusieurs contextes](#un-onglet-plusieurs-contextes--la-granularité-des-clés-du-store) ·
+[Deux prédicats de connexion](#deux-prédicats-de-connexion-jamais-un-seul) ·
 [Départ d'un pair](#départ-dun-pair--un-fait-métier-deux-transports) ·
 [Signaux datachannel](#signaux-datachannel--trois-enveloppes-trois-consommateurs) ·
-[Le Peer PeerJS](#le-peer-peerjs--un-seul-par-onglet) ·
+[Le Peer PeerJS](#le-peer-peerjs--un-seul-par-onglet)
+(→ [`destroy()` n'est pas une coupure réseau](#destroy-de-peerjs-nest-pas-une-coupure-réseau) ·
+[ce qui traverse le state Pinia](#ce-qui-traverse-le-state-réactif-pinia)) ·
 [Conventions de code](#conventions-de-code) ·
 [Le routage ne pose aucune précondition](#le-routage-ne-pose-aucune-précondition) ·
 [Cleanup obligatoire](#cleanup-obligatoire) ·
@@ -413,6 +416,26 @@ scénarios) et `_hubRateLimiter` (arbitrage « verbe `.reset()` plutôt que Pini
   présence n'ayant pas d'historique. Le drain s'arrête sur `isShuttingDown` — rejouer après
   `beginShutdown()` rouvrirait ce que le teardown vient de fermer — mais les appelants coalescés
   résolvent **toujours**. Épinglé par `useConnectionPool.test.js` (§ `syncUsersConnections`)
+- **Synchroniser n'est pas savoir.** `_doGetRoomUsersDiff` écrit `usersInRoom` et `roomMembers` à
+  **tous** les tours, `presenceSynced` seulement sur un tour qui a **observé** quelque chose —
+  `users.length > 0`, mesuré sur la liste **brute**, avant le filtrage de mon propre slug. Les deux
+  moitiés comptent. Le tour sur liste vide est le **seul** capable de purger le dernier partant
+  (`nextSlugs = []` ⇒ `removedUsers = previousSlugs`) : le tenir dehors laissait une room qui se
+  vide garder ses fantômes dans l'allowlist que lisent les deux gardes d'autorisation. Et le
+  déclarer « présence connue » ferait basculer ces gardes de « je ne sais pas encore » à « tu n'es
+  pas membre » sur une ignorance. Mesurer **avant** le filtrage n'est pas un détail : le canal de
+  présence me compte toujours parmi ses membres, donc `[moi]` est une observation valide — « je
+  sais, je suis seul » — alors que sa projection filtrée est vide ; après filtrage, le seul tour qui
+  apprend qu'il est seul passerait pour un tour qui n'a rien appris. Le drapeau est **monotone** :
+  `waitForPresenceSync` est mémoïsée et ne résout qu'une fois, un retour à `false` ne réarmerait
+  aucune attente — seul `destroy()` le rabaisse, avec la liste. L'écrivain reste unique, mais son
+  invariant devient directionnel : **la connaissance n'avance jamais sans la liste**. Corollaire
+  dans `_doSyncUsersConnections`, entre la purge et le fan-out : **pas d'observation, pas
+  d'émission** — un tour vide oublie mais n'ouvre rien, sinon le premier tour du provider
+  (`{ immediate: true }` sur une liste encore vide) ferait composer au client star le slug de son
+  hub avant toute connaissance de la room, `requestOrConnectPeer` ne portant aucun garde
+  d'autorisation sur sa première tentative. Épinglé par `usePeerConnections.test.js`
+  (§ `getRoomUsersDiff`), `useConnectionPool.test.js` et `useMediaBroadcast.watchUsers.test.js`
 - **Garde de teardown** : `beginShutdown`/`endShutdown` est un **compteur** ré-entrant, jamais un
   booléen (deux arrêts concurrents se volaient le garde). Toujours dans un `try/finally` : une
   exception laissant `shutdownCount ≥ 1` fait sortir `_handleConnectionAttempt` par `return true`,

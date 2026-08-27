@@ -128,15 +128,26 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
         return false
     }
 
-    // watch users list to sync connections when new user join the room
+    // Watcher de la liste de présence : chaque composition reçue est synchronisée, y
+    // compris la LISTE VIDE. C'est le seul tour capable de purger le dernier partant — le
+    // tenir dehors laissait son fantôme dans `usersInRoom`, c'est-à-dire dans l'allowlist
+    // que lisent les deux gardes d'autorisation, le ciblage de `forwardStarMessage` et les
+    // destinataires par défaut de `sendData`.
+    //
+    // ⚠️ Le garde retiré ici ne l'est que parce que la distinction « synchroniser » /
+    // « déclarer la présence connue » existe désormais plus bas. Le premier tour du
+    // provider — `watch(() => props.users, api.watchUsers, { immediate: true })`, armé sur
+    // une liste encore vide — traverse la chaîne, purge (rien) et n'apprend rien :
+    // `_doGetRoomUsersDiff` ne passe `presenceSynced` à true que sur un tour qui a OBSERVÉ
+    // au moins un membre, et `_doSyncUsersConnections` n'ouvre rien sur un tour qui n'a
+    // rien observé. Sans ces deux-là, la liste vide ferait passer la présence pour connue
+    // et transformerait un refus d'admission en ignorance déguisée.
+    //
+    // `null`/`undefined` tombent jusqu'à `syncUsersConnections`, qui les rejette sur son
+    // `Array.isArray` : la forme se valide à un seul endroit.
     const watchUsers = (newVal) => {
         try {
-            if(newVal && newVal.length === 0) {
-                return
-            }
-
             syncUsersConnections(newVal)
-
         } catch (e) {
             console.error(e)
         }

@@ -730,6 +730,47 @@ describe('useConnectionPool', () => {
             expect(core.requestRemotePeerConnection).toHaveBeenCalledWith('teacher', ctx.session.currentType)
         })
 
+        // ── Pas d'observation, pas d'émission ─────────────────────────────────
+        //
+        // Le tour sur liste vide a le droit d'OUBLIER — c'est même le seul qui puisse
+        // purger le dernier partant — jamais celui d'OUVRIR. Le garde vit entre la purge
+        // et le fan-out ; ces deux cas l'épinglent des deux côtés.
+        it('un tour vide purge mais n\'ouvre rien (client star)', async () => {
+            // ⭐ La branche fautive : le client star compose son hub sans regarder
+            // `newUsers`. Le premier tour du provider (`{ immediate: true }` sur une liste
+            // encore vide) enverrait donc un POST de signalisation avant toute
+            // connaissance de la room, et armerait un retry sur rien.
+            ctx.session.topology = 'star'
+            ctx.session.hubSlug = 'teacher'
+            ctx.session.isHub = false
+            connections.getRoomUsersDiff.mockResolvedValue({
+                newUsers: [],
+                removedUsers: ['bob'],
+            })
+
+            await pool.syncUsersConnections([])
+
+            expect(ctx.peerStore.removeRemotePeerId).toHaveBeenCalledWith('bob')
+            expect(core.requestRemotePeerConnection).not.toHaveBeenCalled()
+            expect(connections.connectToPeer).not.toHaveBeenCalled()
+        })
+
+        it('un tour vide n\'ouvre rien en mesh non plus', async () => {
+            // Le garde porte sur le BLOC, pas sur la seule branche star : la règle ne doit
+            // pas dépendre du fait que mesh itère aujourd'hui `newUsers`, vide ici par
+            // construction. Un `newUsers` non vide sur une entrée vide est incohérent — et
+            // c'est précisément ce que le garde doit rendre inoffensif.
+            connections.getRoomUsersDiff.mockResolvedValue({
+                newUsers: [{ slug: 'alice' }],
+                removedUsers: [],
+            })
+
+            await pool.syncUsersConnections([])
+
+            expect(core.requestRemotePeerConnection).not.toHaveBeenCalled()
+            expect(connections.connectToPeer).not.toHaveBeenCalled()
+        })
+
         it('sfu : aucune connexion pair-à-pair côté client', async () => {
             ctx.session.topology = 'sfu'
             connections.getRoomUsersDiff.mockResolvedValue({

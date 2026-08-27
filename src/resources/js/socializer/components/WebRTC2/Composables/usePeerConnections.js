@@ -38,6 +38,23 @@ export function usePeerConnections(ctx) {
             return { newUsers: [], removedUsers: [] }
         }
 
+        // Ce tour a-t-il OBSERVÉ quelque chose ? Question distincte de « qui est là », et
+        // c'est tout le correctif : synchroniser n'est pas savoir.
+        //
+        // ⚠️ Mesuré sur la liste BRUTE, avant le filtrage de mon propre slug. Le canal de
+        // présence me compte toujours parmi les membres : `[moi]` — le dernier autre pair
+        // vient de partir — est une observation valide, alors que sa projection filtrée
+        // est vide. Sur la liste filtrée, le seul tour qui apprend « je suis seul »
+        // passerait pour un tour qui n'a rien appris.
+        //
+        // ⚠️ Et `length > 0`, jamais « la liste me contient » : ce tableau est une prop,
+        // pas un fait vérifié. Un consommateur qui s'exclurait de sa propre liste ne
+        // serait pas fautif, mais son contexte ne déclarerait alors JAMAIS la présence
+        // connue — chaque admission entrante paierait le timeout de `waitForPresenceSync`
+        // avant de conclure comme elle l'aurait fait tout de suite. Et sans qu'aucun test
+        // ne rougisse, le contexte de test naissant déjà `presenceSynced: true`.
+        const presenceObserved = users.length > 0
+
         const usersInRoom = users.filter(user => user.slug !== ctx.meStore.getMe.slug)
         const nextSlugs = usersInRoom.map(user => user.slug)
         const previousSlugs = [...ctx.connection.usersInRoom]
@@ -45,20 +62,37 @@ export function usePeerConnections(ctx) {
         const newUsers = usersInRoom.filter(user => !previousSlugs.includes(user.slug))
         const removedUsers = previousSlugs.filter(slug => !nextSlugs.includes(slug))
 
-        ctx.connection.usersInRoom = nextSlugs
-
-        // Ce contexte SAIT désormais qui est membre — fait distinct de la liste
-        // elle-même, et lu par les gardes d'admission pour ne pas confondre « tu n'es
-        // pas membre » avec « je ne sais pas encore ». Écrit ici parce que c'est ici
-        // qu'est écrit `usersInRoom` : un seul écrivain pour les deux, donc jamais de
-        // désaccord entre la liste et la connaissance qu'on en a.
-        ctx.connection.presenceSynced = true
-
-        // Projection dans le store : ce contexte témoigne de la présence de ces pairs.
-        // Unique écrivain de `usersInRoom`, donc unique écrivain de l'index — c'est ce
+        // Écrits à TOUS les tours, observation ou non — c'est ce qui rend le dernier
+        // partant purgeable : sur une liste vide, `removedUsers` vaut `previousSlugs`, et
+        // c'est le seul tour qui puisse le dire.
+        //
+        // Les deux ensemble, jamais l'un sans l'autre. La projection dans le store est ce
         // qui permet à `removeRemotePeerId` de répondre « absent de TOUTES les rooms »
-        // sans dépendre de l'ordre des purges de `connections`.
+        // sans dépendre de l'ordre des purges de `connections` ; purger la liste sans
+        // purger l'index ferait survivre le peerId d'un partant à son propre départ.
+        ctx.connection.usersInRoom = nextSlugs
         ctx.peerStore.setRoomMembers(ctx.contextId, nextSlugs)
+
+        // La liste et la CONNAISSANCE qu'on en a n'avancent plus au même rythme, et c'est
+        // le correctif lui-même. L'écrivain, lui, reste unique : l'invariant n'est plus
+        // « les deux bougent ensemble », il est « la connaissance n'avance jamais sans la
+        // liste ».
+        //
+        // Un tour qui n'a rien observé synchronise (il purge) mais n'apprend rien. Le
+        // déclarer « présence connue » ferait basculer les gardes d'admission de « je ne
+        // sais pas encore » à « tu n'es pas membre » sur une ignorance — `_admitIncoming`
+        // et `responseRemotePeerConnection` sont le chemin de sécurité.
+        //
+        // ⚠️ Écrit en DERNIER : ce drapeau réveille les attentes de `waitForPresenceSync`,
+        // et ce qu'elles trouvent au réveil doit être complet.
+        //
+        // ⚠️ Monotone : jamais remis à false ici. `waitForPresenceSync` est mémoïsée et ne
+        // résout qu'une fois — un retour à false ne réarmerait aucune attente et
+        // fabriquerait un contexte qui se dit « présence inconnue » pendant que sa propre
+        // attente répond déjà `true`. Seul `destroy()` le rabaisse, avec la liste.
+        if (presenceObserved) {
+            ctx.connection.presenceSynced = true
+        }
 
         return { newUsers, removedUsers }
     }

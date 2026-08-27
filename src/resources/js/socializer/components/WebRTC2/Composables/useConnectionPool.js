@@ -335,6 +335,33 @@ export function useConnectionPool(ctx, { core, connections }) {
             ctx.peerStore.removeRemotePeerId(userSlug)
         })
 
+        // ⚠️ La purge est au-dessus, le fan-out en dessous, et le garde passe ENTRE LES
+        // DEUX : un tour qui n'a rien observé a le droit d'OUBLIER — c'est même le seul
+        // tour capable de purger le dernier partant — jamais celui d'OUVRIR.
+        //
+        // Sans lui, le premier tour du provider (`{ immediate: true }` sur une liste de
+        // présence encore vide) ferait composer au client star le slug de son hub avant
+        // toute connaissance de la room : `requestOrConnectPeer` ne porte aucun garde
+        // d'autorisation sur sa PREMIÈRE tentative (celui d'`isAuthorizedPeer` vit dans
+        // `_handleConnectionAttempt`, donc un tour plus tard). Un POST de signalisation
+        // part, un slot du plafond de cadence est consommé, et un moteur de retry s'arme
+        // sur rien.
+        //
+        // Le garde porte sur le BLOC, pas sur la seule branche fautive : la règle est
+        // « pas d'observation, pas d'émission », et elle ne doit pas dépendre du fait que
+        // mesh / hub / sfu itèrent aujourd'hui `newUsers`, vide ici par construction. Le
+        // jour où l'une d'elles itérera `usersInRoom` — comme le fait déjà
+        // `startWebcamStream` — la protection incidente disparaîtrait sans un mot.
+        //
+        // ⚠️ Le prédicat porte sur `users`, l'entrée du tour, et surtout PAS sur
+        // `ctx.connection.presenceSynced`, qui dirait pourtant la même chose ici. Adosser
+        // TOUT l'établissement au drapeau de présence en ferait le point de défaillance
+        // unique du module : un jour où il ne serait pas écrit, plus rien ne s'ouvrirait,
+        // mesh compris. Ce drapeau garde les autorisations, il ne conditionne pas
+        // l'établissement. Même prédicat que `presenceObserved` dans `_doGetRoomUsersDiff`,
+        // sur la même entrée : les deux se lisent ensemble.
+        if (users.length === 0) return
+
         // Mesh: tout le monde se connecte à tout le monde.
         if (ctx.topology.value === 'mesh') {
             newUsers.forEach(user => {

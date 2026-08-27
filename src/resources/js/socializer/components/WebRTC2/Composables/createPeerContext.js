@@ -110,7 +110,7 @@ export function createPeerContext({ type, room, options = {} }) {
     const connection = reactive({
         usersInRoom: [],
 
-        // La composition de la room a-t-elle été synchronisée AU MOINS UNE FOIS ?
+        // La composition de la room a-t-elle été OBSERVÉE au moins une fois ?
         //
         // ⚠️ Distinct de `usersInRoom.length > 0`, et c'est tout l'intérêt : un tableau
         // vide ne dit pas « personne n'est membre », il dit « je ne sais pas encore ».
@@ -118,6 +118,10 @@ export function createPeerContext({ type, room, options = {} }) {
         // ferme la porte à tout contact légitime reçu pendant le démarrage du contexte.
         //
         // Même écrivain unique que `usersInRoom` : usePeerConnections._doGetRoomUsersDiff.
+        // Mais les deux n'avancent PAS au même rythme : un tour de synchronisation sur
+        // liste vide réécrit la liste (c'est ce qui purge une room qui se vide) sans rien
+        // déclarer connu. L'invariant que l'écrivain unique garantit est donc directionnel
+        // — la connaissance n'avance jamais sans la liste — et non simultané.
         presenceSynced: false,
     })
 

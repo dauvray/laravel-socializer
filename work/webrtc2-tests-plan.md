@@ -35,7 +35,7 @@ et le seul étage où les incendies du paquet étaient détectables). Le harnais
 | Tâche 4 · `usePeerTransport` — 7 fichiers (sécurité, `peer-unavailable`, singleton, mesh, reconnexion, `forwardStar`, `iceRefresh`) | ◐ | 4 items, ci-dessous |
 | Tâche 5 · `createPeerContext` | ✅ | — |
 | Tâche 6 · `usePeerOrchestrator` | ⛔ **bloquée** | voir ci-dessous ; seul `broadcastPresence` est couvert |
-| Tâche 7 · `useMediaBroadcast` | ⛔ **bloquée** | après la tâche 6 |
+| Tâche 7 · `useMediaBroadcast` | ⛔ **bloquée** | après la tâche 6 ; seul `watchUsers` est couvert |
 | Couches extraites de l'orchestrateur — `useConnectionPool`, `useCallManager`, `useStreamManager`, `useSignalingQueue` | ✅ | — |
 | Store — `peers2Store` : runtime, observabilité, `remotePeerId` | ✅ | — |
 | UI — `useAwaitedStreams`, `useBroadcastPresence`, `MediaBroadcastPlayer` (identité, spinner) | ✅ | — |
@@ -44,9 +44,11 @@ et le seul étage où les incendies du paquet étaient détectables). Le harnais
 
 ⛔ **Les tâches 6 et 7 sont volontairement bloquées.** Le wrapping du routage star qu'elles doivent
 couvrir est justement ce que la TODOLIST prévoit de *déplacer* dans `usePeerTransport` (item `[L]`,
-gelé). Écrire ces tests avant le déménagement revient à les jeter. Exception ouverte, et elle
-survit au déménagement : `usePeerOrchestrator.broadcastPresence.test.js` n'asserte rien sur le
-routage star.
+gelé). Écrire ces tests avant le déménagement revient à les jeter. Deux exceptions ouvertes, et
+elles survivent au déménagement parce qu'aucune n'asserte sur le routage star :
+`usePeerOrchestrator.broadcastPresence.test.js`, et `useMediaBroadcast.watchUsers.test.js` (27/08/2026)
+qui mocke l'orchestrateur en entier pour épingler le seul point d'entrée de la chaîne de présence.
+**Élargir ce second fichier au reste de la façade rouvrirait le blocage** — son en-tête le dit.
 
 Les couches extraites se testent avec des `vi.fn()` pour les dépendances injectées — c'est tout
 l'intérêt de l'injection descendante. `useCallManager` et `useStreamManager` n'enregistrent aucun
