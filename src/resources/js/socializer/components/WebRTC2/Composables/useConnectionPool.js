@@ -247,9 +247,12 @@ export function useConnectionPool(ctx, { core, connections }) {
      *
      * @param {string} userSlug - L'identifiant de l'utilisateur pour lequel la connexion est tentée.
      * @param {string|null} type - Type de connexion (défaut : type courant du contexte).
+     * @param {Object} [options]
+     * @param {boolean} [options.preserveRetry=false] - Ne pas réarmer une chaîne de retry
+     *        déjà en vol pour ce pair. Réservé aux appelants **périodiques** (cf. plus bas).
      * @returns {void}
      */
-    const requestOrConnectPeer = (userSlug, type = null) => {
+    const requestOrConnectPeer = (userSlug, type = null, { preserveRetry = false } = {}) => {
         if (!userSlug) return
         const effectiveType = type || ctx.currentType.value
         if (connections.hasOpenConnection(userSlug, null, effectiveType)) return
@@ -276,6 +279,20 @@ export function useConnectionPool(ctx, { core, connections }) {
         }
 
         // On lance le moteur de retry (qui surveillera l'évolution vers 'open')
+        //
+        // ⚠️ `preserveRetry` protège l'HORIZON D'ABANDON, et le défaut reste le réarmement.
+        // `scheduleRetry(slug, 0, …)` commence par `clearRetry` : tout appelant qui relance
+        // à l'attente 0 remet `attempt` à zéro, donc `MAX_RETRY_ATTEMPTS` n'est jamais
+        // atteint et les ≈55 s d'horizon ne tombent jamais. C'est sans conséquence pour un
+        // appelant ÉVÉNEMENTIEL — un arrivant, une recovery `peer-unavailable` : le fait est
+        // neuf, il mérite une chaîne neuve. C'en est une pour un appelant PÉRIODIQUE : la
+        // réconciliation de présence repasse à chaque tour, et sur une room qui brasse de la
+        // présence un pair injoignable serait rappelé indéfiniment, à ~1 appel/s.
+        //
+        // Le garde porte sur le seul réarmement, jamais sur la composition elle-même : la
+        // chaîne en vol continue de surveiller, et l'appel utile est déjà parti ci-dessus.
+        if (preserveRetry && retryManager.hasPendingRetry(userSlug)) return
+
         retryManager.scheduleRetry(userSlug, 0, _handleConnectionAttempt)
     }
 
@@ -362,24 +379,86 @@ export function useConnectionPool(ctx, { core, connections }) {
         // sur la même entrée : les deux se lisent ensemble.
         if (users.length === 0) return
 
+        // ── Le fan-out RÉCONCILIE, il ne diffe pas ──────────────────────────────────
+        //
+        // `newUsers` est une optimisation, pas une autorité : il ne nomme que les
+        // TRANSITIONS que le diff a vues. Or un diff d'instantanés est aveugle à un pair
+        // parti et revenu entre les deux instantanés qu'il compare — il est alors dans
+        // `previousSlugs` ET `nextSlugs`, donc dans aucune des deux listes. Deux chemins de
+        // production le font, et aucun n'est le « même flush Vue » qu'on soupçonnait
+        // (pusher-js émet un événement par frame, et un flush `'pre'` est une microtâche :
+        // il est drainé entre deux frames) :
+        //
+        //   (a) COUPURE DE PRÉSENCE. Sur `connecting`/`disconnected`, pusher-js réinitialise
+        //       ses canaux sans rien émettre : la liste reste périmée toute la coupure. Au
+        //       retour il se ré-abonne et `here()` repart avec la liste COMPLÈTE. Un pair
+        //       qui a rechargé pendant la coupure n'a jamais été vu partir.
+        //   (b) RECHARGEMENT CHEVAUCHANT. Reverb n'émet pas `member_removed` tant que
+        //       l'utilisateur tient une autre connexion, ni `member_added` s'il est déjà
+        //       abonné (`InteractsWithPresenceChannels::userIsSubscribed`) : un rechargement
+        //       dont la connexion neuve précède le ramassage de l'ancienne ne produit
+        //       AUCUN événement de présence. Rien ne peut alors avoir lieu à ce tour-ci —
+        //       seul le tour suivant, quel qu'en soit le motif, réparera.
+        //
+        // L'autorité est donc « membre de la room ET rien d'établi ». Le bail des peerId
+        // borne l'autre moitié du même symptôme (composer un numéro mort) ; il ne remplace
+        // pas celle-ci : sans entrée dans `newUsers`, aucun appel ne partait du tout, et un
+        // diffuseur ne rappelait jamais le pair revenu — écran noir chez lui, sans erreur.
+        //
+        // ⚠️ `isConnectionEstablished`, JAMAIS `hasOpenConnection` : ce dernier est
+        // volontairement optimiste et compte pour ouverte une `MediaConnection` en
+        // `connecting`, c'est-à-dire l'état exact d'un pair qui vient de recharger. Il garde
+        // d'ailleurs l'entrée de `requestOrConnectPeer`, donc un membre non établi mais
+        // « ouvert » ne reçoit rien : la réconciliation échoue FERMÉE — elle sous-tire, elle
+        // ne régresse pas. Le contournement serait la « fraîcheur par preuve de connexion »,
+        // écartée en août parce que la preuve qu'elle cherche est produite par le bug.
+        //
+        // ⚠️ Réparation OPPORTUNISTE, pas garantie : PeerJS ne ferme que sur
+        // `iceConnectionState` `failed`/`closed` et ne fait rien sur `disconnected`. Le tour
+        // de présence peut donc arriver avant que la dégradation soit visible.
+        //
+        // ⚠️ Placée SOUS le garde ci-dessus, jamais au-dessus : au-dessus, le premier tour du
+        // provider (`{ immediate: true }`, liste vide) composerait une room entière de
+        // mémoire — « pas d'observation, pas d'émission » tomberait.
+        //
+        // Lecture de `ctx.connection.usersInRoom` : c'est la composition que
+        // `getRoomUsersDiff` vient d'écrire, et la même que lisent les deux gardes
+        // d'autorisation. Aucun état n'est ajouté ici.
+        const newSlugs = new Set(newUsers.map(user => user.slug))
+        const targets = [...new Set([
+            ...newSlugs,
+            ...ctx.connection.usersInRoom.filter(
+                slug => !connections.isConnectionEstablished(slug)
+            ),
+        ])]
+
         // Mesh: tout le monde se connecte à tout le monde.
         if (ctx.topology.value === 'mesh') {
-            newUsers.forEach(user => {
-                requestOrConnectPeer(user.slug)
+            targets.forEach(userSlug => {
+                requestOrConnectPeer(userSlug, null, { preserveRetry: !newSlugs.has(userSlug) })
 
                 // Si on est en train de partager l'écran, initier aussi la connexion 'screen'
-                if (ctx.media.isCapturing) {
-                    requestOrConnectPeer(user.slug, 'screen')
+                //
+                // ⚠️ Réservé aux ARRIVANTS, hors réconciliation : `isConnectionEstablished`
+                // ci-dessus porte sur le type courant, pas sur 'screen', et la reprise d'un
+                // partage vers un membre déjà connu appartient à `startScreenCapture`, qui
+                // itère `usersInRoom` à l'ouverture de la capture.
+                if (ctx.media.isCapturing && newSlugs.has(userSlug)) {
+                    requestOrConnectPeer(userSlug, 'screen')
                 }
             })
         }
         // Star: le hub se connecte à tout le monde, les clients seulement au hub.
         else if (ctx.topology.value === 'star' && ctx.hubSlug.value) {
             if (ctx.isHub.value) {
-                newUsers.forEach(user => {
-                    requestOrConnectPeer(user.slug)
+                targets.forEach(userSlug => {
+                    requestOrConnectPeer(userSlug, null, { preserveRetry: !newSlugs.has(userSlug) })
                 })
             } else {
+                // ⚠️ Inconditionnel, et c'est un défaut connu (`work/webrtc2-todo.md`) : le
+                // client compose son hub même absent de la room. Laissé tel quel ici — c'est
+                // aussi, par accident, la seule réconciliation qui existait, donc le corriger
+                // avant celle ci-dessus régresserait la reprise d'un hub qui recharge.
                 requestOrConnectPeer(ctx.hubSlug.value)
             }
         }

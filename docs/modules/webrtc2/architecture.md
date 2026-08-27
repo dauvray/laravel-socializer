@@ -436,6 +436,34 @@ scénarios) et `_hubRateLimiter` (arbitrage « verbe `.reset()` plutôt que Pini
   hub avant toute connaissance de la room, `requestOrConnectPeer` ne portant aucun garde
   d'autorisation sur sa première tentative. Épinglé par `usePeerConnections.test.js`
   (§ `getRoomUsersDiff`), `useConnectionPool.test.js` et `useMediaBroadcast.watchUsers.test.js`
+- **Le fan-out RÉCONCILIE, il ne diffe pas.** `newUsers` est une optimisation, pas une autorité : il
+  ne nomme que les **transitions** que le diff a vues, et un diff d'instantanés est aveugle à un pair
+  parti et revenu **entre** les deux instantanés qu'il compare — il est alors dans `previousSlugs`
+  **et** `nextSlugs`, donc dans aucune des deux listes. L'autorité est « membre de la room **et** rien
+  d'établi ». Deux chemins produisent cet angle mort, et **aucun n'est un « même flush Vue »** :
+  pusher-js émet un événement par frame et un flush `'pre'` est une microtâche, donc drainé entre
+  deux frames. Ce sont **(a)** une coupure de présence — pusher-js réinitialise ses canaux sans rien
+  émettre sur `connecting`/`disconnected`, puis rejoue `here()` avec la liste **complète** au retour,
+  si bien qu'un pair qui a rechargé pendant la coupure n'a jamais été vu partir ; et **(b)** un
+  rechargement chevauchant — Reverb n'émet pas `member_removed` tant que l'utilisateur tient une
+  autre connexion, ni `member_added` s'il est déjà abonné
+  (`InteractsWithPresenceChannels::userIsSubscribed`), donc un rechargement dont la connexion neuve
+  précède le ramassage de l'ancienne ne produit **aucun** événement de présence : rien ne peut avoir
+  lieu à ce tour-là, seul le tour suivant réparera, quel qu'en soit le motif. Le bail des peerId
+  borne l'autre moitié du même symptôme — composer un numéro mort — et ne remplace pas celle-ci :
+  sans entrée dans `newUsers`, aucun appel ne partait, et un diffuseur ne rappelait jamais le pair
+  revenu. Trois bornes : le prédicat est `isConnectionEstablished` et **jamais**
+  `hasOpenConnection`, qui compte pour ouverte une `MediaConnection` en `connecting` — l'état exact
+  d'un pair qui vient de recharger — et qui garde d'ailleurs l'entrée de `requestOrConnectPeer`, si
+  bien que la réconciliation **échoue fermée** (elle sous-tire, elle ne régresse pas) ; elle vit
+  **sous** le garde « pas d'observation, pas d'émission », au-dessus duquel le premier tour du
+  provider composerait une room entière de mémoire ; et elle **ne réarme pas** une chaîne de retry en
+  vol (`requestOrConnectPeer(slug, type, { preserveRetry: true })`), sans quoi `attempt` repartirait
+  de zéro à chaque tour de présence et l'horizon d'abandon de ≈55 s ne tomberait jamais. Réparation
+  **opportuniste**, pas garantie : PeerJS ne ferme que sur `iceConnectionState` `failed`/`closed` et
+  ne fait rien sur `disconnected`, donc le tour de présence peut arriver avant que la dégradation
+  soit visible. Épinglé par `scenarios/peerDeparture.test.js` (« A recharge sans que B voie son
+  départ ») et `useConnectionPool.test.js`
 - **Garde de teardown** : `beginShutdown`/`endShutdown` est un **compteur** ré-entrant, jamais un
   booléen (deux arrêts concurrents se volaient le garde). Toujours dans un `try/finally` : une
   exception laissant `shutdownCount ≥ 1` fait sortir `_handleConnectionAttempt` par `return true`,

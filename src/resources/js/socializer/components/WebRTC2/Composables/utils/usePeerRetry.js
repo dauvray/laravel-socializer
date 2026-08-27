@@ -37,6 +37,23 @@ export function usePeerRetry(ctx, options = {}) {
     }
 
     /**
+     * Une chaîne de tentatives est-elle déjà en vol pour ce pair ?
+     *
+     * ⚠️ Prédicat en LECTURE SEULE, et sur la même clé que `clearRetry` — donc portant le
+     * type et la room courants du contexte, pas seulement le slug.
+     *
+     * Sa raison d'être : `scheduleRetry(slug, 0, …)` commence par `clearRetry`, donc tout
+     * appelant qui relance à l'attente 0 remet `attempt` à zéro et **défait l'horizon
+     * d'abandon** (`MAX_RETRY_ATTEMPTS` tentatives, ≈55 s) sans le dire. Un appelant
+     * périodique — le fan-out de présence, qui repasse à chaque tour — doit donc pouvoir
+     * laisser vivre une chaîne en cours au lieu de la réarmer.
+     *
+     * @param {string} userSlug
+     * @returns {boolean}
+     */
+    const hasPendingRetry = (userSlug) => pendingTimers.has(_retryKey(userSlug))
+
+    /**
      * Stoppe toutes les tentatives en cours (ex: lors de la fermeture d'une room ou du composant)
      * @returns {void}
      */
@@ -108,9 +125,10 @@ export function usePeerRetry(ctx, options = {}) {
     // Sécurité : si le composant Vue est détruit, on stoppe tout
     onUnmounted(() => clearAll())
 
-    return { 
-        scheduleRetry, 
-        clearRetry, 
-        clearAll 
+    return {
+        scheduleRetry,
+        clearRetry,
+        clearAll,
+        hasPendingRetry,
     }
 }

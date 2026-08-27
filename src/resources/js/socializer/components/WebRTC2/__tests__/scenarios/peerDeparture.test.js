@@ -120,6 +120,56 @@ describe("départ d'un pair", () => {
         expect(bob.receivedStreamsFrom()).toContain('alice')
     })
 
+    it("A recharge sans que B voie son départ : B, diffuseur, ré-appelle et A reçoit son flux", async () => {
+        // Le trou que le bail borne sans le fermer, et le seul où PERSONNE ne rattrape.
+        //
+        // Aucun tour de présence n'annonce le départ d'A : Reverb supprime `member_removed`
+        // quand la connexion neuve précède le ramassage de l'ancienne
+        // (`InteractsWithPresenceChannels::userIsSubscribed`), et une coupure de présence
+        // (reconnect Echo) rejoue `here()` avec la liste complète. A est donc dans
+        // `previousSlugs` ET `nextSlugs` : `newUsers` et `removedUsers` sont vides tous les
+        // deux, et un fan-out fondé sur `newUsers` seul n'ouvre rien.
+        //
+        // ⚠️ B diffuse, PAS A — et c'est tout le test. En mode stream le flux ne part que du
+        // diffuseur : A, sans flux local, n'ouvre aucun appel. Asserter sur ce qu'initie A
+        // serait vert sans correctif, A étant un contexte neuf pour qui tout le monde est
+        // « nouveau ». La seule direction qui puisse rougir est celle que B possède.
+        const aliceV1 = await spawn({ slug: 'alice', peerId: 'peer-alice-v1' })
+        const bob = await spawn({ slug: 'bob' })
+
+        await connectRoom([aliceV1, bob])
+        await bob.api.startWebcamStream()
+        await connectRoom([aliceV1, bob])
+        expect(aliceV1.receivedStreamsFrom()).toContain('bob')
+
+        // L'onglet d'alice se ferme : son Peer disparaît du bus PeerJS et ses connexions
+        // tombent des deux côtés. B l'apprend par la fermeture, jamais par la présence —
+        // `handleRemoteDeparture` ne touche donc ni `usersInRoom` ni le mapping (le veto de
+        // présence de `removeRemotePeerId` s'applique : alice est encore membre).
+        server.goOffline('alice')
+        aliceV1.peerInstance.destroy()
+        await settle()
+
+        // ⚠️ AUCUN `syncUsersConnections` intermédiaire ici, contrairement aux deux
+        // scénarios voisins : c'est cette béquille qui rend le revenant « nouveau ». Sans
+        // elle, la composition vue par B ne bouge pas d'un iota entre le départ et le
+        // retour — exactement le cas de production.
+        server.goOnline('alice')
+        const aliceV2 = await spawn({ slug: 'alice', peerId: 'peer-alice-v2' })
+        // `rounds` plus large que par défaut : la chaîne est plus longue qu'un
+        // établissement nominal — B compose le peerId mort, `peer-unavailable` l'invalide,
+        // B redemande la signalisation, puis rappelle sur le peerId frais.
+        await connectRoom([aliceV2, bob], { rounds: 8 })
+
+        // La présence n'a rien signalé : alice n'a jamais quitté la composition de B.
+        // C'est la précondition du test, pas son objet — si elle tombe, le test ne teste
+        // plus le bon trou.
+        expect(bob.api.usersInRoom.value).toContain('alice')
+
+        // Le fait métier : alice revenue reçoit la diffusion de bob.
+        expect(aliceV2.receivedStreamsFrom()).toContain('bob')
+    })
+
     it("B, initiateur, sort d'un peerId mort et rouvre le canal (mode data)", async () => {
         // Mode data : les deux pairs se connectent mutuellement, donc B initie vraiment.
         // C'est la configuration où un peerId périmé devenait une impasse PERMANENTE —

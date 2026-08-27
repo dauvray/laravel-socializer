@@ -771,6 +771,70 @@ describe('useConnectionPool', () => {
             expect(connections.connectToPeer).not.toHaveBeenCalled()
         })
 
+        // ── Le fan-out réconcilie, il ne diffe pas ────────────────────────────
+        //
+        // `newUsers` ne nomme que les TRANSITIONS vues par le diff. Un pair parti et
+        // revenu entre deux instantanés comparés n'y figure pas — il est dans
+        // `previousSlugs` ET `nextSlugs`. L'autorité est donc « membre de la room ET rien
+        // d'établi ».
+        //
+        // ⚠️ Ce fichier stube `getRoomUsersDiff`, donc `ctx.connection.usersInRoom` n'est
+        // JAMAIS écrit ici : ces trois cas doivent le pré-semer eux-mêmes. Sans ce
+        // pré-semis, la réconciliation ne voit aucun membre et les cas verdissent pour la
+        // mauvaise raison. Le bout-en-bout du même défaut vit dans
+        // `scenarios/peerDeparture.test.js`.
+        it('compose un membre présent des deux côtés du diff avec qui rien n\'est établi', async () => {
+            ctx.connection.usersInRoom = ['alice']
+            // Ni arrivante ni partante : la composition n'a pas bougé d'un iota.
+            connections.getRoomUsersDiff.mockResolvedValue({ newUsers: [], removedUsers: [] })
+
+            await pool.syncUsersConnections([{ slug: 'alice' }])
+
+            expect(core.requestRemotePeerConnection).toHaveBeenCalledWith('alice', ctx.session.currentType)
+        })
+
+        it('ne recompose pas un membre déjà établi', async () => {
+            ctx.connection.usersInRoom = ['alice']
+            connections.isConnectionEstablished.mockReturnValue(true)
+            connections.getRoomUsersDiff.mockResolvedValue({ newUsers: [], removedUsers: [] })
+
+            await pool.syncUsersConnections([{ slug: 'alice' }])
+
+            expect(core.requestRemotePeerConnection).not.toHaveBeenCalled()
+            expect(connections.connectToPeer).not.toHaveBeenCalled()
+        })
+
+        it('ne réarme pas le moteur de retry d\'un membre qui en a déjà un en vol', async () => {
+            // L'horizon d'abandon, sinon défait en silence : `scheduleRetry(slug, 0, …)`
+            // commence par `clearRetry`, donc une réconciliation qui repasse à chaque tour
+            // de présence remettrait `attempt` à zéro — MAX_RETRY_ATTEMPTS ne serait jamais
+            // atteint et un pair injoignable serait rappelé indéfiniment.
+            ctx.connection.usersInRoom = ['alice']
+            connections.getRoomUsersDiff.mockResolvedValue({
+                newUsers: [{ slug: 'alice' }],
+                removedUsers: [],
+            })
+
+            // Tour 1 : alice est une arrivante, donc une chaîne NEUVE est armée — c'est le
+            // comportement par défaut, et il ne change pas : un fait neuf mérite une
+            // chaîne neuve.
+            await pool.syncUsersConnections([{ slug: 'alice' }])
+
+            // À mi-chemin du premier délai (1000 ms + jitter < 300), un tour de présence
+            // sans arrivant : la réconciliation compose alice de nouveau.
+            await vi.advanceTimersByTimeAsync(700)
+            connections.getRoomUsersDiff.mockResolvedValue({ newUsers: [], removedUsers: [] })
+            await pool.syncUsersConnections([{ slug: 'alice' }])
+
+            core.requestRemotePeerConnection.mockClear()
+
+            // La chaîne d'origine arrive à échéance : elle a survécu au tour de présence.
+            // Réarmée à zéro par ce tour, elle n'aurait pas encore tiré ici.
+            await vi.advanceTimersByTimeAsync(FIRST_RETRY_MS - 700)
+
+            expect(core.requestRemotePeerConnection).toHaveBeenCalledWith('alice', ctx.session.currentType)
+        })
+
         it('sfu : aucune connexion pair-à-pair côté client', async () => {
             ctx.session.topology = 'sfu'
             connections.getRoomUsersDiff.mockResolvedValue({

@@ -70,16 +70,41 @@ avant le déménagement revient à les jeter.
 > D'où des items séparés — mélanger deux mécanismes dans une même passe rendrait indécidable lequel
 > a fait le travail.
 >
-> **Deux verrous sont fermés** (27/08/2026) : `syncUsersConnections` coalesce au lieu de jeter la
-> composition reçue, et le tour sur liste vide purge sans déclarer la présence connue. Les deux
-> invariants vivent dans
+> **Trois verrous sont fermés** : `syncUsersConnections` coalesce au lieu de jeter la composition
+> reçue (27/08), le tour sur liste vide purge sans déclarer la présence connue (27/08), et le fan-out
+> réconcilie au lieu de differ (28/08). Les trois invariants vivent dans
 > [architecture.md § Conventions de code](../docs/modules/webrtc2/architecture.md#conventions-de-code).
 > Ce qui suit ne s'en déduit pas : un tour qui a bien lieu peut encore ne rien voir.
-- [ ] **Le diff de présence ne voit pas un départ+retour coalescés** `[M]`
-  `usePeerConnections.js:45-46` : si `member_removed` et `member_added` tombent dans le même flush
-  Vue, le slug est dans `previousSlugs` **et** `nextSlugs` — `removedUsers` et `newUsers` sont donc
-  tous deux vides. Rien ne purge, rien ne recompose : le contexte ne fait **rien du tout** du
-  rechargement d'un pair. C'est le trou que le bail borne côté composition.
+- [x] **Le diff de présence est aveugle à un pair parti et revenu entre deux instantanés** `[M]` —
+  fermé le 28/08/2026, mais **pas par le mécanisme que cet item nommait**, et c'est le résultat
+  principal. Trois réfutations, consignées pour que personne ne les re-dérive :
+  1. **le « même flush Vue » n'existe pas** — pusher-js émet un événement par frame
+     (`pusher.ts:110-118`, `presence_channel.ts:74-95`), Echo les mappe 1:1, une frame WebSocket est
+     une tâche et un flush `'pre'` est une microtâche : il est drainé entre deux frames ;
+  2. **réfutation décisive, côté serveur** — Reverb supprime l'un des deux événements dès qu'ils se
+     chevauchent (`InteractsWithPresenceChannels::userIsSubscribed` : pas de `member_added` si déjà
+     abonné, pas de `member_removed` s'il reste une connexion). Un rechargement produit donc soit
+     `(remove, add)` en deux frames — traité correctement — soit **rien du tout** ;
+  3. **la branche coalescente de `syncUsersConnections` n'a aucun chemin d'entrée** — en régime
+     établi un tour est borné aux microtâches, et la seule fenêtre large (`waitForMeReady` pendant)
+     est celle où le diff n'a **rien** écrit, donc où `usersInRoom` est vide et où personne n'est
+     perdu. `lastLocalPeerId` ne tombe que quand le dernier consommateur se démonte.
+
+  Les deux mécanismes qui produisaient réellement le dommage — **(a)** coupure de présence au
+  reconnect Echo, `here()` rejoué avec la liste complète ; **(b)** rechargement chevauchant, zéro
+  événement de présence — et la correction (« le fan-out réconcilie, il ne diffe pas ») sont dans
+  [architecture.md](../docs/modules/webrtc2/architecture.md#conventions-de-code). ⚠️ Le cas **(b)**
+  n'est réparé qu'au **prochain** tour de présence, quel qu'en soit le motif : aucun tour n'a lieu au
+  moment du rechargement, donc aucune correction fondée sur la présence ne peut faire mieux. Le
+  déclencheur structurellement juste serait la **fermeture de connexion** — item ci-dessous.
+- [ ] **Re-composer sur fermeture de connexion, pas seulement sur tour de présence** `[M]`
+  Le fait qui change lors d'un rechargement est la connexion, pas la présence : le déclencheur juste
+  est `handleClose`, pas le tour de présence. C'est ce qui fermerait le cas **(b)** ci-dessus sans
+  attendre un tour. Le discriminant existe déjà (`isAuthorizedPeer(slug, ctx)`, celui de
+  `_handleConnectionAttempt`). Ce qui rend l'item non trivial : le point d'entrée unique d'une
+  disparition de pair est `useCallManager.handleRemoteDeparture`, et transformer un chemin de purge
+  en chemin de rétablissement traverse la frontière de couche que son en-tête déclare — de plus il
+  avale ses exceptions, donc une version cassée serait verte.
 - [ ] **`roomMembers` n'a pas de contrat de fraîcheur** `[M]`
   `getters.js:180` (`isUserInAnyRoom`) : un contexte monté qui ne reçoit plus de `props.users` frais
   épingle le slug pour l'onglet entier, et `removeRemotePeerId` devient un no-op permanent. Même
@@ -98,6 +123,24 @@ avant le déménagement revient à les jeter.
   la même passe rendait indécidable lequel des deux avait fait le travail. Le reprendre demande de
   réécrire « star : un client ne se connecte qu'au hub » (`useConnectionPool.test.js`), qui stube
   `getRoomUsersDiff` et laisse donc `usersInRoom` vide.
+  ⚠️ **COUPLAGE, découvert le 28/08/2026 : ne pas le corriger seul.** Cet appel inconditionnel était,
+  par accident, la **seule réconciliation** que le module possédait — la branche star client est la
+  seule qui rattrapait un hub ayant rechargé sans que son départ soit annoncé. Depuis que le fan-out
+  réconcilie (28/08), la règle générale couvre le cas ; l'item devient donc une **simplification**
+  sous tests verts, à faire **après**, jamais avant. Le prédicat à poser est le même que celui de la
+  réconciliation, restreint au hub : membre de la room **et** rien d'établi.
+- [ ] **Un canal de présence mémoïsé peut rendre `users` définitivement vide** `[S]` — piège latent,
+  **aucun consommateur vivant ne l'atteint aujourd'hui**, d'où l'effort `[S]` et pas de correction
+  dans la passe où il a été trouvé (28/08/2026).
+  `useReverbChannel.leave()` saute `Echo.leave()` quand un autre consommateur tient le même nom (le
+  compteur de consommateurs, qui est là pour ça) — mais Echo mémoïse ses canaux, donc le canal pusher
+  sous-jacent reste `subscribed: true`. Un consommateur qui se démonte puis se remonte sur ce nom
+  re-branche son `here()` sur un canal qui ne ré-émettra **jamais** `subscription_succeeded` : son
+  `users` reste à `[]` pour de bon, alors que `leave()` vient de le vider. `usersInRoom` étant
+  l'allowlist des deux gardes d'autorisation, le contexte n'admettrait plus personne.
+  Non joignable aujourd'hui : `Exemples/Home.vue` est le seul consommateur de présence de son canal,
+  et `Server.vue`, `Room.vue`, `ChatComponent.vue` utilisent des noms distincts. Le jour où deux
+  composants partagent un nom de canal de **présence**, c'est joignable.
 
 ---
 

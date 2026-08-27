@@ -238,6 +238,21 @@ verbe demanderait de monter `Notifications.vue`, et le scénario ne parlerait pl
 
   Deux effets de bord assumés, dans le bon sens : la fenêtre glissante d'`/ask-to-peer-id` repart à
   zéro, et les `createdAt` des demandes en vol deviennent stale.
+- **Un scénario de rechargement qui garde un tour de présence intermédiaire teste autre chose, et il
+  est vert gratuitement.** Le `await bob.api.syncUsersConnections([{ slug: 'bob' }])` glissé entre le
+  départ et le retour rend le revenant « nouveau » pour le survivant : c'est une **béquille de
+  harnais**, pas le cas de production. En production le départ n'est pas toujours annoncé (cf.
+  [architecture.md](architecture.md), « le fan-out réconcilie »), donc le scénario qui vise cet angle
+  mort doit **ne rien livrer** entre les deux.
+- **Le revenant est toujours vert comme initiateur : asserter sur la direction que possède le
+  SURVIVANT.** Un pair qui recharge repart d'un contexte neuf où tout le monde est « nouveau » — tout
+  ce qu'il initie fonctionne sans correctif. En mode `stream` le flux ne part que du diffuseur : il
+  faut donc **faire diffuser le survivant** et asserter que le revenant reçoit son flux. Se tromper
+  de direction donne un test vert qui ne prouve rien.
+- **`useConnectionPool.test.js` stube `getRoomUsersDiff`**, donc `ctx.connection.usersInRoom` n'y est
+  jamais réellement écrit : tout cas qui exerce une lecture de la composition doit la **pré-semer**
+  lui-même. Sans ce pré-semis, un test de réconciliation ne voit aucun membre et verdit pour la
+  mauvaise raison.
 
 ---
 
