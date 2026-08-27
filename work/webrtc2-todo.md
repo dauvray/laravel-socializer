@@ -148,21 +148,55 @@ avant le déménagement revient à les jeter.
 
 > Le champ embarqué sur les deux routes de peerId (livré le 27/08/2026) ferme la fenêtre entre
 > l'arrivée dans la room et le premier contact P2P, où l'arrivant n'avait localement AUCUN moyen de
-> savoir qu'un flux venait. Ce qui suit est ce qu'il ne ferme pas — deux fenêtres résiduelles, plus
-> la vérification que seule une session à deux onglets peut donner.
+> savoir qu'un flux venait. Ce qui suit est ce qu'il ne ferme pas — **trois** fenêtres résiduelles,
+> dont la troisième a été trouvée par la mesure du 28/08 et n'est pas de même nature que les deux
+> autres : ce n'est pas « la vignette arrive tard », c'est « le fait n'arrive pas ».
+>
+> ⚠️ **Et une vignette qui n'est jamais visible** — défaut de rendu, étage CSS, item séparé plus bas.
+> Les deux se cumulaient : c'est pourquoi la mesure a dû instrumenter le DOM et la géométrie, pas
+> l'écran.
 
-- [ ] **Les deux fenêtres résiduelles** `[M]` — **aucune des deux n'est fatale** : la vignette
-  d'attente y arrive tard, elle n'y est jamais fausse. Les trois chemins d'annonce et leurs bornes :
-  [flux.md](../docs/modules/webrtc2/flux.md#comment-un-arrivant-sait-qui-diffuse).
+- [ ] **Les deux premières fenêtres résiduelles** `[M]` — **aucune des deux n'est fatale** : la
+  vignette d'attente y arrive tard, elle n'y est jamais fausse. Les trois chemins d'annonce et leurs
+  bornes : [flux.md](../docs/modules/webrtc2/flux.md#comment-un-arrivant-sait-qui-diffuse).
   1. **Avant la première demande de peerId** — `syncUsersConnections` attend `waitForMeReady`, donc
      l'identité locale et le peerId : tant qu'elle n'est pas là, aucun POST n'est parti et il n'y a
-     rien à embarquer. Fenêtre courte en régime établi (le `Peer` de l'onglet est déjà ouvert quand on
-     navigue en SPA), longue au premier chargement — `/get-ice-servers` est `await`é avant `new Peer`
-     (jusqu'à `ICE_FETCH_TIMEOUT_MS`), puis vient la poignée de main du serveur PeerJS.
+     rien à embarquer. Longue au premier chargement — `/get-ice-servers` est `await`é avant
+     `new Peer` (jusqu'à `ICE_FETCH_TIMEOUT_MS`), puis vient la poignée de main du serveur PeerJS.
+     **Mesurée le 28/08 : 592 ms** entre le `goto` et la frame portant `isBroadcasting`, cache HTTP
+     chaud. Donc bien plus courte que la borne théorique de 3 s.
+     ⚠️ **La phrase « fenêtre courte en régime établi, le `Peer` de l'onglet est déjà ouvert quand on
+     navigue en SPA » était vraie et trompeuse** : le `Peer` survit bien (vérifié, peerId identique
+     avant/après une navigation vue-router), et c'est précisément **ce qui produit la fenêtre 3**.
   2. **Le client non-hub en topologie star** ne demande que le peerId du hub : il n'échange donc
      jamais de signalisation avec un diffuseur qui n'est pas le hub, et n'apprend rien de lui. Même
      borne que l'annonce data channel en star, pour une raison différente — ici il n'y a pas de
      relais qui perd l'identité, il n'y a pas d'échange du tout.
+
+- [ ] 🔴 **Fenêtre 3 — un peerId déjà connu sous bail ne redemande rien, donc n'apprend rien** `[M]`
+  — **trouvée par la mesure du 28/08/2026, et c'est le résultat principal de cette mesure.** Celle-là
+  est fatale : ce n'est pas une vignette tardive, c'est une vignette **absente**.
+
+  Le mécanisme, confirmé aux deux bouts (mesure *et* code) :
+  `useConnectionPool.requestOrConnectPeer` (`:263-279`) lit `getDialableRemotePeerId(userSlug)` ;
+  **si le bail est encore valide, il appelle `connectToPeer` directement et aucun POST ne part.** Or
+  `isBroadcasting` ne voyage que sur ces deux POST. Un arrivant qui possède déjà le peerId du
+  diffuseur n'a donc **aucun** porteur pour le fait — et en contexte `stream` un non-diffuseur
+  n'ouvre pas de canal data, donc le chemin `BROADCAST_STATE` est fermé aussi. Il ne reste que le
+  `peer.call` du diffuseur, c'est-à-dire exactement l'état d'avant le correctif.
+
+  Reproduction (le cas est **majoritaire à l'usage**, pas un cas limite : c'est la navigation SPA
+  ordinaire à l'intérieur du bail de ≈55 s) : B est sur `/app`, quitte par un `RouterLink`, A démarre
+  sa webcam, B revient par `history.back()` — donc sans rechargement, `Peer` préservé.
+  **Deux runs, zéro POST de peerId après le retour dans les deux cas**, et deux issues différentes :
+  `t_vignette = 8 811 ms` (un signal finit par arriver du côté de A) et **`t_vignette = null`** (rien
+  en 25 s). Le non-déterminisme est cohérent avec « il ne reste que le retry de l'autre côté ».
+
+  ⚠️ **Ne pas « corriger » en forçant un POST à chaque tour** : ce serait rouvrir l'item « le client
+  star compose son hub même absent de la room », qui consomme un slot du plafond de cadence à chaque
+  tour de présence. Le porteur juste n'est probablement pas la route de peerId — c'est ici que
+  l'option `whisper` écartée ci-dessous reprend de la valeur, puisqu'elle est **indépendante** de la
+  signalisation P2P et fermerait les trois fenêtres. À rouvrir avec cet argument neuf.
 
   **L'option étudiée, et pourquoi elle n'a pas été prise** : un `whisper` sur le canal de présence
   fermerait les deux d'un coup (un seul saut WebSocket, avant toute signalisation, et le serveur
@@ -171,17 +205,77 @@ avant le déménagement revient à les jeter.
   WebRTC2 ne connaît aujourd'hui la présence que par la prop `users` d'un provider, et il faudrait y
   faire entrer le canal Reverb — `inject(REVERB_CHANNEL, null)`, comme `useChatSimple`, donc optionnel
   — plus un filtre sur `roomId` puisqu'une page monte plusieurs providers sur **un** canal
-  (`Exemples/Home.vue` en monte trois). À ne rouvrir que si la fenêtre 1 se révèle visible à l'usage :
-  le champ sur la signalisation coûtait deux lignes de PHP, celui-ci est un chantier.
+  (`Exemples/Home.vue` en monte trois). Le champ sur la signalisation coûtait deux lignes de PHP,
+  celui-ci est un chantier.
 
-- [ ] **Vérifier à la main que la vignette arrive tôt** `[S]` — la seule chose que la suite ne peut pas
-  dire. Deux onglets, **rechargement dur des deux côtés et rien qui écrive dans `.env` pendant la
-  mesure** (sinon on mesure deux pannes à la fois, cf. `docs/modules/webrtc2/tests.md` et la règle
-  `.ai/rules/web-r-t-c2.md` de l'hôte). A démarre sa webcam, B ouvre la page : la vignette « en
-  attente du flux » doit apparaître dans la première seconde. **Et la contre-épreuve, qui compte
-  autant** : B arrive alors que personne ne diffuse ⇒ **aucune vignette** — c'est la régression du
-  13/08 qu'on ne rouvre pas. Le champ ne part du bundle qu'après un build front ; le PHP, lui, est
-  servi directement depuis `vendor/` dans le bac à sable.
+  ✅ **L'arbitrage a changé le 28/08/2026, et c'est l'argument à retenir.** Il avait été écarté sur
+  « à ne rouvrir que si la fenêtre 1 se révèle visible à l'usage » — or la fenêtre 1 s'est révélée
+  **courte** (592 ms mesurés), et c'est la fenêtre 3 qui est fatale. Le couplage reste le même coût,
+  mais il achète désormais autre chose : un porteur **indépendant de la signalisation P2P**, donc le
+  seul qui ferme un cas où *aucun* échange de peerId n'a lieu. Adosser l'annonce aux routes de peerId
+  est structurellement limité — elle ne peut rien dire quand il n'y a rien à demander.
+
+- [ ] 🔴 **La vignette n'est JAMAIS visible : `.draggable-video` sans `<video>` s'effondre à 0 px**
+  `[S]` — défaut de **rendu**, étage CSS, indépendant des trois fenêtres ci-dessus. Le nœud est bien
+  dans le DOM, à l'heure : il n'apparaît simplement pas à l'écran, sur la seule page qui le rend.
+
+  Géométrie mesurée (28/08/2026, viewport 1440×1000, `StreamSimpleUI` en contexte `stream`) :
+
+  | Élément | hauteur | y |
+  |---|---|---|
+  | `.draggable-video` | **0 px** | 757 |
+  | `.video-loading` (`position:absolute; inset:0`) | **0 px** | 757 |
+  | `.video-loading-label` | 26 px | **792** |
+  | `.col.overflow-hidden` (parent) | 34 px | 722 → **756** |
+
+  `_socializer.scss:240-256` a été écrit pour **recouvrir le cadre noir d'un `<video>`** — son
+  commentaire le dit. Dans `StreamSimpleUI.vue:42-47` le `.draggable-video` n'a pas de `<video>` :
+  sans enfant en flux, sa hauteur de contenu est 0, `inset:0` donne donc une surface nulle à
+  l'overlay, le label déborde à y=792 et le `.col.overflow-hidden` de `:31` — posé exprès pour le
+  problème de `min-width` des `<video>` — **le clippe**.
+
+  ⚠️ **Piège de vérification à retenir** : `isVisible()` de Playwright rend **`true`** (boîte non
+  vide, `visibility:visible`, `opacity:1`) — il ne teste pas le clipping par un ancêtre. Un test qui
+  s'y fierait serait vert sur une vignette invisible. Ce qui tranche, c'est la géométrie comparée à
+  celle de l'ancêtre, ou une capture d'écran relue.
+
+  Ce n'est **pas** un correctif d'une ligne : donner une hauteur au `.draggable-video` sans `<video>`
+  touche un SCSS partagé avec les players réels, et **le SCSS du paquet est copié dans l'hôte, c'est
+  la copie qui est compilée** (deux fichiers à modifier). À traiter avec [sass-todo.md](sass-todo.md),
+  qui porte déjà l'arbitrage `_variables.scss` propre au paquet.
+
+- [x] **Vérifier à la main que la vignette arrive tôt** `[S]` — **fait le 28/08/2026**, et le résultat
+  n'est pas celui attendu : le correctif `10d634f` fonctionne, l'UI ne le montre pas, et le cas
+  majoritaire n'est pas couvert. Les deux découvertes ont leurs items ci-dessus (fenêtre 3, rendu).
+
+  Ce que la mesure a établi, chiffres relevés sur l'onglet de l'arrivant :
+
+  | Ce qui est mesuré | Valeur |
+  |---|---|
+  | frame Reverb portant `isBroadcasting:true` (`.ResponseToPeerID`) | **592 ms** |
+  | `announcedStreamsMap` peuplée **et** nœud DOM rendu | **607 ms** |
+  | coût du front une fois le fait reçu | **15 ms** |
+  | contre-épreuve : personne ne diffuse, sondage 250 ms sur 5 s | **0 vignette** |
+  | navigation SPA, bail de peerId chaud | **8 811 ms**, puis **jamais** (2ᵉ run) |
+
+  **Verdict sur `10d634f` : positif.** Le champ est sur le fil (frame brute capturée,
+  `private-App.Models.User.35`), il arrive en 592 ms, et le front le rend en 15 ms. La contre-épreuve
+  du 13/08 tient — et elle tient **sous contrôle positif**, ce qui est le point de méthode à garder :
+  sans vérifier d'abord que B voit `["admin"]` dans `usersInRoom` et que la présence est abonnée,
+  « aucune vignette » aurait été vert par panne de présence, pas par correction.
+
+  Trois pièges de harnais mesurés, à ne pas re-payer :
+  - **`waitForSelector` sur un sélecteur filtré par texte (`:has-text`) a coûté 442 ms de latence
+    propre** là où un sondage `evaluate` à 50 ms donne 15 ms. Le premier chiffre a failli être
+    consigné comme un coût de l'application. Chronométrer par sondage, jamais par `waitForSelector`.
+  - **`a[href="/app"]` (« Vue ready ») est une ancre simple, pas un `RouterLink`** : cliquer dessus
+    provoque un vrai chargement de document et fait retomber la mesure sur le cas « premier
+    chargement ». Pour une navigation SPA de retour, `history.back()` (popstate → vue-router).
+  - **Le bac à sable sert par le dev server Vite** (`public/hot` présent), donc le working tree, et
+    **pas** `public/build` — qui a 28 h de retard sur `10d634f` et ne contient pas
+    `noteBroadcastFromSignal`. Aucun build n'est requis, mais si `public/hot` disparaît la mesure
+    tourne en silence sur le code d'avant le correctif. `.env` non touché de bout en bout
+    (horodatage relevé avant/après), suite JS verte après coup (52 fichiers, 940 tests).
 
 ---
 

@@ -214,6 +214,18 @@ limite que pour l'annonce data channel : le hub retransmet `envelope.payload` te
 d'origine est perdue au-delà de lui — seul le hub enregistre les annonces de ses clients (comme
 `AUDIO_MUTE_TOGGLE`).
 
+> ⚠️ **Limite structurelle du chemin 3, à connaître avant de compter sur lui : il ne dit rien quand
+> il n'y a rien à demander.** `requestOrConnectPeer` ne poste sur les routes de peerId que si le
+> peerId distant n'est **pas** déjà connu sous bail (`useConnectionPool.js`, lecture de
+> `getDialableRemotePeerId` avant l'alternative connexion directe / demande). Un contexte qui remonte
+> avec un bail encore valide — cas nominal d'une navigation SPA à l'intérieur de
+> `REMOTE_PEER_ID_LEASE_MS` — se connecte directement, **sans POST, donc sans porteur pour
+> `isBroadcasting`** ; et en contexte `stream` un non-diffuseur n'ouvre pas de canal data, ce qui
+> ferme aussi le chemin 1. Il ne reste alors que le `peer.call` du diffuseur (chemin 2), c'est-à-dire
+> l'état d'avant ce mécanisme. Mesuré : la vignette arrive à ≈8,8 s, ou pas du tout.
+> Le suivi est dans [work/webrtc2-todo.md](../../../work/webrtc2-todo.md), § « Annonce de
+> diffusion », fenêtre 3.
+
 ### Lire l'état du Peer local
 
 Trois verbes du store, à connaître avant de diagnostiquer quoi que ce soit sur le Peer :
