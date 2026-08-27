@@ -121,6 +121,76 @@ class ValidationTest extends TestCase
         });
     }
 
+    #[Test]
+    #[DataProvider('peerIdRoutes')]
+    public function l_etat_de_diffusion_absent_est_relaye_a_false(string $uri, string $event): void
+    {
+        // Même raison que `connectionType`, en plus dure : ce champ est né après les
+        // routes, donc tout bundle antérieur au déploiement ne l'envoie pas — et un 422
+        // ici reproduit exactement « A diffuse, B arrive, B ne voit rien ». Absent doit
+        // arriver `false` et non `null` : le client n'a pas de troisième état à traiter.
+        $alice = $this->makeUser('alice');
+        $bob = $this->makeUser('bob');
+
+        $payload = $this->nominalPayload($uri, $bob, $alice);
+        unset($payload['isBroadcasting']);
+
+        $this->actingAs($alice)->postJson($uri, $payload)->assertOk();
+
+        $this->assertBroadcastSent($bob, $event, function (array $payload) {
+            return $payload['isBroadcasting'] === false;
+        });
+    }
+
+    #[Test]
+    #[DataProvider('peerIdRoutes')]
+    public function l_etat_de_diffusion_annonce_est_relaye(string $uri, string $event): void
+    {
+        // Le fait qui ferme la fenêtre d'attente perçue chez l'arrivant : c'est ce champ,
+        // et lui seul, qui lui apprend qu'un flux vient avant tout contact P2P.
+        $alice = $this->makeUser('alice');
+        $bob = $this->makeUser('bob');
+
+        $this->actingAs($alice)
+            ->postJson($uri, $this->nominalPayload($uri, $bob, $alice))
+            ->assertOk();
+
+        $this->assertBroadcastSent($bob, $event, function (array $payload) {
+            return $payload['isBroadcasting'] === true;
+        });
+    }
+
+    #[Test]
+    public function un_etat_de_diffusion_non_booleen_est_refuse(): void
+    {
+        // La chaîne "true" est le piège : `boolean` accepte 1/0/"1"/"0" mais PAS "true".
+        // Un client qui sérialiserait ce champ en chaîne casserait donc la signalisation
+        // entière plutôt que la seule vignette d'attente — d'où le test.
+        $alice = $this->makeUser('alice');
+        $bob = $this->makeUser('bob');
+
+        $this->actingAs($alice)->postJson('/ask-to-peer-id', $this->corrupt(
+            $this->nominalPayload('/ask-to-peer-id', $bob, $alice),
+            'isBroadcasting',
+            'true',
+        ))->assertStatus(422);
+
+        $this->assertNoBroadcastSent();
+    }
+
+    /**
+     * Les deux routes qui portent l'état de diffusion.
+     *
+     * @return array<string, array{0: string, 1: string}>
+     */
+    public static function peerIdRoutes(): array
+    {
+        return [
+            'askForPeerId' => ['/ask-to-peer-id', 'AskToPeerID'],
+            'responseToPeerId' => ['/response-to-peer-id', 'ResponseToPeerID'],
+        ];
+    }
+
     /*
     |--------------------------------------------------------------------------
     | 2 à 6. Ce qui est refusé — et qui n'émet rien

@@ -14,10 +14,14 @@
  * membre qui ne diffusait pas affichait donc une vignette d'attente pendant tout le
  * délai d'abandon (symptôme rapporté : « le spinner s'affiche même si aucun stream
  * n'est actif, puis disparaît »). La source est désormais un FAIT, `announcedStreamPeers`
- * (`ctx.media.announcedStreamsMap`), alimenté par deux chemins exacts :
+ * (`ctx.media.announcedStreamsMap`), alimenté par trois chemins exacts :
  *   - l'annonce `BROADCAST_STATE` reçue sur le data channel (useBroadcastPresence) ;
  *   - l'appel one-way entrant, qui n'existe que si l'émetteur a un flux vivant
- *     (usePeerTransport) et arrive dès l'offre, avant ICE.
+ *     (usePeerTransport) et arrive dès l'offre, avant ICE ;
+ *   - l'`isBroadcasting` embarqué sur les deux routes de peerId (usePeerCore à
+ *     l'émission, noteBroadcastFromSignal à la réception) — le seul qui n'exige aucun
+ *     contact P2P, donc le seul qui puisse afficher quelque chose dans la première
+ *     seconde d'une arrivée.
  * Conséquence : **aucune vignette quand personne ne diffuse**, et un pair qui arrête sa
  * diffusion voit son annonce purgée (useCallManager.handleRemoteDeparture) — d'où la
  * disparition de l'ancienne mémoire `served`, qui compensait ça au prix d'un pair

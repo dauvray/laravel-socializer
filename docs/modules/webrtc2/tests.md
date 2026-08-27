@@ -253,6 +253,29 @@ verbe demanderait de monter `Notifications.vue`, et le scénario ne parlerait pl
   jamais réellement écrit : tout cas qui exerce une lecture de la composition doit la **pré-semer**
   lui-même. Sans ce pré-semis, un test de réconciliation ne voit aucun membre et verdit pour la
   mauvaise raison.
+- **Trois chemins alimentent `announcedStreamPeers` : un scénario qui n'en coupe aucun ne prouve
+  aucun des trois.** C'est la version « annonce » du piège de direction ci-dessus. Pour isoler le
+  chemin voulu, **neutraliser le P2P sortant du diffuseur** avec les fabriques du mock :
+
+  ```js
+  alice.peerInstance.call = vi.fn((peerId, stream, options) =>
+      createMockMediaConnection(options?.metadata))
+  alice.peerInstance.connect = vi.fn((peerId, options) =>
+      createMockDataConnection(options?.metadata))
+  ```
+
+  Les deux rendent une connexion **valide mais non reliée au bus** — donc l'état exact d'un
+  `peer.call` que personne ne répond. Ni l'annonce `BROADCAST_STATE` (pas de canal data) ni la trace
+  de l'appel entrant (rien n'est livré) ne peuvent plus expliquer le résultat : il ne reste que la
+  signalisation. Sans cette coupure, en contexte `stream`, `connectToPeer` ouvre le canal data **avec**
+  l'appel média et l'annonce arrive par le premier chemin — le test serait vert avant même le
+  correctif.
+- **Une fonctionnalité qui traverse trois étages se contre-éprouve sur les trois.** En neutralisant
+  `noteBroadcastFromSignal` (27/08/2026), exactement trois cas tombent — le verbe
+  (`useBroadcastPresence`), le câblage (`usePeerOrchestrator.broadcastPresence`) et le scénario
+  (`lateJoiner`) — et **le cas pré-existant « B est averti qu'A diffuse » reste vert**, puisqu'il
+  passe par le data channel. C'est ce dernier point qui donne le rayon d'action : une contre-épreuve
+  qui fait tomber plus que prévu dit qu'on a couplé deux chemins.
 
 ---
 

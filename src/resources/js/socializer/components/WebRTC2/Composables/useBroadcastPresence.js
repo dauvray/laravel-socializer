@@ -7,6 +7,8 @@
  * - l'émission du signal `BROADCAST_STATE` (changement d'état local, et à l'ouverture
  *   de chaque connexion data — c'est ce second point qui informe les arrivants)
  * - la réception de ce signal et l'écriture dans `ctx.media.announcedStreamsMap`
+ * - l'enregistrement de l'état de diffusion embarqué sur les signaux de signalisation
+ *   serveur (`noteBroadcastFromSignal`), qui n'exige aucun contact P2P
  * - la purge des annonces des pairs qui ont quitté la room
  *
  * 👉 utilise (par injection, jamais par import) :
@@ -37,10 +39,14 @@
  * commencé à diffuser (ce qui est exactement ce qu'on veut), mais elle n'arrive pas non
  * plus plus tôt que l'appel. Le filet qui couvre la fenêtre « A diffuse déjà, B arrive »
  * est la trace de l'appel entrant, écrite par `usePeerTransport` dans le même registre
- * (`peer.on('call')` se déclenche dès la réception de l'offre, avant ICE). La fenêtre
- * restante — échange de peerId + backoff, avant tout contact P2P — n'est observable
- * localement par AUCUN moyen ; seule une annonce côté serveur (présence Reverb) la
- * couvrirait.
+ * (`peer.on('call')` se déclenche dès la réception de l'offre, avant ICE).
+ *
+ * La fenêtre d'AVANT tout contact P2P — échange de peerId + backoff — est couverte depuis
+ * que les deux routes de peerId embarquent `isBroadcasting` (`noteBroadcastFromSignal`
+ * ci-dessous) : elle ne l'était par aucun chemin, et le délai se lisait comme une panne.
+ * Ce que ce troisième chemin ne couvre toujours pas : l'instant avant la PREMIÈRE demande
+ * de peerId (`waitForMeReady`), et le client non-hub en topologie star, qui ne demande que
+ * le hub.
  *
  * ⚠️ LIMITE ASSUMÉE — topologie star : le hub retransmet `envelope.payload` tel quel
  * (cf. `forwardStarMessage`), l'identité de l'émetteur d'origine est donc perdue pour
@@ -59,7 +65,11 @@ export function useBroadcastPresence(ctx, { transport }) {
 
     // Webcam/audio OU partage d'écran : du point de vue du récepteur, « un flux de moi
     // est en route » ne se décline pas par type — la vignette d'attente est par pair.
-    const isBroadcasting = () => !!(ctx.media.isStreaming || ctx.media.isCapturing)
+    //
+    // Le prédicat vit sur le contexte (`createPeerContext`) parce que `usePeerCore`
+    // l'embarque aussi sur ses deux routes de peerId : deux copies divergeraient. Le verbe
+    // reste ici, c'est lui que le reste du composable et ses tests consomment.
+    const isBroadcasting = () => ctx.isBroadcasting.value === true
 
     const _payload = () => ({
         roomId: ctx.session.onAirRoom,
@@ -153,6 +163,33 @@ export function useBroadcastPresence(ctx, { transport }) {
         return true
     }
 
+    /**
+     * Enregistre l'état de diffusion embarqué sur un signal de signalisation SERVEUR
+     * (`.AskToPeerID` / `.ResponseToPeerID`, cf. `usePeerCore`).
+     *
+     * C'est le seul des trois chemins d'annonce qui n'exige aucun contact P2P : il ferme la
+     * fenêtre « A diffuse déjà, B arrive » entre l'entrée dans la room et le premier
+     * `peer.call`, où B n'avait localement aucun moyen de savoir qu'un flux venait.
+     *
+     * ⚠️ **Marque, ne purge JAMAIS sur `false`.** `BROADCAST_STATE` peut purger : il voyage
+     * sur un data channel ordonné, émis au changement d'état. Celui-ci est un instantané
+     * embarqué sur un chemin HTTP + Reverb sans garantie d'ordre — un `false` en retard
+     * effacerait une annonce vraie. L'arrêt de diffusion garde ses deux purges
+     * (`handleRemoteDeparture`, `BROADCAST_STATE: false`) et le filet
+     * `AWAITED_STREAM_TIMEOUT_MS`.
+     *
+     * L'identité vient de `fromUserSlug`, que le backend force à `Auth::user()->slug`
+     * (invariant n°1 de la signalisation) — jamais d'un champ que l'émetteur choisit.
+     *
+     * @param {Object} payload  Enveloppe du signal { fromUserSlug, isBroadcasting, … }
+     * @returns {boolean} true si une annonce a été enregistrée
+     */
+    const noteBroadcastFromSignal = (payload) => {
+        if (payload?.isBroadcasting !== true) return false
+
+        return ctx.markAnnouncedStream(payload.fromUserSlug, 'peer-id') === true
+    }
+
     // Changement d'état local → annonce. Utile quand un canal data est déjà ouvert
     // (démarrage d'un partage d'écran pendant une diffusion webcam, arrêt de l'un des
     // deux). Au tout premier démarrage il n'y a encore aucun canal : l'annonce partira
@@ -188,6 +225,7 @@ export function useBroadcastPresence(ctx, { transport }) {
         announceBroadcastState,
         announceBroadcastStateTo,
         handleBroadcastStateMessage,
+        noteBroadcastFromSignal,
         stopBroadcastPresence,
     }
 }

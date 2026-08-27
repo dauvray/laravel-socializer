@@ -54,9 +54,39 @@ describe('usePeerCore', () => {
                     // `connectionType` = connexion réellement demandée ; par défaut le
                     // type du contexte, mais c'est lui qui porte 'screen'.
                     connectionType: ctx.session.currentType,
+                    // État de diffusion embarqué : c'est ce qui permet au destinataire
+                    // d'afficher sa vignette d'attente avant tout contact P2P.
+                    isBroadcasting: false,
                 }
             )
             expect(result).toBe(true)
+        })
+
+        it('annonce ma diffusion en cours sur la demande de peerId', async () => {
+            // Le cas qui compte : je diffuse déjà quand je demande le peerId d'un
+            // arrivant. Sans ce champ, il ne peut apprendre qu'un flux vient que par mon
+            // `peer.call`, donc après un aller-retour de signalisation de plus.
+            ctx.media.isStreaming = true
+
+            await core.requestRemotePeerConnection('alice')
+
+            expect(ctx.AjaxService.load).toHaveBeenCalledWith(
+                ENDPOINTS.ASK_TO_PEER_ID,
+                'post',
+                expect.objectContaining({ isBroadcasting: true })
+            )
+        })
+
+        it('annonce aussi un partage d\'écran seul (le prédicat est par pair, pas par type)', async () => {
+            ctx.media.isCapturing = true
+
+            await core.requestRemotePeerConnection('alice')
+
+            expect(ctx.AjaxService.load).toHaveBeenCalledWith(
+                ENDPOINTS.ASK_TO_PEER_ID,
+                'post',
+                expect.objectContaining({ isBroadcasting: true })
+            )
         })
 
         it('appelle addWaitingRemotePeerId avec le bon slug et les bonnes métadonnées après le POST', async () => {
@@ -322,7 +352,35 @@ describe('usePeerCore', () => {
                     // Renvoyé tel que reçu ; retombe sur `type` quand le demandeur ne
                     // l'envoie pas (backend ou client non à jour).
                     connectionType: 'visio',
+                    // MON état, jamais celui reçu dans le payload.
+                    isBroadcasting: false,
                 }
+            )
+        })
+
+        it('annonce ma diffusion en cours dans la réponse de peerId', async () => {
+            // C'est le chemin qui informe l'arrivant : il demande mon peerId, ma réponse
+            // lui apprend qu'un flux vient — avant que mon peer.call ne soit parti.
+            ctx.media.isStreaming = true
+
+            await core.responseRemotePeerConnection(buildPayload())
+
+            expect(ctx.AjaxService.load).toHaveBeenCalledWith(
+                ENDPOINTS.RESPONSE_TO_PEER_ID,
+                'post',
+                expect.objectContaining({ isBroadcasting: true })
+            )
+        })
+
+        it('ne renvoie pas l\'état de diffusion reçu dans le payload', async () => {
+            // Un pair qui prétend diffuser ne doit pas faire annoncer MA diffusion à ma
+            // place : le champ émis est une lecture de mon propre état, pas un relais.
+            await core.responseRemotePeerConnection(buildPayload({ isBroadcasting: true }))
+
+            expect(ctx.AjaxService.load).toHaveBeenCalledWith(
+                ENDPOINTS.RESPONSE_TO_PEER_ID,
+                'post',
+                expect.objectContaining({ isBroadcasting: false })
             )
         })
 

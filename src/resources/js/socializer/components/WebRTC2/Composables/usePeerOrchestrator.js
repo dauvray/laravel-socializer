@@ -67,18 +67,33 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
     const streamManager = useStreamManager(context, { media, callManager })
 
     // 5. Couche présence de diffusion : annonce `BROADCAST_STATE` sur le data channel.
-    //    Ne dépend que du transport ; personne ne consomme ses verbes en interne (l'UI
-    //    lit la projection `announcedStreamPeers`), donc aucun cycle possible.
+    //    Ne dépend que du transport. Seule la couche signalisation ci-dessous consomme un
+    //    de ses verbes (`noteBroadcastFromSignal`), et elle est instanciée APRÈS : aucun
+    //    cycle possible. L'UI, elle, ne lit que la projection `announcedStreamPeers`.
     const presence = useBroadcastPresence(context, { transport })
 
     // 6. Couche signalisation : route les signaux serveur entrants vers les handlers.
     //    Instanciée en dernier — personne ne consomme ses verbes, donc elle peut router
     //    vers n'importe quelle couche sans jamais créer de callback ascendant.
     //    Cette table est l'unique source de vérité du routage des signaux.
+    //
+    //    Les deux signaux de peerId portent l'état de diffusion de leur émetteur : on le
+    //    note AVANT de déléguer, puis on rend le retour du handler **inchangé** — le
+    //    routage l'attend, et `true` / `false` y portent une décision de retry. Ce n'est
+    //    pas une précondition ajoutée : `noteBroadcastFromSignal` ne peut ni échouer ni
+    //    court-circuiter, donc l'invariant « le routage ne pose aucune précondition »
+    //    tient. C'est ici et pas dans les handlers parce que c'est le seul étage autorisé
+    //    à mixer les couches (usePeerCore ignore l'existence de la couche présence).
     const signaling = useSignalingQueue(context, {
         routes: {
-            PEER_CONNECTION_REQUEST:     core.responseRemotePeerConnection,
-            PEER_CONNECT_TO_REMOTE_PEER: connections.connectToPeer,
+            PEER_CONNECTION_REQUEST: (payload) => {
+                presence.noteBroadcastFromSignal(payload)
+                return core.responseRemotePeerConnection(payload)
+            },
+            PEER_CONNECT_TO_REMOTE_PEER: (payload) => {
+                presence.noteBroadcastFromSignal(payload)
+                return connections.connectToPeer(payload)
+            },
         },
     })
 

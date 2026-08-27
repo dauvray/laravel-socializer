@@ -169,7 +169,12 @@ export function usePeerCore(ctx) {
                 toUserSlug: userSlug,
                 room: room,
                 type: type,
-                connectionType: requestedType
+                connectionType: requestedType,
+                // Embarqué sur une demande qui partait déjà : c'est ce qui permet à
+                // l'arrivant d'afficher sa vignette d'attente sans attendre un contact
+                // P2P (cf. useBroadcastPresence.noteBroadcastFromSignal). Un vrai booléen
+                // JSON — la règle `boolean` de Laravel refuse la chaîne "true".
+                isBroadcasting: ctx.isBroadcasting.value === true
             })
             // `contextId` = propriétaire de la demande : c'est ce qui permet de la purger
             // au démontage de CE contexte, sans toucher à celles de ses voisins.
@@ -254,7 +259,11 @@ export function usePeerCore(ctx) {
                 // Renvoyés tels que reçus : `type` route la réponse vers le bon contexte
                 // du demandeur, `connectionType` lui dit quelle connexion ouvrir.
                 type: payload.type,
-                connectionType: payload.connectionType || payload.type
+                connectionType: payload.connectionType || payload.type,
+                // Mon état, pas celui reçu : c'est la réponse qui informe le demandeur que
+                // je diffuse déjà. Les deux directions comptent — la demande ci-dessus le
+                // porte aussi — et la première arrivée gagne, le marquage étant idempotent.
+                isBroadcasting: ctx.isBroadcasting.value === true
             })
             return true
         } catch (e) {

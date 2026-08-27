@@ -22,7 +22,11 @@ vi.mock('~estarter/services/AjaxService.js', () => ({
     useAjaxService: () => globalThis[Symbol.for('webrtc2.test.signalingServer')].createClient(),
 }))
 
-import { createPeerBus } from '../__mocks__/peerjs.js'
+import {
+    createPeerBus,
+    createMockDataConnection,
+    createMockMediaConnection,
+} from '../__mocks__/peerjs.js'
 import { createFakeSignalingServer } from '../helpers/fakeSignalingServer.js'
 import { createVirtualPeer, connectRoom, settle } from '../helpers/createVirtualPeer.js'
 import { installFakeMedia } from '../helpers/fakeMedia.js'
@@ -155,5 +159,46 @@ describe("arrivant tardif : A diffuse déjà quand B rejoint", () => {
         // encore servi doit afficher une vignette, un pair silencieux ne doit rien
         // afficher. C'est ce fait qui a remplacé l'heuristique « tout membre sans flux ».
         expect(bob.api.announcedStreamPeers.value).toContain('alice')
+    })
+
+    it("B est averti par la seule signalisation, sans qu'aucune connexion P2P ne s'ouvre", async () => {
+        // Le chemin ajouté pour fermer la fenêtre d'attente perçue : les deux routes de
+        // peerId embarquent l'état de diffusion de leur émetteur. On coupe donc TOUT le
+        // P2P sortant d'A — ni appel média, ni canal data — pour qu'il ne reste
+        // strictement aucune autre source possible : sans ce champ, B n'a rien à afficher
+        // avant le premier contact, et l'attente se lit comme une panne.
+        const alice = await spawn({ slug: 'alice' })
+
+        await connectRoom([alice])
+        await alice.api.startWebcamStream()
+        await settle()
+
+        // Un appel qu'aucun pair ne reçoit (pas de livraison au bus) : c'est exactement
+        // l'état d'un `peer.call` en vol jamais répondu.
+        alice.peerInstance.call = vi.fn((peerId, stream, options) =>
+            createMockMediaConnection(options?.metadata))
+        alice.peerInstance.connect = vi.fn((peerId, options) =>
+            createMockDataConnection(options?.metadata))
+
+        const bob = await spawn({ slug: 'bob' })
+        await connectRoom([alice, bob])
+
+        expect(bob.api.announcedStreamPeers.value).toContain('alice')
+        // Contre-épreuve : rien n'est arrivé par un autre chemin.
+        expect(bob.receivedStreamsFrom()).not.toContain('alice')
+    })
+
+    it("un membre qui ne diffuse pas n'est jamais annoncé", async () => {
+        // La contre-épreuve de tout le mécanisme, et la régression à ne pas rouvrir : la
+        // vignette d'attente ne doit apparaître pour personne quand personne ne diffuse.
+        // Les deux pairs échangent bien leurs peerId — donc le champ voyage — mais à
+        // `false`.
+        const alice = await spawn({ slug: 'alice' })
+        const bob = await spawn({ slug: 'bob' })
+
+        await connectRoom([alice, bob])
+
+        expect(bob.api.announcedStreamPeers.value).toEqual([])
+        expect(alice.api.announcedStreamPeers.value).toEqual([])
     })
 })

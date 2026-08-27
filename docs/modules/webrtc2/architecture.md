@@ -83,7 +83,7 @@ Un invariant se tient à un seul endroit, vérifiable au grep.
 | séquence de départ d'un pair | `useCallManager.handleRemoteDeparture` | point d'entrée unique quel que soit le transport qui l'annonce |
 | timers de retry connexion | `useConnectionPool` | `clearRetry` / `clearAllRetries` |
 | routage des signaux serveur | `useSignalingQueue` (table `routes` construite par l'orchestrateur) | exposer un verbe et l'inscrire dans la table — pas de `watch` sur `ctx.lastRoomSignal` ailleurs |
-| `media.announcedStreamsMap` | deux écrivains assumés, chacun sur la seule information qu'il voit : `useBroadcastPresence` (annonce `BROADCAST_STATE`) et `usePeerTransport` (appel one-way entrant) ; purge par `useCallManager.handleRemoteDeparture` | `ctx.markAnnouncedStream` / `ctx.clearAnnouncedStream` (jamais d'écriture directe), lecture via `ctx.announcedStreamPeers` |
+| `media.announcedStreamsMap` | trois écrivains assumés, chacun sur la seule information qu'il voit : `useBroadcastPresence` (annonce `BROADCAST_STATE`, **et** `noteBroadcastFromSignal` pour l'`isBroadcasting` des routes de peerId) et `usePeerTransport` (appel one-way entrant) ; purge par `useCallManager.handleRemoteDeparture`. ⚠️ le chemin `peer-id` marque mais ne purge jamais — pas de garantie d'ordre, cf. [flux.md](flux.md#comment-un-arrivant-sait-qui-diffuse) | `ctx.markAnnouncedStream` / `ctx.clearAnnouncedStream` (jamais d'écriture directe), lecture via `ctx.announcedStreamPeers` |
 | `peerStore.roomMembers[contextId]` (index de présence) | `usePeerConnections._doGetRoomUsersDiff`, unique producteur de `usersInRoom` ; purgé par `createPeerContext.destroy` | `peerStore.isUserInAnyRoom(slug)` en lecture — c'est le prédicat de `removeRemotePeerId` |
 | `session.authorizedCallPeers` (allowlist du garde sortant) | `useCallManager`, **seul écrivain** : marque à l'acceptation (`acceptCallFromPeer`) et à l'ouverture (`openCallBetweenPeer`) — les deux marquages sont eux-mêmes gardés, cf. ci-dessous —, purge au départ du pair et au `resetCallState` | `ctx.markAuthorizedCallPeer` / `isAuthorizedCallPeer` / `clearAuthorizedCallPeer` / `clearAllAuthorizedCallPeers` — jamais d'écriture directe, et **jamais** `session.currentCallUsers` à sa place (état d'affichage, cf. [securite.md](securite.md)) |
 
@@ -512,6 +512,13 @@ et systématiquement polluée par le HMR.
 
 ⚠️ **Ne jamais poser de garde d'autorisation ici non plus** — il va dans `connectToPeer` (voir
 [securite.md](securite.md)).
+
+Les deux entrées de la table sont **enveloppées** par l'orchestrateur, qui note l'`isBroadcasting`
+du signal (`presence.noteBroadcastFromSignal`) avant de déléguer et rend le retour du handler
+**inchangé** — le routage l'attend, et `true` / `false` y portent une décision de retry. Ce n'est pas
+une précondition : l'enveloppe ne peut ni échouer ni court-circuiter. La règle pour en ajouter une
+autre : un effet **synchrone, sans retour, sans await**, ou bien c'est un handler et il a sa place
+dans une couche.
 
 ---
 

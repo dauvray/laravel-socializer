@@ -135,19 +135,24 @@ export function createFakeSignalingServer() {
 
         const { toUserSlug, room, type, connectionType, peerId } = data
 
+        // Le backend caste : absent ou null arrive `false` chez le destinataire, jamais
+        // `undefined` (cf. `UserController::broadcastingRules`). Le reproduire ici, sinon
+        // un test pourrait passer sur un `undefined` qui n'existe pas en production.
+        const isBroadcasting = data.isBroadcasting === true
+
         // ⚠️ Les payloads reproduisent la liste blanche exacte de `UserController` :
         // le backend ne relaie QUE les champs qu'il nomme. Ajouter ici un champ que le
         // PHP ne transmet pas rendrait des scénarios verts sur un chemin impossible en
         // production — la classe de faux positif qui a déjà piégé ce package deux fois.
         // `type` route le signal (roomId = '<type>-<room>'), `connectionType` porte la
-        // connexion à ouvrir.
+        // connexion à ouvrir, `isBroadcasting` l'état de diffusion de l'émetteur.
         switch (url) {
             case ENDPOINTS.ASK_TO_PEER_ID:
                 _dispatchTo(toUserSlug, {
                     room,
                     type,
                     signalType: 'PEER_CONNECTION_REQUEST',
-                    payload: { fromUserSlug, room, type, connectionType },
+                    payload: { fromUserSlug, room, type, connectionType, isBroadcasting },
                 })
                 break
 
@@ -158,7 +163,7 @@ export function createFakeSignalingServer() {
                     signalType: 'PEER_CONNECT_TO_REMOTE_PEER',
                     // `connectToPeer` lit `userSlug || fromUserSlug` : on envoie
                     // `fromUserSlug`, comme le backend réel.
-                    payload: { fromUserSlug, peerId, room, type, connectionType },
+                    payload: { fromUserSlug, peerId, room, type, connectionType, isBroadcasting },
                 })
                 break
 

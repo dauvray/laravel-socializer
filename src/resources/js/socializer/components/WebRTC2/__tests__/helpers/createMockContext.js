@@ -543,6 +543,10 @@ export function createMockContext(overrides = {}) {
     const currentStream      = computed(() => media.currentStream)
     const isStreaming        = computed(() => media.isStreaming)
     const isCapturing        = computed(() => media.isCapturing)
+    // Même dérivation que `createPeerContext` : le prédicat « je diffuse » est par pair, pas
+    // par type. Lu par usePeerCore (émission sur les routes de peerId) et par
+    // useBroadcastPresence — un mock qui l'oublierait leur servirait `undefined.value`.
+    const isBroadcasting     = computed(() => !!(media.isStreaming || media.isCapturing))
     const announcedStreamPeers = computed(() => Array.from(media.announcedStreamsMap.keys()))
     const mySlug             = computed(() => meStore.getMe?.slug)
     const myName             = computed(() => meStore.getMe?.name)
@@ -704,6 +708,7 @@ export function createMockContext(overrides = {}) {
         currentStream,
         isStreaming,
         isCapturing,
+        isBroadcasting,
         announcedStreamPeers,
         mySlug,
         myName,

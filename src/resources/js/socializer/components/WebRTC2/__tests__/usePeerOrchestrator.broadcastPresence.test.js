@@ -3,13 +3,15 @@
  *
  * Câblage de l'annonce de diffusion, de bout en bout : orchestrateur → contexte réel →
  * listeners de connexion PeerJS. Les tests unitaires de `useBroadcastPresence` valident
- * le protocole ; ceux-ci valident qu'il est BRANCHÉ — c'est-à-dire les deux points où le
+ * le protocole ; ceux-ci valident qu'il est BRANCHÉ — c'est-à-dire les trois points où le
  * wiring peut casser sans qu'aucun test unitaire ne bronche :
  *
  *   1. le wrap `onDataReceived` est posé même quand l'app ne fournit pas de callback
  *      (sinon `handleData` n'est pas branché du tout et les annonces sont perdues) ;
  *   2. l'annonce part à l'ouverture d'une connexion data, ce qui suppose que
- *      `onConnectionOpen` reçoive la connexion — `conn.on('open')` n'émet aucun argument.
+ *      `onConnectionOpen` reçoive la connexion — `conn.on('open')` n'émet aucun argument ;
+ *   3. la table `routes` de la couche signalisation note l'état de diffusion embarqué sur
+ *      les signaux de peerId (troisième chemin d'annonce, le seul sans contact P2P).
  *
  * Choix d'infra : contexte, stores et listeners RÉELS (seul PeerJS est mocké via alias).
  * L'autorisation de la connexion entrante passe par le chemin « appel direct » (mapping
@@ -17,6 +19,7 @@
  * déclencherait de vraies requêtes de signalisation.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { nextTick } from 'vue'
 import { withSetup } from './helpers/withSetup.js'
 import { mockEventBus } from './helpers/mockEventBus.js'
 import { resetPeerMock, getLastPeerInstance, createMockDataConnection } from './__mocks__/peerjs.js'
@@ -162,5 +165,67 @@ describe('usePeerOrchestrator — câblage de l\'annonce de diffusion', () => {
         conn._triggerEvent('open')
 
         expect(conn.send).not.toHaveBeenCalled()
+    })
+
+    /**
+     * Troisième point où le wiring peut casser sans qu'aucun test unitaire ne bronche : la
+     * table `routes` de la couche signalisation. `noteBroadcastFromSignal` y est appelé
+     * AVANT de déléguer, donc l'annonce est enregistrée même quand le handler refuse
+     * ensuite d'ouvrir la connexion (pair pas encore autorisé, retry à venir) — c'est
+     * voulu : le registre ne pilote qu'une vignette, jamais une décision de connexion.
+     *
+     * On passe par `PEER_CONNECT_TO_REMOTE_PEER`, dont le handler n'émet aucune requête.
+     */
+    describe('câblage de la table de routage des signaux', () => {
+        const dispatchPeerIdResponse = async (payload) => {
+            peerStore.dispatchSignal({
+                roomId: CTX_ID,
+                type: 'PEER_CONNECT_TO_REMOTE_PEER',
+                payload: { room: 'app', type: 'stream', ...payload },
+            })
+            // Le routage se fait dans le flush du watcher sur `ctx.lastRoomSignal`.
+            await nextTick()
+        }
+
+        it('enregistre l\'annonce portée par une réponse de peerId', async () => {
+            await initialize({})
+
+            await dispatchPeerIdResponse({
+                fromUserSlug: 'alice',
+                peerId: 'peer-alice',
+                isBroadcasting: true,
+            })
+
+            expect(api.announcedStreamPeers.value).toEqual(['alice'])
+        })
+
+        it('n\'enregistre rien quand le signal ne porte pas de diffusion', async () => {
+            await initialize({})
+
+            await dispatchPeerIdResponse({
+                fromUserSlug: 'alice',
+                peerId: 'peer-alice',
+                isBroadcasting: false,
+            })
+
+            expect(api.announcedStreamPeers.value).toEqual([])
+        })
+
+        it('n\'efface pas une annonce data channel déjà posée', async () => {
+            // L'arbitrage qui compte : les deux chemins écrivent dans le même registre, et
+            // celui de la signalisation n'a pas de garantie d'ordre — il ne doit donc
+            // jamais retirer ce que l'autre a posé.
+            await initialize({})
+            const conn = acceptIncomingConn()
+            conn._triggerEvent('data', { type: BROADCAST_STATE, isBroadcasting: true })
+
+            await dispatchPeerIdResponse({
+                fromUserSlug: 'alice',
+                peerId: 'peer-alice',
+                isBroadcasting: false,
+            })
+
+            expect(api.announcedStreamPeers.value).toEqual(['alice'])
+        })
     })
 })

@@ -233,6 +233,13 @@ export function createPeerContext({ type, room, options = {} }) {
         announcedStreamPeers: computed(() => Array.from(media.announcedStreamsMap.keys())),
         isStreaming: computed(() => media.isStreaming),
         isCapturing: computed(() => media.isCapturing),
+        // « Un flux de moi est en route », PAR PAIR et non par type : du point de vue du
+        // récepteur, une vignette d'attente ne se décline pas en webcam/écran.
+        //
+        // Posé sur le contexte parce que DEUX couches l'annoncent — useBroadcastPresence
+        // sur le data channel, usePeerCore sur les deux routes de peerId — et qu'un
+        // prédicat recopié dans les deux finirait par diverger.
+        isBroadcasting: computed(() => !!(media.isStreaming || media.isCapturing)),
         isAudioStream: computed(() => media.isAudioStream),
 
         isMuted: computed(() => ui.streamStates.isMuted),
@@ -576,12 +583,13 @@ export function createPeerContext({ type, room, options = {} }) {
      * Accesseurs de `media.announcedStreamsMap` — « un flux de ce pair est en route ».
      *
      * Accesseurs plutôt qu'écriture directe, pour la même raison que
-     * beginShutdown/endShutdown : deux couches y écrivent (annonce data channel et
-     * appel entrant), la validation du slug doit donc tenir à un seul endroit.
+     * beginShutdown/endShutdown : TROIS chemins y écrivent (annonce data channel, appel
+     * entrant, état embarqué sur les deux routes de peerId), la validation du slug doit
+     * donc tenir à un seul endroit.
      * `source` n'est que de la traçabilité (debug) : la présence de la clé est le fait.
      *
      * @param {string} userSlug
-     * @param {'signal'|'call'} source
+     * @param {'signal'|'call'|'peer-id'} source
      */
     const markAnnouncedStream = (userSlug, source = 'signal') => {
         if (!isValidSlug(userSlug)) return false

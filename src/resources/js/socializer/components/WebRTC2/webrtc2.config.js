@@ -97,11 +97,13 @@ export const STREAM_STALE_MS = 300_000
  * pair qui a ANNONCÉ un flux jamais arrivé (cf. useAwaitedStreams).
  *
  * ⚠️ FILET, pas mécanisme. Le fait « ce pair diffuse » vient désormais d'une annonce
- * protocolaire (`BROADCAST_STATE` sur le data channel, cf. useBroadcastPresence) ou de
- * la trace d'un appel one-way entrant (usePeerTransport) : un pair silencieux n'est plus
- * attendu du tout, donc ce délai ne s'applique plus jamais à un non-diffuseur. Il ne
- * reste que pour le cas « annonce reçue, flux qui n'arrivera pas » (canal data vivant,
- * chemin média cassé), où une vignette tournerait sinon à vie. Une nouvelle annonce du
+ * protocolaire (`BROADCAST_STATE` sur le data channel, cf. useBroadcastPresence), de la
+ * trace d'un appel one-way entrant (usePeerTransport), ou de l'`isBroadcasting` embarqué
+ * sur les deux routes de peerId (usePeerCore) : un pair silencieux n'est plus attendu du
+ * tout, donc ce délai ne s'applique plus jamais à un non-diffuseur. Il ne reste que pour
+ * le cas « annonce reçue, flux qui n'arrivera pas » (canal data vivant, chemin média
+ * cassé), où une vignette tournerait sinon à vie — le troisième chemin élargit d'ailleurs
+ * ce cas, puisqu'il annonce avant même qu'une connexion existe. Une nouvelle annonce du
  * même pair réarme l'attente.
  *
  * Dimensionné au-dessus du backoff de connexion (MAX_RETRY_ATTEMPTS plafonné à 10 s par

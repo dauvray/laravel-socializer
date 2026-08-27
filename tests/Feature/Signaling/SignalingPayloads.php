@@ -57,6 +57,9 @@ trait SignalingPayloads
                 // Le cas du partage d'écran : `type` reste celui du contexte, seul
                 // `connectionType` vaut 'screen'.
                 'connectionType' => 'screen',
+                // Un vrai booléen JSON, comme `usePeerCore` l'envoie : la règle `boolean`
+                // de Laravel refuserait la chaîne "true".
+                'isBroadcasting' => true,
             ],
             '/response-to-peer-id' => [
                 'toUserSlug' => $to->slug,
@@ -64,6 +67,7 @@ trait SignalingPayloads
                 'room' => 'app',
                 'type' => 'stream',
                 'connectionType' => 'screen',
+                'isBroadcasting' => true,
             ],
             '/send-alert-to-user' => [
                 'toUserSlug' => $to->slug,

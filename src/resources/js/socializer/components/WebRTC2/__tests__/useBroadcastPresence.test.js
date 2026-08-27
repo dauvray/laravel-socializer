@@ -269,6 +269,72 @@ describe('useBroadcastPresence', () => {
         })
     })
 
+    describe('réception depuis la signalisation serveur', () => {
+        // Troisième chemin d'annonce, et le seul qui n'exige AUCUN contact P2P : il ferme
+        // la fenêtre entre l'arrivée dans la room et le premier `peer.call`, où rien
+        // n'était localement observable. L'identité vient de `fromUserSlug`, que le
+        // backend force à l'authentifié.
+        it('enregistre le pair quand le signal annonce une diffusion', () => {
+            const presence = mount()
+
+            const noted = presence.noteBroadcastFromSignal({
+                fromUserSlug: 'alice',
+                room: 'app',
+                type: 'stream',
+                isBroadcasting: true,
+            })
+
+            expect(noted).toBe(true)
+            expect(ctx.announcedStreamPeers.value).toEqual(['alice'])
+        })
+
+        it('n\'enregistre rien quand le champ est absent (client ou backend non à jour)', () => {
+            const presence = mount()
+
+            expect(presence.noteBroadcastFromSignal({ fromUserSlug: 'alice' })).toBe(false)
+            expect(ctx.announcedStreamPeers.value).toEqual([])
+        })
+
+        it('n\'efface JAMAIS une annonce existante sur un signal à false', () => {
+            // ⚠️ L'asymétrie avec `BROADCAST_STATE`, qui purge : celui-ci voyage sur un
+            // data channel ordonné, au changement d'état. Un signal de signalisation est
+            // un instantané embarqué sur un chemin HTTP + Reverb sans garantie d'ordre —
+            // un `false` en retard effacerait une annonce vraie, et la vignette
+            // disparaîtrait alors que le flux est en route.
+            const presence = mount()
+            presence.handleBroadcastStateMessage(
+                { type: BROADCAST_STATE, isBroadcasting: true },
+                incomingConn('alice')
+            )
+
+            presence.noteBroadcastFromSignal({ fromUserSlug: 'alice', isBroadcasting: false })
+
+            expect(ctx.announcedStreamPeers.value).toEqual(['alice'])
+        })
+
+        it('ne s\'enregistre pas soi-même', () => {
+            // Garde déjà porté par `ctx.markAnnouncedStream`, épinglé ici parce que c'est
+            // la seule alimentation dont la source n'est pas une connexion distante.
+            const presence = mount()
+
+            expect(presence.noteBroadcastFromSignal({
+                fromUserSlug: MY_SLUG,
+                isBroadcasting: true,
+            })).toBe(false)
+            expect(ctx.announcedStreamPeers.value).toEqual([])
+        })
+
+        it('ignore un slug malformé', () => {
+            const presence = mount()
+
+            expect(presence.noteBroadcastFromSignal({
+                fromUserSlug: 'pas un slug !',
+                isBroadcasting: true,
+            })).toBe(false)
+            expect(ctx.announcedStreamPeers.value).toEqual([])
+        })
+    })
+
     describe('purge', () => {
         it('oublie l\'annonce d\'un pair qui quitte la room', async () => {
             const presence = mount()

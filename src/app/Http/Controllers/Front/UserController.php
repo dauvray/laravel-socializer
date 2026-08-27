@@ -170,6 +170,22 @@ class UserController extends Controller
     }
 
     /**
+     * Règles de l'état de diffusion embarqué sur les deux routes de peerId.
+     *
+     * Toujours nullable : le champ est né après les routes, et une règle `required` couperait
+     * la signalisation de tout client plus vieux que ce déploiement — donc reproduirait le
+     * symptôme que le champ existe pour fermer.
+     *
+     * ⚠️ La règle `boolean` de Laravel accepte `true|false|1|0|"1"|"0"`, mais **pas** les
+     * chaînes `"true"` / `"false"`. Le client poste en JSON (`AjaxService` → axios sur un objet
+     * simple), donc un vrai booléen arrive : ne jamais sérialiser ce champ en chaîne côté JS.
+     */
+    private function broadcastingRules(): array
+    {
+        return ['nullable', 'boolean'];
+    }
+
+    /**
      * Règles du bloc `options` des deux routes d'invitation d'appel.
      *
      * `$actionRequired` sépare les deux sens de l'échange : l'invitation porte toujours son
@@ -224,6 +240,10 @@ class UserController extends Controller
             // Nullable : le module WebRTC v1 ne l'envoie pas, et le repli `connectionType
             // || type` est un choix documenté de rétrocompatibilité côté client.
             'connectionType' => $this->typeRules(false),
+            // Nullable pour la même raison, et elle est ici encore plus dure : un 422 sur
+            // cette route reproduit « A diffuse, B arrive, B ne voit rien ». Tout bundle
+            // antérieur au déploiement de ce champ doit continuer à passer.
+            'isBroadcasting' => $this->broadcastingRules(),
         ]);
 
         $to = config('estarter.models.user')::where('slug', $data['toUserSlug'])->first();
@@ -247,6 +267,11 @@ class UserController extends Controller
                 // au lieu de dépendre uniquement du moteur de retry côté client.
                 'connectionType' => $data['connectionType'] ?? null,
                 'fromUserSlug' => $user->slug,
+                // « Je diffuse au moment où je te parle », embarqué sur une demande qui
+                // partait déjà : c'est ce qui permet à l'arrivant d'afficher sa vignette
+                // d'attente avant tout contact P2P. Cf. responseToPeerId pour le pourquoi
+                // du cast.
+                'isBroadcasting' => (bool) ($data['isBroadcasting'] ?? false),
             ])
             ->sendNow();
         }
@@ -269,6 +294,7 @@ class UserController extends Controller
             'room' => $this->roomRules(),
             'type' => $this->typeRules(),
             'connectionType' => $this->typeRules(false),
+            'isBroadcasting' => $this->broadcastingRules(),
         ]);
 
         $to = config('estarter.models.user')::where('slug', $data['toUserSlug'])->first();
@@ -289,6 +315,11 @@ class UserController extends Controller
                 'type' => $data['type'],
                 'connectionType' => $data['connectionType'] ?? null,
                 'room' => $data['room'],
+                // ⚠️ Casté, contrairement au `status` de responseToPeerAuthorization qui
+                // est relayé brut : celui-là est une décision d'appel, celui-ci ne nourrit
+                // qu'une vignette d'attente. Absent doit arriver `false` pour que le client
+                // n'ait pas un troisième état à distinguer.
+                'isBroadcasting' => (bool) ($data['isBroadcasting'] ?? false),
             ])
             ->sendNow();
         }

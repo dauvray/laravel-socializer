@@ -243,6 +243,23 @@ Contrôleur unique : `src/app/Http/Controllers/Front/UserController.php`, sectio
 Seuls les **deux premiers** passent par la file de signaux. Les trois autres sont consommés
 directement par `Notifications.vue`.
 
+Les **deux premiers** portent en plus un `isBroadcasting` — l'état de diffusion de l'émetteur au
+moment où il parle. Trois propriétés à ne pas défaire :
+
+- **`nullable` en validation, casté au relais.** Le champ est né après les routes : tout bundle plus
+  vieux que son déploiement ne l'envoie pas, et un 422 sur `/ask-to-peer-id` reproduit « A diffuse,
+  B arrive, B ne voit rien ». Absent arrive donc `false`, jamais `null` — le client n'a pas de
+  troisième état à distinguer. (Contrairement au `status` de `/response-to-authorization-peer`,
+  relayé brut : celui-là est une décision d'appel, celui-ci ne nourrit qu'une vignette d'attente.)
+- **La règle `boolean` refuse la chaîne `"true"`** (elle accepte `true|false|1|0|"1"|"0"`). Le client
+  poste en JSON, donc un vrai booléen arrive : ne jamais sérialiser ce champ en chaîne côté JS.
+  Épinglé par `un_etat_de_diffusion_non_booleen_est_refuse`.
+- **Il ne nourrit que l'UI d'attente** (`announcedStreamPeers` → `useAwaitedStreams`), jamais une
+  décision de connexion ni une allowlist. Son identité est le `fromUserSlug` **authentifié**
+  (invariant 1), pas un champ que l'émetteur choisit : le pire cas d'un client menteur est une
+  vignette fantôme sur sa propre ligne, bornée par `AWAITED_STREAM_TIMEOUT_MS`. Le mécanisme complet
+  et ce qu'il ne couvre pas : [modules/webrtc2/flux.md](../modules/webrtc2/flux.md#comment-un-arrivant-sait-qui-diffuse).
+
 ---
 
 ## Cinq invariants backend

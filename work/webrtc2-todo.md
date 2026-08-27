@@ -144,6 +144,47 @@ avant le déménagement revient à les jeter.
 
 ---
 
+## Annonce de diffusion — ce qui reste après le champ `isBroadcasting`
+
+> Le champ embarqué sur les deux routes de peerId (livré le 27/08/2026) ferme la fenêtre entre
+> l'arrivée dans la room et le premier contact P2P, où l'arrivant n'avait localement AUCUN moyen de
+> savoir qu'un flux venait. Ce qui suit est ce qu'il ne ferme pas — deux fenêtres résiduelles, plus
+> la vérification que seule une session à deux onglets peut donner.
+
+- [ ] **Les deux fenêtres résiduelles** `[M]` — **aucune des deux n'est fatale** : la vignette
+  d'attente y arrive tard, elle n'y est jamais fausse. Les trois chemins d'annonce et leurs bornes :
+  [flux.md](../docs/modules/webrtc2/flux.md#comment-un-arrivant-sait-qui-diffuse).
+  1. **Avant la première demande de peerId** — `syncUsersConnections` attend `waitForMeReady`, donc
+     l'identité locale et le peerId : tant qu'elle n'est pas là, aucun POST n'est parti et il n'y a
+     rien à embarquer. Fenêtre courte en régime établi (le `Peer` de l'onglet est déjà ouvert quand on
+     navigue en SPA), longue au premier chargement — `/get-ice-servers` est `await`é avant `new Peer`
+     (jusqu'à `ICE_FETCH_TIMEOUT_MS`), puis vient la poignée de main du serveur PeerJS.
+  2. **Le client non-hub en topologie star** ne demande que le peerId du hub : il n'échange donc
+     jamais de signalisation avec un diffuseur qui n'est pas le hub, et n'apprend rien de lui. Même
+     borne que l'annonce data channel en star, pour une raison différente — ici il n'y a pas de
+     relais qui perd l'identité, il n'y a pas d'échange du tout.
+
+  **L'option étudiée, et pourquoi elle n'a pas été prise** : un `whisper` sur le canal de présence
+  fermerait les deux d'un coup (un seul saut WebSocket, avant toute signalisation, et le serveur
+  réémet les client events de présence avec le `user_id` **authentifié** — `accept_client_events_from`
+  vaut `members` par défaut dans Reverb). Son coût n'est pas la latence, c'est le **couplage** :
+  WebRTC2 ne connaît aujourd'hui la présence que par la prop `users` d'un provider, et il faudrait y
+  faire entrer le canal Reverb — `inject(REVERB_CHANNEL, null)`, comme `useChatSimple`, donc optionnel
+  — plus un filtre sur `roomId` puisqu'une page monte plusieurs providers sur **un** canal
+  (`Exemples/Home.vue` en monte trois). À ne rouvrir que si la fenêtre 1 se révèle visible à l'usage :
+  le champ sur la signalisation coûtait deux lignes de PHP, celui-ci est un chantier.
+
+- [ ] **Vérifier à la main que la vignette arrive tôt** `[S]` — la seule chose que la suite ne peut pas
+  dire. Deux onglets, **rechargement dur des deux côtés et rien qui écrive dans `.env` pendant la
+  mesure** (sinon on mesure deux pannes à la fois, cf. `docs/modules/webrtc2/tests.md` et la règle
+  `.ai/rules/web-r-t-c2.md` de l'hôte). A démarre sa webcam, B ouvre la page : la vignette « en
+  attente du flux » doit apparaître dans la première seconde. **Et la contre-épreuve, qui compte
+  autant** : B arrive alors que personne ne diffuse ⇒ **aucune vignette** — c'est la régression du
+  13/08 qu'on ne rouvre pas. Le champ ne part du bundle qu'après un build front ; le PHP, lui, est
+  servi directement depuis `vendor/` dans le bac à sable.
+
+---
+
 ## usePeerConnections
 
 - [ ] **`usersInRoom` : sémantique trompeuse (filtrage prématuré)** `[M]`
