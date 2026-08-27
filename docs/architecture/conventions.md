@@ -21,6 +21,23 @@ minuscules : `Dauvray\Socializer\app\Models\Post`,
 autochargée sous cet arbre demande donc un `composer dump-autoload` — sans lui, elle reste
 introuvable, sans erreur qui le dise.
 
+⚠️ **Ce paquet n'est PAS géré par Pint — ne pas lui appliquer celui du projet hôte.** Il n'a ni
+`pint.json` ni Pint en dépendance, et son style s'est écarté du preset Laravel (indentation des
+chaînages `Broadcast::private(…)->as(…)`, lignes vides, ordre des imports). Mesuré le 27/08/2026 :
+`vendor/bin/pint <un fichier du paquet>` depuis la racine de l'hôte a réécrit **166 lignes** d'un
+`UserController.php` dont 20 seulement venaient d'être modifiées, quatorze fixers déclenchés, et a
+supprimé au passage un import inutilisé pré-existant. Conséquences :
+
+- le diff du dépôt du paquet devient illisible, et il embarque du code que personne n'a relu — sur un
+  contrôleur qui porte des gardes de sécurité, c'est la mauvaise sorte de bruit ;
+- la règle « lancer `pint --dirty` après toute modification PHP » du `CLAUDE.md` d'un hôte vise **le
+  code de l'hôte**. Dans un projet où les paquets maison sont développés en place dans `vendor/`,
+  `--dirty` les attrape : il faut nommer les fichiers, ou ne pas lancer Pint.
+
+Une modification ici se relit donc à l'œil, dans le style du voisinage. Adopter Pint un jour est
+possible, mais c'est une passe de reformatage à part entière, sur tout le paquet, dans son propre
+commit — jamais un effet de bord d'un correctif.
+
 **Modèles** — squelette commenté figé, blocs conservés même vides :
 `GLOBAL VARIABLES` / `FUNCTIONS` / `RELATIONS` / `SCOPES` / `ACCESORS` *(sic)* / `MUTATORS`.
 

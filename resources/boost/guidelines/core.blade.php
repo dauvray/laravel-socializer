@@ -25,6 +25,10 @@ puis suivre sa table de routage vers `docs/INDEX.md`. Ne pas explorer le code au
   `Dauvray\Socializer\app\console\Commands\…`. Non-idiomatique mais systématique — le reproduire.
   Le dossier est `src/app/console/` (minuscule) alors que le namespace est `…\app\Console\…` :
   créer une classe autochargée y demande un `composer dump-autoload`.
+- **Ce paquet n'est pas géré par Pint : ne pas lui appliquer celui de l'hôte.** Son style s'est
+  écarté du preset Laravel — mesuré, un fichier de 20 lignes modifiées en ressort avec 166 lignes
+  réécrites. Relire à l'œil, dans le style du voisinage —
+  `docs/architecture/conventions.md#php`.
 - **Le front est en français en dur**, sans `$t()`. Introduire l'i18n est un chantier à part entière.
 - **Tout sommet NebulaGraph créé sans `id` explicite est dupliqué à chaque passage**
   (`insertVertex` retombe sur `uniqidReal()`). La projection de la base a un seul propriétaire,
