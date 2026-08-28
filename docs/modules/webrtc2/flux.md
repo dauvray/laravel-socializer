@@ -303,7 +303,7 @@ pour le rationale.
 ```
 signal serveur .CloseConnectionToPeerID → remoteStopCall ─┐
 fermeture de connexion PeerJS → handleStreamRemoved ──────┤
-                                                          ▼
+   (entrantes seulement, contexte 'stream')               ▼
                                     useCallManager.handleRemoteDeparture
                                       ├─ garde par participant (closingUsers) + try/finally
                                       ├─ purge remoteStreamsMap  (le type fermé, sur entry.remoteSlug)
@@ -316,3 +316,30 @@ fermeture de connexion PeerJS → handleStreamRemoved ──────┤
 Filet indépendant des événements de fermeture : `handleStreamReceived` écoute `ended` / `inactive`
 sur les pistes du flux reçu. C'est ce qui autorise `_purgePeerStreams` à ne retirer que le type
 fermé sans risque de fuite.
+
+## Perte d'une connexion — l'autre lecteur, qui ne purge pas mais rétablit
+
+⚠️ **Le second transport ci-dessus ne voit qu'une partie des fermetures** : le wrap de
+l'orchestrateur ne route que les **entrantes** d'un contexte `stream`. Ce qui tombe chez un
+diffuseur quand son pair recharge est sa connexion **sortante** — et les contextes `data` et
+`visio` n'ont aucun chemin fermeture → départ. Un second lecteur, indépendant, part donc du seul
+point d'entrée universel :
+
+```
+conn.on('close') → createPeerContext.handleClose   (tous types, LES DEUX SENS)
+   ├─ purge l'instance + le peerId (sous veto de présence)
+   └─ publie ctx.connectionLostSignal = remoteSlug   ⟵ si shutdownCount === 0, lu SYNCHRONE
+                        │
+                        ▼
+        useConnectionPool  (watch, jumeau de peerUnavailableSignal)
+          ├─ remet le signal à null   (deux conns par pair en 'stream' : média + data)
+          ├─ isShuttingDown ?         filet tardif
+          ├─ hasPendingRetry ?        un moteur veille déjà → se taire
+          ├─ isAuthorizedPeer ?       le pair me concerne-t-il encore
+          ├─ _canEmitStreamFor ?      ai-je quelque chose à émettre
+          └─ requestOrConnectPeer(userSlug)
+```
+
+Une **perte** n'est pas un **départ** : l'une rétablit, l'autre purge, et chacune a son
+propriétaire. Les cinq gardes et ce qu'ils coûtent quand ils manquent :
+[architecture.md § Conventions de code](architecture.md#conventions-de-code).

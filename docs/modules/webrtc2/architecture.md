@@ -285,6 +285,29 @@ transport.
 défectueuse, maintenant corrigée (voir la règle `entry.remoteSlug` plus bas), et un filet
 indépendant existe désormais (nettoyage sur fin de pistes, ci-dessous).
 
+### Une PERTE n'est pas un DÉPART, et ne passe pas par ici
+
+Le second transport ci-dessus n'est **pas** « la fermeture d'une connexion PeerJS », mais
+seulement une partie d'entre elles : le wrap de `usePeerOrchestrator` ne route vers
+`handleStreamRemoved` que les fermetures **entrantes** (`senderSlug !== mySlug`) d'un contexte
+`stream`. Les contextes `data` et `visio` n'ont, eux, aucun chemin fermeture → départ.
+
+Ce qui tombe chez un diffuseur quand son pair recharge est donc **invisible d'ici** : c'est sa
+connexion **sortante**, celle que ce filtre écarte. Le seul point d'entrée universel d'une
+fermeture — tous types, les deux sens — est `createPeerContext.handleClose`, un étage plus bas.
+
+Les deux faits ont donc deux propriétaires distincts et deux lecteurs indépendants, et c'est
+délibéré :
+
+| Fait | Point d'entrée | Propriétaire | Ce qu'il en fait |
+|---|---|---|---|
+| **départ** — ce pair s'en va | `remoteStopCall` · `handleStreamRemoved` | `useCallManager` | purge : transport, retries, flux, autorisation d'appel |
+| **perte** — cette connexion est tombée | `handleClose` | `useConnectionPool` | re-composition, sous cinq gardes |
+
+Les confondre reviendrait à greffer un chemin de rétablissement sur un chemin de purge — et
+`handleRemoteDeparture` **avale ses exceptions**, donc une greffe cassée y serait verte. La
+mécanique de la re-composition est décrite avec les conventions du fan-out, plus bas.
+
 ---
 
 ## Signaux datachannel : trois enveloppes, trois consommateurs
@@ -465,6 +488,43 @@ scénarios) et `_hubRateLimiter` (arbitrage « verbe `.reset()` plutôt que Pini
   ne fait rien sur `disconnected`, donc le tour de présence peut arriver avant que la dégradation
   soit visible. Épinglé par `scenarios/peerDeparture.test.js` (« A recharge sans que B voie son
   départ ») et `useConnectionPool.test.js`
+- **La PERTE d'une connexion est le SECOND déclencheur de composition**, et c'est ce qui ferme le
+  cas **(b)** ci-dessus. La réconciliation le borne sans le fermer : sans aucun événement de
+  présence, aucun tour n'a lieu, et rien de fondé sur la présence ne peut faire mieux — le fait qui
+  change lors d'un rechargement est la **connexion**. `createPeerContext.handleClose` publie donc
+  `connectionLostSignal` (troisième « signal réactif de communication inverse », comme
+  `peerUnavailableSignal` et `inviteAbandonedSignal`) et `useConnectionPool` l'observe. L'infra
+  publie un fait, la couche qui possède l'établissement décide : aucune frontière n'est franchie, et
+  `handleRemoteDeparture` — chemin de purge, qui avale ses exceptions — n'est pas touché.
+  **Cinq gardes, tous load-bearing :**
+  **(1)** le drapeau de teardown est lu **à l'écriture**, de façon synchrone, jamais chez le lecteur :
+  `stopCallWithPeers` pose `beginShutdown()`, ferme les connexions, puis relâche dans un `finally`
+  **asynchrone** — une microtâche plus tard le garde peut être retombé et un raccroché volontaire
+  serait recomposé ;
+  **(2)** aucune re-composition tant qu'une **chaîne de retry veille** sur ce pair
+  (`hasPendingRetry`), et ce garde porte **deux** propriétés — il ferme la boucle
+  *composition → orphelin `peer-unavailable` → fermeture → composition*, **et** il empêche de parler
+  trop tôt : un rechargement dure une seconde pendant laquelle personne ne répond, et composer alors
+  poserait un `waiting` de `SIGNALING_STALE_MS` qui **muselle** la demande suivante, y compris celle
+  du tour de présence quand le pair est enfin là. Ce déclencheur ne vise donc **que le régime
+  établi**, seul état où plus personne ne veille ;
+  **(3)** `isAuthorizedPeer`, appliqué **en amont** — le laisser à `_handleConnectionAttempt`
+  coûterait un POST, un jeton du plafond de cadence et un retry armé avant d'être rattrapé un tour
+  plus tard. Il porte aussi la validation de format, d'où l'absence d'un `isValidSlug` propre ;
+  **(4)** `_canEmitStreamFor(currentType)` : seul un contexte qui a réellement quelque chose à
+  émettre recompose. En mode `stream`, c'est le **diffuseur** — le récepteur n'ouvre rien faute de
+  flux local, et sans ce garde chaque spectateur d'une diffusion qui s'arrête armerait une chaîne de
+  ≈55 s incapable d'ouvrir quoi que ce soit. `'data'` rend toujours `true` ;
+  **(5)** le signal est remis à `null` d'entrée, sans quoi deux fermetures successives du même pair
+  (un contexte `stream` ouvre un appel média **et** un canal data) n'en déclencheraient qu'une.
+  Réparation **opportuniste** pour la même raison que la réconciliation. Le bail périmé n'est pas
+  traité ici : la composition tombe sur `peer-unavailable`, `invalidateRemotePeerId` purge et le
+  watcher voisin redemande — chaîne existante, aucun code neuf. **Écarté** : invalider le mapping
+  directement sur la fermeture. Une fermeture ne prouve pas que le peerId est mort, et
+  `getRemotePeerId` est la source **anti-usurpation** du chemin (b) de `_isAuthorizedIncomingPeer` —
+  l'affaiblir pour gagner un aller-retour échangerait une latence contre un chemin de sécurité.
+  Épinglé par `scenarios/peerDeparture.test.js` (« A recharge en chevauchement »),
+  `useConnectionPool.test.js` et `createPeerContext.test.js`
 - **Garde de teardown** : `beginShutdown`/`endShutdown` est un **compteur** ré-entrant, jamais un
   booléen (deux arrêts concurrents se volaient le garde). Toujours dans un `try/finally` : une
   exception laissant `shutdownCount ≥ 1` fait sortir `_handleConnectionAttempt` par `return true`,

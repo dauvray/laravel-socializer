@@ -454,6 +454,19 @@ export function createPeerContext({ type, room, options = {} }) {
             // Auto-cleanup : retire tous les listeners dès que la connexion est fermée
             // (cleanup est déjà assigné au moment où ce handler s'exécute car c'est async)
             cleanup()
+
+            // En DERNIER : publier la perte, une fois l'état du store déjà purgé — le
+            // lecteur (useConnectionPool) interroge `isConnectionEstablished` et le
+            // mapping, qui doivent donc décrire l'après-fermeture.
+            //
+            // ⚠️ Le garde est lu ICI, de façon SYNCHRONE, et pas dans le watcher. Un
+            // arrêt volontaire (`stopCallWithPeers`) pose `beginShutdown()`, ferme les
+            // connexions, puis relâche dans un `finally` ASYNCHRONE : lu une microtâche
+            // plus tard, `isShuttingDown` peut être déjà retombé, et un raccroché serait
+            // re-composé. À l'instant de la fermeture, il ne peut pas mentir.
+            if (remoteSlug && lifecycle.shutdownCount === 0) {
+                connectionLostSignal.value = remoteSlug
+            }
         }
 
         //------------------
@@ -732,7 +745,19 @@ export function createPeerContext({ type, room, options = {} }) {
     // callback vers `stopCallWithPeers` : usePeerCore est la couche la plus basse, elle ne
     // connaît ni la FSM d'appel ni l'UI. Le consommateur le remet à null.
     const inviteAbandonedSignal = ref(null)
-        
+
+    // Signal réactif : communication inverse createPeerContext → useConnectionPool.
+    // `handleClose` y écrit le slug du pair dont une connexion vient de tomber ; le pool
+    // l'observe et décide, seul, s'il y a lieu de re-composer.
+    //
+    // ⚠️ Une PERTE n'est pas un DÉPART, et c'est pourquoi ce signal existe plutôt qu'un
+    // greffon sur `handleRemoteDeparture` : le wrap de l'orchestrateur ne route vers la
+    // séquence de départ que les fermetures ENTRANTES d'un contexte `stream`. Or ce qui
+    // tombe chez un diffuseur quand son pair recharge, c'est sa connexion SORTANTE —
+    // qu'aucun chemin n'observait, tous types confondus. `handleClose` est le seul point
+    // d'entrée universel d'une fermeture.
+    const connectionLostSignal = ref(null)
+
     return {
         contextId,
         lastRoomSignal,
@@ -781,6 +806,9 @@ export function createPeerContext({ type, room, options = {} }) {
 
         // signal réactif (usePeerCore → UI)
         inviteAbandonedSignal,
+
+        // signal réactif (createPeerContext → useConnectionPool)
+        connectionLostSignal,
 
         // destruction explicite (cleanup manuel si nécessaire hors lifecycle)
         destroy,

@@ -70,9 +70,11 @@ avant le déménagement revient à les jeter.
 > D'où des items séparés — mélanger deux mécanismes dans une même passe rendrait indécidable lequel
 > a fait le travail.
 >
-> **Trois verrous sont fermés** : `syncUsersConnections` coalesce au lieu de jeter la composition
-> reçue (27/08), le tour sur liste vide purge sans déclarer la présence connue (27/08), et le fan-out
-> réconcilie au lieu de differ (28/08). Les trois invariants vivent dans
+> **Quatre verrous sont fermés** : `syncUsersConnections` coalesce au lieu de jeter la composition
+> reçue (27/08), le tour sur liste vide purge sans déclarer la présence connue (27/08), le fan-out
+> réconcilie au lieu de differ (28/08), et **la perte d'une connexion est devenue un second
+> déclencheur de composition** (28/08) — celui qui ferme le cas où aucun tour de présence n'a lieu.
+> Les quatre invariants vivent dans
 > [architecture.md § Conventions de code](../docs/modules/webrtc2/architecture.md#conventions-de-code).
 > Ce qui suit ne s'en déduit pas : un tour qui a bien lieu peut encore ne rien voir.
 - [x] **Le diff de présence est aveugle à un pair parti et revenu entre deux instantanés** `[M]` —
@@ -96,15 +98,46 @@ avant le déménagement revient à les jeter.
   [architecture.md](../docs/modules/webrtc2/architecture.md#conventions-de-code). ⚠️ Le cas **(b)**
   n'est réparé qu'au **prochain** tour de présence, quel qu'en soit le motif : aucun tour n'a lieu au
   moment du rechargement, donc aucune correction fondée sur la présence ne peut faire mieux. Le
-  déclencheur structurellement juste serait la **fermeture de connexion** — item ci-dessous.
-- [ ] **Re-composer sur fermeture de connexion, pas seulement sur tour de présence** `[M]`
-  Le fait qui change lors d'un rechargement est la connexion, pas la présence : le déclencheur juste
-  est `handleClose`, pas le tour de présence. C'est ce qui fermerait le cas **(b)** ci-dessus sans
-  attendre un tour. Le discriminant existe déjà (`isAuthorizedPeer(slug, ctx)`, celui de
-  `_handleConnectionAttempt`). Ce qui rend l'item non trivial : le point d'entrée unique d'une
-  disparition de pair est `useCallManager.handleRemoteDeparture`, et transformer un chemin de purge
-  en chemin de rétablissement traverse la frontière de couche que son en-tête déclare — de plus il
-  avale ses exceptions, donc une version cassée serait verte.
+  déclencheur structurellement juste serait la **fermeture de connexion** — item ci-dessous,
+  **fermé le 28/08/2026**, ce qui clôt (b) du même geste.
+- [x] **Re-composer sur fermeture de connexion, pas seulement sur tour de présence** `[M]` —
+  **fermé le 28/08/2026.** `handleClose` publie `ctx.connectionLostSignal`, `useConnectionPool`
+  l'observe : troisième « signal réactif de communication inverse », sur le motif exact de
+  `peerUnavailableSignal`. Les cinq gardes et les deux décisions écartées vivent dans
+  [architecture.md § Conventions de code](../docs/modules/webrtc2/architecture.md#conventions-de-code) ;
+  la séparation perte / départ dans
+  [§ Départ d'un pair](../docs/modules/webrtc2/architecture.md#départ-dun-pair--un-fait-métier-deux-transports).
+
+  **Ce que la passe a RÉFUTÉ dans l'énoncé ci-dessus, et qui a rendu la tâche plus simple que
+  prévu** — à ne pas re-dériver :
+
+  1. **« le point d'entrée unique d'une disparition de pair est `handleRemoteDeparture` » est faux
+     pour ce déclencheur.** Le wrap de `usePeerOrchestrator` (`:196-214`) n'existe que pour
+     `type === 'stream'` et n'y route que les fermetures **entrantes** (`senderSlug !== mySlug`).
+     Or ce qui tombe chez un diffuseur quand son pair recharge est sa connexion **sortante** —
+     explicitement exclue ; et `data`/`visio` n'ont aucun chemin fermeture → départ. Le seul point
+     d'entrée universel est `createPeerContext.handleClose`, un étage plus bas. Il n'y avait donc
+     **aucune frontière de couche à traverser**, et le `try/catch` avaleur de `handleRemoteDeparture`
+     n'était pas en jeu : une perte n'est pas un départ.
+  2. **`hasPendingRetry` n'est pas qu'un anti-boucle, c'est le garde qui empêche de parler trop
+     tôt** — et il a été retiré puis remis. Un rechargement dure une seconde pendant laquelle
+     personne ne répond : composer alors pose un `waiting` de `SIGNALING_STALE_MS` qui **muselle la
+     demande suivante**, y compris celle du tour de présence quand le pair est enfin là. Mesuré : sans
+     lui, le scénario voisin « A recharge sans que B voie son départ » passe au rouge. Ce déclencheur
+     ne vise donc **que le régime établi**, seul état où plus aucun moteur ne veille.
+  3. **Le premier scénario écrit était vert pour la mauvaise raison** : il provoquait la perte juste
+     après l'établissement, donc alors qu'une chaîne veillait encore (elle ne s'éteint qu'à son
+     réveil, ≤ 1299 ms). Il a fallu une **attente réelle** de 1,5 s — `settle()` ne draine pas les
+     minuteurs et `useFakeTimers` gèlerait le faux serveur. Le piège complet est dans
+     [tests.md](../docs/modules/webrtc2/tests.md).
+  4. **Écarté, et à ne pas rouvrir** : invalider le mapping peerId directement sur la fermeture pour
+     économiser l'aller-retour mort. Une fermeture ne prouve pas que le peerId est mort, et
+     `getRemotePeerId` est la source **anti-usurpation** du chemin (b) de `_isAuthorizedIncomingPeer`.
+     La chaîne existante (`peer-unavailable` → `invalidateRemotePeerId` → watcher voisin) fait le
+     travail sans toucher à un chemin de sécurité.
+  5. **Un garde retiré parce qu'aucune contre-épreuve ne pouvait le faire rougir** : `isValidSlug`,
+     déjà porté par `isAuthorizedPeer` en première ligne. Les quatre autres ont chacun été vus rouges,
+     un par un.
 - [ ] **`roomMembers` n'a pas de contrat de fraîcheur** `[M]`
   `getters.js:180` (`isUserInAnyRoom`) : un contexte monté qui ne reçoit plus de `props.users` frais
   épingle le slug pour l'onglet entier, et `removeRemotePeerId` devient un no-op permanent. Même

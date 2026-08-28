@@ -7,6 +7,7 @@
  * - le moteur de retry des connexions (instance dédiée de usePeerRetry)
  * - la décision « demander un peerId » vs « ouvrir la connexion »
  * - la recovery sur peer indisponible (watch de ctx.peerUnavailableSignal)
+ * - la re-composition sur perte de connexion (watch de ctx.connectionLostSignal)
  * - la synchronisation room → connexions (diff des users, fan-out mesh / star)
  *
  * 👉 utilise (par injection, jamais par import) :
@@ -311,6 +312,79 @@ export function useConnectionPool(ctx, { core, connections }) {
         ctx.peerUnavailableSignal.value = null
     })
 
+    // ── Recovery watch : perte d'une connexion ─────────────────────────────────
+    //
+    // Le SECOND déclencheur de composition, à côté du tour de présence. Il ferme le cas
+    // que la réconciliation borne sans le fermer : un rechargement chevauchant ne produit
+    // AUCUN événement de présence (Reverb supprime `member_removed` tant qu'une autre
+    // connexion tient, et `member_added` sur un déjà-abonné), donc aucun tour n'a lieu et
+    // rien de fondé sur la présence ne peut faire mieux. Le fait qui change alors, c'est
+    // la connexion — et `createPeerContext.handleClose` est son seul point d'entrée, pour
+    // tous les types et les DEUX sens. La séquence de départ, elle, ne voit jamais une
+    // fermeture sortante : le wrap de l'orchestrateur la réserve aux entrantes d'un
+    // contexte `stream`.
+    //
+    // Réparation OPPORTUNISTE comme la réconciliation, et pour la même raison : PeerJS ne
+    // ferme que sur `iceConnectionState` `failed`/`closed` et ne fait rien sur
+    // `disconnected` — une connexion qui se dégrade sans tomber ne produit aucun signal.
+    // ─────────────────────────────────────────────────────────────────────────
+    const unwatchConnectionLost = watch(ctx.connectionLostSignal, (userSlug) => {
+        // Remis à null d'entrée : chaque fermeture doit pouvoir se signaler, y compris
+        // deux fermetures successives du même pair (un contexte `stream` ouvre un appel
+        // média ET un canal data), et un `watch` ne se re-déclenche pas à valeur égale.
+        if (!userSlug) return
+        ctx.connectionLostSignal.value = null
+
+        // Filet tardif : le garde qui tranche est celui de l'ÉCRITURE, lu de façon
+        // synchrone dans `handleClose`. Ici `isShuttingDown` peut déjà être retombé.
+        if (ctx.isShuttingDown.value) return
+
+        // Pas de `isValidSlug` ici : `isAuthorizedPeer` l'applique déjà en première ligne
+        // (contrairement au watcher voisin, qui ne le consulte pas et doit donc valider
+        // lui-même). Un garde qu'aucune contre-épreuve ne peut faire rougir ment sur son
+        // utilité.
+
+        // ⚠️ ANTI-BOUCLE, et bien plus que ça : c'est aussi ce qui empêche de PARLER TROP
+        // TÔT. Deux propriétés en un prédicat, et les deux sont load-bearing.
+        //
+        //   • la boucle : composer sur un peerId périmé rend `peer-unavailable` et une
+        //     connexion orpheline, dont la fermeture repasserait ici — composition →
+        //     orphelin → fermeture → composition. Une chaîne étant armée dès la première
+        //     composition, le second tour sort ici ;
+        //   • le pair pas encore revenu : un rechargement dure une seconde, pendant
+        //     laquelle personne ne répond. Composer alors pose un `waiting` de
+        //     SIGNALING_STALE_MS qui MUSELLE la demande suivante — y compris celle du
+        //     tour de présence, quand le pair est enfin là. Mesuré : sans ce garde, le
+        //     scénario voisin « A recharge sans que B voie son départ » passe au rouge.
+        //     Tant qu'une chaîne veille, elle redemandera au bon rythme ; la perte
+        //     n'apprend rien qu'elle ne sache.
+        //
+        // Le trou que ce déclencheur ferme est donc exactement le régime ÉTABLI : une
+        // connexion qui vivait a éteint son moteur (`_handleConnectionAttempt` → `true`),
+        // et plus personne ne veille quand elle tombe.
+        if (retryManager.hasPendingRetry(userSlug)) return
+
+        // Le discriminant « ce pair me concerne-t-il encore ? », le même que la branche 2
+        // de `_handleConnectionAttempt` — appliqué EN AMONT, et c'est le point : le
+        // laisser au moteur coûterait un POST, un jeton du plafond de cadence et un retry
+        // armé avant d'être rattrapé un tour plus tard.
+        if (!isAuthorizedPeer(userSlug, ctx)) return
+
+        // Seul un contexte qui a réellement quelque chose à émettre re-compose. En mode
+        // `stream`, c'est le diffuseur — la seule direction qui puisse rétablir le flux,
+        // le récepteur n'ouvrant rien faute de flux local. Sans ce garde, chaque
+        // récepteur d'une diffusion qui s'arrête armerait une chaîne de retry de ~55 s
+        // incapable d'ouvrir quoi que ce soit, pour finir sur un warn d'abandon.
+        // `'data'` rend toujours `true` : chat et visio ne sont pas concernés.
+        if (!_canEmitStreamFor(ctx.currentType.value)) return
+
+        // Sans `preserveRetry` : le garde ci-dessus a déjà écarté le cas où une chaîne
+        // veille, donc il n'y a rien à préserver. Une perte est de toute façon un fait
+        // ÉVÉNEMENTIEL, comme un arrivant ou une recovery `peer-unavailable` — l'horizon
+        // d'abandon que `preserveRetry` protège ne vise que les appelants PÉRIODIQUES.
+        requestOrConnectPeer(userSlug)
+    })
+
     /**
      * UN tour de synchronisation, sans verrou : la boucle de drain de
      * `syncUsersConnections` est seule à l'appeler, et elle garantit la sérialisation.
@@ -540,6 +614,7 @@ export function useConnectionPool(ctx, { core, connections }) {
      */
     const stopPool = () => {
         unwatchPeerUnavailable()
+        unwatchConnectionLost()
         retryManager.clearAll()
     }
 

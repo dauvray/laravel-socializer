@@ -253,6 +253,28 @@ verbe demanderait de monter `Notifications.vue`, et le scénario ne parlerait pl
   jamais réellement écrit : tout cas qui exerce une lecture de la composition doit la **pré-semer**
   lui-même. Sans ce pré-semis, un test de réconciliation ne voit aucun membre et verdit pour la
   mauvaise raison.
+- **Un scénario ne peut pas faire tourner le moteur de retry, et l'oublier fabrique des verts
+  gratuits *comme* des rouges trompeurs.** `settle()` draine les microtâches et les tâches à échéance
+  0, jamais les minuteurs — or une chaîne de retry se réveille à `1000·2^0 + jitter` (≤ 1299 ms) et
+  ne s'éteint qu'à ce réveil, même si la connexion est établie depuis longtemps. Deux conséquences
+  opposées, toutes deux rencontrées en posant la re-composition sur perte :
+  - **vert gratuit** : un scénario qui provoque la perte juste après l'établissement la provoque
+    alors qu'un moteur veille encore — état qui n'existe qu'une seconde en production. Le tester
+    revient à court-circuiter un mécanisme qui aurait fait le travail. Il faut **attendre réellement**
+    (`await new Promise(r => setTimeout(r, 1500))`) pour atteindre le régime établi, seul état où le
+    trou existe ;
+  - **rouge trompeur** : à l'inverse, un correctif conditionné à « aucune chaîne en vol » paraît
+    inerte dans un scénario écrit sans cette attente, et l'on est tenté de **retirer le garde**. Le
+    faire régresse aussitôt le scénario voisin (« A recharge sans que B voie son départ »), pour une
+    raison qui n'a rien à voir avec le harnais : composer un pair qui n'est pas encore revenu pose un
+    `waiting` de `SIGNALING_STALE_MS` qui muselle la demande suivante.
+
+  Et pas de `vi.useFakeTimers()` pour s'en sortir : il gèlerait le `setTimeout(…, 0)` du faux serveur.
+- **Un garde qu'aucune contre-épreuve ne peut faire rougir ment sur son utilité.** En neutralisant les
+  gardes un par un du watcher de perte, l'un d'eux — `isValidSlug` — n'a fait rougir aucun cas :
+  `isAuthorizedPeer` le porte déjà en première ligne. Il a été retiré, pas commenté. Corollaire pour
+  le test qui vise ce refus : il doit **empoisonner la composition** (`usersInRoom = ['slug invalide']`),
+  sinon il sort sur « pas membre » et n'épingle pas ce qu'il croit.
 - **Trois chemins alimentent `announcedStreamPeers` : un scénario qui n'en coupe aucun ne prouve
   aucun des trois.** C'est la version « annonce » du piège de direction ci-dessus. Pour isoler le
   chemin voulu, **neutraliser le P2P sortant du diffuseur** avec les fabriques du mock :

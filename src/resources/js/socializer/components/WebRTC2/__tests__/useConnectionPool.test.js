@@ -1077,6 +1077,139 @@ describe('useConnectionPool', () => {
         })
     })
 
+    // ── Re-composition : connectionLostSignal ───────────────────────────────
+    //
+    // Le SECOND déclencheur de composition, à côté du tour de présence. Il ferme le cas
+    // que la réconciliation borne sans le fermer : un rechargement chevauchant ne produit
+    // AUCUN événement de présence, donc aucun tour n'a lieu et rien de fondé sur la
+    // présence ne peut faire mieux.
+    //
+    // ⚠️ Ce fichier stube `getRoomUsersDiff`, donc `ctx.connection.usersInRoom` n'est
+    // JAMAIS écrit ici : chaque cas qui doit franchir le garde d'autorisation le
+    // pré-sème lui-même. Sans ce pré-semis ils verdiraient par le mauvais bout — le
+    // garde sortirait avant même d'atteindre la composition.
+    //
+    // Le bout-en-bout, lui, vit dans `scenarios/peerDeparture.test.js` (« A recharge en
+    // chevauchement ») : c'est le seul étage où le symptôme est observable.
+    describe('re-composition sur perte de connexion', () => {
+
+        it('recompose le pair perdu et remet le signal à null', async () => {
+            ctx.connection.usersInRoom = ['alice']
+
+            ctx.connectionLostSignal.value = 'alice'
+            await nextTick()
+
+            expect(core.requestRemotePeerConnection).toHaveBeenCalledWith('alice', ctx.session.currentType)
+            expect(ctx.connectionLostSignal.value).toBe(null)
+        })
+
+        it('compose directement quand le peerId est encore sous bail', async () => {
+            ctx.connection.usersInRoom = ['alice']
+            ctx.peerStore.addRemotePeerId('alice', 'peer-alice')
+
+            ctx.connectionLostSignal.value = 'alice'
+            await nextTick()
+
+            expect(connections.connectToPeer).toHaveBeenCalledWith(
+                expect.objectContaining({ userSlug: 'alice', peerId: 'peer-alice' })
+            )
+        })
+
+        it('ignore un slug au format invalide, fût-il dans la composition', async () => {
+            // Le porteur est `isAuthorizedPeer`, qui valide le format en première ligne —
+            // ce watcher n'a donc pas de garde de format à lui. D'où la composition
+            // empoisonnée : sans elle, le cas sortirait sur « pas membre » et n'épinglerait
+            // pas ce qu'il croit.
+            ctx.connection.usersInRoom = ['not a valid slug!']
+
+            ctx.connectionLostSignal.value = 'not a valid slug!'
+            await nextTick()
+
+            expect(core.requestRemotePeerConnection).not.toHaveBeenCalled()
+            expect(connections.connectToPeer).not.toHaveBeenCalled()
+        })
+
+        it('ignore le signal pendant un teardown', async () => {
+            ctx.connection.usersInRoom = ['alice']
+            ctx.beginShutdown()
+
+            ctx.connectionLostSignal.value = 'alice'
+            await nextTick()
+
+            expect(core.requestRemotePeerConnection).not.toHaveBeenCalled()
+        })
+
+        it('ne recompose pas un pair qui n\'est plus autorisé', async () => {
+            // `usersInRoom` vide et aucune autorisation d'appel : le pair est réellement
+            // parti. Sans ce garde, la perte relancerait une composition sur un absent —
+            // un POST, un jeton du plafond de cadence et un retry armé sur rien, que
+            // `_handleConnectionAttempt` ne rattraperait qu'un tour plus tard.
+            ctx.connectionLostSignal.value = 'alice'
+            await nextTick()
+
+            expect(core.requestRemotePeerConnection).not.toHaveBeenCalled()
+            expect(connections.connectToPeer).not.toHaveBeenCalled()
+        })
+
+        it('reste muet tant qu\'une chaîne de retry veille sur ce pair', async () => {
+            // ⭐ Le garde qui porte DEUX propriétés à lui seul.
+            //
+            // 1. l'anti-boucle : composer un peerId périmé rend une connexion orpheline,
+            //    dont la fermeture repasserait ici — le second tour sort sur ce garde ;
+            // 2. le pair pas encore revenu : un rechargement dure une seconde, pendant
+            //    laquelle personne ne répond. Composer alors poserait un `waiting` de
+            //    SIGNALING_STALE_MS qui muselle la demande suivante, y compris celle du
+            //    tour de présence quand le pair est enfin là.
+            //
+            // Autrement dit, ce déclencheur ne vise QUE le régime établi : une connexion
+            // qui vivait a éteint son moteur, et plus personne ne veille quand elle tombe.
+            ctx.connection.usersInRoom = ['alice']
+            connections.connectToPeer.mockReturnValue(false)
+            pool.requestOrConnectPeer('alice')   // arme une chaîne pour 'alice'
+            core.requestRemotePeerConnection.mockClear()
+            connections.connectToPeer.mockClear()
+
+            ctx.connectionLostSignal.value = 'alice'
+            await nextTick()
+
+            expect(core.requestRemotePeerConnection).not.toHaveBeenCalled()
+            expect(connections.connectToPeer).not.toHaveBeenCalled()
+        })
+
+        it('mode stream : le récepteur, sans flux local, ne recompose rien', async () => {
+            // En mode stream le flux ne part que du diffuseur : un récepteur qui
+            // recomposerait armerait une chaîne de ~55 s incapable d'ouvrir quoi que ce
+            // soit (`connectToPeer` sort par `true` sans rien ouvrir faute de flux), pour
+            // finir sur un warn d'abandon — à chaque fin de diffusion, chez chaque
+            // spectateur.
+            app.unmount()
+            ctx = createMockContext({ session: { currentType: 'stream' } })
+            mountPool(ctx)
+            ctx.connection.usersInRoom = ['alice']
+
+            ctx.connectionLostSignal.value = 'alice'
+            await nextTick()
+
+            expect(core.requestRemotePeerConnection).not.toHaveBeenCalled()
+            expect(connections.connectToPeer).not.toHaveBeenCalled()
+        })
+
+        it('mode stream : le diffuseur, lui, recompose', async () => {
+            // La contre-épreuve du cas précédent — sans elle, « ne recompose rien »
+            // serait vert même si le déclencheur était mort tout entier.
+            app.unmount()
+            ctx = createMockContext({ session: { currentType: 'stream' } })
+            mountPool(ctx)
+            ctx.connection.usersInRoom = ['alice']
+            ctx.media.currentStream = liveStream()
+
+            ctx.connectionLostSignal.value = 'alice'
+            await nextTick()
+
+            expect(core.requestRemotePeerConnection).toHaveBeenCalledWith('alice', 'stream')
+        })
+    })
+
     // ── Cleanup ─────────────────────────────────────────────────────────────
 
     describe('cleanup', () => {

@@ -562,6 +562,12 @@ export function createMockContext(overrides = {}) {
     // ── Signal inviteAbandoned ────────────────────────────────────────────────
     const inviteAbandonedSignal = ref(null)
 
+    // ── Signal connectionLost ─────────────────────────────────────────────────
+    // Écrit par handleClose sur le vrai contexte ; ici c'est le test qui l'écrit pour
+    // simuler la chute d'une connexion. Doit rester un `ref` : le watch du pool s'y
+    // accroche, et un mock qui l'oublierait le laisserait observer `undefined`.
+    const connectionLostSignal = ref(null)
+
     // ── waitForMeReady ────────────────────────────────────────────────────────
     // Dans les tests on résout immédiatement sauf override explicite (ex: tester le timeout)
     const waitForMeReady = overrides.waitForMeReady
@@ -739,6 +745,7 @@ export function createMockContext(overrides = {}) {
         // signaux réactifs
         peerUnavailableSignal,
         inviteAbandonedSignal,
+        connectionLostSignal,
 
         // destroy
         destroy,

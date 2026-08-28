@@ -170,6 +170,72 @@ describe("départ d'un pair", () => {
         expect(aliceV2.receivedStreamsFrom()).toContain('bob')
     })
 
+    it("⭐ A recharge en chevauchement : la PERTE de la connexion suffit à ce que B rappelle", async () => {
+        // Le cas (b) que le fan-out réconciliant BORNE sans le fermer : il n'est réparé
+        // qu'au PROCHAIN tour de présence, quel qu'en soit le motif. Ici il n'y en a
+        // aucun — et c'est exactement la production.
+        //
+        // ⚠️ CE QUI SÉPARE CE TEST DU PRÉCÉDENT tient en une ligne : le voisin finit par
+        // `connectRoom([aliceV2, bob])`, qui donne à B un tour de présence. C'est ce tour
+        // qui déclenche la réconciliation, donc le voisin épingle la réconciliation, pas
+        // le rappel. Ici B n'en reçoit JAMAIS : le seul fait qui lui parvienne est la
+        // fermeture de sa propre connexion sortante. Le second mécanisme est ainsi
+        // neutralisé par construction, et rien d'autre ne peut rendre ce test vert.
+        //
+        // ⚠️ L'ORDRE est le cas (b) lui-même : le nouvel onglet monte AVANT que l'ancien
+        // soit ramassé. C'est cette superposition qui fait taire Reverb
+        // (`InteractsWithPresenceChannels::userIsSubscribed` : pas de `member_removed`
+        // tant qu'une autre connexion tient, pas de `member_added` sur un déjà-abonné).
+        // Inverser l'ordre ne testerait plus rien : B poserait sa demande de peerId dans
+        // le vide, personne n'étant en face pour y répondre.
+        //
+        // ⚠️ B diffuse, PAS A — même raison qu'au test précédent : en mode stream, la
+        // seule direction qui puisse rougir est celle que possède le survivant.
+        const aliceV1 = await spawn({ slug: 'alice', peerId: 'peer-alice-v1' })
+        const bob = await spawn({ slug: 'bob' })
+
+        await connectRoom([aliceV1, bob])
+        await bob.api.startWebcamStream()
+        await connectRoom([aliceV1, bob])
+        expect(aliceV1.receivedStreamsFrom()).toContain('bob')
+
+        // ⚠️ ATTENTE RÉELLE, et elle EST le sujet. Le trou ne s'ouvre qu'en régime
+        // ÉTABLI : tant que le moteur de retry veille sur alice, il redemanderait de
+        // lui-même et rien ne serait à réparer. Il ne s'éteint qu'à son premier réveil
+        // (`_handleConnectionAttempt` → `true` sur connexion établie), planifié à
+        // `1000·2^0 + jitter` ≤ 1299 ms. Sans cette attente le test serait vert AVANT le
+        // correctif, par un mécanisme qui n'existe pas une seconde plus tard en
+        // production. `settle()` n'y suffit pas : il draine les tâches à échéance 0, pas
+        // les minuteurs. Et pas de `useFakeTimers` — il gèlerait le faux serveur.
+        await new Promise((resolve) => setTimeout(resolve, 1500))
+
+        // Alice recharge : le nouvel onglet monte et reprend la signalisation de son slug
+        // pendant que l'ancien vit encore. Sa présence à ELLE est neuve (`here()` complet
+        // au montage) — celle de B ne bouge pas.
+        const aliceV2 = await spawn({ slug: 'alice', peerId: 'peer-alice-v2' })
+        await aliceV2.api.syncUsersConnections([{ slug: 'alice' }, { slug: 'bob' }])
+        await settle()
+
+        // Rien n'est encore arrivé chez B : A n'a pas de flux local, donc elle n'ouvre
+        // aucun appel (`connectToPeer` sort par `true` sans rien ouvrir), et son mapping
+        // de A reste sur le peerId mort. C'est la précondition du trou.
+        expect(bob.peerStore.getRemotePeerId('alice')).toBe('peer-alice-v1')
+
+        // Ramassage de l'ancien onglet : la connexion sortante de B tombe. C'est le SEUL
+        // fait qui lui parvienne — et il ne passe pas par `handleRemoteDeparture`, que le
+        // wrap de l'orchestrateur réserve aux fermetures entrantes.
+        aliceV1.peerInstance.destroy()
+        await settle(8)
+
+        // La présence n'a rien signalé : alice n'a jamais quitté la composition de B.
+        // Précondition, pas objet du test — si elle tombe, le test ne teste plus le trou.
+        expect(bob.api.usersInRoom.value).toContain('alice')
+
+        // Le fait métier : alice revenue reçoit la diffusion de bob, sans qu'aucun tour
+        // de présence n'ait eu lieu chez lui.
+        expect(aliceV2.receivedStreamsFrom()).toContain('bob')
+    })
+
     it("B, initiateur, sort d'un peerId mort et rouvre le canal (mode data)", async () => {
         // Mode data : les deux pairs se connectent mutuellement, donc B initie vraiment.
         // C'est la configuration où un peerId périmé devenait une impasse PERMANENTE —

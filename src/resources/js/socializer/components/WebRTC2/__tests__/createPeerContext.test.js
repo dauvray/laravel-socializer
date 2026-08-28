@@ -392,6 +392,53 @@ describe('createPeerContext', () => {
 
                 expect(spy).toHaveBeenCalledTimes(1)
             })
+
+            // ── Publication de la perte ───────────────────────────────────────
+            //
+            // `handleClose` est le seul point d'entrée d'une fermeture, tous types et
+            // les DEUX sens confondus — la séquence de départ, elle, ne voit jamais une
+            // fermeture sortante. C'est donc ici que la perte se publie, à charge pour
+            // useConnectionPool de décider s'il y a lieu de re-composer.
+            it('publie le slug du pair dont la connexion vient de tomber', () => {
+                const ctx = mountContext()
+
+                closeWith(ctx, { type: 'data', room: 'app', slug: 'alice', from: 'alice' })
+
+                expect(ctx.connectionLostSignal.value).toBe('alice')
+            })
+
+            it('publie aussi la perte d\'une connexion SORTANTE', () => {
+                // Le cas qui motive tout le mécanisme : quand un pair recharge, ce qui
+                // tombe chez le diffuseur est sa connexion sortante — `metadata.from`
+                // porte MON slug. Aucun chemin ne l'observait.
+                const ctx = mountContext()
+
+                closeWith(ctx, { type: 'stream', room: 'app', slug: 'alice', from: 'test-user' })
+
+                expect(ctx.connectionLostSignal.value).toBe('alice')
+            })
+
+            it('ne publie jamais mon propre slug', () => {
+                const ctx = mountContext()
+
+                // Ni `from` ni `slug` ne désignent un distant : rien à recomposer.
+                closeWith(ctx, { type: 'data', room: 'app', slug: 'test-user', from: 'test-user' })
+
+                expect(ctx.connectionLostSignal.value).toBe(null)
+            })
+
+            it('ne publie rien pendant un teardown', () => {
+                // ⚠️ Le garde est lu ICI, de façon synchrone, et pas chez le lecteur :
+                // `stopCallWithPeers` pose `beginShutdown()`, ferme les connexions, puis
+                // relâche dans un `finally` ASYNCHRONE. Une microtâche plus tard le
+                // drapeau peut être retombé, et un raccroché volontaire serait recomposé.
+                const ctx = mountContext()
+                ctx.beginShutdown()
+
+                closeWith(ctx, { type: 'data', room: 'app', slug: 'alice', from: 'alice' })
+
+                expect(ctx.connectionLostSignal.value).toBe(null)
+            })
         })
     })
 

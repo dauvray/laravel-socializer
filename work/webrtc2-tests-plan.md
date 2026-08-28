@@ -40,6 +40,7 @@ et le seul étage où les incendies du paquet étaient détectables). Le harnais
 | Store — `peers2Store` : runtime, observabilité, `remotePeerId` | ✅ | — |
 | UI — `useAwaitedStreams`, `useBroadcastPresence`, `MediaBroadcastPlayer` (identité, spinner) | ✅ | — |
 | Scénarios — smoke, `lateJoiner`, `broadcastLifecycle`, `peerDeparture`, `multiContext`, `incomingMappingInvariant`, `outgoingAuth` | ✅ | — |
+| Perte de connexion → re-composition — `scenarios/peerDeparture` (« A recharge en chevauchement »), `useConnectionPool`, `createPeerContext` | ✅ | — |
 | Hors WebRTC2 — `Chat/dateSeparatorRender`, `System/useReverbChannel` (dont le désabonnement de whisper par callback), `User/coverCallButton` | amorces | plan Chat : [chat-tests-plan.md](chat-tests-plan.md) |
 
 ⛔ **Les tâches 6 et 7 sont volontairement bloquées.** Le wrapping du routage star qu'elles doivent
@@ -54,6 +55,17 @@ Les couches extraites se testent avec des `vi.fn()` pour les dépendances inject
 l'intérêt de l'injection descendante. `useCallManager` et `useStreamManager` n'enregistrent aucun
 hook de lifecycle et s'appellent **directement**, sans `withSetup` ; `useConnectionPool` et
 `useSignalingQueue` posent un `watch` + un `onUnmounted`, donc `withSetup` y est **obligatoire**.
+
+### Un scénario ne peut pas faire tourner le moteur de retry (28/08/2026)
+
+`settle()` draine les microtâches et les tâches à échéance 0, **jamais les minuteurs** — et
+`vi.useFakeTimers()` est exclu en scénario (il gèlerait le faux serveur). Or une chaîne de retry se
+réveille à `1000·2^0 + jitter` (≤ 1299 ms) et ne s'éteint qu'à ce réveil, même sur une connexion
+établie depuis longtemps. Tout scénario qui vise un comportement du **régime établi** doit donc
+attendre réellement (`await new Promise(r => setTimeout(r, 1500))`), sans quoi il court-circuite un
+moteur qui aurait fait le travail — vert gratuit. Le piège symétrique, plus coûteux, est d'en
+conclure que le garde du correctif est trop strict et de le retirer :
+[tests.md](../docs/modules/webrtc2/tests.md) porte les deux versants.
 
 ### Le canal de présence est livrable au harnais depuis le 28/08/2026
 
