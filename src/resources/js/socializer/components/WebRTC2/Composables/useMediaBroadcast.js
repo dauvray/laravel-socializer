@@ -144,7 +144,7 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}, dep
     // « déclarer la présence connue » existe désormais plus bas. Le premier tour du
     // provider — `watch(() => props.users, api.watchUsers, { immediate: true })`, armé sur
     // une liste encore vide — traverse la chaîne, purge (rien) et n'apprend rien :
-    // `_doGetRoomUsersDiff` ne passe `presenceSynced` à true que sur un tour qui a OBSERVÉ
+    // `getRoomUsersDiff` ne passe `presenceSynced` à true que sur un tour qui a OBSERVÉ
     // au moins un membre, et `_doSyncUsersConnections` n'ouvre rien sur un tour qui n'a
     // rien observé. Sans ces deux-là, la liste vide ferait passer la présence pour connue
     // et transformerait un refus d'admission en ignorance déguisée.

@@ -97,11 +97,28 @@ export default () => {
     remotePeersId: new Map(), // peerId distants (clé: userSlug, valeur: { peerId, learnedAt })
     waitingRemotePeerId: new Map(), // demandes de peerId en vol (clé: `slug|room|type`, valeur: { room, type, createdAt, … })
 
-    // Composition des rooms, par contexte (clé: contextId, valeur: string[] de slugs).
-    // Écrit par l'unique producteur de `ctx.connection.remotePeers`
-    // (usePeerConnections._doGetRoomUsersDiff), purgé à la destruction du contexte.
-    // C'est la source de vérité de « ce pair est-il encore présent quelque part ? »,
-    // seul prédicat qui autorise à oublier son peerId (cf. removeRemotePeerId).
+    // Composition des rooms, par contexte (clé: contextId, valeur: string[] de slugs — mon
+    // propre slug en est filtré à la source). C'est LA composition, pas une projection :
+    // `ctx.connection.remotePeers` n'est qu'un accesseur en lecture seule au-dessus de
+    // cette entrée (cf. createPeerContext). Écrit par `computeRoomDiff` — l'écrivain de
+    // production unique, appelé par usePeerConnections.getRoomUsersDiff —, semé par
+    // `setRoomMembers`, purgé par `clearRoomMembers` à la destruction du contexte.
+    //
+    // ⚠️ Cette entrée porte DEUX rôles, et le second est de sécurité :
+    //   1. « ce pair est-il encore présent quelque part ? », seul prédicat qui autorise à
+    //      oublier son peerId (`isUserInAnyRoom` / `removeRemotePeerId`) — un balayage de
+    //      TOUS les contextes de l'onglet ;
+    //   2. l'allowlist du chemin (a) des DEUX gardes d'autorisation (`isAuthorizedPeer` en
+    //      sortie, `_isAuthorizedIncomingPeer` en entrée) — la lecture d'UN seul contexte.
+    // Toute politique posée ici touche les deux : une péremption d'entrée pensée pour (1)
+    // fermerait silencieusement (2) sur un contexte dont la composition est simplement
+    // stable. Une telle politique appartient à la LECTURE de (1), pas à l'entrée.
+    //
+    // ⚠️ L'écriture est toujours une RÉAFFECTATION du tableau entier, jamais un `push` :
+    // un computed qui trace la clé (c'est le cas de tous les lecteurs, via l'accesseur)
+    // ne s'invaliderait pas sur une mutation en place. C'est le piège qui avait rendu
+    // `roomSignals` inconsommable — il est écrit en entier à `createPeerContext.js`, sur
+    // le computed de `lastRoomSignal`.
     roomMembers: {},
     signalQueues: {}, // files d’attente de signaux pour les callbacks de connexions { type-roomId, payload }
     signalSeq: {}, // seq monotone par clé de file (type-room) — jamais réinitialisé, cf. dispatchSignal

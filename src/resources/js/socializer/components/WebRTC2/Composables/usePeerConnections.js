@@ -28,10 +28,6 @@ export function usePeerConnections(ctx) {
 
     const inFlightConnections = new Set()
 
-    // Mutex à chaîne de promesses : sérialise les appels concurrents à getRoomUsersDiff
-    // pour éviter le TOCTOU sur ctx.connection.remotePeers (lecture puis écriture non atomiques).
-    let _diffLock = Promise.resolve()
-
     /**
      * Reconstruit l'annuaire `user_id` → slug depuis la liste de présence BRUTE.
      *
@@ -57,7 +53,24 @@ export function usePeerConnections(ctx) {
         }
     }
 
-    const _doGetRoomUsersDiff = async (users = []) => {
+    /**
+     * Un tour de composition de room : qui vient d'arriver, qui vient de partir.
+     *
+     * ⚠️ Sans verrou, et ce n'est pas un oubli. Un mutex à chaîne de promesses a vécu ici,
+     * censé garder un TOCTOU entre la lecture de la composition précédente et son écriture.
+     * Il ne gardait rien : l'unique `await` de cette fonction PRÉCÈDE la lecture, tout ce
+     * qui suit est synchrone, et deux appels concurrents ne peuvent donc pas s'entrelacer.
+     * L'ordre des tours, lui, est sérialisé un étage au-dessus par la boucle de drain de
+     * `useConnectionPool.syncUsersConnections` — seul appelant de production.
+     *
+     * Deux invariants portent cette absence de verrou, et les défaire la rend fausse :
+     * `peerStore.computeRoomDiff` reste synchrone, et rien ne s'insère entre la barrière
+     * `waitForMeReady` et l'appel.
+     *
+     * @param {Array<{id: ?number|string, slug: string}>} users  Liste de présence BRUTE
+     * @returns {Promise<{ newUsers: Array<Object>, removedUsers: string[] }>}
+     */
+    const getRoomUsersDiff = async (users = []) => {
         // ⚠️ AVANT la barrière `waitForMeReady`, et c'est la seule écriture de ce tour qui
         // la précède. Elle ferme une course réelle : un diffuseur re-annonce dès qu'il voit
         // l'arrivant, or l'arrivant ne peut attribuer ce whisper que si son annuaire est
@@ -93,23 +106,29 @@ export function usePeerConnections(ctx) {
         // ne rougisse, le contexte de test naissant déjà `presenceSynced: true`.
         const presenceObserved = users.length > 0
 
-        const remotePeers = users.filter(user => user.slug !== ctx.meStore.getMe.slug)
-        const nextSlugs = remotePeers.map(user => user.slug)
-        const previousSlugs = [...ctx.connection.remotePeers]
+        // `remoteUsers`, pas `remotePeers` : ce sont les OBJETS utilisateur de la liste de
+        // présence, pas les slugs de la composition. L'homonymie a déjà coûté une relecture.
+        const remoteUsers = users.filter(user => user.slug !== ctx.meStore.getMe.slug)
+        const nextSlugs = remoteUsers.map(user => user.slug)
 
-        const newUsers = remotePeers.filter(user => !previousSlugs.includes(user.slug))
-        const removedUsers = previousSlugs.filter(slug => !nextSlugs.includes(slug))
-
-        // Écrits à TOUS les tours, observation ou non — c'est ce qui rend le dernier
-        // partant purgeable : sur une liste vide, `removedUsers` vaut `previousSlugs`, et
-        // c'est le seul tour qui puisse le dire.
+        // Le diff ET l'écriture, en un seul appel. Écrit à TOUS les tours, observation ou
+        // non — c'est ce qui rend le dernier partant purgeable : sur une liste vide,
+        // `removedSlugs` vaut la composition précédente entière, et c'est le seul tour qui
+        // puisse le dire.
         //
-        // Les deux ensemble, jamais l'un sans l'autre. La projection dans le store est ce
-        // qui permet à `removeRemotePeerId` de répondre « absent de TOUTES les rooms »
-        // sans dépendre de l'ordre des purges de `connections` ; purger la liste sans
-        // purger l'index ferait survivre le peerId d'un partant à son propre départ.
-        ctx.connection.remotePeers = nextSlugs
-        ctx.peerStore.setRoomMembers(ctx.contextId, nextSlugs)
+        // Une seule case mémoire depuis la migration : `roomMembers[contextId]` porte à la
+        // fois l'allowlist du chemin (a) des deux gardes d'autorisation — que
+        // `ctx.connection.remotePeers` lit par accesseur — et le prédicat « absent de TOUTES
+        // les rooms » de `removeRemotePeerId`. Avant, deux écritures jumelles ici tenaient
+        // les deux domiciles synchrones, et rien ne l'aurait signalé si l'une avait sauté.
+        const { newSlugs, removedSlugs } = ctx.peerStore.computeRoomDiff(ctx.contextId, nextSlugs)
+
+        // Les arrivants retraduits en objets : c'est ce que la forme publique promet, et le
+        // store n'a pas à connaître les objets utilisateur. Filtre sur `remoteUsers` plutôt
+        // que `map` sur `newSlugs` pour conserver l'ordre de la liste de présence et le
+        // comportement sur doublon.
+        const newUsers = remoteUsers.filter(user => newSlugs.includes(user.slug))
+        const removedUsers = removedSlugs
 
         // La liste et la CONNAISSANCE qu'on en a n'avancent plus au même rythme, et c'est
         // le correctif lui-même. L'écrivain, lui, reste unique : l'invariant n'est plus
@@ -133,13 +152,6 @@ export function usePeerConnections(ctx) {
         }
 
         return { newUsers, removedUsers }
-    }
-
-    const getRoomUsersDiff = (users = []) => {
-        const current = _diffLock.then(() => _doGetRoomUsersDiff(users))
-        // On absorbe l'erreur sur le verrou pour ne pas casser les appels suivants.
-        _diffLock = current.catch(() => {})
-        return current
     }
 
     /**

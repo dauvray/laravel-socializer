@@ -263,7 +263,7 @@ export function useBroadcastPresence(ctx, { transport, reverb = null }) {
         }
 
         // Annuaire écrit par le seul écrivain de `remotePeers`
-        // (`usePeerConnections._doGetRoomUsersDiff`) : un `user_id` qui n'y est pas n'est
+        // (`usePeerConnections.getRoomUsersDiff`) : un `user_id` qui n'y est pas n'est
         // pas un membre observé de la room, et ne peut donc rien y annoncer.
         const remoteSlug = ctx.connection.slugByUserId.get(String(userId))
 

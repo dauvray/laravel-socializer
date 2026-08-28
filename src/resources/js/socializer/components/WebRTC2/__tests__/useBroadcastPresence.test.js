@@ -66,7 +66,7 @@ describe('useBroadcastPresence', () => {
             session: { currentType: 'stream', onAirRoom: 'app' },
             connection: { remotePeers: ['alice', 'bob'] },
         })
-        // L'annuaire que `_doGetRoomUsersDiff` écrit en production : sans lui, aucun
+        // L'annuaire que `getRoomUsersDiff` écrit en production : sans lui, aucun
         // `user_id` de whisper n'est traduisible en slug.
         ctx.connection.slugByUserId.set('11', 'alice')
         ctx.connection.slugByUserId.set('12', 'bob')

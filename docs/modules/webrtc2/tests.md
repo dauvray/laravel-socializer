@@ -167,6 +167,20 @@ verbe demanderait de monter `Notifications.vue`, et le scénario ne parlerait pl
   changement d'identité) alors que `getQueueForRoom` lit `_signalQueueRooms` (objet nu, non réactif) :
   deux structures déconnectées. **Tout test de drain de file serait un faux positif** avant
   correction du mock.
+- **`connection.remotePeers` est un ACCESSEUR des deux côtés**, au-dessus de
+  `peerStore.roomMembers[contextId]` — le double ne le déclare donc pas comme une propriété, et un
+  override `connection: { remotePeers: [...] }` est **extrait avant le spread** pour semer l'index.
+  Le remettre dans le spread écraserait l'accesseur par un tableau nu et ressusciterait le miroir
+  dans le double **sans rien casser** : les deux gardes lisent `Array.isArray(…) ? … : []`, donc la
+  composition deviendrait simplement invisible au store et le verdict basculerait vers « refusé »,
+  que la moitié des tests d'autorisation attend déjà. Trois conséquences pour le double :
+  `_roomMembers` est `reactive` (l'état Pinia réel l'est, et c'est la réactivité du chemin de
+  PRODUCTION — écrire par `computeRoomDiff`, lire par l'accesseur — qu'un objet nu casserait, pas
+  celle du semis) ; son `computeRoomDiff` **importe** `diffRoomMembers` du store ; et son setter est
+  le **seul** écart assumé avec la production, qui n'en a aucun. `roomMembersSourceOfTruth.test.js`
+  épingle les trois, et ferme l'écart là où il compte : au grep sur les sources de production, qui
+  ne doivent ni assigner ni muter ce champ. C'est la forme exacte de la panne de `Peer.id`
+  (`peerjsMockFidelity.descriptors.test.js`), traitée à la source plutôt qu'en durcissant le double.
 - **Le bail se lit avec la constante, jamais avec un littéral**, et le mock stocke la même FORME
   de valeur que le store (`{ peerId, learnedAt }`). `createMockContext` importe donc
   `REMOTE_PEER_ID_LEASE_MS` pour la raison exacte qui lui fait importer `waitingPeerIdKey` : une
@@ -249,10 +263,12 @@ verbe demanderait de monter `Notifications.vue`, et le scénario ne parlerait pl
   ce qu'il initie fonctionne sans correctif. En mode `stream` le flux ne part que du diffuseur : il
   faut donc **faire diffuser le survivant** et asserter que le revenant reçoit son flux. Se tromper
   de direction donne un test vert qui ne prouve rien.
-- **`useConnectionPool.test.js` stube `getRoomUsersDiff`**, donc `ctx.connection.remotePeers` n'y est
-  jamais réellement écrit : tout cas qui exerce une lecture de la composition doit la **pré-semer**
+- **`useConnectionPool.test.js` stube `getRoomUsersDiff`**, donc la composition n'y est jamais
+  réellement écrite : tout cas qui exerce une lecture de la composition doit la **pré-semer**
   lui-même. Sans ce pré-semis, un test de réconciliation ne voit aucun membre et verdit pour la
-  mauvaise raison.
+  mauvaise raison. Le semis s'écrit `ctx.connection.remotePeers = [...]` sur un double (le setter de
+  semis) et `peerStore.setRoomMembers(ctx.contextId, [...])` sur un **vrai** contexte, où l'écriture
+  lève. Toujours par réaffectation, jamais par `push` : les lecteurs tracent la clé.
 - **Un scénario ne peut pas faire tourner le moteur de retry, et l'oublier fabrique des verts
   gratuits *comme* des rouges trompeurs.** `settle()` draine les microtâches et les tâches à échéance
   0, jamais les minuteurs — or une chaîne de retry se réveille à `1000·2^0 + jitter` (≤ 1299 ms) et

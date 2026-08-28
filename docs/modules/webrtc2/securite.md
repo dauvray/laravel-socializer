@@ -160,6 +160,19 @@ Un pair entrant est admis par **(a)** appartenance à `ctx.connection.remotePeer
 **ou** **(b)** appel direct vérifié : `peerStore.getRemotePeerId(from)` existe **et** correspond à
 `conn.peer` — allowlist et anti-usurpation fusionnées en une seule condition stricte.
 
+> ℹ️ L'allowlist du chemin (a) vit dans le **store** depuis la migration de la composition :
+> `ctx.connection.remotePeers` est un accesseur en lecture seule au-dessus de
+> `peerStore.roomMembers[contextId]`, dont l'unique écrivain de production est
+> `peerStore.computeRoomDiff`. Rien n'a changé pour les gardes — la lecture reste synchrone et
+> `Array.isArray(…) ? … : []` reste leur lecture défensive — mais deux conséquences valent d'être
+> sues avant de toucher à cette entrée. D'abord elle porte **deux** lecteurs de sens opposé : cette
+> allowlist, qui ne doit jamais expirer (une room calme reste une room, et `props.users` n'a aucun
+> battement de cœur), et `isUserInAnyRoom`, dont un slug épinglé rend `removeRemotePeerId`
+> définitivement inerte. Toute péremption appartient donc à la **lecture** du second, jamais à
+> l'entrée. Ensuite l'absence de setter est structurelle : une écriture hors du verbe du store lève,
+> et aucune source de production n'écrit ni ne mute ce champ — vérifié au grep par
+> `roomMembersSourceOfTruth.test.js`.
+
 L'anti-usurpation par **résolution inverse** — le peerId réel de la connexion ne doit être résolu à
 aucun **autre** slug — s'applique ensuite aux **deux** chemins. Sur (b) elle n'est pas redondante :
 la concordance n'y est vérifiée que dans le sens slug → peerId, et laissait donc passer un pair dont

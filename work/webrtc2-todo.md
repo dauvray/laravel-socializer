@@ -139,11 +139,32 @@ avant le déménagement revient à les jeter.
      déjà porté par `isAuthorizedPeer` en première ligne. Les quatre autres ont chacun été vus rouges,
      un par un.
 - [ ] **`roomMembers` n'a pas de contrat de fraîcheur** `[M]`
-  `getters.js:180` (`isUserInAnyRoom`) : un contexte monté qui ne reçoit plus de `props.users` frais
-  épingle le slug pour l'onglet entier, et `removeRemotePeerId` devient un no-op permanent. Même
-  question de conception un étage au-dessus — à traiter avec « Migrer `remotePeers` vers Pinia »
-  ci-dessous, pas avant. Le préjudice résiduel se limite désormais à la longévité de l'entrée
-  d'allowlist, qui reste gardée par l'égalité `conn.peer`.
+  `isUserInAnyRoom` (`getters.js`) : un contexte monté qui ne reçoit plus de `props.users` frais
+  épingle le slug pour l'onglet entier, et `removeRemotePeerId` devient un no-op permanent. Le
+  préjudice résiduel se limite à la longévité de l'entrée d'allowlist, qui reste gardée par
+  l'égalité `conn.peer`.
+
+  ⚠️ **La consigne « à traiter avec la migration Pinia, pas avant » est retirée : la migration l'a
+  réfutée** (29/08/2026). Elle ne dit plus où le correctif doit vivre, elle dit où il ne peut PAS
+  vivre. Depuis que `roomMembers[contextId]` est la source, l'entrée porte **deux lecteurs de sens
+  opposé** :
+
+  | lecteur | ce que « périmé » devrait vouloir dire |
+  |---|---|
+  | `getRoomMembers` → allowlist du chemin (a) des deux gardes + réconciliation du fan-out | **ne doit jamais expirer** — une room calme reste une room |
+  | `isUserInAnyRoom` → `removeRemotePeerId` | **devrait expirer** — un slug épinglé rend le verbe inerte |
+
+  Un `updatedAt` posé sur l'entrée, par analogie avec le `learnedAt` de `remotePeersId`, servirait
+  donc le second en **fermant silencieusement** le premier : `props.users` n'a aucun battement de
+  cœur (`MediaBroadcastProvider` ne pousse la composition que sur changement), donc une room saine
+  et stable ne produit aucun tour de présence pendant un temps arbitraire, et se verrait refuser ses
+  propres membres. Invisible en test, de surcroît : toute suite re-synchronise, et
+  `vi.useFakeTimers()` gèle `Date.now()`.
+
+  La fraîcheur appartient donc à la **lecture** de `isUserInAnyRoom`, pas à l'entrée. Et le fait
+  qu'elle cherche n'est probablement pas un âge mais une **liveness de contexte** — « ce contexte
+  a-t-il encore un flux de présence ? » —, dont la purge au démontage (`clearRoomMembers`) est le
+  cas déjà couvert ; le trou est le contexte **monté** devenu muet.
 - [x] **Le client star compose son hub même absent de la room** `[S]` — **fermé le 28/08/2026**, sous
   tests verts, comme la simplification annoncée. La branche client est devenue la branche mesh
   filtrée : `targets.includes(hubSlug)`, avec le même `preserveRetry`. Le couplage annoncé s'est
@@ -355,27 +376,55 @@ avant le déménagement revient à les jeter.
   ⚠️ **La mention « le prédicat prévu en A2 de l'audit sécurité » était une référence pendante** :
   `securite.md` ne porte plus de section numérotée, et ce prédicat est **livré** depuis, sous la
   forme de `utils/isAuthorizedPeer.js`.
-- [ ] **Migrer `remotePeers` vers Pinia** `[M]`
-  `ctx.connection.remotePeers` est un tableau mutable partagé hors store. Le déplacer dans
-  `peerStore` avec une action `computeRoomDiff(newSlugs)` synchrone (lecture + écriture atomique)
-  supprimerait le mutex `_diffLock` et rendrait la liste réactive dans les composants.
-  Dépend du renommage ci-dessus.
-  ℹ️ **`_diffLock` n'attend plus cette migration pour être sans emploi** (constaté le 27/08/2026) :
-  depuis que le verrou du pool coalesce, son drain sérialise déjà les tours, et c'est le **seul
-  appelant de production** de `getRoomUsersDiff`. Le mutex ne garde donc plus qu'un export public
-  que personne n'exerce en parallèle — coût nul, à retirer avec la migration, pas avant ni
-  séparément.
+- [x] **Migrer `remotePeers` vers Pinia** `[M]` — **fermé le 29/08/2026**, sous tests verts
+  (983 → 1015 cas). `roomMembers[contextId]` est la source unique ; `ctx.connection.remotePeers` est
+  devenu un **accesseur en lecture seule** au-dessus d'elle, donc les ~25 lectures de production et
+  les ~55 semis sur double n'ont pas bougé. L'écrivain de production est `peerStore.computeRoomDiff`,
+  et `_diffLock` est parti. Le contrat, ses deux lecteurs de nature différente et l'invariant de
+  réaffectation vivent dans
+  [architecture.md](../docs/modules/webrtc2/architecture.md#propriétaires-uniques) ; le versant
+  harnais dans [tests.md](../docs/modules/webrtc2/tests.md).
+
+  **Quatre écarts avec l'énoncé ci-dessus, à ne pas re-dériver :**
+
+  1. **« lecture + écriture atomique » était faux, et c'était la justification affichée.** Le couple
+     lecture-puis-écriture n'a jamais eu de point de suspension entre ses deux moitiés — l'unique
+     `await` de la fonction précède la lecture —, donc aucun TOCTOU n'y était possible et `_diffLock`
+     n'a jamais rien gardé. Ce que la migration apporte est **un seul chemin d'écriture** vers
+     l'allowlist, la valeur précédente étant lue là où la nouvelle est écrite. Rester synchrone est
+     en revanche un vrai invariant, épinglé sans `await` : rendre l'action asynchrone fait rougir
+     12 cas.
+  2. **« rendrait la liste réactive dans les composants » : elle l'était déjà.** `connection` est un
+     `reactive` et l'écriture était une réaffectation, donc `api.remotePeers` s'invalidait. Le gain
+     réel est ailleurs : un domicile unique, et la composition lisible depuis le store sans `ctx`.
+  3. **Les deux tests qui visaient le mutex n'étaient pas porteurs.** Celui qui affirmait « sans le
+     mutex, les deux appels liraient le même `previousSlugs` vide » était vert par symétrie de
+     microtâches et n'a pas rougi à son retrait ; ne pas le réécrire en test de FIFO, l'ordre étant
+     garanti un étage au-dessus par le drain de `syncUsersConnections`. Les deux ont été remplacés
+     par le seul énoncé qui survive et puisse rougir : un tour qui lève ne laisse pas la composition
+     à moitié écrite.
+  4. **La parade est devenue permanente au lieu d'être jetable.** La passe de renommage avait posé un
+     accesseur jetant, retiré avant commit ; ici l'absence de setter en production **est** la parade
+     (une écriture lève un `TypeError`), et `roomMembersSourceOfTruth.test.js` la fige avec ce qui
+     ferme le seul risque du setter conservé dans le double : un grep sur les sources de production
+     vérifiant qu'aucune n'assigne ni ne mute ce champ — la forme exacte de la panne de `Peer.id`,
+     traitée à la source plutôt qu'en durcissant le double.
+
+  ℹ️ **Deux constats de méthode, mesurés :** le seul mode de panne réellement silencieux était
+  l'override `connection: { remotePeers }` du double, qui arrivait **après** l'accesseur par le
+  spread et l'écrasait sans rien casser (clé extraite avant le spread, plus un garde structurel) ;
+  et la réactivité de `_roomMembers` dans le double n'était exigée par **aucun** test existant — le
+  proxy de `connection` déclenche même sur un index nu. Ce qu'un index nu casse est le chemin de
+  production, que plus aucun test ne voyait depuis que la production a cessé d'écrire là. Le cas qui
+  le prouve a été écrit et **vu rouge** avant d'être vert.
 - [x] **`getNewUsersInRoom` est un export mort** `[S]` — **fermé le 28/08/2026, sortie B** : la
   fonction (un simple `await getRoomUsersDiff(users)` dont on ne garde que `newUsers`), son export
   et son unique test sont supprimés. Aucun appelant de production ne le lisait, dans le paquet
   comme dans l'hôte, donc rien d'observable n'a changé — un test de moins, et c'était le bon.
-  ℹ️ **Ce qui reste vrai après lui, et qui cadre la migration Pinia** : une **projection** de la
-  composition existe déjà — `peerStore.roomMembers[contextId]`, écrite par
-  `_doGetRoomUsersDiff` et lue par le prédicat de `removeRemotePeerId` (cf.
-  [architecture.md](../docs/modules/webrtc2/architecture.md#un-onglet-plusieurs-contextes--la-granularité-des-clés-du-store)).
-  Ce n'est PAS la migration : la source de vérité reste `ctx.connection`, et la duplication est
-  assumée tant que les deux écritures restent dans la même fonction. La migration consisterait à
-  faire de `roomMembers` la source et à supprimer le miroir — pas à ajouter un troisième état.
+  ℹ️ **Ce qui cadrait la migration Pinia, et qui est fait depuis (29/08/2026)** : la duplication
+  entre `ctx.connection.remotePeers` et sa projection `peerStore.roomMembers[contextId]` était
+  assumée « tant que les deux écritures restent dans la même fonction ». `roomMembers` est
+  maintenant la source et le miroir a disparu — sans troisième état.
 
 ---
 

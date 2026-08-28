@@ -98,26 +98,32 @@ describe('usePeerConnections', () => {
             expect(ctx.connection.remotePeers).toEqual([])
         })
 
-        it('sérialise les appels concurrents (pas de TOCTOU sur remotePeers)', async () => {
-            // Sans le mutex, les deux appels liraient le même `previousSlugs` vide et le
-            // second annoncerait alice comme un arrivant une seconde fois.
-            const [first, second] = await Promise.all([
-                connections.getRoomUsersDiff([{ slug: 'alice' }]),
-                connections.getRoomUsersDiff([{ slug: 'alice' }, { slug: 'bob' }]),
-            ])
+        // Un mutex à chaîne de promesses a vécu ici, et deux cas le visaient — dont un qui
+        // affirmait que « sans le mutex, les deux appels liraient le même `previousSlugs`
+        // vide ». C'était faux, et depuis longtemps : l'unique `await` de la fonction
+        // précède la lecture, tout ce qui suit est synchrone, donc deux appels ne peuvent
+        // pas s'entrelacer. Ce cas était vert par symétrie de microtâches, pas par
+        // invariant — il n'aurait jamais pu rougir sur le retrait du verrou, et il ne l'a
+        // pas fait. Ne pas le réécrire en test de FIFO : l'ordre n'est pas garanti ici, il
+        // l'est un étage au-dessus, par la boucle de drain de `syncUsersConnections`.
+        //
+        // Ce qui reste vrai et peut rougir : un tour qui lève ne laisse pas la composition
+        // à moitié écrite. C'est la barrière qui l'assure — elle précède toute écriture —
+        // et c'est le seul énoncé des deux qui survive au retrait du verrou.
+        it('un tour qui lève ne laisse pas la composition à moitié écrite', async () => {
+            await connections.getRoomUsersDiff([{ slug: 'alice' }])
 
-            expect(first.newUsers.map((u) => u.slug)).toEqual(['alice'])
-            expect(second.newUsers.map((u) => u.slug)).toEqual(['bob'])
-            expect(ctx.connection.remotePeers).toEqual(['alice', 'bob'])
-        })
-
-        it('une erreur dans un appel ne bloque pas le verrou pour les suivants', async () => {
             ctx.waitForMeReady.mockRejectedValueOnce(new Error('boom'))
+            await expect(connections.getRoomUsersDiff([{ slug: 'bob' }])).rejects.toThrow('boom')
 
-            await expect(connections.getRoomUsersDiff([{ slug: 'alice' }])).rejects.toThrow('boom')
+            expect(ctx.connection.remotePeers).toEqual(['alice'])
+            expect(ctx.peerStore.roomMembers[ctx.contextId]).toEqual(['alice'])
 
+            // Et le tour suivant diffe bien depuis la composition intacte, pas depuis un
+            // état partiel : alice part, bob arrive.
             const diff = await connections.getRoomUsersDiff([{ slug: 'bob' }])
             expect(diff.newUsers.map((u) => u.slug)).toEqual(['bob'])
+            expect(diff.removedUsers).toEqual(['alice'])
         })
 
         // ── Synchroniser n'est pas savoir ─────────────────────────────────────
@@ -141,7 +147,12 @@ describe('usePeerConnections', () => {
             expect(diff.removedUsers).toEqual(['alice', 'bob'])
             expect(diff.newUsers).toEqual([])
             expect(ctx.connection.remotePeers).toEqual([])
-            expect(ctx.peerStore.setRoomMembers).toHaveBeenLastCalledWith(ctx.contextId, [])
+            // L'état, pas le verbe : le tour vide doit avoir PURGÉ l'index de présence
+            // partagé, seul prédicat qui autorise à oublier le peerId des partants. En
+            // assertant l'appel, ce cas suivait le nom de l'écrivain plutôt que son effet —
+            // il a rougi au passage de `setRoomMembers` à `computeRoomDiff` sans qu'aucun
+            // comportement ne change.
+            expect(ctx.peerStore.roomMembers[ctx.contextId]).toEqual([])
         })
 
         it('un tour vide ne déclare PAS la présence connue', async () => {

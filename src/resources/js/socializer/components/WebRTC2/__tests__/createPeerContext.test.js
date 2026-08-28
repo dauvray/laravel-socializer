@@ -58,15 +58,25 @@ describe('createPeerContext', () => {
             expect(mountContext({ type: 'visio', room: 'salon' }).contextId).toBe('visio-salon')
         })
 
+        // Deux natures d'isolation, et depuis la migration de la composition dans le store
+        // elles ne se démontrent plus de la même façon : `session` est propre à chaque
+        // contexte par CONSTRUCTION (un `reactive` par appel), tandis que la composition
+        // vit dans un store partagé par tout l'onglet et n'est isolée que par sa CLÉ.
+        // C'est donc ici que se vérifie la règle de granularité du store — « X est présent
+        // dans ma room » est un fait par contexte, `roomMembers[contextId]`. Corollaire
+        // assumé, hérité de `clearSignalQueueRoom` cinq lignes plus haut dans `destroy` :
+        // deux contextes vivants qui partageraient le même `type-room` partageraient aussi
+        // leur composition.
         it('deux contextes ont des états indépendants', () => {
             const a = mountContext({ type: 'data', room: 'r1' })
             const b = mountContext({ type: 'visio', room: 'r2' })
 
             a.session.currentCallUsers = [{ userSlug: 'alice', type: 'visio' }]
-            a.connection.remotePeers = ['alice']
+            peerStore.setRoomMembers(a.contextId, ['alice'])
 
             expect(b.session.currentCallUsers).toEqual([])
             expect(b.connection.remotePeers).toEqual([])
+            expect(a.connection.remotePeers).toEqual(['alice'])
             expect(a.contextId).not.toBe(b.contextId)
         })
 
@@ -338,10 +348,9 @@ describe('createPeerContext', () => {
             it('conserve le peerId d\'un pair toujours en room', () => {
                 const ctx = mountContext()
                 peerStore.addRemotePeerId('alice', 'p-alice')
-                // La présence est déclarée dans le STORE, pas seulement dans le contexte
-                // local : c'est l'index partagé qui fait foi (`setRoomMembers` est écrit
-                // par getRoomUsersDiff, unique producteur de `remotePeers`).
-                ctx.connection.remotePeers = ['alice']
+                // La présence se déclare dans le STORE, et il n'y a plus d'autre endroit où
+                // la déclarer : `ctx.connection.remotePeers` n'est qu'un accesseur au-dessus
+                // de cette entrée. Ce cas posait les deux, du temps où il y en avait deux.
                 peerStore.setRoomMembers(ctx.contextId, ['alice'])
 
                 closeWith(ctx, { type: 'data', room: 'app', slug: 'alice', from: 'alice' })
@@ -627,7 +636,7 @@ describe('createPeerContext', () => {
             const ctx = mountContext({ options: { topology: 'star', hubSlug: 'alice' } })
 
             expect(ctx.isHubConnected.value).toBe(false)
-            ctx.connection.remotePeers = ['alice']
+            peerStore.setRoomMembers(ctx.contextId, ['alice'])
             expect(ctx.isHubConnected.value).toBe(true)
         })
 
@@ -662,7 +671,7 @@ describe('createPeerContext', () => {
             ctx.media.currentStream = { id: 'stream' }
             ctx.media.isStreaming = true
             ctx.media.isCapturing = true
-            ctx.connection.remotePeers = ['alice']
+            peerStore.setRoomMembers(ctx.contextId, ['alice'])
             ctx.addCurrentCallUser('alice', 'visio')
             ctx.callMachine.transition('calling')
         }
@@ -678,6 +687,12 @@ describe('createPeerContext', () => {
             expect(ctx.media.isStreaming).toBe(false)
             expect(ctx.media.isCapturing).toBe(false)
             expect(ctx.connection.remotePeers).toEqual([])
+            // Et l'entrée DISPARAÎT de l'index partagé — elle ne devient pas « room vide ».
+            // C'est ce que lit `isUserInAnyRoom`, qui balaie tous les contextes de l'onglet :
+            // un contexte démonté qui témoignerait encore d'une room vide serait inoffensif,
+            // mais un qui témoignerait d'une room peuplée empêcherait à jamais d'oublier le
+            // peerId de ses membres.
+            expect(ctx.contextId in peerStore.roomMembers).toBe(false)
             expect(ctx.currentCallUsers.value).toEqual([])
             expect(ctx.callStatus.value).toBe('idle')
         })

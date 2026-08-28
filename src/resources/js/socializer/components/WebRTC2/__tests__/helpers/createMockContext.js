@@ -24,6 +24,10 @@ import { isValidSlug } from '~socializer/components/WebRTC2/Composables/utils/va
 // ⚠️ Importée du store, jamais réécrite ici : la clé est un contrat partagé, une
 // seconde implémentation dans le mock divergerait en silence.
 import { waitingPeerIdKey } from '~socializer/stores/peers2/keys.js'
+// Même raison encore : le diff de composition et la valeur d'une room non déclarée sont un
+// contrat partagé. C'est contre CE double que les arrivées et les départs sont assertés — une
+// seconde implémentation du diff rendrait ces assertions muettes sur la production.
+import { diffRoomMembers, EMPTY_MEMBERS } from '~socializer/stores/peers2/roomDiff.js'
 // Même raison : le bail est une politique, elle a un seul domicile.
 import { REMOTE_PEER_ID_LEASE_MS } from '~socializer/components/WebRTC2/webrtc2.config.js'
 import { mockEventBus } from './mockEventBus.js'
@@ -76,22 +80,74 @@ export function createMockContext(overrides = {}) {
         ...(overrides.ui ?? {}),
     })
 
+    // ── Composition des rooms (peerStore.roomMembers) ─────────────────────────
+    // Déclarée ICI, avant `connection`, parce que `connection.remotePeers` n'est qu'un
+    // accesseur au-dessus d'elle — comme en production, où le champ n'existe plus que
+    // sous la forme d'un getter vers `peerStore.roomMembers[contextId]`.
+    //
+    // ⚠️ `reactive`, comme l'état Pinia réel — et la raison exacte a été MESURÉE, parce
+    // qu'elle n'est pas celle qu'on croit. Un semis par le setter ci-dessous déclenche même
+    // sur un objet nu : c'est le proxy de `connection` qui trace la clé `remotePeers` et
+    // déclenche sur l'écriture, l'index n'y est pour rien. Ce qu'un index nu casserait est
+    // le chemin de PRODUCTION — écrire par `computeRoomDiff`, lire par l'accesseur —, que
+    // plus aucun test ne pouvait voir depuis que la production a cessé d'écrire ici. Le
+    // double aurait alors servi des valeurs justes à des lecteurs qui ne se réveillent
+    // jamais. Épinglé par `roomMembersSourceOfTruth.test.js`, vu rouge avec un objet nu.
+    const _roomMembers = reactive({})
+
     // ── Connection state ──────────────────────────────────────────────────────
     // `presenceSynced: true` par défaut — un contexte de test qui se voit attribuer un
     // `remotePeers` (fût-il vide) décrit une room qu'il CONNAÎT. Le laisser à false
     // ferait basculer chaque garde d'admission sur le chemin « je ne sais pas encore »
     // et rendrait les tests de refus dépendants d'un timeout. Les tests qui visent
     // précisément le démarrage d'un contexte le passent explicitement à false.
+    //
+    // ⚠️ `remotePeers` est extrait des overrides AVANT le spread, et sème `_roomMembers` au
+    // lieu d'entrer dans l'objet. Spreadé, il écraserait l'accesseur par un tableau nu et
+    // ressusciterait dans le double le miroir que la production vient de supprimer — sans
+    // rien casser sur le coup : les deux gardes d'autorisation lisent
+    // `Array.isArray(…) ? … : []`, donc la composition serait simplement devenue invisible
+    // au store, et la moitié des tests d'autorisation attend déjà un refus.
+    const { remotePeers: _seededRemotePeers, ...connectionOverrides } = overrides.connection ?? {}
+    if (_seededRemotePeers !== undefined) {
+        _roomMembers[contextId] = Array.isArray(_seededRemotePeers) ? [..._seededRemotePeers] : []
+    }
+
     const connection = reactive({
-        remotePeers: [],
+        // Les pairs DISTANTS de la room, en slugs. Accesseur, pas champ : la composition
+        // vit dans `peerStore.roomMembers[contextId]`, ici comme en production.
+        //
+        // Le setter, lui, N'EXISTE PAS en production — `createPeerContext` n'expose qu'un
+        // getter et une écriture y lève. Il est conservé ici comme verbe de SEMIS, parce
+        // que la moitié des fichiers de test stube `getRoomUsersDiff` : sans écrivain de
+        // production, la composition n'a aucun autre moyen d'exister. Il écrit
+        // `_roomMembers` en direct, jamais via le `vi.fn()` `setRoomMembers`, dont les
+        // appels sont assertés ailleurs.
+        get remotePeers() {
+            return _roomMembers[contextId] ?? EMPTY_MEMBERS
+        },
+        set remotePeers(slugs) {
+            _roomMembers[contextId] = Array.isArray(slugs) ? [...slugs] : []
+        },
         presenceSynced: true,
         // Annuaire `user_id` → slug, `markRaw` comme dans createPeerContext : `reactive()`
         // convertirait la Map en collection réactive, et le double cesserait de se
         // comporter comme la production sur le seul point qui compte ici (une lecture
         // impérative, sans traçage).
         slugByUserId: markRaw(new Map()),
-        ...(overrides.connection ?? {}),
+        ...connectionOverrides,
     })
+
+    // Garde structurel du paragraphe ci-dessus : si un jour un override reprend le chemin
+    // du spread, il aura remplacé l'accesseur par une valeur, et ce test le dira tout de
+    // suite au lieu de laisser un fichier entier verdir pour la mauvaise raison.
+    if (typeof Object.getOwnPropertyDescriptor(connection, 'remotePeers')?.get !== 'function') {
+        throw new Error(
+            'createMockContext: `connection.remotePeers` a perdu son accesseur — la composition '
+            + 'doit se semer via `connection: { remotePeers: [...] }` (extrait avant le spread) '
+            + 'ou `peerStore.setRoomMembers(contextId, [...])`, jamais par une clé spreadée.'
+        )
+    }
 
 
     // ── Lifecycle state (garde de teardown partagé) ───────────────────────────
@@ -130,7 +186,6 @@ export function createMockContext(overrides = {}) {
     // raison. `Debug.vue` itère aussi directement ces entrées.
     const _remotePeerIds = new Map()
     const _waitingRemotePeerIds = new Map()
-    const _roomMembers = {}
     const _signalQueueRooms = {}
     // Registre des contextes montés. Une vraie Map, comme dans peers2/state.js — mais
     // NON réactive des deux côtés : le store réel la pose en `markRaw` précisément pour
@@ -225,8 +280,29 @@ export function createMockContext(overrides = {}) {
             peerStore.clearWaitingRemotePeerIds(slug)
         }),
 
-        // ── Index de présence (roomMembers) ───────────────────────────────────
+        // ── Composition des rooms (roomMembers) ───────────────────────────────
+        // Source de la composition, pas index d'appoint : `connection.remotePeers` est un
+        // accesseur au-dessus de ces entrées.
         roomMembers: _roomMembers,
+        // Curryfié comme le vrai getter, et pour la même raison : il doit relire à chaque
+        // appel. Rend `EMPTY_MEMBERS` — gelé, identité stable — pour un contexte muet.
+        getRoomMembers: vi.fn((contextId) => {
+            if (!contextId) return EMPTY_MEMBERS
+            return _roomMembers[contextId] ?? EMPTY_MEMBERS
+        }),
+        // Diff ET écriture en un appel synchrone, comme le vrai. Le calcul est IMPORTÉ du
+        // store, pas réécrit : c'est contre ce verbe que `usePeerConnections.test.js`
+        // asserte les arrivées et les départs de la production.
+        computeRoomDiff: vi.fn((contextId, nextSlugs = []) => {
+            if (!contextId) return { newSlugs: [], removedSlugs: [] }
+
+            const next = Array.isArray(nextSlugs) ? [...nextSlugs] : []
+            const diff = diffRoomMembers(_roomMembers[contextId], next)
+
+            _roomMembers[contextId] = next
+
+            return diff
+        }),
         setRoomMembers: vi.fn((contextId, slugs = []) => {
             if (!contextId) return
             _roomMembers[contextId] = Array.isArray(slugs) ? [...slugs] : []
@@ -673,7 +749,12 @@ export function createMockContext(overrides = {}) {
         media.isStreaming = false
         media.isCapturing = false
         callMachine.reset()
-        connection.remotePeers = []
+        // Comme `createPeerContext.destroy` : un contexte détruit ne témoigne plus de la
+        // présence de personne, donc son entrée DISPARAÎT — elle ne devient pas « room
+        // vide ». Le double posait un `[]`, écart sans conséquence sur les lectures mais
+        // qui aurait fait divergier la seule chose que cette entrée gouverne encore après
+        // la mort du contexte : `isUserInAnyRoom`, qui balaie tous les contextes.
+        peerStore.clearRoomMembers(contextId)
         connection.presenceSynced = false
         session.authorizedCallPeers.clear()
     })

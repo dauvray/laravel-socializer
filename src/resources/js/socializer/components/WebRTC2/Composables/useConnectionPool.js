@@ -449,7 +449,7 @@ export function useConnectionPool(ctx, { core, connections }) {
         // TOUT l'établissement au drapeau de présence en ferait le point de défaillance
         // unique du module : un jour où il ne serait pas écrit, plus rien ne s'ouvrirait,
         // mesh compris. Ce drapeau garde les autorisations, il ne conditionne pas
-        // l'établissement. Même prédicat que `presenceObserved` dans `_doGetRoomUsersDiff`,
+        // l'établissement. Même prédicat que `presenceObserved` dans `getRoomUsersDiff`,
         // sur la même entrée : les deux se lisent ensemble.
         if (users.length === 0) return
 

@@ -84,8 +84,9 @@ Un invariant se tient à un seul endroit, vérifiable au grep.
 | timers de retry connexion | `useConnectionPool` | `clearRetry` / `clearAllRetries` |
 | routage des signaux serveur | `useSignalingQueue` (table `routes` construite par l'orchestrateur) | exposer un verbe et l'inscrire dans la table — pas de `watch` sur `ctx.lastRoomSignal` ailleurs |
 | `media.announcedStreamsMap` | deux écrivains assumés, chacun sur la seule information qu'il voit : `useBroadcastPresence` — qui porte à lui seul **trois** des quatre chemins d'annonce (`BROADCAST_STATE` sur le data channel, `noteBroadcastFromSignal` pour l'`isBroadcasting` des routes de peerId, `handleBroadcastStateWhisper` pour le canal de présence) — et `usePeerTransport` (appel one-way entrant) ; purge par `useCallManager.handleRemoteDeparture`. ⚠️ les chemins `peer-id` et `presence` marquent mais ne purgent **jamais**, cf. [flux.md](flux.md#comment-un-arrivant-sait-qui-diffuse) | `ctx.markAnnouncedStream` / `ctx.clearAnnouncedStream` (jamais d'écriture directe), lecture via `ctx.announcedStreamPeers` |
-| `peerStore.roomMembers[contextId]` (index de présence) | `usePeerConnections._doGetRoomUsersDiff`, unique producteur de `remotePeers` ; purgé par `createPeerContext.destroy` | `peerStore.isUserInAnyRoom(slug)` en lecture — c'est le prédicat de `removeRemotePeerId` |
-| `connection.slugByUserId` (annuaire d'identité de la room) | `usePeerConnections._doGetRoomUsersDiff`, même écrivain que `remotePeers` mais **écrit devant la barrière `waitForMeReady`** : un whisper arrivé tôt doit rester traduisible, et l'annuaire n'autorise rien (la garde d'affichage est l'intersection de `useAwaitedStreams` avec `remotePeers`) ; purgé par `createPeerContext.destroy` | lecture directe, uniquement pour traduire un `metadata.user_id` de client event en slug |
+| `peerStore.roomMembers[contextId]` — **LA composition de la room, et son seul domicile** | `peerStore.computeRoomDiff`, appelé par `usePeerConnections.getRoomUsersDiff` et par personne d'autre (vérifié au grep par `roomMembersSourceOfTruth.test.js`) ; semé par `setRoomMembers` en test seulement ; purgé par `createPeerContext.destroy` via `clearRoomMembers` — l'entrée **disparaît**, elle ne devient pas « room vide » | **deux lecteurs de nature différente**, et toute politique posée sur cette entrée les touche tous les deux : `peerStore.isUserInAnyRoom(slug)`, qui balaie TOUS les contextes de l'onglet et est le prédicat de `removeRemotePeerId` ; et `peerStore.getRoomMembers(contextId)` — un seul contexte —, que `ctx.connection.remotePeers` expose par accesseur et qui est l'allowlist du chemin (a) des deux gardes d'autorisation |
+| `connection.remotePeers` | **plus un état** : accesseur au-dessus de la ligne ci-dessus. **Aucun setter en production** — une écriture lève un `TypeError`, ce qui remplace définitivement la parade jetable de la passe de renommage. `createMockContext` en garde un, de SEMIS, seul écart assumé avec la production et rendu sûr par le grep qui vérifie qu'aucune source de production n'écrit ce champ | tous les lecteurs de la composition, inchangés — `ctx.remotePeers` en computed pour l'UI |
+| `connection.slugByUserId` (annuaire d'identité de la room) | `usePeerConnections.getRoomUsersDiff`, même écrivain que la composition mais **écrit devant la barrière `waitForMeReady`** : un whisper arrivé tôt doit rester traduisible, et l'annuaire n'autorise rien (la garde d'affichage est l'intersection de `useAwaitedStreams` avec `remotePeers`) ; purgé par `createPeerContext.destroy` | lecture directe, uniquement pour traduire un `metadata.user_id` de client event en slug |
 | `session.authorizedCallPeers` (allowlist du garde sortant) | `useCallManager`, **seul écrivain** : marque à l'acceptation (`acceptCallFromPeer`) et à l'ouverture (`openCallBetweenPeer`) — les deux marquages sont eux-mêmes gardés, cf. ci-dessous —, purge au départ du pair et au `resetCallState` | `ctx.markAuthorizedCallPeer` / `isAuthorizedCallPeer` / `clearAuthorizedCallPeer` / `clearAllAuthorizedCallPeers` — jamais d'écriture directe, et **jamais** `session.currentCallUsers` à sa place (état d'affichage, cf. [securite.md](securite.md)) |
 
 L'état *plat* partagé (`session.currentCallUsers`, via `ctx.addCurrentCallUser` &co.) n'a
@@ -215,6 +216,19 @@ Cinq corollaires à ne pas défaire :
   l'expiration pour que la résolution inverse rende `null` et que le refus sur contradiction
   cesse de mordre. Corollaire : une expiration ne **supprime** jamais l'entrée. On cesse de
   composer, on ne cesse pas de reconnaître.
+- **`roomMembers[contextId]` s'écrit par RÉAFFECTATION du tableau entier, jamais par mutation
+  en place.** Depuis que `connection.remotePeers` est un accesseur au-dessus de cette entrée,
+  tous les lecteurs de la composition tracent la **clé** ; un `push` ne la touche pas, donc il
+  laisse les valeurs justes et les lecteurs endormis. C'est le piège qui avait rendu
+  `roomSignals` inconsommable, transposé à la composition. Épinglé au grep, sur les sources de
+  production, par `roomMembersSourceOfTruth.test.js`.
+- **Deux contextes vivants qui partageraient le même `type-room` partageraient leur
+  composition** — donc leur allowlist, et le `clearRoomMembers` du premier démonté viderait
+  celle de l'autre. Hasard **assumé**, et pas nouveau : `clearSignalQueueRoom(contextId)`, cinq
+  lignes plus haut dans le même `destroy`, l'a déjà, et le last-write-wins de `registerContext`
+  en est la forme reconnue. La migration l'élargit à l'allowlist ; la panne reste fail-closed —
+  un refus, réparé au tour de présence suivant — et non une fuite de privilège. `contextId`
+  étant dérivé de `type` et `room`, aucun appelant actuel ne le produit.
 
 ⚠️ **Un test à un seul contexte par onglet ne peut pas voir ces pannes.** Le harnais monte
 donc plusieurs contextes par pair virtuel (`peer.mountContext()`), et les scénarios leur
@@ -430,17 +444,22 @@ scénarios) et `_hubRateLimiter` (arbitrage « verbe `.reset()` plutôt que Pini
   ouvre son propre `effectScope` et arme sa propre alarme de 15 s. Tout code qui la rappelle en
   boucle paie donc l'attente à chaque tour, et un flot d'appels sur un contexte jamais prêt accumule
   autant de timers. Ne pas déduire le comportement de l'une de celui de l'autre
-- **Verrou de `syncUsersConnections`** : il **coalesce**, il ne jette pas. Un `return` sec sur
-  verrou tenu ne perdait pas qu'une action : `getRoomUsersDiff` est l'unique écrivain de
-  `remotePeers`, `presenceSynced` et `roomMembers`, donc un tour sauté laissait **trois** états
-  périmés d'un coup — dont l'allowlist de présence que lisent les deux gardes d'autorisation. Et la
+- **Verrou de `syncUsersConnections`** : il **coalesce**, il ne jette pas — et c'est désormais le
+  **seul** verrou du chemin. `getRoomUsersDiff` en a porté un seçond, `_diffLock`, censé garder un
+  TOCTOU entre la lecture de la composition précédente et son écriture ; il ne gardait rien, l'unique
+  `await` de la fonction précédant la lecture, et il a été retiré avec la migration de la composition
+  dans le store. Ne pas le réintroduire : ce qu'il aurait sérialisé l'est ici, par la boucle de drain.
+  Un `return` sec sur verrou tenu ne perdait pas qu'une action : `getRoomUsersDiff` est l'unique
+  écrivain de la composition (`roomMembers[contextId]`, que `connection.remotePeers` expose) **et** de
+  `presenceSynced`, donc un tour sauté laissait périmée l'allowlist de présence que lisent les deux
+  gardes d'autorisation. Et la
   fenêtre est celle de `waitForMeReady` (jusqu'à 15 s au démarrage), c'est-à-dire le moment où la
   composition bouge le plus. On retient donc la **dernière** liste reçue pendant le tour et on la
   rejoue à la libération ; les intermédiaires sont écrasées sans être traitées, une liste de
   présence n'ayant pas d'historique. Le drain s'arrête sur `isShuttingDown` — rejouer après
   `beginShutdown()` rouvrirait ce que le teardown vient de fermer — mais les appelants coalescés
   résolvent **toujours**. Épinglé par `useConnectionPool.test.js` (§ `syncUsersConnections`)
-- **Synchroniser n'est pas savoir.** `_doGetRoomUsersDiff` écrit `remotePeers` et `roomMembers` à
+- **Synchroniser n'est pas savoir.** `getRoomUsersDiff` écrit la composition à
   **tous** les tours, `presenceSynced` seulement sur un tour qui a **observé** quelque chose —
   `users.length > 0`, mesuré sur la liste **brute**, avant le filtrage de mon propre slug. Les deux
   moitiés comptent. Le tour sur liste vide est le **seul** capable de purger le dernier partant

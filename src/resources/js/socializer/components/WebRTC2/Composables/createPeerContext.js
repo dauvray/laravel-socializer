@@ -111,11 +111,26 @@ export function createPeerContext({ type, room, options = {} }) {
     // CONNECTION STATE
     const connection = reactive({
         // Les pairs DISTANTS de la room, en slugs — mon propre slug en est filtré à la
-        // source (usePeerConnections._doGetRoomUsersDiff). Le nom dit l'exclusion parce
+        // source (usePeerConnections.getRoomUsersDiff). Le nom dit l'exclusion parce
         // que tous les lecteurs en dépendent : c'est « les pairs auxquels je dois me
         // connecter », pas « les membres de la room ». C'est aussi l'allowlist du
         // chemin (a) des deux gardes d'autorisation.
-        remotePeers: [],
+        //
+        // ⚠️ ACCESSEUR, pas champ : la composition vit dans `peerStore.roomMembers[contextId]`
+        // et n'a plus qu'un domicile. Elle en a eu deux — ce champ et sa projection dans le
+        // store —, tenus synchrones par la seule discipline « les deux écritures restent dans
+        // la même fonction », et il n'y avait aucun garde structurel derrière cette phrase.
+        //
+        // ⚠️ Aucun setter, volontairement : une écriture lève (`TypeError` de piège `set`,
+        // le code de module étant en mode strict). C'est la parade au mode de panne qui a
+        // coûté la passe de renommage précédente — les deux gardes lisent
+        // `Array.isArray(…) ? … : []`, donc une écriture qui manquerait sa cible ne
+        // casserait rien, elle rendrait la composition invisible et basculerait le verdict
+        // vers « refusé », que la moitié des tests d'autorisation attend déjà. L'unique
+        // écrivain de production est `peerStore.computeRoomDiff`.
+        get remotePeers() {
+            return peerStore.getRoomMembers(contextId)
+        },
 
         // La composition de la room a-t-elle été OBSERVÉE au moins une fois ?
         //
@@ -124,7 +139,9 @@ export function createPeerContext({ type, room, options = {} }) {
         // Les gardes d'admission lisent cette différence — refuser sur « je ne sais pas »
         // ferme la porte à tout contact légitime reçu pendant le démarrage du contexte.
         //
-        // Même écrivain unique que `remotePeers` : usePeerConnections._doGetRoomUsersDiff.
+        // Écrit au même endroit que la composition — `usePeerConnections.getRoomUsersDiff`,
+        // qui reste l'écrivain unique des deux, quoiqu'ils vivent désormais dans des
+        // domiciles distincts : ce drapeau ici, la composition dans le store.
         // Mais les deux n'avancent PAS au même rythme : un tour de synchronisation sur
         // liste vide réécrit la liste (c'est ce qui purge une room qui se vide) sans rien
         // déclarer connu. L'invariant que l'écrivain unique garantit est donc directionnel
@@ -717,9 +734,12 @@ export function createPeerContext({ type, room, options = {} }) {
         // Remet la machine d'état d'appel à IDLE et vide closingUsers
         callMachine.reset()
 
-        // Réinitialise la liste des pairs distants — et le fait de la connaître :
-        // un contexte détruit ne sait plus qui est membre, il ne sait pas « personne ».
-        connection.remotePeers = []
+        // Le fait de connaître la composition retombe ici ; la composition elle-même est
+        // déjà partie plus haut, avec `clearRoomMembers` — un contexte détruit ne sait plus
+        // qui est membre, il ne sait pas « personne ». Les deux moitiés vivaient côte à côte
+        // tant que la liste était un champ de `connection` ; depuis qu'elle est dans le
+        // store, elles se rabaissent à vingt lignes d'écart, et rien entre les deux ne lit
+        // la composition (vérifié).
         connection.presenceSynced = false
         // Même raison, et une de plus : l'annuaire est ce qui rend un `user_id` de whisper
         // traduisible. Le laisser survivre à un contexte détruit laisserait attribuable

@@ -98,7 +98,12 @@ describe('usePeerTransport — forwardStarMessage (validation envelope.to)', () 
         const evil = 'bob; rm -rf /'
         // Une connexion existe malgré un slug malformé : le filtre _isValidSlug doit primer.
         const evilSend = addOpenConn(evil)
-        ctx.connection.remotePeers.push(evil)
+        // Semis par RÉAFFECTATION, jamais par `push` : la composition vit dans
+        // `peerStore.roomMembers[contextId]` et ses lecteurs tracent la clé, qu'une mutation
+        // en place ne touche pas. Ici la lecture est impérative et un `push` marcherait —
+        // mais alors ce fichier serait le seul endroit du dépôt à muter la composition, et
+        // le modèle à copier au prochain test.
+        ctx.connection.remotePeers = [...ctx.connection.remotePeers, evil]
 
         transport.forwardStarMessage(
             { __starRoute: true, to: [evil], from: SENDER, payload: 'x' },
@@ -197,10 +202,8 @@ describe('usePeerTransport — forwardStarMessage (validation envelope.to)', () 
          */
         it('laisse passer un premier fan-out dont le coût dépasse à lui seul le budget', () => {
             const members = Array.from({ length: 60 }, (_, i) => `member${i}`)
-            members.forEach(slug => {
-                ctx.connection.remotePeers.push(slug)
-                addOpenConn(slug)
-            })
+            ctx.connection.remotePeers = [...ctx.connection.remotePeers, ...members]
+            members.forEach(slug => addOpenConn(slug))
 
             // 32 Ko × 60 destinataires ≈ 1,9 Mio, au-delà du budget d'une fenêtre.
             expect(CHUNK.length * members.length).toBeGreaterThan(HUB_MAX_BYTES_PER_WINDOW)

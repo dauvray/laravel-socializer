@@ -4,6 +4,9 @@ import { waitingPeerIdKey } from '~socializer/stores/peers2/keys.js'
 // d'appel — dupliquerait la POLITIQUE sur deux lecteurs : la classe de divergence
 // silencieuse contre laquelle keys.js a été extrait.
 import { REMOTE_PEER_ID_LEASE_MS } from '~socializer/components/WebRTC2/webrtc2.config.js'
+// Même raison que keys.js : la valeur d'une composition non déclarée est un contrat partagé
+// entre ce getter, l'action qui l'écrit et le double de test qui décide comme eux.
+import { EMPTY_MEMBERS } from '~socializer/stores/peers2/roomDiff.js'
 
 export default {
 
@@ -178,6 +181,26 @@ export default {
     /*--------------------------
     | Composition des rooms (index de présence)
     --------------------------*/
+    /**
+     * La composition déclarée par UN contexte — les pairs distants de sa room, en slugs.
+     *
+     * Unique chemin de lecture de `roomMembers` à cette granularité : `connection.remotePeers`
+     * n'est qu'un accesseur au-dessus de lui, et c'est ce que lisent l'allowlist du chemin (a)
+     * des deux gardes d'autorisation et le fan-out de connexions.
+     *
+     * ⚠️ Curryfié comme ses voisins, et ici pour une raison de plus que la leur : rendre la
+     * VALEUR ferait un `computed` par store, pas par contexte — il ne pourrait pas dépendre
+     * de son argument. Le contrat est « relis à chaque appel ».
+     *
+     * Rend `EMPTY_MEMBERS` — gelé et d'identité stable — pour un contexte qui n'a rien
+     * déclaré, jamais `undefined` : tous les lecteurs itèrent ou filtrent le résultat, et un
+     * `[]` neuf par lecture réveillerait un `watch` à chaque tour.
+     */
+    getRoomMembers: (state) => (contextId) => {
+        if (!contextId) return EMPTY_MEMBERS
+        return state.roomMembers[contextId] ?? EMPTY_MEMBERS
+    },
+
     /**
      * Ce pair est-il présent dans au moins une room connue de cet onglet ?
      * Seul prédicat qui autorise à oublier son peerId (cf. removeRemotePeerId).

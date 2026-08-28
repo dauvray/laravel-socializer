@@ -1,6 +1,9 @@
 import { toRaw } from 'vue'
 import { isEmpty } from '~estarter/services/helpers.js'
 import { waitingPeerIdKey } from '~socializer/stores/peers2/keys.js'
+// Même raison que keys.js : le diff de composition est un contrat partagé avec le double de
+// test, contre lequel les arrivées et les départs sont assertés.
+import { diffRoomMembers } from '~socializer/stores/peers2/roomDiff.js'
 
 export default {
 
@@ -469,15 +472,68 @@ export default {
     /*--------------------------
     | Composition des rooms (index de présence)
     |
-    | Projection, par contexte, de `ctx.connection.remotePeers`. Son unique raison d'être
-    | est de donner un prédicat FIABLE à removeRemotePeerId ci-dessous : « ce pair est-il
-    | encore présent dans une room de cet onglet ? ». La map `connections` servait
-    | auparavant de proxy pour cette question et y répondait mal — elle décrit des
-    | connexions PeerJS, dont l'existence dépend de l'ordre des purges et pas de la
-    | présence réelle.
+    | LA composition, par contexte — pas une projection : `ctx.connection.remotePeers` est un
+    | accesseur en lecture seule au-dessus de `roomMembers[contextId]`. Elle sert deux
+    | lecteurs de nature différente, et c'est ce qui gouverne toute décision ici :
+    |
+    |   - `isUserInAnyRoom` ci-dessous — un balayage de TOUS les contextes de l'onglet, seul
+    |     prédicat qui autorise à oublier un peerId. La map `connections` servait auparavant
+    |     de proxy pour cette question et y répondait mal : elle décrit des connexions PeerJS,
+    |     dont l'existence dépend de l'ordre des purges et pas de la présence réelle ;
+    |   - `getRoomMembers` — la lecture d'UN contexte, qui est l'allowlist du chemin (a) des
+    |     deux gardes d'autorisation.
+    |
+    | ⚠️ Toutes les écritures ci-dessous RÉAFFECTENT le tableau, aucune ne le mute : les
+    | lecteurs tracent la clé, et une mutation en place ne l'invalide pas (cf. state.js).
     --------------------------*/
 
-    /** Déclare la composition d'une room pour un contexte. @param {string} contextId */
+    /**
+     * Le diff d'un tour de présence ET son écriture, en un seul appel synchrone.
+     *
+     * ⚠️ Ce que ce verbe apporte est **un seul chemin d'écriture** vers l'allowlist, la
+     * valeur précédente étant lue là où la nouvelle est écrite. Ce n'est PAS l'atomicité —
+     * à ne pas re-dériver : le couple lecture-puis-écriture de `usePeerConnections` n'a
+     * jamais eu de point de suspension entre ses deux moitiés (son unique `await` précède
+     * la lecture), donc aucun TOCTOU n'y était possible et le mutex `_diffLock` qui
+     * prétendait le garder n'a jamais rien gardé. Ce qu'il sérialisait, l'ordre des tours,
+     * l'est déjà par la boucle de drain de `useConnectionPool.syncUsersConnections` — son
+     * seul appelant.
+     *
+     * Rester SYNCHRONE est en revanche un invariant : le jour où ce verbe deviendrait
+     * asynchrone, la fenêtre s'ouvrirait pour de bon. `peers2Store.roomMembers.test.js`
+     * l'épingle en assertant l'état sans `await`.
+     *
+     * L'appelant garde ses barrières asynchrones AVANT l'appel — ce verbe ne décide pas
+     * quand un tour a le droit d'écrire, seulement ce que ce tour change.
+     *
+     * ⚠️ Écrit à TOUS les tours, observation ou non : sur une liste vide, `removedSlugs`
+     * vaut la composition précédente entière, et c'est le seul tour qui puisse rendre le
+     * dernier partant purgeable.
+     *
+     * @param {string} contextId
+     * @param {string[]} nextSlugs  Composition observée à ce tour (pairs DISTANTS)
+     * @returns {{ newSlugs: string[], removedSlugs: string[] }}
+     */
+    computeRoomDiff(contextId, nextSlugs = []) {
+        if (!contextId) return { newSlugs: [], removedSlugs: [] }
+
+        const next = Array.isArray(nextSlugs) ? [...nextSlugs] : []
+        const diff = diffRoomMembers(this.roomMembers[contextId], next)
+
+        this.roomMembers[contextId] = next
+
+        return diff
+    },
+
+    /**
+     * Déclare la composition d'une room pour un contexte, sans rien calculer.
+     *
+     * Reste le verbe de SEMIS — un test qui doit poser une composition sans faire tourner
+     * `getRoomUsersDiff`, et rien d'autre en production : l'écrivain de production est
+     * `computeRoomDiff` ci-dessus.
+     *
+     * @param {string} contextId
+     */
     setRoomMembers(contextId, slugs = []) {
         if (!contextId) return
         this.roomMembers[contextId] = Array.isArray(slugs) ? [...slugs] : []
