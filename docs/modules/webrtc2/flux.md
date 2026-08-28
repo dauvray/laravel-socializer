@@ -245,28 +245,50 @@ traduisible.
 
 ### Lire l'état du Peer local
 
-Trois verbes du store, à connaître avant de diagnostiquer quoi que ce soit sur le Peer :
+**`peerIdentity()` est le seul chemin de lecture.** Aucun code de production ne lit un champ brut
+du Peer — ni `peerPhase`, ni `lastLocalPeerId`, ni `localPeer.destroyed`. Six prédicats
+répondaient chacun à sa façon à « ai-je un peer utilisable, et quel est son id ? », ils
+divergeaient, et cette divergence était la cause commune de la plupart des pannes du module.
 
 | Verbe | Rend | À quoi il sert |
 |---|---|---|
-| `peerStore.peerIdentity()` | `{ state, id, lastId, consumers }`, `state` parmi `absent` · `creating` · `connecting` · `ready` · `disconnected` · `destroyed` | réconcilier en un seul fait les **six** prédicats qui répondent aujourd'hui à « ai-je un peer utilisable, et quel est son id ? » |
-| `peerStore.peerStateViolations()` | les contradictions présentes, chacune avec un `code` stable | nommer un état incohérent au lieu de le déduire |
-| `peerStore.auditPeerState('<transition>')` | idem, **et** hurle sur `console.error` en dev | dire quelle transition a produit la contradiction |
+| `peerStore.peerIdentity()` | `{ state, id, lastId, consumers }`, `state` parmi `absent` · `creating` · `connecting` · `ready` · `disconnected` · `destroyed` | LE fait : l'état du Peer et son identité |
+| `peerStore.peerStateViolations()` | les contradictions présentes, chacune avec un `code` stable | confronter le **déclaré** à l'**observé** |
+| `peerStore.auditPeerState('<transition>')` | idem, **et** hurle sur `console.error` | dire quelle transition a produit la contradiction |
 
-`id` est l'identité **courante**, `lastId` l'identité **historique**, et leur divergence est le cœur
-de la panne la plus silencieuse du module : `Peer.disconnect()` met `_id` à `null` alors que
-`lastLocalPeerId` reste posé, or `waitForMeReady` ne consulte que le second. L'onglet se croit
-joignable, ne répond plus à aucune demande de peerId, et rien ne le dit — d'où le code
-`id-historique-sur-peer-inutilisable`, qui se déclenche exactement quand aucune reconnexion n'est
-plus en vol.
+`id` est l'identité **courante**, `lastId` l'identité **historique**, et leur divergence était le
+cœur de la panne la plus silencieuse du module : `Peer.disconnect()` met `_id` à `null` alors que
+`lastLocalPeerId` reste posé, et `waitForMeReady` ne consultait que le second — l'onglet se croyait
+joignable, ne répondait plus à aucune demande de peerId, et rien ne le disait. **La barrière lit
+désormais l'identité courante** ; ce qui l'épingle, ce sont les trois cas
+« ne répond pas prêt sur un peer détruit / déconnecté sans recours / attend la fin d'un backoff »
+de `createPeerContext.test.js`. Le code `id-historique-sur-peer-inutilisable` reste : l'état est
+toujours atteignable, seul son exploitant a disparu.
 
-> ⚠️ **Ces trois verbes sont des getters rendant une FONCTION**, comme `getWaitingRemotePeerId`.
-> `localPeer` porte un `Peer` `markRaw` : ses mutations internes (`_open`, `_disconnected`,
-> `_destroyed`) sont invisibles à Vue, donc un `computed` servirait un état partiellement périmé —
-> pire qu'un état absent pour un outil d'observation.
+#### La phase, et ce qu'elle ne décide pas
 
-C'est un **instrument de mesure, pas encore la source de vérité** : aucun lecteur n'est migré. La
-machine à états qui les remplacera est un item de [`work/`](../../../work/webrtc2-todo.md).
+Un seul fait est **déclaré** — `peerPhase`, dans le store (`absent` · `creating` · `connecting` ·
+`ready` · `disconnected`), écrit par les transitions `markPeerCreating` / `markPeerConnecting` /
+`markPeerOpen(id)` / `markPeerDisconnected` / `markPeerAbsent`, appelées par le seul
+`usePeerTransport`. Il fallait un fait **réactif** : `localPeer` est `markRaw`, donc les mutations
+internes du `Peer` sont invisibles à Vue et aucun `watchEffect` — celui de `waitForMeReady` en
+particulier — ne serait réveillé par une reconnexion.
+
+Deux règles, et elles sont ce qui empêche la phase de devenir un septième prédicat menteur :
+
+- **L'observation l'emporte sur la déclaration.** `destroyed` / `disconnected` sont écrits par
+  PeerJS ; une phase qui prétendrait `ready` sur un peer détruit n'est pas crue par
+  `peerIdentity()`, elle est signalée (`pret-mais-detruit`).
+- **Une transition inattendue est appliquée, jamais refusée** — l'inverse de
+  `useCallStateMachine`, qui arbitre des actions et refuse. Ici la phase ne fait que SUIVRE une
+  bibliothèque tierce : refuser la laisserait décrire un peer qui n'existe plus. Elle est donc
+  appliquée et journalisée (`[WebRTC2][peerFSM]`). Épinglé par `peers2Store.peerRuntime.test.js` ›
+  « APPLIQUE une transition inattendue, en la journalisant ».
+
+> ⚠️ **Les trois verbes du tableau sont des getters rendant une FONCTION**, comme
+> `getWaitingRemotePeerId`, et pour la même raison que ci-dessus : sur un `Peer` `markRaw`, un
+> `computed` servirait un état partiellement périmé — pire qu'un état absent pour un outil
+> d'observation. Ce qui est réactif, c'est la phase ; ce qui est juste, c'est le getter.
 
 Côté journal, toute destruction du Peer nomme sa **cause** (`_schedulePeerDestroy` /
 `_destroyPeerSingleton`) et son peerId, relevé **avant** le `destroy()` — après, `disconnect()` l'a

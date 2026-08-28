@@ -16,7 +16,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createMockContext } from './helpers/createMockContext.js'
 import { withSetup } from './helpers/withSetup.js'
-import { resetPeerMock, getLastPeerInstance } from './__mocks__/peerjs.js'
+import { bootLocalPeer } from './helpers/bootLocalPeer.js'
+import { resetPeerMock } from './__mocks__/peerjs.js'
 import { usePeerTransport } from '~socializer/components/WebRTC2/Composables/usePeerTransport.js'
 import { REMOTE_PEER_ID_LEASE_MS } from '~socializer/components/WebRTC2/webrtc2.config.js'
 
@@ -55,8 +56,9 @@ describe('usePeerTransport — recovery peer-unavailable', () => {
 
         mount(ctx)
         const transport = withSetup(() => usePeerTransport(ctx))[0]
-        await transport.setLocalPeer()
-        peerInstance = getLastPeerInstance()
+        // Jusqu'à `'open'` : la recovery se juge sur un onglet réellement joignable — un
+        // peer resté à mi-chemin n'est pas l'état dans lequel un `peer-unavailable` arrive.
+        peerInstance = await bootLocalPeer(() => transport.setLocalPeer(), { peerId: 'peer-me' })
 
         // État de départ commun : A connaît un peerId de bob, désormais mort.
         ctx.peerStore.addRemotePeerId('bob', STALE_PEER_ID)

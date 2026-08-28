@@ -99,6 +99,29 @@ export function usePeerCore(ctx) {
         userSlugToInviteId.clear()
     }
 
+    /**
+     * Mon peerId, **s'il est publiable** — sinon `null`.
+     *
+     * Les quatre routes de ce fichier ne font qu'une chose de cet id : le POSTer à un pair,
+     * qui composera dessus. Le publier avant que le serveur PeerJS ne l'ait confirmé (`'open'`
+     * non reçu) revient donc à donner rendez-vous à une adresse qui n'existe pas encore : en
+     * face, « Could not connect to peer <uuid> », et aucune erreur de notre côté.
+     *
+     * ⚠️ La lecture passe par `peerIdentity()` et NON par l'ancien `getLocalPeerId`, qui
+     * rendait `localPeer.id` quelle que soit la phase. L'id existe pourtant dès la
+     * construction — c'est nous qui le fournissons au constructeur (cf. `usePeerTransport`,
+     * « l'id est fourni PAR NOUS ») — donc l'ancien garde ne refusait JAMAIS pendant la
+     * fenêtre `connecting`. C'est exactement ce que le commentaire de
+     * `sendAuthorizationRemotePeerId` supposait déjà résolu : « le pair le redemandera, et le
+     * garde répondra dès que le Peer sera prêt ».
+     *
+     * @returns {?string}
+     */
+    const publishableLocalPeerId = () => {
+        const { state, id } = ctx.peerStore.peerIdentity()
+        return state === 'ready' ? id : null
+    }
+
     /*------  Connection directe ----------*/
 
     /**
@@ -127,7 +150,7 @@ export function usePeerCore(ctx) {
         const room = ctx.session.onAirRoom
         const type = ctx.session.currentType
         const requestedType = connectionType || type
-        const localPeerId = ctx.peerStore.getLocalPeerId
+        const localPeerId = publishableLocalPeerId()
 
         if (!localPeerId) {
             console.warn('localPeer pas encore prêt')
@@ -202,10 +225,11 @@ export function usePeerCore(ctx) {
         // Sans peerId local on POSTerait `peerId: null` : le pair distant ne pourrait
         // jamais se connecter et rien ne réessaierait sur ce chemin. Symétrique de la
         // garde de requestRemotePeerConnection.
-        // ⚠️ Cette garde reste nécessaire malgré le waitForMeReady de useSignalingQueue :
-        // celui-ci attend `peerStore.lastLocalPeerId` (réactif), alors qu'on lit ici
-        // `localPeer.id`, remis à null par peer.reconnect() — les deux peuvent diverger.
-        const localPeerId = ctx.peerStore.getLocalPeerId
+        // ⚠️ Cette garde reste nécessaire malgré le `waitForMeReady` de `useSignalingQueue`,
+        // et pour une raison qui a changé : les deux lisent désormais le même fait
+        // (`peerIdentity`), mais pas au même MOMENT. La barrière est franchie une fois, en
+        // amont du routage ; le peer peut tomber entre-temps.
+        const localPeerId = publishableLocalPeerId()
         if (!localPeerId) {
             console.warn('[usePeerCore] responseRemotePeerConnection: localPeer pas encore prêt')
             return false
@@ -276,7 +300,7 @@ export function usePeerCore(ctx) {
 
     const requestAuthorizationRemotePeerId = async (payload) => {
 
-        const localPeerId = ctx.peerStore.getLocalPeerId
+        const localPeerId = publishableLocalPeerId()
 
         // Symétrique des gardes de `requestRemotePeerConnection` (:109) et
         // `responseRemotePeerConnection` (:181), qui manquait ici.
@@ -356,7 +380,7 @@ export function usePeerCore(ctx) {
 
     const sendAuthorizationRemotePeerId = async (payload) => {
         if (payload.status) {
-            const localPeerId = ctx.peerStore.getLocalPeerId
+            const localPeerId = publishableLocalPeerId()
 
             // ⚠️ Ici, contrairement aux trois autres gardes, on N'ANNULE PAS l'envoi : ce
             // message est une ACCEPTATION d'appel, et le refuser la perdrait pour de bon —

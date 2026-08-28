@@ -22,6 +22,7 @@
 import { reactive, computed, ref, inject, onBeforeMount, onUnmounted, watchEffect, effectScope, shallowReactive, markRaw } from 'vue'
 import { useAjaxService } from '~estarter/services/AjaxService.js'
 import { usePeer2Store } from '~socializer/stores/peers2.js'
+import { PEER_PHASES } from '~socializer/stores/peers2/phases.js'
 import { useServerStore } from '~socializer/stores/server.js'
 import { useMeStore } from '~estarter/stores/me.js'
 import { createCallStateMachine } from '~socializer/components/WebRTC2/Composables/utils/useCallStateMachine.js'
@@ -288,7 +289,13 @@ export function createPeerContext({ type, room, options = {} }) {
 
         mySlug: computed(() => meStore.getMe?.slug),
         myName: computed(() => meStore.getMe?.name),
-        localPeerId: computed(() => peerStore.lastLocalPeerId),
+        // Mon peerId JOIGNABLE, `null` sinon. Exposé à l'UI (`Widgets/UI/Report/Debug.vue`),
+        // où afficher l'id d'un peer mort est précisément ce qui a fait chercher au mauvais
+        // endroit. `peerPhase` est la dépendance réactive — `localPeer` est `markRaw`, donc
+        // un computed qui ne lirait que l'identité ne s'invaliderait jamais.
+        localPeerId: computed(() => (
+            peerStore.peerPhase === PEER_PHASES.READY ? peerStore.peerIdentity().id : null
+        )),
     }
 
     // HELPERS (fonctions utilitaires, actions synchrones)
@@ -359,10 +366,33 @@ export function createPeerContext({ type, room, options = {} }) {
             scope.run(() => {
                 watchEffect(() => {
                     const slug = meStore.getMe?.slug
-                    // peerStore.lastLocalPeerId est réactif (Pinia) et mis à jour par l'événement
-                    // 'open' de PeerJS — contrairement à localPeer.id qui est markRaw.
-                    const peerId = peerStore.lastLocalPeerId
-                    if (slug && peerId) {
+
+                    // ⚠️ Deux lectures, et chacune fait un travail que l'autre ne peut pas.
+                    //
+                    // `peerPhase` est le DÉCLENCHEUR : c'est le seul fait réactif du cycle de
+                    // vie du Peer, écrit par les transitions du store. `localPeer` porte un
+                    // `Peer` `markRaw`, donc ses mutations internes (`_open`, `_disconnected`,
+                    // `_destroyed`) sont invisibles à Vue : un `watchEffect` qui ne lirait que
+                    // l'identité ne serait jamais réveillé par une reconnexion.
+                    //
+                    // `peerIdentity()` est le VERDICT, et il porte l'identité COURANTE.
+                    // L'ancienne version consultait `lastLocalPeerId` — un fait HISTORIQUE
+                    // que seul `_destroyPeerSingleton` retire, et que le `.catch` d'init
+                    // laisse sciemment posé : elle répondait donc « prêt » sur un peer
+                    // détruit ou déconnecté sans recours, et tout ce qui reprenait derrière
+                    // publiait un peerId que le serveur PeerJS ne connaît plus. C'est la
+                    // panne la plus silencieuse du module ; `peerStateViolations` la nomme
+                    // `id-historique-sur-peer-inutilisable`.
+                    //
+                    // Ne rien résoudre du tout hors de `ready` est délibéré : une coupure
+                    // transitoire est suivie d'un backoff, et abandonner sur `false` y
+                    // ferait sortir les quatre consommateurs par leur `if (!ready) return`
+                    // alors que la reconnexion allait aboutir. Le timeout est le filet.
+                    const identity = peerStore.peerPhase === PEER_PHASES.READY
+                        ? peerStore.peerIdentity()
+                        : null
+
+                    if (slug && identity?.state === 'ready' && identity.id) {
                         // On initialise le contexte dès que l'identité locale est réellement prête.
                         session.isHub = (slug === session.hubSlug)
                         _resolve(true)

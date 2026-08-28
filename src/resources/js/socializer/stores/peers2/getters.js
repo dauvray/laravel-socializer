@@ -7,6 +7,8 @@ import { REMOTE_PEER_ID_LEASE_MS } from '~socializer/components/WebRTC2/webrtc2.
 // Même raison que keys.js : la valeur d'une composition non déclarée est un contrat partagé
 // entre ce getter, l'action qui l'écrit et le double de test qui décide comme eux.
 import { EMPTY_MEMBERS } from '~socializer/stores/peers2/roomDiff.js'
+// Même raison : la phase du Peer est un contrat partagé avec les actions qui l'écrivent.
+import { PEER_PHASES } from '~socializer/stores/peers2/phases.js'
 
 export default {
 
@@ -45,27 +47,32 @@ export default {
     },
 
     /*--------------------------
-    | Identité du Peer local — le fait dérivé
+    | Identité du Peer local — LE fait, et le seul chemin de lecture
     --------------------------*/
     // ⚠️ Fonction, pas `computed`, pour la MÊME raison que les deux getters ci-dessus, mais par
     // un autre chemin : `localPeer` porte un `Peer` `markRaw` (cf. usePeerTransport), donc ses
     // mutations internes (`_open`, `_disconnected`, `_destroyed`) sont invisibles à Vue. Un
-    // `computed` ne s'invaliderait que sur `localPeerReady` : il servirait un état PARTIELLEMENT
+    // `computed` ne s'invaliderait que sur `peerPhase` : il servirait un état PARTIELLEMENT
     // périmé, ce qui est pire qu'un état absent pour un outil d'observation.
 
     /**
-     * L'état du Peer local et son identité, en UN seul fait lisible.
+     * L'état du Peer local et son identité, en UN seul fait lisible — et **le seul chemin de
+     * lecture** de la production. Les champs bruts (`peerPhase`, `lastLocalPeerId`,
+     * `localPeer.destroyed`, …) ne se lisent plus ailleurs : les six prédicats qui répondaient
+     * chacun à sa façon à « ai-je un peer utilisable, et quel est son id ? » divergeaient, et
+     * cette divergence était la cause commune de la plupart des pannes du module.
      *
-     * Six prédicats coexistent aujourd'hui pour répondre à « ai-je un peer utilisable, et quel
-     * est son id ? » — `localPeer`, `localPeerReady`, `lastLocalPeerId`, `peerInitPromise`,
-     * `localPeer.disconnected`, `localPeer.destroyed` — et ils divergent. Ce getter ne les
-     * remplace pas encore (aucun lecteur n'est migré) : il les RÉCONCILIE en un seul endroit,
-     * pour qu'on puisse enfin mesurer avant de reconcevoir.
+     * ⚠️ **L'observation l'emporte sur la déclaration**, et c'est la règle de conception :
+     * `peerPhase` est écrite par nos transitions, tandis que `destroyed` / `disconnected` sont
+     * écrits par PeerJS sur l'instance. Une phase qui prétendrait `ready` sur un peer détruit
+     * n'est donc pas crue ici — elle est signalée par `peerStateViolations`
+     * (`pret-mais-detruit`). C'est ce qui empêche la phase de devenir un septième prédicat
+     * capable de mentir à son tour.
      *
      * `id` est l'identité COURANTE, `lastId` l'identité HISTORIQUE, et leur divergence est le
      * cœur du problème : `Peer.disconnect()` met `_id` à `null` (peerjs 1.5.4,
-     * `dist/bundler.mjs:1809`) alors que `lastLocalPeerId` reste posé. `waitForMeReady` lit le
-     * second et répond « prêt » quand le premier ne vaut plus rien.
+     * `dist/bundler.mjs:1809`) alors que `lastLocalPeerId` reste posé. C'est ce second fait, et
+     * lui seul, que `waitForMeReady` consultait — d'où sa réponse « prêt » sur un peer fini.
      *
      * @returns {{state: string, id: ?string, lastId: ?string, consumers: number}}
      */
@@ -77,11 +84,11 @@ export default {
         if (!peer) {
             // `creating` couvre l'aller-retour ICE de `_doInit` : une fenêtre de plusieurs
             // centaines de ms pendant laquelle il n'y a PAS de peer et pourtant rien à recréer.
-            return { state: state.peerInitPromise ? 'creating' : 'absent', ...base }
+            return { state: state.peerPhase === PEER_PHASES.CREATING ? 'creating' : 'absent', ...base }
         }
         if (peer.destroyed) return { state: 'destroyed', ...base }
         if (peer.disconnected) return { state: 'disconnected', ...base }
-        return { state: state.localPeerReady ? 'ready' : 'connecting', ...base }
+        return { state: state.peerPhase === PEER_PHASES.READY ? 'ready' : 'connecting', ...base }
     },
 
     /**
@@ -91,6 +98,12 @@ export default {
      * n'est pas une liste défensive. La détection est ici (pure, testable) et le hurlement est
      * dans l'action `auditPeerState`.
      *
+     * ⚠️ Depuis que la phase est déclarée, ces codes ont gagné un second rôle sans changer
+     * d'énoncé : ils confrontent le DÉCLARÉ (`peerPhase`, écrite par nos transitions) à
+     * l'OBSERVÉ (`destroyed` / `disconnected`, écrits par PeerJS). `pret-mais-detruit` n'est
+     * plus seulement « un drapeau oublié » — c'est « la phase affirme ce que l'instance
+     * contredit », le seul mode de panne qu'une phase déclarée peut introduire.
+     *
      * @returns {Array<{code: string, message: string}>}
      */
     peerStateViolations: (state) => () => {
@@ -98,28 +111,34 @@ export default {
         const violations = []
         const add = (code, message) => violations.push({ code, message })
 
-        if (state.localPeerReady && !peer) {
-            add('pret-sans-peer', 'localPeerReady est vrai alors que localPeer est nul')
+        if (state.peerPhase === PEER_PHASES.READY && !peer) {
+            add('pret-sans-peer', 'la phase est `ready` alors que localPeer est nul')
         }
 
-        if (state.lastLocalPeerId && !peer && !state.peerInitPromise) {
+        if (state.lastLocalPeerId && !peer && state.peerPhase !== PEER_PHASES.CREATING) {
             // Produit par le `.catch` d'init : il nulle `localPeer` et laisse
-            // `lastLocalPeerId` posé, à dessein (`waitForMeReady` en dépend). C'est donc un
-            // état ATTENDU du code actuel — et c'est précisément pour ça qu'il doit être
-            // nommé : « prêt » y est vrai pour `waitForMeReady` et faux pour tout le reste.
+            // `lastLocalPeerId` posé. La raison a DISPARU avec la FSM — `waitForMeReady` ne
+            // lit plus l'id historique —, et plus aucun lecteur de production ne le
+            // consulte sans peer vivant. La contradiction est donc devenue supprimable :
+            // c'est un item du `work/`, pas un effet de bord à prendre au passage.
             add('id-historique-sans-peer', 'lastLocalPeerId est posé alors qu\'aucun peer n\'existe et qu\'aucune init n\'est en vol')
         }
 
-        if (peer && state.localPeerReady && typeof peer.id !== 'string') {
-            add('pret-sans-id', 'localPeerReady est vrai alors que le peer n\'a pas d\'id utilisable')
+        if (peer && state.peerPhase === PEER_PHASES.READY && typeof peer.id !== 'string') {
+            add('pret-sans-id', 'la phase est `ready` alors que le peer n\'a pas d\'id utilisable')
         }
 
         if (state.lastLocalPeerId && peer && (peer.destroyed || (peer.disconnected && !state.peerReconnectTimer))) {
-            // ⭐ La contradiction la plus coûteuse du lot, et la seule qui soit SILENCIEUSE de
-            // bout en bout. `waitForMeReady` ne consulte que `lastLocalPeerId` — un fait
-            // HISTORIQUE — et répond donc « prêt » sur un peer fini. Tout ce qui en découle
-            // publie ou attend un peerId que le serveur PeerJS ne connaît plus : en face,
-            // « Could not connect to peer <uuid> », et l'arrivant ne voit rien.
+            // ⭐ La contradiction la plus coûteuse du lot, et la seule qui ait été SILENCIEUSE
+            // de bout en bout. `waitForMeReady` ne consultait que `lastLocalPeerId` — un fait
+            // HISTORIQUE — et répondait donc « prêt » sur un peer fini ; tout ce qui en
+            // découlait publiait ou attendait un peerId que le serveur PeerJS ne connaît plus.
+            // En face, « Could not connect to peer <uuid> », et l'arrivant ne voit rien.
+            //
+            // Ce chemin-là est fermé (la barrière lit l'identité COURANTE, épinglé par
+            // `createPeerContext.test.js` › « ne répond pas prêt sur un peer détruit »), mais
+            // l'ÉTAT reste atteignable : ce code le nomme pour le prochain lecteur qui
+            // s'accrocherait à l'id historique.
             //
             // Le prédicat exclut expressément le cas transitoire : un backoff en vol
             // (`peerReconnectTimer`) veut dire qu'une reconnexion est attendue, et l'id
@@ -129,8 +148,8 @@ export default {
             add('id-historique-sur-peer-inutilisable', 'lastLocalPeerId est posé sur un peer détruit ou déconnecté sans reconnexion en vol')
         }
 
-        if (peer?.destroyed && state.localPeerReady) {
-            add('pret-mais-detruit', 'localPeerReady est vrai sur un peer détruit')
+        if (peer?.destroyed && state.peerPhase === PEER_PHASES.READY) {
+            add('pret-mais-detruit', 'la phase est `ready` sur un peer détruit')
         }
 
         if (peer && !peer.destroyed && state.peerConsumers.size === 0 && !state.peerDestroyTimer) {
@@ -145,19 +164,21 @@ export default {
     },
 
     /*--------------------------
-    | LocalPerr
+    | Peer local — l'INSTANCE, et rien d'autre
     --------------------------*/
+    /**
+     * L'objet `Peer` lui-même, pour ce qui doit l'appeler (`connect`, `call`).
+     *
+     * ⚠️ Seule lecture brute qui subsiste, et ce n'est pas un prédicat : « quel est l'état du
+     * Peer » se lit sur `peerIdentity()`, jamais ici. Trois getters ont été supprimés avec la
+     * FSM — `getLocalPeerId` (l'id COURANT, qui ne dit pas s'il vaut encore quelque chose),
+     * `getLastLocalPeerId` (l'id HISTORIQUE, le pire des deux : il survit au peer) et
+     * `getLocalPeerReady` (un booléen, muet sur tout ce qui n'est pas « ouvert »). Les
+     * réintroduire, c'est rendre à chacun le droit de répondre seul à une question qui en
+     * demande trois.
+     */
     getLocalPeer() {
         return this.localPeer
-    },
-    getLocalPeerId() {
-        return this.localPeer ? this.localPeer.id : null
-    },
-    getLastLocalPeerId() {
-        return this.lastLocalPeerId
-    },
-    getLocalPeerReady() {
-        return this.localPeerReady
     },
 
     /*--------------------------

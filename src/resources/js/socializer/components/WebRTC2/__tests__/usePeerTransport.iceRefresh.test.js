@@ -54,6 +54,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createMockContext } from './helpers/createMockContext.js'
 import { withSetup } from './helpers/withSetup.js'
+import { PEER_PHASES } from '~socializer/stores/peers2/phases.js'
 import {
     ENDPOINTS,
     ICE_REFRESH_MARGIN_MS,
@@ -192,7 +193,7 @@ describe('usePeerTransport — rafraîchissement du credential TURN', () => {
         expect(peer.reconnect).not.toHaveBeenCalled()
         expect(peer.id).toBe('peer-alice')
         expect(ctx.peerStore.localPeer).toBe(peer)
-        expect(ctx.peerStore.localPeerReady).toBe(true)
+        expect(ctx.peerStore.peerPhase).toBe(PEER_PHASES.READY)
         expect(ctx.peerStore.getConnections).toBe(connexionsAvant)
     })
 

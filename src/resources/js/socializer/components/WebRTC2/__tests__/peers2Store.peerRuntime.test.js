@@ -23,6 +23,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { usePeer2Store } from '~socializer/stores/peers2.js'
+import { PEER_PHASES } from '~socializer/stores/peers2/phases.js'
 
 describe('peers2 — runtime du Peer singleton', () => {
     let store
@@ -33,6 +34,68 @@ describe('peers2 — runtime du Peer singleton', () => {
 
     afterEach(() => {
         vi.useRealTimers()
+    })
+
+    // ── La phase, et le sens de son contrôle de transitions ──────────────────────
+    //
+    // ⚠️ Ces trois cas épinglent une INVERSION délibérée par rapport à
+    // `useCallStateMachine`, qui refuse une transition invalide et rend `false`. Là-bas, la
+    // FSM arbitre des actions ; ici elle ne fait que SUIVRE le cycle de vie de PeerJS.
+    // Refuser laisserait la phase décrire un peer qui n'existe plus — la divergence même
+    // qu'elle supprime. Quiconque « corrigerait » ce contrôle en refus le fera rougir.
+    describe('phase du Peer', () => {
+        it('part de `absent`', () => {
+            expect(store.peerPhase).toBe(PEER_PHASES.ABSENT)
+        })
+
+        it('enchaîne le cycle nominal sans rien journaliser', () => {
+            const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+            store.markPeerCreating()
+            store.markPeerConnecting()
+            store.markPeerOpen('peer-alice')
+
+            expect(store.peerPhase).toBe(PEER_PHASES.READY)
+            // `markPeerOpen` porte les TROIS faits d'un `'open'`, pas seulement la phase.
+            expect(store.lastLocalPeerId).toBe('peer-alice')
+            expect(store.peerReconnectAttempts).toBe(0)
+            expect(warn).not.toHaveBeenCalled()
+        })
+
+        it('APPLIQUE une transition inattendue, en la journalisant', () => {
+            const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+            // `absent → ready` : aucun chemin du code ne le produit.
+            store.markPeerOpen('peer-alice')
+
+            expect(store.peerPhase).toBe(PEER_PHASES.READY)
+            expect(warn).toHaveBeenCalledWith(expect.stringContaining('absent → ready'))
+        })
+
+        it('ne dit rien d\'une transition vers la phase courante', () => {
+            const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+            store.markPeerCreating()
+
+            store.markPeerCreating()
+
+            expect(store.peerPhase).toBe(PEER_PHASES.CREATING)
+            expect(warn).not.toHaveBeenCalled()
+        })
+
+        it('`reconnect()` ramène directement de `disconnected` à `ready`', () => {
+            const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+            store.markPeerCreating()
+            store.markPeerConnecting()
+            store.markPeerOpen('peer-alice')
+
+            store.markPeerDisconnected()
+            store.markPeerOpen('peer-alice')
+
+            // Le vrai `reconnect()` réutilise l'instance : il n'y a pas de retour par
+            // `creating`, et le signaler ferait crier l'audit à chaque micro-coupure.
+            expect(store.peerPhase).toBe(PEER_PHASES.READY)
+            expect(warn).not.toHaveBeenCalled()
+        })
     })
 
     describe('consommateurs par jeton', () => {
@@ -207,15 +270,17 @@ describe('peers2 — runtime du Peer singleton', () => {
             const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
             store.setPeerListenersDetach(() => { throw new Error('off a jeté') })
             store.localPeer = { id: 'peer-alice' }
-            store.localPeerReady = true
+            store.markPeerCreating()
+            store.markPeerConnecting()
+            store.markPeerOpen('peer-alice')
 
             expect(() => store.resetPeerState()).not.toThrow()
 
             // Le try/catch vit dans l'action précisément pour ça : un `off()` qui jette ne
-            // doit pas laisser le reset à mi-course — peer nullé mais drapeaux encore vrais
+            // doit pas laisser le reset à mi-course — peer nullé mais phase encore `ready`
             // serait l'état impossible qui gèle `setLocalPeer` à vie.
             expect(store.localPeer).toBeNull()
-            expect(store.localPeerReady).toBe(false)
+            expect(store.peerPhase).toBe(PEER_PHASES.ABSENT)
             expect(store.peerListenersDetach).toBeNull()
             expect(warn).toHaveBeenCalled()
             warn.mockRestore()
@@ -231,8 +296,11 @@ describe('peers2 — runtime du Peer singleton', () => {
         const armLiveState = (onDestroyFire, onReconnectFire, onDetach = vi.fn(), onIceRefreshFire = vi.fn()) => {
             store.setPeerListenersDetach(onDetach)
             store.localPeer = { id: 'peer-alice' }
-            store.localPeerReady = true
-            store.lastLocalPeerId = 'peer-alice'
+            // Le chemin complet des transitions, comme un vrai démarrage : `markPeerOpen`
+            // publie aussi `lastLocalPeerId`.
+            store.markPeerCreating()
+            store.markPeerConnecting()
+            store.markPeerOpen('peer-alice')
             store.setPeerInitPromise(Promise.resolve())
             store.incrementReconnectAttempts()
             store.incrementIceRefreshAttempts()
@@ -253,7 +321,7 @@ describe('peers2 — runtime du Peer singleton', () => {
             store.resetPeerState()
 
             expect(store.localPeer).toBeNull()
-            expect(store.localPeerReady).toBe(false)
+            expect(store.peerPhase).toBe(PEER_PHASES.ABSENT)
             expect(store.lastLocalPeerId).toBeNull()
             expect(store.peerInitPromise).toBeNull()
             expect(store.peerReconnectAttempts).toBe(0)

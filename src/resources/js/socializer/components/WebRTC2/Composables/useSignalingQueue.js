@@ -141,7 +141,7 @@ export function useSignalingQueue(ctx, { routes = {} } = {}) {
         // signal était retardé de 15 s puis ABANDONNÉ. Or `PEER_CONNECT_TO_REMOTE_PEER`
         // n'est jamais re-livré : c'est ce qui empêchait un arrivant de voir un flux
         // existant, de façon intermittente. Les préconditions appartiennent aux
-        // handlers (garde `getLocalPeerId` de responseRemotePeerConnection) et au moteur
+        // handlers (garde d'identité publiable de responseRemotePeerConnection) et au moteur
         // de retry du pool, qui savent réessayer. Router doit rester synchrone.
         console.debug(`[useSignalingQueue] signal routé: ${signal.type}`)
 

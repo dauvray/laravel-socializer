@@ -28,6 +28,9 @@ import { waitingPeerIdKey } from '~socializer/stores/peers2/keys.js'
 // contrat partagé. C'est contre CE double que les arrivées et les départs sont assertés — une
 // seconde implémentation du diff rendrait ces assertions muettes sur la production.
 import { diffRoomMembers, EMPTY_MEMBERS } from '~socializer/stores/peers2/roomDiff.js'
+// Même raison : la phase du Peer et sa table de transitions sont le contrat que ce double
+// doit reproduire — une seconde table recopiée ici divergerait sans jamais lever.
+import { PEER_PHASES, isExpectedPeerPhaseTransition } from '~socializer/stores/peers2/phases.js'
 // Même raison : le bail est une politique, elle a un seul domicile.
 import { REMOTE_PEER_ID_LEASE_MS } from '~socializer/components/WebRTC2/webrtc2.config.js'
 import { mockEventBus } from './mockEventBus.js'
@@ -195,10 +198,30 @@ export function createMockContext(overrides = {}) {
     // Jetons des consommateurs du peer singleton — un Set, comme peers2/state.js.
     const _peerConsumers = new Set()
 
+    // ── Peer local : UN seul fait, deux noms ──────────────────────────────────
+    // Côté store réel, `getLocalPeer()` rend `this.localPeer` : impossible de les faire
+    // diverger. Le double les portait en champs INDÉPENDANTS, et ça n'était pas visible
+    // tant que rien ne lisait les deux — jusqu'à ce que `peerIdentity` (qui lit
+    // `localPeer`) devienne le chemin de lecture des composables, alors que les tests
+    // sèment `getLocalPeer`. Deux noms pour un fait, c'est un mock qui ment.
+    //
+    // ⚠️ Extraits des overrides AVANT le spread final, comme `connection.remotePeers` et
+    // pour la même raison : spreadés, ils écraseraient les accesseurs par des valeurs
+    // nues et rendraient la divergence possible à nouveau.
+    const {
+        localPeer: _seededLocalPeer,
+        getLocalPeer: _seededLocalPeerAlias,
+        ...peerStoreOverrides
+    } = overrides.peerStore ?? {}
+
+    let _localPeer = _seededLocalPeer ?? _seededLocalPeerAlias ?? null
+
     const peerStore = {
-        lastLocalPeerId: overrides.peerStore?.lastLocalPeerId ?? null,
-        getLocalPeerId: overrides.peerStore?.getLocalPeerId ?? 'local-peer-id-mock',
-        getLocalPeer: overrides.peerStore?.getLocalPeer ?? null,
+        lastLocalPeerId: peerStoreOverrides.lastLocalPeerId ?? null,
+        // `getLocalPeerId` a disparu du store réel avec la FSM : « quel est mon peerId » ne se
+        // répond plus sans dire dans quelle phase il est valable (cf. `peerIdentity`). Le
+        // conserver ici ferait mentir le double, et `mockFidelity` le refuse — un membre que
+        // le vrai store n'a pas.
         // ⚠️ Objet nu, PAS un computed : les getters Pinia sont auto-déballés, et le code
         // sous test lit `ctx.peerStore.getConnections?.[room]` sans `.value`. Enveloppé
         // dans un computed, tout accès retournait undefined → `hasOpenConnection`
@@ -371,11 +394,18 @@ export function createMockContext(overrides = {}) {
             }
         }),
 
-        // Peer local : `usePeerTransport` lit et écrit ces deux membres directement.
-        // Leur absence du mock était invisible (undefined se lit sans erreur) mais
-        // rendait tout test du transport muet sur ces chemins.
-        localPeer: overrides.peerStore?.localPeer ?? null,
-        localPeerReady: overrides.peerStore?.localPeerReady ?? false,
+        // Peer local : `usePeerTransport` lit et écrit ce membre directement, et
+        // `getLocalPeer` en est l'ALIAS — le même objet, comme dans le store réel.
+        get localPeer() { return _localPeer },
+        set localPeer(peer) { _localPeer = peer },
+        get getLocalPeer() { return _localPeer },
+        set getLocalPeer(peer) { _localPeer = peer },
+
+        // La phase déclarée, comme le store réel — écrite par les transitions ci-dessous et
+        // par elles seules. Le double NE pré-sème PAS un peer prêt : les tests du transport
+        // comptent sur `localPeer === null` pour que `setLocalPeer` construise réellement une
+        // instance. Un test qui a besoin d'un peer joignable le sème (`seedReadyPeer`).
+        peerPhase: peerStoreOverrides.peerPhase ?? PEER_PHASES.ABSENT,
 
         // ─── Runtime du Peer singleton ────────────────────────────────────────
         // Ref-counting, garde d'init et reconnexion : cet état vit dans le store réel
@@ -383,13 +413,13 @@ export function createMockContext(overrides = {}) {
         // vie du module `usePeerTransport`. Le mock doit donc compter pour de vrai —
         // des `vi.fn()` vides rendraient verts des tests de destruction différée qui
         // ne prouveraient plus rien.
-        peerInitPromise: overrides.peerStore?.peerInitPromise ?? null,
-        peerReconnectAttempts: overrides.peerStore?.peerReconnectAttempts ?? 0,
-        peerDestroyTimer: overrides.peerStore?.peerDestroyTimer ?? null,
-        peerReconnectTimer: overrides.peerStore?.peerReconnectTimer ?? null,
-        peerIceRefreshTimer: overrides.peerStore?.peerIceRefreshTimer ?? null,
-        peerIceRefreshAttempts: overrides.peerStore?.peerIceRefreshAttempts ?? 0,
-        peerListenersDetach: overrides.peerStore?.peerListenersDetach ?? null,
+        peerInitPromise: peerStoreOverrides.peerInitPromise ?? null,
+        peerReconnectAttempts: peerStoreOverrides.peerReconnectAttempts ?? 0,
+        peerDestroyTimer: peerStoreOverrides.peerDestroyTimer ?? null,
+        peerReconnectTimer: peerStoreOverrides.peerReconnectTimer ?? null,
+        peerIceRefreshTimer: peerStoreOverrides.peerIceRefreshTimer ?? null,
+        peerIceRefreshAttempts: peerStoreOverrides.peerIceRefreshAttempts ?? 0,
+        peerListenersDetach: peerStoreOverrides.peerListenersDetach ?? null,
 
         // ⚠️ Des JETONS, comme le store réel, et le `null` de retour est le point de
         // fidélité qui compte : un retrait de jeton inconnu rend `null` (« rien à
@@ -420,30 +450,32 @@ export function createMockContext(overrides = {}) {
             const id = (typeof peer?.id === 'string') ? peer.id : null
             const base = { id, lastId: peerStore.lastLocalPeerId, consumers: _peerConsumers.size }
 
-            if (!peer) return { state: peerStore.peerInitPromise ? 'creating' : 'absent', ...base }
+            if (!peer) {
+                return { state: peerStore.peerPhase === PEER_PHASES.CREATING ? 'creating' : 'absent', ...base }
+            }
             if (peer.destroyed) return { state: 'destroyed', ...base }
             if (peer.disconnected) return { state: 'disconnected', ...base }
-            return { state: peerStore.localPeerReady ? 'ready' : 'connecting', ...base }
+            return { state: peerStore.peerPhase === PEER_PHASES.READY ? 'ready' : 'connecting', ...base }
         }),
         peerStateViolations: vi.fn(() => {
             const peer = peerStore.localPeer
             const violations = []
             const add = (code, message) => violations.push({ code, message })
 
-            if (peerStore.localPeerReady && !peer) {
-                add('pret-sans-peer', 'localPeerReady est vrai alors que localPeer est nul')
+            if (peerStore.peerPhase === PEER_PHASES.READY && !peer) {
+                add('pret-sans-peer', 'la phase est `ready` alors que localPeer est nul')
             }
-            if (peerStore.lastLocalPeerId && !peer && !peerStore.peerInitPromise) {
+            if (peerStore.lastLocalPeerId && !peer && peerStore.peerPhase !== PEER_PHASES.CREATING) {
                 add('id-historique-sans-peer', 'lastLocalPeerId est posé alors qu\'aucun peer n\'existe et qu\'aucune init n\'est en vol')
             }
-            if (peer && peerStore.localPeerReady && typeof peer.id !== 'string') {
-                add('pret-sans-id', 'localPeerReady est vrai alors que le peer n\'a pas d\'id utilisable')
+            if (peer && peerStore.peerPhase === PEER_PHASES.READY && typeof peer.id !== 'string') {
+                add('pret-sans-id', 'la phase est `ready` alors que le peer n\'a pas d\'id utilisable')
             }
             if (peerStore.lastLocalPeerId && peer && (peer.destroyed || (peer.disconnected && !peerStore.peerReconnectTimer))) {
                 add('id-historique-sur-peer-inutilisable', 'lastLocalPeerId est posé sur un peer détruit ou déconnecté sans reconnexion en vol')
             }
-            if (peer?.destroyed && peerStore.localPeerReady) {
-                add('pret-mais-detruit', 'localPeerReady est vrai sur un peer détruit')
+            if (peer?.destroyed && peerStore.peerPhase === PEER_PHASES.READY) {
+                add('pret-mais-detruit', 'la phase est `ready` sur un peer détruit')
             }
             if (peer && !peer.destroyed && _peerConsumers.size === 0 && !peerStore.peerDestroyTimer) {
                 add('peer-orphelin', 'un peer vivant n\'a plus aucun consommateur et aucune destruction n\'est armée')
@@ -459,6 +491,30 @@ export function createMockContext(overrides = {}) {
             )
             return violations
         }),
+
+        // ── Transitions de phase ──────────────────────────────────────────────
+        // Mêmes verbes que le store réel, et la même règle : la transition inattendue est
+        // APPLIQUÉE puis journalisée, jamais refusée (cf. l'en-tête de peers2/phases.js).
+        // Un double qui refuserait figerait la phase et rendrait verts des tests décrivant
+        // un peer que la production n'a jamais.
+        setPeerPhase: vi.fn((to, where = '?') => {
+            if (!isExpectedPeerPhaseTransition(peerStore.peerPhase, to)) {
+                console.warn(
+                    `[WebRTC2][peerFSM] Transition inattendue : ${peerStore.peerPhase} → ${to} (${where}) — appliquée quand même`
+                )
+            }
+            peerStore.peerPhase = to
+            return to
+        }),
+        markPeerCreating: vi.fn(() => peerStore.setPeerPhase(PEER_PHASES.CREATING, 'début d\'init')),
+        markPeerConnecting: vi.fn(() => peerStore.setPeerPhase(PEER_PHASES.CONNECTING, 'Peer construit')),
+        markPeerOpen: vi.fn((id = null) => {
+            if (typeof id === 'string' && id.length > 0) peerStore.lastLocalPeerId = id
+            peerStore.resetReconnectAttempts()
+            return peerStore.setPeerPhase(PEER_PHASES.READY, 'après \'open\' du Peer')
+        }),
+        markPeerDisconnected: vi.fn(() => peerStore.setPeerPhase(PEER_PHASES.DISCONNECTED, 'après \'disconnected\' du Peer')),
+        markPeerAbsent: vi.fn((where = 'Peer abandonné') => peerStore.setPeerPhase(PEER_PHASES.ABSENT, where)),
 
         setPeerInitPromise: vi.fn((promise = null) => { peerStore.peerInitPromise = promise }),
         resetReconnectAttempts: vi.fn(() => { peerStore.peerReconnectAttempts = 0 }),
@@ -514,7 +570,8 @@ export function createMockContext(overrides = {}) {
         resetPeerState: vi.fn(() => {
             peerStore.detachPeerListeners()
             peerStore.localPeer = null
-            peerStore.localPeerReady = false
+            // Affectation directe, comme le store réel : un reset n'est pas une transition.
+            peerStore.peerPhase = PEER_PHASES.ABSENT
             peerStore.lastLocalPeerId = null
             peerStore.peerInitPromise = null
             peerStore.peerReconnectAttempts = 0
@@ -588,9 +645,9 @@ export function createMockContext(overrides = {}) {
             if (Object.keys(_connections[room]).length === 0) delete _connections[room]
         }),
 
-        setLocalPeer: vi.fn(),
-        // `setLocalPeerId` retiré : n'existait ni sur le store réel (qui expose
-        // `setLastLocalPeerId`) ni dans aucun appelant — API purement imaginaire.
+        // `setLocalPeer` / `setLocalPeerReady` / `setLastLocalPeerId` retirés avec la FSM :
+        // ces trois setters du store réel n'avaient AUCUN appelant (le transport écrivait les
+        // champs en direct), et les transitions les remplacent.
         addPlayer: vi.fn((player) => { _players.push(player) }),
         removePlayer: vi.fn((videoId) => {
             const idx = _players.findIndex((p) => p.videoId === videoId)
@@ -601,7 +658,21 @@ export function createMockContext(overrides = {}) {
         _pushSignal: (signal) => { _signalQueue.value = [..._signalQueue.value, signal] },
         _clearSignals: () => { _signalQueue.value = [] },
 
-        ...(overrides.peerStore ?? {}),
+        ...peerStoreOverrides,
+    }
+
+    // Même garde structurel que pour `connection.remotePeers`, et il vaut pour les deux
+    // noms : le jour où un override reprend le chemin du spread, `localPeer` et
+    // `getLocalPeer` redeviendraient deux champs indépendants — un test sèmerait l'un et le
+    // code sous test lirait l'autre, sans que rien ne le dise.
+    for (const alias of ['localPeer', 'getLocalPeer']) {
+        if (typeof Object.getOwnPropertyDescriptor(peerStore, alias)?.get !== 'function') {
+            throw new Error(
+                `createMockContext: \`peerStore.${alias}\` a perdu son accesseur — les deux noms `
+                + 'désignent LE MÊME peer (comme dans le store réel) et doivent être semés via '
+                + '`peerStore: { localPeer }` (extrait avant le spread), jamais par une clé spreadée.'
+            )
+        }
     }
 
     // ── meStore mock ──────────────────────────────────────────────────────────

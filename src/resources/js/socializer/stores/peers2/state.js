@@ -1,10 +1,28 @@
 import { markRaw } from 'vue'
+import { PEER_PHASES } from '~socializer/stores/peers2/phases.js'
 
 export default () => {
   return {
     lastLocalPeerId: null, // last peer id local
     localPeer: null, // peer local
-    localPeerReady : false, // indique si le peer local est prêt (id attribué)
+
+    // ─── La phase déclarée du Peer singleton ─────────────────────────────────
+    // Le SEUL fait déclaré du cycle de vie, et le seul réactif : `localPeer` est
+    // `markRaw`, donc ses mutations internes (`_open`, `_disconnected`, `_destroyed`) sont
+    // invisibles à Vue. Sans cette phase, un `watchEffect` ne serait jamais réveillé par
+    // une reconnexion — c'est ce qui obligeait `waitForMeReady` à s'accrocher à
+    // `lastLocalPeerId`, un fait HISTORIQUE, et à répondre « prêt » sur un peer fini.
+    //
+    // ⚠️ Écrite UNIQUEMENT par les transitions de `actions.js` (`markPeerCreating`,
+    // `markPeerOpen`, …), elles-mêmes appelées par le seul `usePeerTransport`. Une
+    // affectation directe depuis un composable rouvrirait le problème qu'elle ferme :
+    // deux écrivains pour un même fait.
+    //
+    // Elle remplace `localPeerReady` (un booléen, donc muet sur tout ce qui n'est pas
+    // « ouvert ») et l'usage de `peerInitPromise` COMME ÉTAT — cette dernière reste, mais
+    // n'est plus qu'un moyen d'attente partagé (cf. plus bas). Elle ne remplace pas
+    // `destroyed` / `disconnected`, qui sont observés et gardent le dernier mot.
+    peerPhase: PEER_PHASES.ABSENT,
 
     // ─── Registre des contextes WebRTC montés (clé: contextId) ───────────────
     // key = contextId (ex: data-room-test, stream-room-test), value = ctx complet.
@@ -48,7 +66,11 @@ export default () => {
     // résultat d'une soustraction, et un retrait de jeton inconnu est un no-op structurel.
     // `markRaw` pour la même raison que `contextRegistry` : Vue proxifie les Set.
     peerConsumers: markRaw(new Set()),
-    peerInitPromise: null, // init en vol — garde anti-race (2 contextes = 1 seul Peer)
+    // Init en vol — garde anti-race (2 contextes = 1 seul Peer). ⚠️ Un MOYEN D'ATTENTE,
+    // pas un état : « où en est le Peer » se lit sur `peerPhase` ci-dessus. Elle a servi
+    // des deux, et c'est ainsi que « pas de peer » a pu être tantôt normal (init en vol)
+    // tantôt contradictoire, sans que rien ne distingue les deux.
+    peerInitPromise: null,
     peerReconnectAttempts: 0, // tentatives de reconnexion PeerJS (backoff + garde anti-boucle)
     peerDestroyTimer: null, // handle de la destruction différée (PEER_DESTROY_DELAY_MS)
     peerReconnectTimer: null, // handle du backoff de reconnexion en cours

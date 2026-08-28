@@ -22,7 +22,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { nextTick } from 'vue'
 import { withSetup } from './helpers/withSetup.js'
 import { mockEventBus } from './helpers/mockEventBus.js'
-import { resetPeerMock, getLastPeerInstance, createMockDataConnection } from './__mocks__/peerjs.js'
+import { bootLocalPeer } from './helpers/bootLocalPeer.js'
+import { resetPeerMock, createMockDataConnection } from './__mocks__/peerjs.js'
 import { usePeerOrchestrator } from '~socializer/components/WebRTC2/Composables/usePeerOrchestrator.js'
 import { BROADCAST_STATE } from '~socializer/components/WebRTC2/Composables/useBroadcastPresence.js'
 import { usePeer2Store } from '~socializer/stores/peers2.js'
@@ -48,10 +49,10 @@ describe('usePeerOrchestrator — câblage de l\'annonce de diffusion', () => {
     })
 
     const initialize = async (callbacks = {}) => {
-        api.initializePeerConnection(callbacks)
-        await vi.waitFor(() => expect(getLastPeerInstance()).not.toBeNull())
-        peerInstance = getLastPeerInstance()
-        peerInstance._triggerEvent('open', 'my-peer-id')
+        peerInstance = await bootLocalPeer(
+            () => api.initializePeerConnection(callbacks),
+            { peerId: 'my-peer-id' }
+        )
     }
 
     /**

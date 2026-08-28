@@ -353,7 +353,8 @@ fenêtre que les autres laissent ouverte :
    est affecté **synchroniquement** dans `_doInit`.
 2. Garde `peerInitPromise` — ne couvre que quelques microtâches : le corps de `_doInit` est
    synchrone, le seul `await` est *dans* le handler `bind('call')`.
-3. Garde `localPeerReady` — n'est vrai qu'après l'événement `'open'`, soit un aller-retour réseau.
+3. Garde de phase — `peerIdentity().state === 'ready'`, qui n'est vrai qu'après l'événement
+   `'open'`, soit un aller-retour réseau.
 
 Entre 2 et 3 s'ouvrait une fenêtre de plusieurs centaines de ms — et la production monte
 précisément deux consommateurs dans cet intervalle : `System/Notifications.vue` crée le contexte
@@ -419,8 +420,13 @@ scénarios) et `_hubRateLimiter` (arbitrage « verbe `.reset()` plutôt que Pini
 ## Conventions de code
 
 - **IDs de session** : `crypto.randomUUID()` — jamais `Math.random()` (cf. `ensureCurrentCallRoomId`)
-- **PeerId local** : `ctx.peerStore.getLocalPeerId` — jamais le triple fallback historique
-  `localPeer?.id || localPeer?._id || lastLocalPeerId`
+- **PeerId local** : `ctx.peerStore.peerIdentity()` — jamais un champ brut, et surtout pas le
+  triple fallback historique `localPeer?.id || localPeer?._id || lastLocalPeerId`. Le getter rend
+  `{ state, id, lastId, consumers }` : `id` est l'identité **courante**, `lastId` l'**historique**.
+  Un id qu'on **publie** (les quatre routes de `usePeerCore`) exige `state === 'ready'` ; un id
+  qu'on **compare à soi-même** (garde anti-auto-connexion de `usePeerConnections`) se lit sans
+  garde de phase. Les trois getters d'avant — `getLocalPeerId`, `getLastLocalPeerId`,
+  `getLocalPeerReady` — ont été supprimés : chacun répondait seul à une question qui en pose trois.
 - **Retry peer** : un seul système, `utils/usePeerRetry` — pas de Map `inviteRetries` parallèle
 - **Rate limiting** : un seul système, `utils/createRateLimiter`. Trois instances module-level, avec
   des clés délibérément différentes — les deux du hub star portent sur l'**identité PeerJS entrante
@@ -620,8 +626,9 @@ signal abandonné dans le routage l'est **définitivement** (l'émetteur ne re-l
 Cassé une fois : un `await ctx.waitForMeReady()` et un `if (ctx.isShuttingDown.value) return`
 ajoutés au routage ont fait disparaître les flux chez les arrivants, de façon **intermittente**.
 `waitForMeReady` résout instantanément quand l'identité est là, mais attend 15 s puis abandonne
-sinon — or `lastLocalPeerId` est remis à `null` par `_destroyPeerSingleton` dès que le compteur de
-consommateurs passe à 0 (délai 10 s), fenêtre atteignable quand plusieurs providers montent/démontent
+sinon — or l'identité locale disparaît avec le Peer, que `_destroyPeerSingleton` détruit dès que le
+compteur de consommateurs passe à 0 (délai 10 s), fenêtre atteignable quand plusieurs providers
+montent/démontent
 et systématiquement polluée par le HMR.
 
 ⚠️ **Ne jamais poser de garde d'autorisation ici non plus** — il va dans `connectToPeer` (voir

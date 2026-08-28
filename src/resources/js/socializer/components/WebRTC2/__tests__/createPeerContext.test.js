@@ -20,6 +20,7 @@ import { useMeStore } from '~estarter/stores/me.js'
 import { MAX_PAYLOAD_BYTES } from '~socializer/components/WebRTC2/webrtc2.config.js'
 import { withSetup } from './helpers/withSetup.js'
 import { mockEventBus } from './helpers/mockEventBus.js'
+import { seedReadyPeer } from './helpers/bootLocalPeer.js'
 import { createMockDataConnection } from './__mocks__/peerjs.js'
 
 const NO_BUS = Symbol('sans eventBus')
@@ -123,7 +124,7 @@ describe('createPeerContext', () => {
     // ── waitForMeReady ────────────────────────────────────────────────────────
     describe('waitForMeReady', () => {
         it('résout immédiatement quand slug et peerId local sont disponibles', async () => {
-            peerStore.lastLocalPeerId = 'peer-local'
+            seedReadyPeer(peerStore, 'peer-local')
             const ctx = mountContext()
 
             await expect(ctx.waitForMeReady()).resolves.toBe(true)
@@ -137,13 +138,13 @@ describe('createPeerContext', () => {
             await nextTick()
             expect(settled).toBe(false)
 
-            peerStore.lastLocalPeerId = 'peer-local'
+            seedReadyPeer(peerStore, 'peer-local')
 
             await expect(pending).resolves.toBe(true)
         })
 
         it('positionne isHub quand mon slug est celui du hub', async () => {
-            peerStore.lastLocalPeerId = 'peer-local'
+            seedReadyPeer(peerStore, 'peer-local')
             const ctx = mountContext({ options: { topology: 'star', hubSlug: 'test-user' } })
 
             await ctx.waitForMeReady()
@@ -165,7 +166,7 @@ describe('createPeerContext', () => {
 
         it('n\'émet aucun faux « a expiré » quand l\'identité était déjà prête (non-régression)', async () => {
             vi.useFakeTimers()
-            peerStore.lastLocalPeerId = 'peer-local'
+            seedReadyPeer(peerStore, 'peer-local')
             const ctx = mountContext()
             const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
@@ -174,6 +175,83 @@ describe('createPeerContext', () => {
             await vi.advanceTimersByTimeAsync(30_000)
 
             expect(warn).not.toHaveBeenCalled()
+        })
+
+        // ── L'identité COURANTE, jamais l'historique ──────────────────────────
+        //
+        // La barrière ne consultait que `lastLocalPeerId`, un fait HISTORIQUE que rien ne
+        // retire tant que le Peer n'est pas détruit — `_destroyPeerSingleton` seul le
+        // nulle, et le `.catch` d'init le laisse SCIEMMENT posé. Elle répondait donc
+        // « prêt » sur un peer qui ne l'est plus, et tout ce qui reprend derrière elle
+        // publiait ou attendait un peerId que le serveur PeerJS ne connaît plus : en face,
+        // « Could not connect to peer <uuid> », et l'arrivant ne voit rien. C'est la panne
+        // la plus silencieuse du module, et `peerStateViolations` la nomme déjà
+        // (`id-historique-sur-peer-inutilisable`).
+        //
+        // Les trois cas ci-dessous couvrent les trois façons dont un peer cesse d'être
+        // utilisable sans que l'id historique bouge. Aucun n'attend `false` par principe :
+        // ce qu'ils exigent, c'est que la barrière ne dise pas OUI — le `false` vient du
+        // timeout, qui est le filet.
+
+        it('ne répond pas prêt sur un peer détruit', async () => {
+            vi.useFakeTimers()
+            vi.spyOn(console, 'warn').mockImplementation(() => {})
+            // Rien ne remet `localPeerReady` à false quand le Peer est détruit ailleurs que
+            // par `_destroyPeerSingleton` : la contradiction est celle que l'audit appelle
+            // `pret-mais-detruit`.
+            const peer = seedReadyPeer(peerStore, 'peer-local')
+            peer.destroyed = true
+
+            const ctx = mountContext({ options: { meReadyTimeoutMs: 50 } })
+            const pending = ctx.waitForMeReady()
+            await vi.advanceTimersByTimeAsync(50)
+
+            await expect(pending).resolves.toBe(false)
+        })
+
+        it('ne répond pas prêt sur un peer déconnecté sans reconnexion en vol', async () => {
+            vi.useFakeTimers()
+            vi.spyOn(console, 'warn').mockImplementation(() => {})
+            // Plafond de tentatives atteint : plus aucun backoff armé, donc plus aucun
+            // recours. Semé comme le handler `'disconnected'` le laisse — phase
+            // `disconnected`, aucun timer — alors que `lastLocalPeerId` reste posé : c'est
+            // la seule chose qui subsiste, et c'est la seule que la barrière consultait.
+            const peer = seedReadyPeer(peerStore, 'peer-local')
+            peer.disconnected = true
+            peerStore.markPeerDisconnected()
+            peerStore.peerReconnectTimer = null
+
+            const ctx = mountContext({ options: { meReadyTimeoutMs: 50 } })
+            const pending = ctx.waitForMeReady()
+            await vi.advanceTimersByTimeAsync(50)
+
+            await expect(pending).resolves.toBe(false)
+        })
+
+        it('attend la fin d\'un backoff de reconnexion, puis répond prêt', async () => {
+            // Une coupure transitoire n'est pas un état terminal : un backoff en vol veut
+            // dire qu'une reconnexion est attendue, et l'id historique est exactement ce
+            // dont `reconnect()` repart. La barrière n'y répond pas non plus — mais elle
+            // ATTEND, et le fait de ne pas abandonner est la moitié qui compte.
+            const peer = seedReadyPeer(peerStore, 'peer-local')
+            peer.disconnected = true
+            peerStore.markPeerDisconnected()
+            peerStore.peerReconnectTimer = setTimeout(() => {}, 10_000)
+
+            const ctx = mountContext()
+            let settled = false
+            const pending = ctx.waitForMeReady().then((v) => { settled = true; return v })
+
+            await nextTick()
+            expect(settled).toBe(false)
+
+            // La reconnexion aboutit : le handler `'open'` repasse le peer à prêt.
+            clearTimeout(peerStore.peerReconnectTimer)
+            peerStore.peerReconnectTimer = null
+            peer.disconnected = false
+            peerStore.markPeerOpen('peer-local')
+
+            await expect(pending).resolves.toBe(true)
         })
     })
 
@@ -736,7 +814,7 @@ describe('createPeerContext', () => {
         })
 
         it('n\'annule pas une attente déjà résolue', async () => {
-            peerStore.lastLocalPeerId = 'peer-local'
+            seedReadyPeer(peerStore, 'peer-local')
             const ctx = mountContext()
 
             await expect(ctx.waitForMeReady()).resolves.toBe(true)

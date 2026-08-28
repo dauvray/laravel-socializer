@@ -6,7 +6,7 @@
 > l'avancement et les tâches restantes.
 
 > Helpers : `withSetup`, `createMockContext`, `mockEventBus`, `__mocks__/peerjs.js`,
-> `createVirtualPeer`, `fakeSignalingServer`, `fakeMedia`.
+> `createVirtualPeer`, `bootLocalPeer`, `fakeSignalingServer`, `fakeMedia`.
 > Commande : `npm run test:run` depuis la racine de l'hôte.
 
 ⚠️ **Ne jamais recopier un décompte ici** : ce document a déjà divergé du réel deux fois, dans les
@@ -37,7 +37,7 @@ et le seul étage où les incendies du paquet étaient détectables). Le harnais
 | Tâche 6 · `usePeerOrchestrator` | ⛔ **bloquée** | voir ci-dessous ; seul `broadcastPresence` est couvert |
 | Tâche 7 · `useMediaBroadcast` | ⛔ **bloquée** | après la tâche 6 ; seul `watchUsers` est couvert |
 | Couches extraites de l'orchestrateur — `useConnectionPool`, `useCallManager`, `useStreamManager`, `useSignalingQueue` | ✅ | — |
-| Store — `peers2Store` : runtime, observabilité, `remotePeerId` | ✅ | — |
+| Store — `peers2Store` : runtime, observabilité, `remotePeerId`, **phase du Peer** | ✅ | — |
 | UI — `useAwaitedStreams`, `useBroadcastPresence`, `MediaBroadcastPlayer` (identité, spinner) | ✅ | — |
 | Scénarios — smoke, `lateJoiner`, `broadcastLifecycle`, `peerDeparture`, `multiContext`, `incomingMappingInvariant`, `outgoingAuth` | ✅ | — |
 | Perte de connexion → re-composition — `scenarios/peerDeparture` (« A recharge en chevauchement »), `useConnectionPool`, `createPeerContext` | ✅ | — |
@@ -66,6 +66,29 @@ attendre réellement (`await new Promise(r => setTimeout(r, 1500))`), sans quoi 
 moteur qui aurait fait le travail — vert gratuit. Le piège symétrique, plus coûteux, est d'en
 conclure que le garde du correctif est trop strict et de le retirer :
 [tests.md](../docs/modules/webrtc2/tests.md) porte les deux versants.
+
+### Démarrer un Peer dans un test : `helpers/bootLocalPeer.js` (29/08/2026)
+
+Trois verbes, et le choix entre eux n'est pas cosmétique :
+
+- **`bootLocalPeer(start, { peerId, getPeer })`** — le motif non-bloquant : lancer la création
+  **sans l'attendre**, attendre que l'instance existe, puis émettre `'open'`. C'était un
+  copier-coller entre `createVirtualPeer` et `usePeerOrchestrator.broadcastPresence.test.js`.
+  ⚠️ `getPeer` est **obligatoire** après un `vi.resetModules()` : `_lastInstance` est un état de
+  module du mock (contrairement au bus, qui vit sur `globalThis`), donc l'accesseur importé
+  statiquement interrogerait l'ancienne copie et l'attente expirerait sur « Peer non créé ».
+- **`seedReadyPeer(peerStore, peerId)`** — pour les tests qui ne construisent aucun `Peer` et
+  semaient le seul `lastLocalPeerId`. Il parcourt le CHEMIN complet des transitions
+  (`creating → connecting → ready`), et repasse par `absent` en cas de re-semis : un raccourci
+  ferait journaliser un enchaînement que la production ne produit jamais.
+- **`seedAbsentPeer(peerStore)`** — « je n'ai pas encore de peerId à publier ». Nettoie AUSSI
+  `lastLocalPeerId`, sans quoi le semis décrirait une contradiction au lieu d'un état.
+
+> ⚠️ **Ce que le contrôle négatif a montré, et qui contredit l'énoncé de l'item.** Commenter
+> l'émission de `'open'` dans le helper fait rougir **tous les scénarios** — et **aucun cas** de
+> `incomingAuth` ni de `peerUnavailable`, les deux fichiers qui ne l'émettaient jamais. Leur
+> admission entrante ne consulte pas l'identité locale : l'`'open'` y est de la **fidélité**, pas
+> un support d'assertion. Ne pas le retirer en concluant « il ne sert à rien ».
 
 ### Le canal de présence est livrable au harnais depuis le 28/08/2026
 
@@ -97,7 +120,7 @@ les client events, pas `here`/`joining`/`leaving`, que le Chat exercera.
 
 - [✅] `requestRemotePeerConnection` : POST Ajax déclenché, `addWaitingRemotePeerId` appelé, throttling SIGNALING_STALE_MS (pas de 2e requête si `waiting` récent)
 - [✅] `requestRemotePeerConnection` rate limiting `ASK_PEER_MAX_REQUESTS_PER_WINDOW` / `ASK_PEER_RATE_WINDOW_MS` : plafond par cible, discrimination slug **et** `connectionType`, reprise après la fenêtre, un POST en échec consomme un jeton, le garde `waiting` sorti en amont n'en consomme aucun. ⚠️ Les tests passent par `invalidateRemotePeerId` (chemin réel du `peer-unavailable`) : sans cette purge c'est le garde `waiting` qui sort en premier et ils verdissent pour la mauvaise raison. ⚠️ `askPeerRateLimiter.reset()` obligatoire en `beforeEach` — état module-level + `Date.now()` gelé par les fake timers
-- [✅] `responseRemotePeerConnection` : POST avec `peerId` local correct, garde `!getLocalPeerId` (aucun POST, `false`), booléen de retour
+- [✅] `responseRemotePeerConnection` : POST avec `peerId` local correct, garde d'identité publiable — `peerIdentity().state !== 'ready'` ⇒ aucun POST, `false` —, booléen de retour
 - [✅] `requestAuthorizationRemotePeerId` : envoi immédiat + retry via `inviteRetryManager`, retourne un `inviteId`
 - [✅] `sendAuthorizationRemotePeerId` : envoi avec `status: true` (inclut peerId) vs `status: false` (type seulement)
 - [ ] `notifyCloseConnectionToPeer` : POST avec room/type/fromUserSlug
@@ -148,7 +171,7 @@ factice qui est un objet nu — sont dans
   - retire la connexion échouée, conserve celles pointant sur un autre peerId
   - invalide le mapping **même** si le pair reste connecté dans une autre room (le bug du 2026-08-13), et même si aucune instance n'a été stockée ; positionne `peerUnavailableSignal`
 - [✅] **`usePeerTransport.singleton.test.js`** (19) — cycle de vie du Peer singleton :
-  - création, `localPeerReady` seulement sur `'open'`, garde d'init (2 contextes simultanés = 1 seul Peer), peer prêt réutilisé
+  - création, phase `ready` seulement sur `'open'`, garde d'init (2 contextes simultanés = 1 seul Peer), peer prêt réutilisé
   - 🔥 **fenêtre asynchrone entre les deux gardes** : `peerInitPromise` est déjà retombée (corps de `_doInit` synchrone) et `'open'` n'est pas arrivé — un second contexte ne doit pas créer un second Peer. C'est la séquence NOMINALE de production (`data-app` au tick 0, `stream-<room>` après résolution de route), et le trou de couverture qui a laissé passer la régression du 2026-08-14
   - **l'invariant « une seule instance de Peer par onglet »**, énoncé une fois pour les trois fenêtres de montage (même tick / init résolue sans `'open'` / `'open'` reçu). Les tests voisins en sont des cas particuliers : c'est **ici** qu'on vérifie que les trois gardes tiennent encore après un remaniement
   - ref-counting : destruction **différée** de `PEER_DESTROY_DELAY_MS`, **annulée** si un consommateur remonte, peer conservé tant qu'un autre consommateur est monté

@@ -34,6 +34,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createMockContext } from './helpers/createMockContext.js'
 import { withSetup } from './helpers/withSetup.js'
 import { usePeer2Store } from '~socializer/stores/peers2.js'
+import { PEER_PHASES } from '~socializer/stores/peers2/phases.js'
 import { ENDPOINTS, PEER_DESTROY_DELAY_MS, STUN_ONLY_ICE_SERVERS } from '~socializer/components/WebRTC2/webrtc2.config.js'
 
 const ROOM = 'live'
@@ -117,12 +118,13 @@ describe('usePeerTransport — Peer singleton (garde d\'init, ref-counting, dest
         const peer = lastPeer()
         expect(peer).not.toBeNull()
         expect(ctx.peerStore.localPeer).toBe(peer)
-        // `localPeerReady` ne suit pas la création mais la connexion réelle au serveur.
-        expect(ctx.peerStore.localPeerReady).toBe(false)
+        // La phase ne suit pas la création mais la connexion réelle au serveur : le Peer
+        // existe (`connecting`), il n'est pas joignable.
+        expect(ctx.peerStore.peerPhase).toBe(PEER_PHASES.CONNECTING)
 
         peer._triggerEvent('open', 'peer-alice')
 
-        expect(ctx.peerStore.localPeerReady).toBe(true)
+        expect(ctx.peerStore.peerPhase).toBe(PEER_PHASES.READY)
         expect(ctx.peerStore.lastLocalPeerId).toBe('peer-alice')
     })
 
@@ -156,9 +158,9 @@ describe('usePeerTransport — Peer singleton (garde d\'init, ref-counting, dest
         // 🔥 Régression du 2026-08-14 (« A diffuse, B reste sur le spinner »).
         //
         // La garde `peerInitPromise` retombe dès que `_doInit` est résolue — c'est-à-dire dès
-        // que la configuration ICE est arrivée et le `Peer` construit. Or `localPeerReady` n'est
-        // vrai qu'à la réception de `'open'`, un aller-retour réseau plus tard. Entre les deux,
-        // seule la garde d'INSTANCE couvre la fenêtre.
+        // que la configuration ICE est arrivée et le `Peer` construit. Or la phase ne passe à
+        // `ready` qu'à la réception de `'open'`, un aller-retour réseau plus tard. Entre les
+        // deux, seule la garde d'INSTANCE couvre la fenêtre.
         //
         // C'est la situation NOMINALE en production : `Notifications.vue` monte le contexte
         // permanent `data-app` au tick 0, et le contexte `stream-<room>` monte après la
@@ -173,7 +175,7 @@ describe('usePeerTransport — Peer singleton (garde d\'init, ref-counting, dest
 
         // La fenêtre est bien ouverte : plus de garde de promesse, et pas encore de `open`.
         expect(ctxA.peerStore.peerInitPromise).toBeNull()
-        expect(ctxA.peerStore.localPeerReady).toBe(false)
+        expect(ctxA.peerStore.peerPhase).toBe(PEER_PHASES.CONNECTING)
 
         const ctxB = makeCtx('stream-live', ctxA.peerStore)
         const [apiB] = mount(usePeerTransport, ctxB)
@@ -192,7 +194,7 @@ describe('usePeerTransport — Peer singleton (garde d\'init, ref-counting, dest
 
         expect(ctxA.peerStore.localPeer).toBe(peer1)
         expect(ctxA.peerStore.lastLocalPeerId).toBe('peer-alice')
-        expect(ctxA.peerStore.localPeerReady).toBe(true)
+        expect(ctxA.peerStore.peerPhase).toBe(PEER_PHASES.READY)
     })
 
     it('ne recrée rien quand le Peer est déjà prêt', async () => {
@@ -216,7 +218,7 @@ describe('usePeerTransport — Peer singleton (garde d\'init, ref-counting, dest
     // Les tests ci-dessus couvrent chacun UNE fenêtre de montage ; celui-ci énonce la règle
     // dont ils sont des cas particuliers : **un onglet n'a jamais deux instances de `Peer`**,
     // quel que soit le moment où un second contexte se monte. Quatre gardes concourent à le
-    // tenir (`localPeerReady`, l'instance, `peerInitPromise`, et la garde d'annulation
+    // tenir (la phase, l'instance, `peerInitPromise`, et la garde d'annulation
     // post-récupération ICE) — c'est ici, et non dans chacune de leurs implémentations, qu'il
     // faut venir vérifier qu'ils tiennent encore après un remaniement.
 
@@ -300,7 +302,7 @@ describe('usePeerTransport — Peer singleton (garde d\'init, ref-counting, dest
 
         expect(peer.destroy).toHaveBeenCalledOnce()
         expect(ctx.peerStore.localPeer).toBeNull()
-        expect(ctx.peerStore.localPeerReady).toBe(false)
+        expect(ctx.peerStore.peerPhase).toBe(PEER_PHASES.ABSENT)
         expect(ctx.peerStore.lastLocalPeerId).toBeNull()
     })
 
@@ -400,7 +402,7 @@ describe('usePeerTransport — Peer singleton (garde d\'init, ref-counting, dest
         // État exact laissé par le `catch` de l'init : le peer a disparu du store alors
         // que le consommateur est encore monté.
         ctx.peerStore.localPeer = null
-        ctx.peerStore.localPeerReady = false
+        ctx.peerStore.markPeerAbsent('après échec d\'init du Peer')
 
         vi.useFakeTimers()
         app.unmount()
@@ -480,7 +482,7 @@ describe('usePeerTransport — Peer singleton (garde d\'init, ref-counting, dest
             // ⚠️ Ce n'est PAS une repro : aucun chemin PeerJS ne livre un `open` après un
             // `destroy()` (`socket._cleanup()` met `onmessage = null`, bundler.mjs:731, avant
             // tout throw possible). C'est l'invariant « un peer hors-jeu n'écrit plus dans le
-            // store », et le garde contre l'état impossible `localPeerReady === true` avec
+            // store », et le garde contre l'état impossible « phase `ready` » avec
             // `localPeer === null` : `setLocalPeer` sortirait alors par sa garde de fraîcheur
             // et plus aucun Peer ne serait jamais recréé — impasse permanente.
             //
@@ -498,7 +500,7 @@ describe('usePeerTransport — Peer singleton (garde d\'init, ref-counting, dest
 
             peer._triggerEvent('open', 'peer-zombie')
 
-            expect(ctxA.peerStore.localPeerReady).toBe(false)
+            expect(ctxA.peerStore.peerPhase).toBe(PEER_PHASES.ABSENT)
             expect(ctxA.peerStore.lastLocalPeerId).toBeNull()
 
             // Le fait métier : la room refonctionne, un nouveau contexte obtient un vrai Peer.
@@ -567,7 +569,10 @@ describe('usePeerTransport — Peer singleton (garde d\'init, ref-counting, dest
         expect(peer.destroy).toHaveBeenCalledOnce()
         expect(peerStore.peerConsumers.size).toBe(0)
         expect(peerStore.getLocalPeer).toBeNull()
-        expect(peerStore.getLastLocalPeerId).toBeNull()
+        // `getLastLocalPeerId` a été supprimé avec la FSM : l'identité historique ne se lit
+        // plus seule (c'est elle qui faisait répondre « prêt » sur un peer mort), mais par
+        // `peerIdentity().lastId`, où elle voisine avec l'état qui dit ce qu'elle vaut.
+        expect(peerStore.peerIdentity()).toMatchObject({ state: 'absent', id: null, lastId: null })
         expect(peerStore.peerInitPromise).toBeNull()
         expect(peerStore.peerDestroyTimer).toBeNull()
     })
@@ -839,7 +844,7 @@ describe('usePeerTransport — Peer singleton (garde d\'init, ref-counting, dest
             // Le fait métier, pas seulement l'absence d'exception : la session est réellement
             // utilisable. Sans relais TURN, mais utilisable.
             peer._triggerEvent('open', 'peer-alice')
-            expect(ctx.peerStore.localPeerReady).toBe(true)
+            expect(ctx.peerStore.peerPhase).toBe(PEER_PHASES.READY)
         })
 
         it('n\'instancie aucun Peer si le singleton a été détruit pendant la récupération ICE', async () => {
@@ -880,7 +885,7 @@ describe('usePeerTransport — Peer singleton (garde d\'init, ref-counting, dest
 
             expect(peerCount()).toBe(0)
             expect(ctx.peerStore.localPeer).toBeNull()
-            expect(ctx.peerStore.localPeerReady).toBe(false)
+            expect(ctx.peerStore.peerPhase).toBe(PEER_PHASES.ABSENT)
         })
 
         it('n\'instancie qu\'un Peer quand une init plus récente supplante celle qui attend l\'ICE', async () => {

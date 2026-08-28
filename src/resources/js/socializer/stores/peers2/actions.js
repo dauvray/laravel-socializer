@@ -4,17 +4,95 @@ import { waitingPeerIdKey } from '~socializer/stores/peers2/keys.js'
 // Même raison que keys.js : le diff de composition est un contrat partagé avec le double de
 // test, contre lequel les arrivées et les départs sont assertés.
 import { diffRoomMembers } from '~socializer/stores/peers2/roomDiff.js'
+// Même raison encore : la phase du Peer et sa table de transitions sont un contrat partagé
+// entre ces actions (écriture), les getters (lecture) et le double de test.
+import { PEER_PHASES, isExpectedPeerPhaseTransition } from '~socializer/stores/peers2/phases.js'
 
 export default {
 
-    setLocalPeer(peer = null) {
-        this.localPeer = peer
+    /*--------------------------
+    | Cycle de vie du Peer — les transitions
+    |
+    | UNIQUES écrivains de `peerPhase`, et appelés par le seul `usePeerTransport` : la
+    | phase suit les événements de PeerJS, elle ne s'invente nulle part ailleurs.
+    |
+    | Ils remplacent trois setters qui n'avaient AUCUN appelant (`setLocalPeer`,
+    | `setLocalPeerReady`, `setLastLocalPeerId`) : le transport écrivait les champs en
+    | direct, depuis quatre endroits, dans un ordre que rien ne contrôlait.
+    --------------------------*/
+
+    /**
+     * Applique une transition de phase. **Toujours**, même inattendue — cf. l'en-tête de
+     * `phases.js` : une phase qui refuserait de suivre décrirait un peer qui n'existe
+     * plus, ce qui est exactement la divergence qu'elle supprime. L'inattendu est
+     * journalisé, pas empêché.
+     *
+     * @param {string} to    Une des `PEER_PHASES`
+     * @param {string} where La transition d'où l'on vient — même rôle que dans `auditPeerState`
+     * @returns {string} la phase désormais en vigueur
+     */
+    setPeerPhase(to, where = '?') {
+        const from = this.peerPhase
+
+        if (!isExpectedPeerPhaseTransition(from, to)) {
+            console.warn(
+                `[WebRTC2][peerFSM] Transition inattendue : ${from} → ${to} (${where}) — appliquée quand même`
+            )
+        }
+
+        this.peerPhase = to
+        return to
     },
-    setLocalPeerReady(ready = false) {
-        this.localPeerReady = ready
+
+    /** Une init démarre : il n'y a pas encore de `Peer`, et c'est normal. */
+    markPeerCreating() {
+        return this.setPeerPhase(PEER_PHASES.CREATING, 'début d\'init')
     },
-    setLastLocalPeerId(peerId = null) {
-        this.lastLocalPeerId = peerId
+
+    /** L'instance existe, son `'open'` n'est pas arrivé. */
+    markPeerConnecting() {
+        return this.setPeerPhase(PEER_PHASES.CONNECTING, 'Peer construit')
+    },
+
+    /**
+     * `'open'` reçu : le pair est joignable sous cet id.
+     *
+     * Publie l'identité et remet le compteur de reconnexion à zéro — les trois faits d'un
+     * `'open'`, dans la seule action qui sait ce que cet événement signifie. Un `id` non
+     * exploitable (le cas `reconnect()`, qui rend `null`) laisse `lastLocalPeerId` en
+     * place : c'est de lui que le transport repart pour restaurer l'instance.
+     *
+     * @param {?string} id L'identité attribuée par le serveur PeerJS
+     */
+    markPeerOpen(id = null) {
+        if (typeof id === 'string' && id.length > 0) {
+            this.lastLocalPeerId = id
+        }
+
+        // Par le verbe, pas par l'affectation : il reste le pendant d'
+        // `incrementReconnectAttempts`, et un compteur à deux écrivains dont l'un est anonyme
+        // est exactement ce que cette passe supprime ailleurs.
+        this.resetReconnectAttempts()
+
+        return this.setPeerPhase(PEER_PHASES.READY, 'après \'open\' du Peer')
+    },
+
+    /** Socket tombé. L'identité historique reste : `reconnect()` en repart. */
+    markPeerDisconnected() {
+        return this.setPeerPhase(PEER_PHASES.DISCONNECTED, 'après \'disconnected\' du Peer')
+    },
+
+    /**
+     * Plus de Peer — init échouée, ou instance abandonnée.
+     *
+     * ⚠️ Ne touche NI `lastLocalPeerId` NI `localPeer` : l'appelant sait lequel des deux
+     * il laisse derrière lui, et le `.catch` d'init préserve délibérément le premier.
+     * `resetPeerState` est le geste complet ; celui-ci n'est que la phase.
+     *
+     * @param {string} where
+     */
+    markPeerAbsent(where = 'Peer abandonné') {
+        return this.setPeerPhase(PEER_PHASES.ABSENT, where)
     },
 
     /*--------------------------
@@ -254,7 +332,11 @@ export default {
         this.detachPeerListeners()
 
         this.localPeer = null
-        this.localPeerReady = false
+        // Affectation directe, pas `markPeerAbsent` : un reset n'est pas une transition —
+        // il ramène l'état à son point de départ depuis N'IMPORTE QUELLE phase, y compris
+        // celles d'où « absent » ne s'atteint pas normalement. Le journal de transitions
+        // n'a rien à en dire.
+        this.peerPhase = PEER_PHASES.ABSENT
         this.lastLocalPeerId = null
         this.peerInitPromise = null
         this.peerReconnectAttempts = 0

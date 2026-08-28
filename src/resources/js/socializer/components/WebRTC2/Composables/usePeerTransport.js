@@ -557,13 +557,13 @@ export function usePeerTransport(ctx) {
         }
 
         // Le peer local est déjà prêt: rien à recréer, mais le contexte est bien enregistré.
-        if(peerStore.localPeerReady) return
+        if (peerStore.peerIdentity().state === 'ready') return
 
         // Init EN VOL : le Peer existe déjà, mais son `'open'` n'est pas encore arrivé.
         //
         // ⚠️ Ce garde porte sur l'INSTANCE, et il est indispensable : les deux gardes
         // voisines laissent une fenêtre de plusieurs centaines de ms grande ouverte, alors que
-        // `localPeerReady` attend un aller-retour réseau (`retrieveId` HTTP + WebSocket).
+        // la phase `ready` attend un aller-retour réseau (`retrieveId` HTTP + WebSocket).
         // Or la production monte précisément deux consommateurs dans cet intervalle :
         // `Notifications.vue` crée le contexte permanent `data-app` au tick 0, et le
         // contexte `stream-<room>` arrive après la résolution de route et un import
@@ -590,6 +590,11 @@ export function usePeerTransport(ctx) {
             // montés dans le même tick s'appuient dessus, et c'est `setLocalPeer` qui enregistre
             // le contexte au registre.
             //
+            // ⚠️ AVANT l'`await` : c'est cette phase qui rend « pas de peer » LÉGITIME pendant
+            // l'aller-retour ICE. Posée après, la fenêtre serait lue comme `absent` — donc comme
+            // une contradiction par l'audit, et comme « rien en vol » par tout lecteur.
+            peerStore.markPeerCreating()
+
             // `fetchIceServers` ne jette JAMAIS et rend toujours un tableau non vide (repli STUN
             // seul, avec timeout) : le Peer est donc créé même si `/get-ice-servers` est mort.
             const { iceServers, credentialTtlMs } = await fetchIceServers(ctx.AjaxService)
@@ -664,6 +669,10 @@ export function usePeerTransport(ctx) {
                 config: { iceServers }
             }))
             peerStore.localPeer = peer
+            // L'instance existe, son `'open'` n'est pas arrivé. Écrit dans le même segment
+            // synchrone que l'affectation ci-dessus : les deux disent le même fait, et un
+            // lecteur ne doit jamais pouvoir voir l'un sans l'autre.
+            peerStore.markPeerConnecting()
 
             // ── Branchement des listeners du Peer ─────────────────────────────────
             // `bind` est la SEULE porte d'entrée : il enregistre la paire (event, handler)
@@ -703,13 +712,6 @@ export function usePeerTransport(ctx) {
                 // pouvait joindre. Ceinture du garde d'instance de `setLocalPeer`.
                 if (peerStore.localPeer !== peer) return
 
-                // Peer utilisable : connexion (re)établie avec le serveur PeerJS.
-                // localPeerReady passe à true ici (et non plus au début de _doInit)
-                // pour refléter l'état réel : le peer n'est utilisable qu'une fois
-                // l'événement 'open' reçu. Idempotent sur les reconnexions.
-                peerStore.localPeerReady = true
-                // Connexion (re)établie : réinitialise le compteur de reconnexion
-                peerStore.resetReconnectAttempts()
                 // Workaround for peer.reconnect deleting previous id
                 //
                 // ⚠️ `peer._id`, JAMAIS `peer.id` : `id` est un accesseur SANS setter
@@ -717,11 +719,20 @@ export function usePeerTransport(ctx) {
                 // lève une TypeError — un module ES est toujours en mode strict. Le champ
                 // assignable est celui que l'accesseur lit. Cf. le garde du même nom dans
                 // le handler 'disconnected', où la levée coûtait toute la reconnexion.
+                //
+                // ⚠️ AVANT la transition, et pas par élégance : `markPeerOpen` pose la phase
+                // `ready`, et l'audit qui suit vérifie que le peer porte alors un id
+                // utilisable (`pret-sans-id`). Restaurer l'instance après, c'est se faire
+                // signaler une contradiction qu'on s'apprêtait à corriger.
                 if (id === null) {
                     peer._id = peerStore.lastLocalPeerId
-                } else {
-                    peerStore.lastLocalPeerId = id
                 }
+
+                // Peer utilisable : connexion (re)établie avec le serveur PeerJS. La
+                // transition porte les trois faits d'un `'open'` — la phase, l'identité
+                // publiée, le compteur de reconnexion remis à zéro. Idempotente sur les
+                // reconnexions.
+                peerStore.markPeerOpen(id)
 
                 peerStore.auditPeerState('après \'open\' du Peer')
             })
@@ -837,16 +848,15 @@ export function usePeerTransport(ctx) {
                 // peer courant, en écrasant au passage son handle de timer.
                 if (peerStore.localPeer !== peer || peer.destroyed) return
 
-                // Le peer n'est plus utilisable : le dire. Rien ne remettait ce drapeau à
-                // false hors destruction complète, si bien qu'un peer déconnecté continuait
-                // de se déclarer « prêt » — `setLocalPeer()` sortait alors par son premier
-                // garde, et `waitForMeReady()` (qui lit `lastLocalPeerId`, un fait
-                // HISTORIQUE) répondait oui. Pendant ce temps `getLocalPeerId` rend `null`,
-                // car `Peer.disconnect()` met `_id` à null : chaque publication du peerId
-                // local sortait donc en `warn('localPeer pas encore prêt')` — l'onglet ne
+                // Le peer n'est plus utilisable : le dire. Rien ne le disait hors destruction
+                // complète, si bien qu'un peer déconnecté continuait de se déclarer « prêt » —
+                // `setLocalPeer()` sortait alors par son premier garde, et `waitForMeReady()`
+                // (qui lisait `lastLocalPeerId`, un fait HISTORIQUE) répondait oui. Pendant ce
+                // temps l'identité COURANTE est nulle, car `Peer.disconnect()` met `_id` à
+                // null : chaque publication du peerId local sortait donc en warn — l'onglet ne
                 // répondait plus à aucune demande de peerId, sans le moindre signe visible.
-                // Remis à true par le handler 'open' dès que la reconnexion aboutit.
-                peerStore.localPeerReady = false
+                // Ramenée à `ready` par le handler 'open' dès que la reconnexion aboutit.
+                peerStore.markPeerDisconnected()
 
                 // Guard auto-reconnect infinie : abandon après MAX_RECONNECT_ATTEMPTS
                 if (peerStore.peerReconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
@@ -1077,8 +1087,8 @@ export function usePeerTransport(ctx) {
 
         const initPromise = _doInit()
             .catch(err => {
-                // En cas d'échec : localPeerReady est encore false (on('open') n'a
-                // pas été reçu), localPeer est remis à null pour permettre un retry.
+                // En cas d'échec : l'`'open'` n'a jamais été reçu, donc la phase n'a jamais
+                // atteint `ready` ; `localPeer` est remis à null pour permettre un retry.
                 // Le compteur de consommateurs N'EST PAS remis à 0 ici : les
                 // consommateurs actifs (composants montés) doivent continuer à
                 // décrémenter normalement via onUnmounted — les remettre à 0 ici
@@ -1086,11 +1096,12 @@ export function usePeerTransport(ctx) {
                 // les anciens démontent, pouvant déclencher la destruction d'un peer
                 // valide. _destroyPeerSingleton gère explicitement le cas localPeer=null
                 // (resetPeerState, qui ne touche pas aux consommateurs).
-                // ⚠️ Pas de resetPeerState ici : il nullerait aussi lastLocalPeerId,
-                // dont dépend waitForMeReady.
+                // ⚠️ Pas de resetPeerState ici : il nullerait aussi `lastLocalPeerId`. Sa
+                // raison d'être — `waitForMeReady` en dépendait — a disparu avec la FSM ;
+                // ce qui reste est une contradiction assumée que le `work/` porte.
                 console.error('[WebRTC2] Échec d\'initialisation du Peer :', err)
-                peerStore.localPeerReady = false
                 peerStore.localPeer = null
+                peerStore.markPeerAbsent('après échec d\'init du Peer')
                 initFailed = true
             })
             .finally(() => {
@@ -1102,12 +1113,13 @@ export function usePeerTransport(ctx) {
                     peerStore.setPeerInitPromise(null)
 
                     // ⚠️ ICI et pas dans le `.catch` : tant que la garde d'init est posée,
-                    // l'état « pas de peer » est LÉGITIME (c'est `creating`). La contradiction
-                    // n'apparaît qu'à la ligne du dessus. Sur un échec, cet audit rougira sur
-                    // `id-historique-sans-peer` — et c'est voulu : le `.catch` laisse
-                    // sciemment `lastLocalPeerId` posé, parce que `waitForMeReady` en dépend.
-                    // La contradiction existe et est assumée ; elle n'était pas nommée. La
-                    // supprimer est le travail de la FSM, pas d'un patch.
+                    // l'état « pas de peer » est LÉGITIME (c'est la phase `creating`). La
+                    // contradiction n'apparaît qu'à la ligne du dessus. Sur un échec, cet audit
+                    // rougira sur `id-historique-sans-peer` : le `.catch` laisse
+                    // `lastLocalPeerId` posé, ce que plus aucun lecteur n'exige depuis que la
+                    // barrière lit l'identité courante. La contradiction est donc désormais
+                    // supprimable — c'est un item du `work/`, et non un effet de bord de cette
+                    // passe.
                     //
                     // Et seulement dans ce `if` : si une init plus récente a pris la main,
                     // l'état décrit le peer de QUELQU'UN D'AUTRE et un audit l'imputerait à

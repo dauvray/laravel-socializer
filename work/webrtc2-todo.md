@@ -32,27 +32,61 @@ avant le déménagement revient à les jeter.
   `const ready = transport.setLocalPeer(); if (!ready) return` a été retiré comme garde mort.
   ⚠️ **Écarté de la passe de régression** : une vingtaine de tests font `await api.setLocalPeer()`
   **avant** de déclencher `'open'` et se bloqueraient. C'est une refonte du harnais autant que du code.
-- [ ] **La machine à états du cycle de vie du Peer** `[L]`
-  Six prédicats coexistent pour répondre à « ai-je un peer utilisable, et quel est son id ? » :
-  `localPeer`, `localPeerReady`, `lastLocalPeerId`, `peerInitPromise`, `localPeer.disconnected`,
-  `localPeer.destroyed`. Ils divergent, et c'est la cause commune de la majorité des pannes du
-  module. `peerStore.peerIdentity()` les réconcilie déjà en un fait unique
-  (`{ state, id, lastId, consumers }`) et `peerStateViolations()` nomme les six contradictions —
-  mais **aucun lecteur n'est migré** : c'est un instrument de mesure, pas encore la source de
-  vérité.
-  ⚠️ **Portée réelle mesurée : 68 cas de test**, pas 20. Deux fichiers entiers
-  (`usePeerTransport.incomingAuth`, 24 cas ; `usePeerTransport.peerUnavailable`, 12 cas)
-  **n'émettent jamais `'open'`** : leur `beforeEach` est à réécrire, pas à réordonner.
-  **Préalable obligatoire** : extraire dans `__tests__/helpers/` le motif non-bloquant qui
-  existe déjà à `createVirtualPeer.js` (dupliqué dans
-  `usePeerOrchestrator.broadcastPresence.test.js`). Et `useCallManager.test.js` +
-  `:81-89` sont la spécification de surface à renégocier, pas des dommages collatéraux.
+  ℹ️ La FSM n'y a pas touché (surface inchangée, décidé avant la passe), mais elle en a **réduit
+  l'enjeu** : « peer utilisable » a désormais un nom lisible de partout (`peerIdentity().state`),
+  et les appelants qui en ont besoin le lisent sans avoir à s'accrocher à la promesse d'init.
+  Le préalable de harnais, lui, est **fait** : `__tests__/helpers/bootLocalPeer.js`.
+- [x] **La machine à états du cycle de vie du Peer** `[L]` — **close le 29/08/2026.** Un seul fait
+  déclaré (`peerPhase`, écrit par cinq transitions) remplace `localPeerReady` et l'usage de
+  `peerInitPromise` COMME état ; `peerIdentity()` est le seul chemin de lecture de la production,
+  et `getLocalPeerId` / `getLastLocalPeerId` / `getLocalPeerReady` sont supprimés — avec trois
+  setters du store qui n'avaient aucun appelant. La substance est dans
+  [flux.md](../docs/modules/webrtc2/flux.md#lire-létat-du-peer-local). Ce que la passe a **appris
+  ou réfuté**, et qui ne se déduit pas du diff :
+  - **La panne silencieuse était fermable seule**, et l'a été en premier (lot 1) :
+    `waitForMeReady` lisait `lastLocalPeerId`, un fait HISTORIQUE, et répondait « prêt » sur un
+    peer détruit ou déconnecté sans recours. Trois cas rouges d'abord, dans
+    `createPeerContext.test.js`. La sémantique retenue n'est pas « répondre `false` » mais
+    **attendre** : abandonner ferait sortir les quatre consommateurs par leur `if (!ready) return`
+    pendant un backoff qui allait aboutir. Le timeout de 15 s reste le filet.
+  - **La phase est appliquée même quand la transition est inattendue** — l'inverse de
+    `useCallStateMachine`, qui refuse. Une phase qui refuserait de suivre PeerJS décrirait un peer
+    qui n'existe plus : c'est la divergence même qu'elle supprime. L'arbitrage est dans l'en-tête
+    de `stores/peers2/phases.js`, épinglé par `peers2Store.peerRuntime.test.js`.
+  - **L'observation garde le dernier mot sur la déclaration** : `peerIdentity()` ne croit pas une
+    phase `ready` sur un peer `destroyed`. Sans cette règle, la phase aurait été un septième
+    prédicat, capable de mentir comme les six autres.
+  - **68 cas de test annoncés, 10 assertions réellement à réécrire** — plus un décor. L'énoncé
+    comptait les fichiers qui n'émettent pas `'open'` ; ce qui coûte n'est pas là, mais dans les
+    fichiers qui asserted sur `localPeerReady` (`singleton`, `reconnect`, `iceRefresh`) et dans
+    `usePeerCore.test.js`, dont TOUT le décor reposait sur un `getLocalPeerId` que le double
+    servait par défaut et que le vrai store n'a jamais eu.
+  - **Un mensonge du double, trouvé en chemin** : `localPeer` et `getLocalPeer` y étaient deux
+    champs INDÉPENDANTS, alors que le store réel ne peut pas les faire diverger. Invisible tant
+    que rien ne lisait les deux — les tests semaient l'un, la production a commencé à lire
+    l'autre. Ce sont désormais deux accesseurs sur un seul objet, avec le garde structurel de
+    `connection.remotePeers`.
+  - **La surface de `setLocalPeer` n'a pas bougé**, comme prévu : `useCallManager.js` et
+    `useCallManager.test.js` sont intacts. L'item voisin `peerInitPromise` reste ouvert et
+    séparé.
+- [ ] **L'id historique survit à un échec d'init — contradiction désormais SUPPRIMABLE** `[S]`
+  Trouvé en fermant la FSM, et laissé hors de sa passe à dessein. Le `.catch` de `_doInit` nulle
+  `localPeer` et laisse `lastLocalPeerId` posé — l'audit le signale (`id-historique-sans-peer`).
+  La raison de le préserver était `waitForMeReady`, **qui ne le lit plus**. Les deux seuls
+  lecteurs de production restants (`peer._id` restauré à l'`'open'` d'une reconnexion,
+  `peer._lastServerId` avant `reconnect()`) exigent tous deux une instance vivante, donc aucun
+  n'est sur ce chemin. Le nettoyer supprime la contradiction ; la garder demande un motif que
+  personne n'a plus. ⚠️ Le code de violation, lui, RESTE : l'état est encore atteignable, et
+  c'est ce qui interdit à un futur lecteur de se raccrocher à l'id historique.
 - [ ] **Fidélité du mock : `disconnect()` ne met pas `_id` à `null`** `[S]`
   Le vrai `Peer.disconnect()` fait `this._id = null` (`bundler.mjs:1809`) ; le mock conserve
   l'id — écart assumé et documenté (le registre du bus est keyé sur `id`, et trois scénarios
   appellent `destroy()` directement). Conséquence : la divergence identité courante /
   identité historique, qui est le cœur de la panne silencieuse, n'est pas reproductible en
   test. Fermer cet écart demande de rekeyer le bus sur une clé stable.
+  ℹ️ **Moins urgent depuis la FSM, et l'argument compte** : les gardes migrés décident sur la
+  PHASE, qui est parfaitement observable en test — c'est ce qui a permis d'épingler la panne
+  silencieuse sans jamais reproduire la nullification de `_id`.
 - [ ] **Fidélité du mock : `open` des connexions est inscriptible** `[S]`
   `peerjsMockFidelity.descriptors.test.js` couvre les **sept accesseurs du `Peer`**. Les
   connexions (`DataConnection`, `MediaConnection`) exposent aussi `open` en lecture seule dans

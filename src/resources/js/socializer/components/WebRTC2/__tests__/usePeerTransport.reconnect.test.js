@@ -18,6 +18,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createMockContext } from './helpers/createMockContext.js'
 import { withSetup } from './helpers/withSetup.js'
+import { PEER_PHASES } from '~socializer/stores/peers2/phases.js'
 import {
     MAX_RECONNECT_ATTEMPTS,
     RECONNECT_BASE_DELAY_MS,
@@ -161,17 +162,21 @@ describe('usePeerTransport — reconnexion PeerJS (backoff, plafond, abandon)', 
     //
     // Ces deux tests épinglent le correctif le plus coûteux de la série : un peer déconnecté
     // continuait de se déclarer « prêt ». `setLocalPeer()` sortait alors par son premier garde
-    // et `waitForMeReady()` répondait oui (il lit `lastLocalPeerId`, un fait HISTORIQUE),
-    // pendant que `getLocalPeerId` rendait `null` — `Peer.disconnect()` met `_id` à null.
+    // et `waitForMeReady()` répondait oui (il lisait `lastLocalPeerId`, un fait HISTORIQUE),
+    // pendant que l'identité COURANTE était nulle — `Peer.disconnect()` met `_id` à null.
     // Chaque publication du peerId local sortait en `warn` : l'onglet ne répondait plus à
     // aucune demande de peerId, sans le moindre signe visible.
+    //
+    // Ils s'assertent sur la PHASE, seul fait déclaré depuis la FSM. `peerIdentity().state`
+    // dirait `disconnected` dans les deux cas — c'est l'observation du peer, et elle ne
+    // distinguerait pas un transport qui a noté la coupure d'un transport qui l'ignore.
 
     it('cesse de se déclarer prêt dès la déconnexion du socket', () => {
-        expect(ctx.peerStore.localPeerReady).toBe(true)
+        expect(ctx.peerStore.peerPhase).toBe(PEER_PHASES.READY)
 
         disconnectSocket()
 
-        expect(ctx.peerStore.localPeerReady).toBe(false)
+        expect(ctx.peerStore.peerPhase).toBe(PEER_PHASES.DISCONNECTED)
     })
 
     it('se redéclare prêt quand la reconnexion aboutit RÉELLEMENT', () => {
@@ -184,12 +189,12 @@ describe('usePeerTransport — reconnexion PeerJS (backoff, plafond, abandon)', 
         // n'ouvre rien de synchrone. C'est le serveur qui répond, ci-dessous.
         expect(peer.reconnect).toHaveBeenCalledOnce()
         expect(peer.disconnected).toBe(false)
-        expect(ctx.peerStore.localPeerReady).toBe(false)
+        expect(ctx.peerStore.peerPhase).toBe(PEER_PHASES.DISCONNECTED)
 
         // Le serveur répond à la réouverture du socket, avec l'id restauré.
         peer._triggerEvent('open', peer._lastServerId)
 
-        expect(ctx.peerStore.localPeerReady).toBe(true)
+        expect(ctx.peerStore.peerPhase).toBe(PEER_PHASES.READY)
         // L'onglet a bien retrouvé SON identité, pas une neuve. Nuance avec l'assertion du
         // premier test : là c'est `_lastServerId` avant l'appel (ce que l'appelant restaure),
         // ici c'est l'id après le tour complet — donc l'effet, et lui seul, qui aurait été

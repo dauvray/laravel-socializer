@@ -14,7 +14,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createMockContext } from './helpers/createMockContext.js'
 import { withSetup } from './helpers/withSetup.js'
-import { resetPeerMock, getLastPeerInstance } from './__mocks__/peerjs.js'
+import { bootLocalPeer } from './helpers/bootLocalPeer.js'
+import { resetPeerMock } from './__mocks__/peerjs.js'
 import { usePeerTransport } from '~socializer/components/WebRTC2/Composables/usePeerTransport.js'
 import { MAX_METADATA_BYTES, REMOTE_PEER_ID_LEASE_MS } from '~socializer/components/WebRTC2/webrtc2.config.js'
 
@@ -36,9 +37,10 @@ describe('usePeerTransport — authentification des connexions entrantes', () =>
 
         ;[transport, app] = withSetup(() => usePeerTransport(ctx))
 
-        // Crée le Peer singleton (mock) et enregistre les handlers on('connection'|'call').
-        await transport.setLocalPeer()
-        peerInstance = getLastPeerInstance()
+        // Crée le Peer singleton (mock), enregistre les handlers on('connection'|'call'),
+        // et va jusqu'à `'open'` : sans cet événement le peer existe mais n'est JAMAIS
+        // prêt, et l'admission serait jugée dans un état que la production ne connaît pas.
+        peerInstance = await bootLocalPeer(() => transport.setLocalPeer(), { peerId: 'peer-me' })
     })
 
     afterEach(() => {
@@ -264,10 +266,13 @@ describe('usePeerTransport — authentification des connexions entrantes', () =>
 
     it('diffère la décision tant que la présence est inconnue, puis admet le membre annoncé', async () => {
         app.unmount()
+        // ⚠️ Avant de remonter : sans ce reset, l'instance du `beforeEach` est encore la
+        // « dernière connue » et l'attente de `bootLocalPeer` se satisferait d'elle —
+        // l'`'open'` partirait sur le peer du contexte démonté.
+        resetPeerMock()
         ctx = unsyncedCtx()
         ;[transport, app] = withSetup(() => usePeerTransport(ctx))
-        await transport.setLocalPeer()
-        peerInstance = getLastPeerInstance()
+        peerInstance = await bootLocalPeer(() => transport.setLocalPeer(), { peerId: 'peer-me' })
 
         const call = incomingCall({ from: 'alice' }, 'peer-alice')
         peerInstance._triggerEvent('call', call)
@@ -288,10 +293,10 @@ describe('usePeerTransport — authentification des connexions entrantes', () =>
 
     it("refuse quand la présence arrive enfin et ne nomme pas l'émetteur", async () => {
         app.unmount()
+        resetPeerMock()
         ctx = unsyncedCtx()
         ;[transport, app] = withSetup(() => usePeerTransport(ctx))
-        await transport.setLocalPeer()
-        peerInstance = getLastPeerInstance()
+        peerInstance = await bootLocalPeer(() => transport.setLocalPeer(), { peerId: 'peer-me' })
 
         const call = incomingCall({ from: 'mallory' }, 'peer-mallory')
         peerInstance._triggerEvent('call', call)

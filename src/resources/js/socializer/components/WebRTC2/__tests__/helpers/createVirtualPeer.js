@@ -54,6 +54,7 @@ import { vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { withSetup } from './withSetup.js'
 import { mockEventBus } from './mockEventBus.js'
+import { bootLocalPeer } from './bootLocalPeer.js'
 import { flushBus } from '../__mocks__/peerjs.js'
 
 /**
@@ -146,20 +147,17 @@ export async function createVirtualPeer({
     server.bindLastClientTo(slug)
     server.registerPeer(slug, { peerStore, contextId: api.contextId })
 
-    // Crée le Peer PeerJS (via transport.setLocalPeer) et branche les callbacks.
-    api.initializePeerConnection(callbacks)
-
-    await vi.waitFor(() => {
-        const instance = getLastPeerInstance()
-        if (!instance) throw new Error(`Peer non créé pour "${slug}"`)
-        return instance
-    })
-
-    const peerInstance = getLastPeerInstance()
-
-    // Le serveur PeerJS attribue le peerId : c'est cet événement qui rend le pair
-    // joignable (et qui l'inscrit au bus).
-    peerInstance._triggerEvent('open', peerId)
+    // Crée le Peer PeerJS (via transport.setLocalPeer), branche les callbacks, puis amène
+    // le pair jusqu'à `'open'` — l'événement qui lui attribue son peerId, le rend joignable
+    // et l'inscrit au bus.
+    //
+    // ⚠️ `getPeer` est OBLIGATOIRE ici : `_lastInstance` est un état de module du mock, et
+    // le `vi.resetModules()` du haut nous a donné une copie neuve. L'accesseur importé
+    // statiquement par le helper interrogerait l'ancienne, qui ne verra jamais ce Peer.
+    const peerInstance = await bootLocalPeer(
+        () => api.initializePeerConnection(callbacks),
+        { peerId, getPeer: getLastPeerInstance }
+    )
     await settle(1)
 
     // Contextes secondaires montés dans cet onglet (cf. mountContext) : démontés avec

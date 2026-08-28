@@ -5,6 +5,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createMockContext } from './helpers/createMockContext.js'
 import { withSetup } from './helpers/withSetup.js'
+import { seedReadyPeer, seedAbsentPeer } from './helpers/bootLocalPeer.js'
 import { usePeerCore } from '~socializer/components/WebRTC2/Composables/usePeerCore.js'
 import {
     ENDPOINTS,
@@ -22,6 +23,12 @@ describe('usePeerCore', () => {
     beforeEach(() => {
         vi.useFakeTimers()
         ctx = createMockContext()
+        // Un Peer local joignable, semé explicitement. Le double portait auparavant un
+        // `getLocalPeerId` truthy PAR DÉFAUT : tout ce fichier tenait donc son décor d'un
+        // membre du mock que le store réel n'a jamais eu. Les quatre routes d'ici publient
+        // ce peerId à un pair distant — elles refusent d'émettre tant qu'il n'est pas
+        // confirmé par le serveur PeerJS, et c'est ce refus qui se sème ou se lève ici.
+        seedReadyPeer(ctx.peerStore, 'local-peer-id-mock')
         ;[core, app] = withSetup(() => usePeerCore(ctx))
         // ⚠️ Le limiteur de /ask-to-peer-id est au niveau MODULE (il doit survivre à un
         // mount/unmount en prod) et `vi.useFakeTimers()` gèle `Date.now()` : sans ce
@@ -172,7 +179,7 @@ describe('usePeerCore', () => {
         })
 
         it('retourne false sans requête si localPeerId est absent', async () => {
-            ctx.peerStore.getLocalPeerId = null
+            seedAbsentPeer(ctx.peerStore)
 
             const result = await core.requestRemotePeerConnection('alice')
 
@@ -345,7 +352,7 @@ describe('usePeerCore', () => {
                 ENDPOINTS.RESPONSE_TO_PEER_ID,
                 'post',
                 {
-                    peerId: ctx.peerStore.getLocalPeerId,
+                    peerId: ctx.peerStore.peerIdentity().id,
                     toUserSlug: 'bob',
                     room: 'room-42',
                     type: 'visio',
@@ -384,8 +391,8 @@ describe('usePeerCore', () => {
             )
         })
 
-        it('utilise bien getLocalPeerId du contexte comme peerId envoyé', async () => {
-            ctx.peerStore.getLocalPeerId = 'my-real-peer-id'
+        it('utilise bien l\'identité courante du contexte comme peerId envoyé', async () => {
+            seedReadyPeer(ctx.peerStore, 'my-real-peer-id')
             const payload = buildPayload()
 
             await core.responseRemotePeerConnection(payload)
@@ -407,7 +414,7 @@ describe('usePeerCore', () => {
         it('ne POSTe rien et retourne false si le peer local n\'est pas encore prêt', async () => {
             // Sans peerId local, le POST enverrait `peerId: null` : le pair distant ne
             // pourrait jamais se connecter et rien ne réessaierait sur ce chemin.
-            ctx.peerStore.getLocalPeerId = null
+            seedAbsentPeer(ctx.peerStore)
             const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
             const result = await core.responseRemotePeerConnection(buildPayload())
@@ -591,7 +598,7 @@ describe('usePeerCore', () => {
                         type: 'visio',
                         action: 'peer-access-permission',
                         room: 'call-room-1',
-                        peerId: ctx.peerStore.getLocalPeerId,
+                        peerId: ctx.peerStore.peerIdentity().id,
                         inviteId,
                     },
                 }
@@ -640,7 +647,7 @@ describe('usePeerCore', () => {
                     type: 'visio',
                     action: 'peer-access-permission',
                     room: 'call-room-42',
-                    peerId: ctx.peerStore.getLocalPeerId,
+                    peerId: ctx.peerStore.peerIdentity().id,
                     inviteId,
                     contextId: ctx.contextId,
                 }
@@ -781,7 +788,7 @@ describe('usePeerCore', () => {
 
         it('n\'émet AUCUNE invitation sans peerId local', async () => {
             const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-            ctx.peerStore.getLocalPeerId = null
+            seedAbsentPeer(ctx.peerStore)
 
             const inviteId = await core.requestAuthorizationRemotePeerId(buildPayload())
 
@@ -795,7 +802,7 @@ describe('usePeerCore', () => {
 
         it('n\'arme aucun retry sans peerId local', async () => {
             vi.spyOn(console, 'warn').mockImplementation(() => {})
-            ctx.peerStore.getLocalPeerId = null
+            seedAbsentPeer(ctx.peerStore)
 
             await core.requestAuthorizationRemotePeerId(buildPayload())
             await vi.advanceTimersByTimeAsync(60_000)
@@ -807,7 +814,7 @@ describe('usePeerCore', () => {
 
         it('n\'inscrit pas de demande en vol sans peerId local', async () => {
             vi.spyOn(console, 'warn').mockImplementation(() => {})
-            ctx.peerStore.getLocalPeerId = null
+            seedAbsentPeer(ctx.peerStore)
 
             await core.requestAuthorizationRemotePeerId(buildPayload())
 
@@ -834,7 +841,7 @@ describe('usePeerCore', () => {
         })
 
         it('envoie un POST à RESPONSE_TO_AUTHORIZATION_PEER avec status true et les options complètes incluant le peerId local', async () => {
-            ctx.peerStore.getLocalPeerId = 'local-peer-xyz'
+            seedReadyPeer(ctx.peerStore, 'local-peer-xyz')
             const payload = buildPayload()
 
             await core.sendAuthorizationRemotePeerId(payload)
@@ -856,8 +863,8 @@ describe('usePeerCore', () => {
             )
         })
 
-        it('injecte getLocalPeerId dans options.peerId quand status est true', async () => {
-            ctx.peerStore.getLocalPeerId = 'peer-id-injected'
+        it('injecte le peerId local dans options.peerId quand status est true', async () => {
+            seedReadyPeer(ctx.peerStore, 'peer-id-injected')
             const payload = buildPayload()
 
             await core.sendAuthorizationRemotePeerId(payload)
@@ -891,7 +898,7 @@ describe('usePeerCore', () => {
         })
 
         it('n\'inclut pas peerId dans options quand status est false', async () => {
-            ctx.peerStore.getLocalPeerId = 'should-not-appear'
+            seedReadyPeer(ctx.peerStore, 'should-not-appear')
             const payload = buildPayload({ status: false })
 
             await core.sendAuthorizationRemotePeerId(payload)
@@ -917,7 +924,7 @@ describe('usePeerCore', () => {
 
         it('retire la clé peerId au lieu d\'envoyer null', async () => {
             const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-            ctx.peerStore.getLocalPeerId = null
+            seedAbsentPeer(ctx.peerStore)
             const payload = buildPayload()
 
             await core.sendAuthorizationRemotePeerId(payload)
@@ -940,7 +947,7 @@ describe('usePeerCore', () => {
         // l'acceptation pour de bon.
         it('envoie tout de même l\'acceptation, statut compris', async () => {
             vi.spyOn(console, 'warn').mockImplementation(() => {})
-            ctx.peerStore.getLocalPeerId = null
+            seedAbsentPeer(ctx.peerStore)
 
             await core.sendAuthorizationRemotePeerId(buildPayload())
 

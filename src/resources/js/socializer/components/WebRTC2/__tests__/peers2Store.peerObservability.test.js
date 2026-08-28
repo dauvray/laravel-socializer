@@ -1,23 +1,32 @@
 /**
  * peers2Store.peerObservability.test.js — `peerIdentity` et les contradictions nommées
  *
- * Six prédicats coexistent pour répondre à « ai-je un peer utilisable, et quel est son id ? » :
- * `localPeer`, `localPeerReady`, `lastLocalPeerId`, `peerInitPromise`, `localPeer.disconnected`
- * et `localPeer.destroyed`. Ils divergent, et cette divergence est la cause commune de la
- * plupart des pannes du module. `peerIdentity` ne les remplace pas encore : il les réconcilie
- * en un seul fait, pour qu'on puisse MESURER avant de reconcevoir.
+ * Six prédicats répondaient chacun à sa façon à « ai-je un peer utilisable, et quel est son
+ * id ? » — `localPeer`, `localPeerReady`, `lastLocalPeerId`, `peerInitPromise`,
+ * `localPeer.disconnected`, `localPeer.destroyed` —, ils divergeaient, et cette divergence est
+ * la cause commune de la plupart des pannes du module. `peerIdentity` les a d'abord
+ * réconciliés pour qu'on puisse MESURER ; il est désormais **le seul chemin de lecture** de la
+ * production, et les deux prédicats déclarés ont fusionné en une phase (`peerPhase`).
  *
  * Ce fichier existe parce que la mesure a manqué. Le churn de peers de la nuit du 24/08 a été
  * établi en croisant à la main les logs Docker du serveur PeerJS avec les `GET /app` de nginx —
  * faute d'un seul endroit disant « voilà l'état du Peer, et voilà en quoi il se contredit ».
  *
  * ⚠️ Les cinq violations ne sont pas une liste défensive : chacune est produite par un chemin
- * identifié du code, et deux d'entre elles sont des états que le code actuel laisse
- * SCIEMMENT (cf. `id-historique-sans-peer`). Les nommer n'est pas les corriger — c'est ce qui
- * permettra de les supprimer sans deviner.
+ * identifié du code, et l'une d'elles est un état que le code laisse SCIEMMENT (cf.
+ * `id-historique-sans-peer`). Depuis la FSM, elles ont un second rôle : confronter le DÉCLARÉ
+ * (la phase) à l'OBSERVÉ (`destroyed` / `disconnected`, écrits par PeerJS) — c'est ce qui
+ * empêche la phase de mentir à son tour.
+ *
+ * ⚠️ **Convention de semis de ce fichier** : un état ATTEIGNABLE se sème par les transitions
+ * (`markPeerCreating` → `markPeerConnecting` → `markPeerOpen`), un état CONTRADICTOIRE par
+ * affectation directe de `peerPhase` — précisément parce qu'aucune transition ne le produit.
+ * Le mélange n'est pas un relâchement : semer une contradiction par un verbe de transition
+ * ferait journaliser un enchaînement impossible et masquerait le vrai sujet du test.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { usePeer2Store } from '~socializer/stores/peers2.js'
+import { PEER_PHASES } from '~socializer/stores/peers2/phases.js'
 import { createMockContext } from './helpers/createMockContext.js'
 
 /** Un double de Peer réduit aux trois drapeaux que `peerIdentity` interroge. */
@@ -48,7 +57,7 @@ describe('peers2 — observabilité de l\'état du Peer', () => {
             // orphelin : `localPeer` est null ALORS QUE l'init est en cours. Sans ce nom, il
             // était indistinguable de `absent` — et c'est précisément l'écart que la garde
             // d'annulation de `_doInit` exploite.
-            store.setPeerInitPromise(Promise.resolve())
+            store.markPeerCreating()
 
             expect(store.peerIdentity().state).toBe('creating')
         })
@@ -63,8 +72,9 @@ describe('peers2 — observabilité de l\'état du Peer', () => {
 
         it('`ready` : le Peer est ouvert', () => {
             store.localPeer = fakePeer()
-            store.localPeerReady = true
-            store.lastLocalPeerId = 'peer-alice'
+            store.markPeerCreating()
+            store.markPeerConnecting()
+            store.markPeerOpen('peer-alice')
             store.addPeerConsumer({})
 
             expect(store.peerIdentity()).toEqual({
@@ -111,15 +121,16 @@ describe('peers2 — observabilité de l\'état du Peer', () => {
 
         it('ne signale rien sur un état cohérent', () => {
             store.localPeer = fakePeer()
-            store.localPeerReady = true
-            store.lastLocalPeerId = 'peer-alice'
+            store.markPeerCreating()
+            store.markPeerConnecting()
+            store.markPeerOpen('peer-alice')
             store.addPeerConsumer({})
 
             expect(store.peerStateViolations()).toEqual([])
         })
 
         it('`pret-sans-peer` : prêt alors qu\'il n\'y a pas de peer', () => {
-            store.localPeerReady = true
+            store.peerPhase = PEER_PHASES.READY
 
             expect(codes()).toContain('pret-sans-peer')
         })
@@ -139,14 +150,14 @@ describe('peers2 — observabilité de l\'état du Peer', () => {
             // « pas de peer » est l'état normal, pas une contradiction. Un outil qui hurle
             // sur du normal n'est plus lu.
             store.lastLocalPeerId = 'peer-alice'
-            store.setPeerInitPromise(Promise.resolve())
+            store.markPeerCreating()
 
             expect(codes()).not.toContain('id-historique-sans-peer')
         })
 
         it('`pret-sans-id` : prêt sur un peer sans id utilisable', () => {
             store.localPeer = fakePeer(null, { disconnected: true })
-            store.localPeerReady = true
+            store.peerPhase = PEER_PHASES.READY
 
             expect(codes()).toContain('pret-sans-id')
         })
@@ -197,7 +208,7 @@ describe('peers2 — observabilité de l\'état du Peer', () => {
 
         it('`pret-mais-detruit` : prêt sur un peer détruit', () => {
             store.localPeer = fakePeer('peer-alice', { destroyed: true })
-            store.localPeerReady = true
+            store.peerPhase = PEER_PHASES.READY
 
             expect(codes()).toContain('pret-mais-detruit')
         })
@@ -240,7 +251,7 @@ describe('peers2 — observabilité de l\'état du Peer', () => {
             // unique là où l'état est incohérent sur plusieurs axes — et le second serait
             // découvert seulement après correction du premier.
             store.localPeer = fakePeer(null, { destroyed: true })
-            store.localPeerReady = true
+            store.peerPhase = PEER_PHASES.READY
 
             expect(codes()).toEqual(
                 expect.arrayContaining(['pret-sans-id', 'pret-mais-detruit'])
@@ -263,14 +274,15 @@ describe('peers2 — observabilité de l\'état du Peer', () => {
         /** Les six états et les six contradictions, en un seul jeu. */
         const CASES = [
             { name: 'absent', apply: () => ({}) },
-            { name: 'creating', apply: (s) => { s.peerInitPromise = Promise.resolve() } },
+            { name: 'creating', apply: (s) => { s.markPeerCreating() } },
             { name: 'connecting', apply: (s) => { s.localPeer = fakePeer() } },
             {
                 name: 'ready',
                 apply: (s, token) => {
                     s.localPeer = fakePeer()
-                    s.localPeerReady = true
-                    s.lastLocalPeerId = 'peer-alice'
+                    s.markPeerCreating()
+                    s.markPeerConnecting()
+                    s.markPeerOpen('peer-alice')
                     s.addPeerConsumer(token)
                 },
             },
@@ -293,11 +305,11 @@ describe('peers2 — observabilité de l\'état du Peer', () => {
                 name: 'detruit et encore prêt',
                 apply: (s) => {
                     s.localPeer = fakePeer('peer-alice', { destroyed: true })
-                    s.localPeerReady = true
+                    s.peerPhase = PEER_PHASES.READY
                     s.lastLocalPeerId = 'peer-alice'
                 },
             },
-            { name: 'prêt sans peer', apply: (s) => { s.localPeerReady = true } },
+            { name: 'prêt sans peer', apply: (s) => { s.peerPhase = PEER_PHASES.READY } },
             { name: 'id historique orphelin', apply: (s) => { s.lastLocalPeerId = 'peer-alice' } },
             {
                 name: 'orphelin en sursis',
@@ -374,7 +386,9 @@ describe('peers2 — observabilité de l\'état du Peer', () => {
         it('reste silencieux sur un état cohérent', () => {
             const error = vi.spyOn(console, 'error').mockImplementation(() => {})
             store.localPeer = fakePeer()
-            store.localPeerReady = true
+            store.markPeerCreating()
+            store.markPeerConnecting()
+            store.markPeerOpen('peer-alice')
             store.addPeerConsumer({})
 
             expect(store.auditPeerState('test')).toEqual([])
@@ -383,7 +397,7 @@ describe('peers2 — observabilité de l\'état du Peer', () => {
 
         it('hurle sur `console.error` en nommant la transition', () => {
             const error = vi.spyOn(console, 'error').mockImplementation(() => {})
-            store.localPeerReady = true
+            store.peerPhase = PEER_PHASES.READY
 
             const violations = store.auditPeerState('après \'open\' du Peer')
 

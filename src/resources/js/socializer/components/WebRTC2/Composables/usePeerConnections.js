@@ -313,8 +313,13 @@ export function usePeerConnections(ctx) {
         const type = payload?.connectionType || payload?.type || ctx.currentType.value
 
         const mySlug = ctx.meStore.getMe?.slug
+        // ⚠️ L'identité COURANTE, sans garde de phase — et c'est voulu : ce qui suit est un
+        // garde anti-auto-connexion, pas une publication. « Ce peerId est le mien » reste vrai
+        // pendant `connecting` comme pendant une coupure, et le refus doit tenir dans les deux
+        // cas. C'est l'exact équivalent de l'ancien `getLocalPeerId` (cf. `usePeerCore`, où le
+        // même id est au contraire gardé parce qu'il part sur le réseau).
         const myPeerId = String(
-            ctx.peerStore.getLocalPeerId
+            ctx.peerStore.peerIdentity().id
             || ''
         )
 
