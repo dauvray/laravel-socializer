@@ -98,7 +98,7 @@ export default () => {
     waitingRemotePeerId: new Map(), // demandes de peerId en vol (clé: `slug|room|type`, valeur: { room, type, createdAt, … })
 
     // Composition des rooms, par contexte (clé: contextId, valeur: string[] de slugs).
-    // Écrit par l'unique producteur de `ctx.connection.usersInRoom`
+    // Écrit par l'unique producteur de `ctx.connection.remotePeers`
     // (usePeerConnections._doGetRoomUsersDiff), purgé à la destruction du contexte.
     // C'est la source de vérité de « ce pair est-il encore présent quelque part ? »,
     // seul prédicat qui autorise à oublier son peerId (cf. removeRemotePeerId).

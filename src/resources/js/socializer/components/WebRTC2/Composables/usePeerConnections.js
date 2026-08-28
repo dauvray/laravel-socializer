@@ -29,7 +29,7 @@ export function usePeerConnections(ctx) {
     const inFlightConnections = new Set()
 
     // Mutex à chaîne de promesses : sérialise les appels concurrents à getRoomUsersDiff
-    // pour éviter le TOCTOU sur ctx.connection.usersInRoom (lecture puis écriture non atomiques).
+    // pour éviter le TOCTOU sur ctx.connection.remotePeers (lecture puis écriture non atomiques).
     let _diffLock = Promise.resolve()
 
     /**
@@ -67,7 +67,7 @@ export function usePeerConnections(ctx) {
         //
         // Écrire tôt ne concède aucun droit : l'annuaire ne fait que traduire un id en
         // slug. La garde d'affichage est ailleurs — `useAwaitedStreams` intersecte les
-        // annonces avec `usersInRoom`, qui reste, lui, derrière la barrière. Un pair
+        // annonces avec `remotePeers`, qui reste, lui, derrière la barrière. Un pair
         // traduit mais pas encore admis est donc noté sans rien afficher.
         _rebuildSlugDirectory(users)
 
@@ -93,11 +93,11 @@ export function usePeerConnections(ctx) {
         // ne rougisse, le contexte de test naissant déjà `presenceSynced: true`.
         const presenceObserved = users.length > 0
 
-        const usersInRoom = users.filter(user => user.slug !== ctx.meStore.getMe.slug)
-        const nextSlugs = usersInRoom.map(user => user.slug)
-        const previousSlugs = [...ctx.connection.usersInRoom]
+        const remotePeers = users.filter(user => user.slug !== ctx.meStore.getMe.slug)
+        const nextSlugs = remotePeers.map(user => user.slug)
+        const previousSlugs = [...ctx.connection.remotePeers]
 
-        const newUsers = usersInRoom.filter(user => !previousSlugs.includes(user.slug))
+        const newUsers = remotePeers.filter(user => !previousSlugs.includes(user.slug))
         const removedUsers = previousSlugs.filter(slug => !nextSlugs.includes(slug))
 
         // Écrits à TOUS les tours, observation ou non — c'est ce qui rend le dernier
@@ -108,7 +108,7 @@ export function usePeerConnections(ctx) {
         // qui permet à `removeRemotePeerId` de répondre « absent de TOUTES les rooms »
         // sans dépendre de l'ordre des purges de `connections` ; purger la liste sans
         // purger l'index ferait survivre le peerId d'un partant à son propre départ.
-        ctx.connection.usersInRoom = nextSlugs
+        ctx.connection.remotePeers = nextSlugs
         ctx.peerStore.setRoomMembers(ctx.contextId, nextSlugs)
 
         // La liste et la CONNAISSANCE qu'on en a n'avancent plus au même rythme, et c'est
@@ -300,7 +300,7 @@ export function usePeerConnections(ctx) {
         //
         // ⚠️ `false`, jamais `true` : `true` signifie « rien à conclure » et ANNULE le
         // retry, `false` le diffère. Un signal légitime reçu avant que la présence Reverb
-        // n'ait peuplé `usersInRoom` doit être rattrapé par le moteur de retry, pas perdu.
+        // n'ait peuplé `remotePeers` doit être rattrapé par le moteur de retry, pas perdu.
         //
         // ⚠️ Ce garde ne va PAS dans `useSignalingQueue` : l'absence de précondition au
         // routage est un invariant documenté (un signal abandonné là l'est définitivement).
@@ -312,7 +312,7 @@ export function usePeerConnections(ctx) {
                     peerId,
                     room,
                     type,
-                    usersInRoom: [...(ctx.connection?.usersInRoom ?? [])],
+                    remotePeers: [...(ctx.connection?.remotePeers ?? [])],
                     isAuthorizedCallPeer: ctx.isAuthorizedCallPeer?.(userSlug) === true,
                 }
             )

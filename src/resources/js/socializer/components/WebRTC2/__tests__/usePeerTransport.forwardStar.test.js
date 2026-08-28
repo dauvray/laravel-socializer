@@ -5,7 +5,7 @@
  *
  * Faille couverte : [HAUTE] envelope.to non validé ni restreint aux membres de la room.
  * Le hub ne doit retransmettre qu'aux slugs (a) au format valide ET (b) réellement
- * présents dans usersInRoom, l'expéditeur étant toujours exclu.
+ * présents dans remotePeers, l'expéditeur étant toujours exclu.
  *
  * Faille couverte (E1) : les deux gardes du hub sont par expéditeur (20 msg/fenêtre) et
  * par message (64 Ko) ; leur PRODUIT par le fan-out ne l'était pas. Le coût réel d'une
@@ -52,7 +52,7 @@ describe('usePeerTransport — forwardStarMessage (validation envelope.to)', () 
         SENDER_PEER_ID = `peer-alice-${_peerSeq++}`
         ctx = createMockContext({
             session: { topology: 'star', hubSlug: 'alice', isHub: true },
-            connection: { usersInRoom: [SENDER, 'bob', 'carol'] },
+            connection: { remotePeers: [SENDER, 'bob', 'carol'] },
             peerStore: { getConnections: conns },
         })
 
@@ -90,7 +90,7 @@ describe('usePeerTransport — forwardStarMessage (validation envelope.to)', () 
         )
 
         expect(sendSpies.bob).toHaveBeenCalledWith('x')
-        // mallory n'est pas dans usersInRoom → aucune connexion, aucun envoi.
+        // mallory n'est pas dans remotePeers → aucune connexion, aucun envoi.
         expect(Object.keys(sendSpies)).not.toContain('mallory')
     })
 
@@ -98,7 +98,7 @@ describe('usePeerTransport — forwardStarMessage (validation envelope.to)', () 
         const evil = 'bob; rm -rf /'
         // Une connexion existe malgré un slug malformé : le filtre _isValidSlug doit primer.
         const evilSend = addOpenConn(evil)
-        ctx.connection.usersInRoom.push(evil)
+        ctx.connection.remotePeers.push(evil)
 
         transport.forwardStarMessage(
             { __starRoute: true, to: [evil], from: SENDER, payload: 'x' },
@@ -198,7 +198,7 @@ describe('usePeerTransport — forwardStarMessage (validation envelope.to)', () 
         it('laisse passer un premier fan-out dont le coût dépasse à lui seul le budget', () => {
             const members = Array.from({ length: 60 }, (_, i) => `member${i}`)
             members.forEach(slug => {
-                ctx.connection.usersInRoom.push(slug)
+                ctx.connection.remotePeers.push(slug)
                 addOpenConn(slug)
             })
 

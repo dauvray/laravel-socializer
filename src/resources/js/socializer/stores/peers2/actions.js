@@ -469,7 +469,7 @@ export default {
     /*--------------------------
     | Composition des rooms (index de présence)
     |
-    | Projection, par contexte, de `ctx.connection.usersInRoom`. Son unique raison d'être
+    | Projection, par contexte, de `ctx.connection.remotePeers`. Son unique raison d'être
     | est de donner un prédicat FIABLE à removeRemotePeerId ci-dessous : « ce pair est-il
     | encore présent dans une room de cet onglet ? ». La map `connections` servait
     | auparavant de proxy pour cette question et y répondait mal — elle décrit des

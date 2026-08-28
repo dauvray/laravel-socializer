@@ -39,7 +39,7 @@ describe('usePeerTransport — sendData mesh (limite de taille payload)', () => 
         conns = {}
         ctx = createMockContext({
             // topology 'mesh' est la valeur par défaut du mock
-            connection: { usersInRoom: ['bob', 'carol'] },
+            connection: { remotePeers: ['bob', 'carol'] },
             peerStore: { getConnections: conns },
         })
 
@@ -119,7 +119,7 @@ describe('usePeerTransport — sendData mesh (limite de taille payload)', () => 
         })
 
         it('exclut un membre sans connexion', () => {
-            ctx.connection.usersInRoom = ['bob', 'carol', 'dave']
+            ctx.connection.remotePeers = ['bob', 'carol', 'dave']
 
             expect(transport.getDataReachablePeers()).toEqual(['bob', 'carol'])
         })
@@ -132,7 +132,7 @@ describe('usePeerTransport — sendData mesh (limite de taille payload)', () => 
         })
 
         it('retourne une liste vide sans aucune connexion', () => {
-            ctx.connection.usersInRoom = []
+            ctx.connection.remotePeers = []
 
             expect(transport.getDataReachablePeers()).toEqual([])
         })

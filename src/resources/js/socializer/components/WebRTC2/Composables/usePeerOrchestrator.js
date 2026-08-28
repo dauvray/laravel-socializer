@@ -254,7 +254,7 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}, 
 
     const startWebcamStream = async () => {
         await media.startCurrentStream()
-        context.usersInRoom.value.forEach(userSlug => {
+        context.remotePeers.value.forEach(userSlug => {
             pool.requestOrConnectPeer(userSlug)
         })
     }
@@ -289,7 +289,7 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}, 
 
     const startAudioStream = async () => {
         await media.startAudioStream()
-        context.usersInRoom.value.forEach(userSlug => {
+        context.remotePeers.value.forEach(userSlug => {
             pool.requestOrConnectPeer(userSlug)
         })
     }
@@ -317,7 +317,7 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}, 
             }
         }
 
-        context.usersInRoom.value.forEach(userSlug => {
+        context.remotePeers.value.forEach(userSlug => {
             pool.requestOrConnectPeer(userSlug, 'screen')
         })
     }
@@ -441,8 +441,7 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}, 
         isHubConnected: context.isHubConnected,
 
         // connection
-        usersInRoom: context.usersInRoom,
-        allUsersInRoom: context.allUsersInRoom,
+        remotePeers: context.remotePeers,
         presenceSynced: context.presenceSynced,
 
         // media

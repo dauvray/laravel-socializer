@@ -4,7 +4,7 @@
  * Vignette d'attente : quels pairs ont un flux ANNONCÉ mais pas encore arrivé.
  *
  * Le point qui compte est l'absence de faux positif : la source n'est plus
- * `usersInRoom` (tous les présents, diffuseurs ou non) mais `announcedStreamPeers`,
+ * `remotePeers` (tous les présents, diffuseurs ou non) mais `announcedStreamPeers`,
  * alimenté par l'annonce data channel et par la trace d'un appel entrant. Un membre
  * silencieux ne doit RIEN afficher — c'était le symptôme rapporté (« le spinner
  * s'affiche même si aucun stream n'est actif, puis disparaît »).
@@ -35,7 +35,7 @@ describe('useAwaitedStreams', () => {
     beforeEach(() => {
         vi.useFakeTimers()
         api = {
-            usersInRoom: ref([]),
+            remotePeers: ref([]),
             remoteStreams: ref([]),
             remoteScreens: ref([]),
             announcedStreamPeers: ref([]),
@@ -53,7 +53,7 @@ describe('useAwaitedStreams', () => {
 
     it('n\'attend PAS un pair présent qui n\'a rien annoncé', () => {
         // Le symptôme rapporté : deux membres dans la room, personne ne diffuse.
-        api.usersInRoom.value = ['alice', 'bob']
+        api.remotePeers.value = ['alice', 'bob']
 
         const { awaitedPeers, isAwaiting } = mount()
 
@@ -62,7 +62,7 @@ describe('useAwaitedStreams', () => {
     })
 
     it('attend un pair dont le flux est annoncé', () => {
-        api.usersInRoom.value = ['alice', 'bob']
+        api.remotePeers.value = ['alice', 'bob']
         api.announcedStreamPeers.value = ['alice']
 
         const { awaitedPeers, isAwaiting } = mount()
@@ -72,7 +72,7 @@ describe('useAwaitedStreams', () => {
     })
 
     it('cesse d\'attendre un pair dès l\'arrivée de son flux', async () => {
-        api.usersInRoom.value = ['alice', 'bob']
+        api.remotePeers.value = ['alice', 'bob']
         api.announcedStreamPeers.value = ['alice', 'bob']
         const { awaitedPeers } = mount()
 
@@ -83,7 +83,7 @@ describe('useAwaitedStreams', () => {
     })
 
     it('reconnaît un partage d\'écran comme un flux reçu', async () => {
-        api.usersInRoom.value = ['alice']
+        api.remotePeers.value = ['alice']
         api.announcedStreamPeers.value = ['alice']
         const { awaitedPeers } = mount()
 
@@ -95,14 +95,14 @@ describe('useAwaitedStreams', () => {
 
     it('ignore l\'annonce d\'un pair absent de la room', () => {
         // Annonce résiduelle (purge en cours, ordre non déterministe) : rien à afficher.
-        api.usersInRoom.value = ['bob']
+        api.remotePeers.value = ['bob']
         api.announcedStreamPeers.value = ['alice']
 
         expect(mount().awaitedPeers.value).toEqual([])
     })
 
     it('abandonne l\'attente après le délai (annonce sans flux ne spinne pas à vie)', async () => {
-        api.usersInRoom.value = ['alice']
+        api.remotePeers.value = ['alice']
         api.announcedStreamPeers.value = ['alice']
         const { awaitedPeers, isAwaiting } = mount()
         expect(awaitedPeers.value).toEqual(['alice'])
@@ -114,7 +114,7 @@ describe('useAwaitedStreams', () => {
     })
 
     it('n\'abandonne pas avant l\'échéance', async () => {
-        api.usersInRoom.value = ['alice']
+        api.remotePeers.value = ['alice']
         api.announcedStreamPeers.value = ['alice']
         const { awaitedPeers } = mount()
 
@@ -124,7 +124,7 @@ describe('useAwaitedStreams', () => {
     })
 
     it('chaque pair a son propre délai', async () => {
-        api.usersInRoom.value = ['alice', 'bob']
+        api.remotePeers.value = ['alice', 'bob']
         api.announcedStreamPeers.value = ['alice']
         const { awaitedPeers } = mount()
 
@@ -138,7 +138,7 @@ describe('useAwaitedStreams', () => {
     })
 
     it('un flux qui arrive juste avant l\'échéance annule l\'abandon', async () => {
-        api.usersInRoom.value = ['alice']
+        api.remotePeers.value = ['alice']
         api.announcedStreamPeers.value = ['alice']
         const { awaitedPeers } = mount()
 
@@ -154,7 +154,7 @@ describe('useAwaitedStreams', () => {
     it('ne ré-attend pas un pair dont le flux s\'arrête', async () => {
         // Arrêt volontaire : l'annonce est purgée avec le départ de la connexion
         // (useCallManager.handleRemoteDeparture), donc plus rien à attendre.
-        api.usersInRoom.value = ['alice']
+        api.remotePeers.value = ['alice']
         api.announcedStreamPeers.value = ['alice']
         api.remoteStreams.value = [entry('alice')]
         const { awaitedPeers } = mount()
@@ -168,7 +168,7 @@ describe('useAwaitedStreams', () => {
     })
 
     it('ne ré-attend pas non plus après l\'arrêt d\'un seul de ses flux', async () => {
-        api.usersInRoom.value = ['alice']
+        api.remotePeers.value = ['alice']
         api.announcedStreamPeers.value = ['alice']
         api.remoteStreams.value = [entry('alice')]
         api.remoteScreens.value = [entry('alice', 'screen')]
@@ -184,7 +184,7 @@ describe('useAwaitedStreams', () => {
     it('une nouvelle annonce réarme une attente abandonnée', async () => {
         // Un abandon n'est pas définitif : le pair relance sa diffusion, la vignette
         // doit revenir (l'ancienne mémoire `served` l'en empêchait pour la session).
-        api.usersInRoom.value = ['alice']
+        api.remotePeers.value = ['alice']
         api.announcedStreamPeers.value = ['alice']
         const { awaitedPeers } = mount()
         await vi.advanceTimersByTimeAsync(TIMEOUT + 100)
@@ -200,7 +200,7 @@ describe('useAwaitedStreams', () => {
 
     it('tolère une api dont les listes sont de simples tableaux', () => {
         api = {
-            usersInRoom: ['alice'],
+            remotePeers: ['alice'],
             remoteStreams: [],
             remoteScreens: [],
             announcedStreamPeers: ['alice'],
@@ -210,7 +210,7 @@ describe('useAwaitedStreams', () => {
     })
 
     it('tolère une api sans projection d\'annonces (aucune attente)', () => {
-        api = { usersInRoom: ['alice'], remoteStreams: [], remoteScreens: [] }
+        api = { remotePeers: ['alice'], remoteStreams: [], remoteScreens: [] }
 
         expect(mount().awaitedPeers.value).toEqual([])
     })

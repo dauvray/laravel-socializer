@@ -69,7 +69,7 @@ describe('usePeerConnections', () => {
 
             expect(diff.newUsers.map((u) => u.slug)).toEqual(['alice', 'bob'])
             expect(diff.removedUsers).toEqual([])
-            expect(ctx.connection.usersInRoom).toEqual(['alice', 'bob'])
+            expect(ctx.connection.remotePeers).toEqual(['alice', 'bob'])
         })
 
         it('détecte les partants et ne les compte pas comme arrivants', async () => {
@@ -79,14 +79,14 @@ describe('usePeerConnections', () => {
 
             expect(diff.newUsers).toEqual([])
             expect(diff.removedUsers).toEqual(['bob'])
-            expect(ctx.connection.usersInRoom).toEqual(['alice'])
+            expect(ctx.connection.remotePeers).toEqual(['alice'])
         })
 
         it('exclut mon propre slug de la liste (filtrage à la source)', async () => {
             const diff = await connections.getRoomUsersDiff([{ slug: ME }, { slug: 'alice' }])
 
             expect(diff.newUsers.map((u) => u.slug)).toEqual(['alice'])
-            expect(ctx.connection.usersInRoom).not.toContain(ME)
+            expect(ctx.connection.remotePeers).not.toContain(ME)
         })
 
         it('retourne un diff vide et ne touche à rien si l\'identité locale n\'est pas prête', async () => {
@@ -95,10 +95,10 @@ describe('usePeerConnections', () => {
             const diff = await connections.getRoomUsersDiff([{ slug: 'alice' }])
 
             expect(diff).toEqual({ newUsers: [], removedUsers: [] })
-            expect(ctx.connection.usersInRoom).toEqual([])
+            expect(ctx.connection.remotePeers).toEqual([])
         })
 
-        it('sérialise les appels concurrents (pas de TOCTOU sur usersInRoom)', async () => {
+        it('sérialise les appels concurrents (pas de TOCTOU sur remotePeers)', async () => {
             // Sans le mutex, les deux appels liraient le même `previousSlugs` vide et le
             // second annoncerait alice comme un arrivant une seconde fois.
             const [first, second] = await Promise.all([
@@ -108,7 +108,7 @@ describe('usePeerConnections', () => {
 
             expect(first.newUsers.map((u) => u.slug)).toEqual(['alice'])
             expect(second.newUsers.map((u) => u.slug)).toEqual(['bob'])
-            expect(ctx.connection.usersInRoom).toEqual(['alice', 'bob'])
+            expect(ctx.connection.remotePeers).toEqual(['alice', 'bob'])
         })
 
         it('une erreur dans un appel ne bloque pas le verrou pour les suivants', async () => {
@@ -122,7 +122,7 @@ describe('usePeerConnections', () => {
 
         // ── Synchroniser n'est pas savoir ─────────────────────────────────────
         //
-        // `usersInRoom` et `presenceSynced` ont le même écrivain — celui-ci — mais plus le
+        // `remotePeers` et `presenceSynced` ont le même écrivain — celui-ci — mais plus le
         // même rythme. Un tour sur liste vide purge (c'est le seul qui puisse rendre le
         // dernier partant) sans déclarer la présence connue : le déclarer ferait basculer
         // les gardes d'admission de « je ne sais pas encore » à « tu n'es pas membre » sur
@@ -140,7 +140,7 @@ describe('usePeerConnections', () => {
 
             expect(diff.removedUsers).toEqual(['alice', 'bob'])
             expect(diff.newUsers).toEqual([])
-            expect(ctx.connection.usersInRoom).toEqual([])
+            expect(ctx.connection.remotePeers).toEqual([])
             expect(ctx.peerStore.setRoomMembers).toHaveBeenLastCalledWith(ctx.contextId, [])
         })
 
@@ -168,7 +168,7 @@ describe('usePeerConnections', () => {
 
             await unsynced.getRoomUsersDiff([{ slug: ME }])
 
-            expect(ctx.connection.usersInRoom).toEqual([])
+            expect(ctx.connection.remotePeers).toEqual([])
             expect(ctx.connection.presenceSynced).toBe(true)
         })
 
@@ -227,7 +227,7 @@ describe('usePeerConnections', () => {
             const diff = await notReady.getRoomUsersDiff([{ id: 11, slug: 'alice' }])
 
             expect(diff.newUsers).toEqual([])
-            expect(ctx.connection.usersInRoom).toEqual([])
+            expect(ctx.connection.remotePeers).toEqual([])
             expect(ctx.connection.slugByUserId.get('11')).toBe('alice')
         })
 
@@ -237,7 +237,7 @@ describe('usePeerConnections', () => {
             expect(ctx.connection.slugByUserId.size).toBe(0)
             // Et la composition, elle, reste complète : l'annuaire est un service annexe,
             // pas une condition d'admission.
-            expect(ctx.connection.usersInRoom).toEqual(['alice', 'bob'])
+            expect(ctx.connection.remotePeers).toEqual(['alice', 'bob'])
         })
     })
 
@@ -436,9 +436,9 @@ describe('usePeerConnections', () => {
         // Le garde d'autorisation sortante exige que la cible soit membre de la room ou
         // interlocuteur d'appel autorisé. On déclare donc la room ici, et pas dans
         // `makeCtx` : les tests de `getRoomUsersDiff` assertent sur le contenu exact de
-        // `usersInRoom` après diff et une valeur initiale non vide les fausserait.
+        // `remotePeers` après diff et une valeur initiale non vide les fausserait.
         beforeEach(() => {
-            ctx.connection.usersInRoom = ['alice', 'bob']
+            ctx.connection.remotePeers = ['alice', 'bob']
         })
 
         it('refuse un payload sans userSlug ou sans peerId', () => {
@@ -771,7 +771,7 @@ describe('usePeerConnections', () => {
             )
 
             it('refuse un slug au format invalide, même déclaré dans la room', () => {
-                ctx.connection.usersInRoom = ['pas un slug !']
+                ctx.connection.remotePeers = ['pas un slug !']
 
                 expect(connections.connectToPeer({
                     userSlug: 'pas un slug !',
@@ -783,8 +783,8 @@ describe('usePeerConnections', () => {
             it('renvoie false — jamais true — pour que le retry diffère au lieu de conclure', () => {
                 // `true` signifie « rien à conclure » et ANNULE le retry (cf. le piège de
                 // `vocal`, qui tombait sur le `return true` final). Un signal légitime reçu
-                // avant que la présence n'ait peuplé `usersInRoom` doit être rattrapé.
-                ctx.connection.usersInRoom = []
+                // avant que la présence n'ait peuplé `remotePeers` doit être rattrapé.
+                ctx.connection.remotePeers = []
 
                 expect(connections.connectToPeer({ userSlug: 'alice', peerId: 'p-alice' })).toBe(false)
             })
@@ -800,7 +800,7 @@ describe('usePeerConnections', () => {
                 // Le registre `authorizedCallPeers` (A1) existe pour lui.
                 ctx.markAuthorizedCallPeer('carol')
 
-                expect(ctx.connection.usersInRoom).not.toContain('carol')
+                expect(ctx.connection.remotePeers).not.toContain('carol')
                 expect(connections.connectToPeer({
                     userSlug: 'carol',
                     peerId: 'p-carol',

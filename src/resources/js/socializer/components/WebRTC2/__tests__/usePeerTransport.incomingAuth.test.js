@@ -9,7 +9,7 @@
  * par la présence OU par un mapping peerId concordant, et (c) ne pas usurper le slug
  * d'un autre membre si son peerId réel est déjà résolu — (c) n'est pas une
  * défense-en-profondeur mais le SEUL anti-usurpation du chemin présence, qui n'exige
- * rien d'autre qu'un slug déclaré présent dans usersInRoom.
+ * rien d'autre qu'un slug déclaré présent dans remotePeers.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createMockContext } from './helpers/createMockContext.js'
@@ -31,7 +31,7 @@ describe('usePeerTransport — authentification des connexions entrantes', () =>
         resetPeerMock()
         ctx = createMockContext({
             contextId: CTX_ID,
-            connection: { usersInRoom: ['alice', 'bob'] },
+            connection: { remotePeers: ['alice', 'bob'] },
         })
 
         ;[transport, app] = withSetup(() => usePeerTransport(ctx))
@@ -174,7 +174,7 @@ describe('usePeerTransport — authentification des connexions entrantes', () =>
     // avec le peerId réel tiennent lieu d'autorisation ET d'anti-usurpation.
 
     it("accepte une connexion data d'un interlocuteur d'appel direct (mapping peerId) hors room", () => {
-        // mallory n'est PAS dans usersInRoom, mais la signalisation a peuplé le mapping.
+        // mallory n'est PAS dans remotePeers, mais la signalisation a peuplé le mapping.
         ctx.peerStore.addRemotePeerId('mallory', 'peer-mallory')
         const conn = incomingConn({ from: 'mallory' }, 'peer-mallory')
         peerInstance._triggerEvent('connection', conn)
@@ -250,7 +250,7 @@ describe('usePeerTransport — authentification des connexions entrantes', () =>
     })
 
     // ── Contexte au démarrage : la présence n'est pas encore connue ─────────────
-    // `usersInRoom` vide ne dit pas « personne n'est membre », il dit « je ne sais pas
+    // `remotePeers` vide ne dit pas « personne n'est membre », il dit « je ne sais pas
     // encore ». Conclure dessus refuse le `peer.call` qui apporte son flux à un arrivant,
     // et ce refus n'est rattrapable par personne : PeerJS ne notifie pas le `close()`
     // d'un appel jamais répondu, et l'émetteur voit sa MediaConnection en `connecting`
@@ -259,7 +259,7 @@ describe('usePeerTransport — authentification des connexions entrantes', () =>
 
     const unsyncedCtx = () => createMockContext({
         contextId: CTX_ID,
-        connection: { usersInRoom: [], presenceSynced: false },
+        connection: { remotePeers: [], presenceSynced: false },
     })
 
     it('diffère la décision tant que la présence est inconnue, puis admet le membre annoncé', async () => {
@@ -278,7 +278,7 @@ describe('usePeerTransport — authentification des connexions entrantes', () =>
         expect(call.close).not.toHaveBeenCalled()
 
         // La présence Reverb arrive — alice était bien membre depuis le début.
-        ctx.connection.usersInRoom = ['alice']
+        ctx.connection.remotePeers = ['alice']
         ctx.connection.presenceSynced = true
 
         await vi.waitFor(() => expect(call.answer).toHaveBeenCalled())
@@ -296,7 +296,7 @@ describe('usePeerTransport — authentification des connexions entrantes', () =>
         const call = incomingCall({ from: 'mallory' }, 'peer-mallory')
         peerInstance._triggerEvent('call', call)
 
-        ctx.connection.usersInRoom = ['alice']
+        ctx.connection.remotePeers = ['alice']
         ctx.connection.presenceSynced = true
 
         // Attendre n'est pas admettre : la présence connue, le garde tranche comme avant.

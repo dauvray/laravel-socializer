@@ -94,7 +94,7 @@ describe('usePeerTransport — Peer singleton (garde d\'init, ref-counting, dest
         const ctx = createMockContext({
             contextId,
             session: { currentType: 'stream', currentRoom: ROOM },
-            connection: { usersInRoom: [] },
+            connection: { remotePeers: [] },
         })
         return sharedPeerStore ? { ...ctx, peerStore: sharedPeerStore } : ctx
     }
@@ -695,7 +695,7 @@ describe('usePeerTransport — Peer singleton (garde d\'init, ref-counting, dest
             const ctxB = createMockContext({
                 contextId: 'data-app',
                 session: { currentType: 'data', currentRoom: 'app' },
-                connection: { usersInRoom: ['bob'] },
+                connection: { remotePeers: ['bob'] },
             })
             ctxB.peerStore = ctxA.peerStore
             const [apiB] = mount(copy2.usePeerTransport, ctxB)

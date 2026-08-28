@@ -85,7 +85,7 @@ export function createPeerContext({ type, room, options = {} }) {
         remoteStreamsMap: shallowReactive(new Map()), // Map pour stocker les flux distants avec une clé composite (userSlug-type) pour éviter les collisions
         // Pairs dont un flux est ANNONCÉ mais pas encore reçu (clé: slug du pair).
         // Réponse exacte à « ai-je une raison d'attendre un flux de ce pair ? », que
-        // `usersInRoom` ne peut pas donner (il liste les présents, diffuseurs ou non).
+        // `remotePeers` ne peut pas donner (il liste les présents, diffuseurs ou non).
         // Deux écrivains, chacun sur la seule information qu'il voit passer — cf. la
         // table des propriétaires dans CONVENTIONS.md :
         //   - useBroadcastPresence : ses trois chemins d'annonce (`BROADCAST_STATE` sur le
@@ -110,16 +110,21 @@ export function createPeerContext({ type, room, options = {} }) {
 
     // CONNECTION STATE
     const connection = reactive({
-        usersInRoom: [],
+        // Les pairs DISTANTS de la room, en slugs — mon propre slug en est filtré à la
+        // source (usePeerConnections._doGetRoomUsersDiff). Le nom dit l'exclusion parce
+        // que tous les lecteurs en dépendent : c'est « les pairs auxquels je dois me
+        // connecter », pas « les membres de la room ». C'est aussi l'allowlist du
+        // chemin (a) des deux gardes d'autorisation.
+        remotePeers: [],
 
         // La composition de la room a-t-elle été OBSERVÉE au moins une fois ?
         //
-        // ⚠️ Distinct de `usersInRoom.length > 0`, et c'est tout l'intérêt : un tableau
+        // ⚠️ Distinct de `remotePeers.length > 0`, et c'est tout l'intérêt : un tableau
         // vide ne dit pas « personne n'est membre », il dit « je ne sais pas encore ».
         // Les gardes d'admission lisent cette différence — refuser sur « je ne sais pas »
         // ferme la porte à tout contact légitime reçu pendant le démarrage du contexte.
         //
-        // Même écrivain unique que `usersInRoom` : usePeerConnections._doGetRoomUsersDiff.
+        // Même écrivain unique que `remotePeers` : usePeerConnections._doGetRoomUsersDiff.
         // Mais les deux n'avancent PAS au même rythme : un tour de synchronisation sur
         // liste vide réécrit la liste (c'est ce qui purge une room qui se vide) sans rien
         // déclarer connu. L'invariant que l'écrivain unique garantit est donc directionnel
@@ -134,7 +139,7 @@ export function createPeerContext({ type, room, options = {} }) {
         // slugs. Sans annuaire, la seule identité disponible dans une charge utile de
         // whisper serait celle que l'émetteur a écrite — ce que `securite.md` interdit.
         //
-        // Même écrivain unique que `usersInRoom`, au même endroit et au même tour : la
+        // Même écrivain unique que `remotePeers`, au même endroit et au même tour : la
         // seule source qui porte les deux champs est la liste de présence
         // (`Http/Resources/PresenceUser` : `id` ET `slug`).
         //
@@ -145,6 +150,7 @@ export function createPeerContext({ type, room, options = {} }) {
         // participer à la réactivité, et toutes les raisons de ne pas y participer.
         slugByUserId: markRaw(new Map()),
     })
+
 
     // LIFECYCLE STATE
     // Garde de teardown partagé : écrit par la couche appels (useCallManager) et par
@@ -222,27 +228,23 @@ export function createPeerContext({ type, room, options = {} }) {
         // Garde de teardown : exposé en lecture seule (seuls beginShutdown/endShutdown écrivent)
         isShuttingDown: computed(() => lifecycle.shutdownCount > 0),
 
-        usersInRoom: computed(() => connection.usersInRoom),
+        remotePeers: computed(() => connection.remotePeers),
         // Exposé parce que deux gardes d'admission en dépendent : sans lui, un refus
         // légitime et un refus « je ne savais pas encore » sont indiscernables depuis
         // l'extérieur — c'est ce qui a coûté un aller-retour de diagnostic complet.
         presenceSynced: computed(() => connection.presenceSynced),
-        // Tous les utilisateurs dans la room, moi compris.
-        // Pas d'exclusion du hub : c'est `usersInRoom` brut + mySlug (sans doublon).
-        allUsersInRoom: computed(() => {
-            const mySlug = meStore.getMe?.slug
-            if (!mySlug || connection.usersInRoom.includes(mySlug)) {
-                return [...connection.usersInRoom]
-            }
-            return [...connection.usersInRoom, mySlug]
-        }),
 
         topology: computed(() => session.topology),
         hubSlug: computed(() => session.hubSlug),
         isHub: computed(() => session.isHub),
+        // Les deux moitiés du prédicat, dites séparément — le hub peut être moi, et
+        // `remotePeers` ne me contient jamais. C'est le seul endroit du module qui ait
+        // besoin de la composition COMPLÈTE ; l'écrire ici en deux termes évite de
+        // maintenir une seconde liste (moi rajouté) que plus personne d'autre ne lit.
         isHubConnected: computed(() => {
-            // allUsersInRoom inclut mon propre slug, donc ce check couvre aussi le cas "je suis le hub"
-            return !!session.hubSlug && computedState.allUsersInRoom.value.includes(session.hubSlug)
+            if (!session.hubSlug) return false
+            return session.hubSlug === meStore.getMe?.slug
+                || connection.remotePeers.includes(session.hubSlug)
         }),
 
         currentStream: computed(() => media.currentStream),
@@ -715,9 +717,9 @@ export function createPeerContext({ type, room, options = {} }) {
         // Remet la machine d'état d'appel à IDLE et vide closingUsers
         callMachine.reset()
 
-        // Réinitialise la liste des utilisateurs en room — et le fait de la connaître :
+        // Réinitialise la liste des pairs distants — et le fait de la connaître :
         // un contexte détruit ne sait plus qui est membre, il ne sait pas « personne ».
-        connection.usersInRoom = []
+        connection.remotePeers = []
         connection.presenceSynced = false
         // Même raison, et une de plus : l'annuaire est ce qui rend un `user_id` de whisper
         // traduisible. Le laisser survivre à un contexte détruit laisserait attribuable

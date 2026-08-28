@@ -120,7 +120,7 @@ describe('usePeerTransport — rafraîchissement du credential TURN', () => {
         const ctx = createMockContext({
             contextId,
             session: { currentType: 'stream', currentRoom: ROOM },
-            connection: { usersInRoom: [] },
+            connection: { remotePeers: [] },
         })
         return sharedPeerStore ? { ...ctx, peerStore: sharedPeerStore } : ctx
     }

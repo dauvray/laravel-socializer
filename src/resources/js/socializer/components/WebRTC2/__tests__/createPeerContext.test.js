@@ -63,10 +63,10 @@ describe('createPeerContext', () => {
             const b = mountContext({ type: 'visio', room: 'r2' })
 
             a.session.currentCallUsers = [{ userSlug: 'alice', type: 'visio' }]
-            a.connection.usersInRoom = ['alice']
+            a.connection.remotePeers = ['alice']
 
             expect(b.session.currentCallUsers).toEqual([])
-            expect(b.connection.usersInRoom).toEqual([])
+            expect(b.connection.remotePeers).toEqual([])
             expect(a.contextId).not.toBe(b.contextId)
         })
 
@@ -340,8 +340,8 @@ describe('createPeerContext', () => {
                 peerStore.addRemotePeerId('alice', 'p-alice')
                 // La présence est déclarée dans le STORE, pas seulement dans le contexte
                 // local : c'est l'index partagé qui fait foi (`setRoomMembers` est écrit
-                // par getRoomUsersDiff, unique producteur de `usersInRoom`).
-                ctx.connection.usersInRoom = ['alice']
+                // par getRoomUsersDiff, unique producteur de `remotePeers`).
+                ctx.connection.remotePeers = ['alice']
                 peerStore.setRoomMembers(ctx.contextId, ['alice'])
 
                 closeWith(ctx, { type: 'data', room: 'app', slug: 'alice', from: 'alice' })
@@ -623,21 +623,22 @@ describe('createPeerContext', () => {
 
     // ── Projections calculées ─────────────────────────────────────────────────
     describe('projections calculées', () => {
-        it('allUsersInRoom ajoute mon slug sans le dupliquer', () => {
-            const ctx = mountContext()
-
-            ctx.connection.usersInRoom = ['alice']
-            expect(ctx.allUsersInRoom.value).toEqual(['alice', 'test-user'])
-
-            ctx.connection.usersInRoom = ['alice', 'test-user']
-            expect(ctx.allUsersInRoom.value).toEqual(['alice', 'test-user'])
-        })
-
         it('isHubConnected suit la présence du hub dans la room', () => {
             const ctx = mountContext({ options: { topology: 'star', hubSlug: 'alice' } })
 
             expect(ctx.isHubConnected.value).toBe(false)
-            ctx.connection.usersInRoom = ['alice']
+            ctx.connection.remotePeers = ['alice']
+            expect(ctx.isHubConnected.value).toBe(true)
+        })
+
+        // La seconde moitié du prédicat : `remotePeers` ne me contient JAMAIS, donc un hub
+        // qui est moi passerait pour absent si l'appartenance était la seule question posée.
+        // Contre-épreuve : neutraliser le terme `hubSlug === mySlug` dans createPeerContext
+        // fait rougir ce cas, et lui seul.
+        it("isHubConnected rend true quand le hub, c'est moi", () => {
+            const ctx = mountContext({ options: { topology: 'star', hubSlug: 'test-user' } })
+
+            expect(ctx.remotePeers.value).not.toContain('test-user')
             expect(ctx.isHubConnected.value).toBe(true)
         })
 
@@ -661,7 +662,7 @@ describe('createPeerContext', () => {
             ctx.media.currentStream = { id: 'stream' }
             ctx.media.isStreaming = true
             ctx.media.isCapturing = true
-            ctx.connection.usersInRoom = ['alice']
+            ctx.connection.remotePeers = ['alice']
             ctx.addCurrentCallUser('alice', 'visio')
             ctx.callMachine.transition('calling')
         }
@@ -676,7 +677,7 @@ describe('createPeerContext', () => {
             expect(ctx.media.currentStream).toBeNull()
             expect(ctx.media.isStreaming).toBe(false)
             expect(ctx.media.isCapturing).toBe(false)
-            expect(ctx.connection.usersInRoom).toEqual([])
+            expect(ctx.connection.remotePeers).toEqual([])
             expect(ctx.currentCallUsers.value).toEqual([])
             expect(ctx.callStatus.value).toBe('idle')
         })
@@ -707,7 +708,7 @@ describe('createPeerContext', () => {
             apps.pop().unmount()
 
             expect(ctx.media.remoteStreamsMap.size).toBe(0)
-            expect(ctx.connection.usersInRoom).toEqual([])
+            expect(ctx.connection.remotePeers).toEqual([])
         })
     })
 })

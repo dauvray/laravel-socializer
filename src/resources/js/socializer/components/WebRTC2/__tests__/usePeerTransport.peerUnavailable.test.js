@@ -50,7 +50,7 @@ describe('usePeerTransport — recovery peer-unavailable', () => {
         ctx = createMockContext({
             contextId: CTX_ID,
             session: { currentType: 'stream', currentRoom: ROOM },
-            connection: { usersInRoom: ['bob'] },
+            connection: { remotePeers: ['bob'] },
         })
 
         mount(ctx)
@@ -187,7 +187,7 @@ describe('usePeerTransport — recovery peer-unavailable', () => {
         const second = createMockContext({
             contextId: 'data-app',
             session: { currentType: 'data', currentRoom: 'app' },
-            connection: { usersInRoom: [], presenceSynced: false },
+            connection: { remotePeers: [], presenceSynced: false },
             peerStore: ctx.peerStore,
             ...overrides,
         })

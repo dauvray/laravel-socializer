@@ -9,7 +9,7 @@
                     Type : {{ api.currentType }}
                 </li>
                 <li>
-                    Remote users : {{ api.usersInRoom }}
+                    Remote users : {{ api.remotePeers }}
                     <ul>
                         <li>
                             Présence synchronisée :

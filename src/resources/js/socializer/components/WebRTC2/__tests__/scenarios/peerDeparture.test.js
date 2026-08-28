@@ -80,7 +80,7 @@ describe("départ d'un pair", () => {
         await bob.api.syncUsersConnections([{ slug: 'bob' }])
         await settle()
 
-        expect(bob.api.usersInRoom.value).not.toContain('alice')
+        expect(bob.api.remotePeers.value).not.toContain('alice')
         expect(bob.peerStore.getRemotePeerId('alice')).toBeFalsy()
     })
 
@@ -144,7 +144,7 @@ describe("départ d'un pair", () => {
 
         // L'onglet d'alice se ferme : son Peer disparaît du bus PeerJS et ses connexions
         // tombent des deux côtés. B l'apprend par la fermeture, jamais par la présence —
-        // `handleRemoteDeparture` ne touche donc ni `usersInRoom` ni le mapping (le veto de
+        // `handleRemoteDeparture` ne touche donc ni `remotePeers` ni le mapping (le veto de
         // présence de `removeRemotePeerId` s'applique : alice est encore membre).
         server.goOffline('alice')
         aliceV1.peerInstance.destroy()
@@ -164,7 +164,7 @@ describe("départ d'un pair", () => {
         // La présence n'a rien signalé : alice n'a jamais quitté la composition de B.
         // C'est la précondition du test, pas son objet — si elle tombe, le test ne teste
         // plus le bon trou.
-        expect(bob.api.usersInRoom.value).toContain('alice')
+        expect(bob.api.remotePeers.value).toContain('alice')
 
         // Le fait métier : alice revenue reçoit la diffusion de bob.
         expect(aliceV2.receivedStreamsFrom()).toContain('bob')
@@ -229,7 +229,7 @@ describe("départ d'un pair", () => {
 
         // La présence n'a rien signalé : alice n'a jamais quitté la composition de B.
         // Précondition, pas objet du test — si elle tombe, le test ne teste plus le trou.
-        expect(bob.api.usersInRoom.value).toContain('alice')
+        expect(bob.api.remotePeers.value).toContain('alice')
 
         // Le fait métier : alice revenue reçoit la diffusion de bob, sans qu'aucun tour
         // de présence n'ait eu lieu chez lui.

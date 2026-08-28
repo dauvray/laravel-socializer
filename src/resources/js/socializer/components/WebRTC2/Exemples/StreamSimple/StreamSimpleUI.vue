@@ -164,7 +164,7 @@
         metadata: {
             fromName: props.api.myName.value,
             roomId: props.api.onAirRoom.value,
-            countViewers: props.api.usersInRoom.value.length,
+            countViewers: props.api.remotePeers.value.length,
             currentType: props.api.currentType.value,
             isMe: true,
             isAudioMuted: props.api.isMuted.value,
@@ -177,7 +177,7 @@
         metadata: {
             fromName: props.api.myName.value,
             roomId: props.api.onAirRoom.value,
-            countViewers: props.api.usersInRoom.value.length,
+            countViewers: props.api.remotePeers.value.length,
             currentType: props.api.currentType.value,
             isMe: true,
         }
@@ -201,7 +201,7 @@
                 // vit dans `useStreamManager._resolveRemoteName`, pas ici.)
                 fromName: sanitizeMetadataName(rs.metadata?.fromName) || 'Unknown',
                 roomId: rs.metadata?.room,
-                countViewers: apiInstance.usersInRoom?.value?.length || apiInstance.usersInRoom?.length || 0,
+                countViewers: apiInstance.remotePeers?.value?.length || apiInstance.remotePeers?.length || 0,
                 currentType: rs.remoteType,
                 peerId: rs.peerId || rs.metadata?.peerId || null, // On vérifie les deux emplacements au cas où
                 isAudioMuted: rs.metadata?.isAudioMuted ?? false,
@@ -217,7 +217,7 @@
                 // Même raison que pour les flux : la metadata du registre est brute.
                 fromName: sanitizeMetadataName(rs.metadata?.fromName) || rs.remoteSlug || 'Unknown',
                 roomId: rs.metadata?.room,
-                countViewers: props.api.usersInRoom.value.length,
+                countViewers: props.api.remotePeers.value.length,
                 currentType: 'screen',
             }
         }))

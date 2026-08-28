@@ -225,9 +225,9 @@ export function usePeerCore(ctx) {
         // « rien à conclure » côté appelant.
         //
         // ⚠️ Et surtout : le prédicat n'est évalué qu'une fois la présence CONNUE.
-        // `usersInRoom` vide ne dit pas « ce pair n'est pas membre », il dit « je ne sais
+        // `remotePeers` vide ne dit pas « ce pair n'est pas membre », il dit « je ne sais
         // pas encore qui est membre » — et l'ordre de production met systématiquement
-        // l'arrivant du mauvais côté : son `usersInRoom` n'est écrit qu'après
+        // l'arrivant du mauvais côté : son `remotePeers` n'est écrit qu'après
         // `waitForMeReady` (donc après le peerId local), alors que la demande du
         // diffuseur ne coûte qu'un aller-retour HTTP + Reverb. Refuser sur cette
         // ignorance-là, c'est refuser le seul contact qui pouvait amener le flux : la
@@ -244,7 +244,7 @@ export function usePeerCore(ctx) {
                     fromUserSlug: payload?.fromUserSlug,
                     room: payload?.room,
                     type: payload?.type,
-                    usersInRoom: [...(ctx.connection?.usersInRoom ?? [])],
+                    remotePeers: [...(ctx.connection?.remotePeers ?? [])],
                     isAuthorizedCallPeer: ctx.isAuthorizedCallPeer?.(payload?.fromUserSlug) === true,
                 }
             )

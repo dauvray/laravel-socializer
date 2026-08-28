@@ -132,7 +132,7 @@ describe("arrivant tardif : A diffuse déjà quand B rejoint", () => {
         // ⚠️ Présence livrée à A **puis** à B, et non dans le même tick comme le fait
         // `connectRoom`. C'est l'ordre de production, et il n'est pas le fruit du hasard :
         // chez B, `syncUsersConnections` attend `waitForMeReady` — donc le peerId local —
-        // AVANT d'écrire `usersInRoom`, alors que la demande d'A ne coûte qu'un
+        // AVANT d'écrire `remotePeers`, alors que la demande d'A ne coûte qu'un
         // aller-retour HTTP + Reverb. La demande atterrit donc régulièrement dans la
         // fenêtre où B connaît son peerId mais pas encore la composition de sa room.
         //

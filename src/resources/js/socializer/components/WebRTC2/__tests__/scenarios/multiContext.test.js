@@ -108,7 +108,7 @@ describe('plusieurs contextes dans le même onglet (forme de Exemples/Home.vue)'
         // Ordre de montage RÉEL : `System/Notifications.vue` crée `data-app` au tick 0 —
         // il est donc le premier inscrit au contextRegistry — et le provider de diffusion
         // arrive après. `data-app` n'a aucun canal de présence : il ne sert qu'aux appels
-        // directs, son `usersInRoom` reste vide à vie.
+        // directs, son `remotePeers` reste vide à vie.
         const alice = await spawn({ slug: 'alice', type: 'data', room: 'app' })
         const aliceStream = alice.mountContext({ type: 'stream', room: STREAM_ROOM })
 
@@ -126,7 +126,7 @@ describe('plusieurs contextes dans le même onglet (forme de Exemples/Home.vue)'
         expect(bobStreamV1.receivedStreamsFrom()).toContain('alice')
 
         // Bob recharge sa page. La présence Reverb d'alice n'a pas le temps de le voir
-        // partir : bob reste dans son `usersInRoom`, et son peerId dans le store partagé.
+        // partir : bob reste dans son `remotePeers`, et son peerId dans le store partagé.
         // C'est ce peerId-là qui est désormais mort.
         server.goOffline('bob')
         bobV1.peerInstance.destroy()
@@ -272,6 +272,6 @@ describe('plusieurs contextes dans le même onglet (forme de Exemples/Home.vue)'
         // d'alice ont bien renégocié, aucun n'est resté bloqué sur l'identité morte.
         expect(bobV2.receivedStreamsFrom()).toContain('alice')
         expect(alice.peerStore.getRemotePeerId('bob')).toBe('peer-bob-v2')
-        expect(aliceChat.api.usersInRoom.value).toContain('bob')
+        expect(aliceChat.api.remotePeers.value).toContain('bob')
     })
 })

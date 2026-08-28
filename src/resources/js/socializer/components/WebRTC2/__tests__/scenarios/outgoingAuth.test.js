@@ -12,7 +12,7 @@
  *           └─► connectToPeer() enregistre le mapping puis peer.call(mallory, sonFlux)
  *
  * Aucune appartenance à la room n'est exigée nulle part sur ce trajet. `mallory` n'est
- * donc **jamais passé à `connectRoom`** : il n'est dans le `usersInRoom` de personne, et
+ * donc **jamais passé à `connectRoom`** : il n'est dans le `remotePeers` de personne, et
  * son seul pouvoir est celui de n'importe quel utilisateur authentifié — POSTer.
  *
  * ── Pourquoi mallory déclare alice dans SA propre room ────────────────────────

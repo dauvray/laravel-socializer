@@ -15,7 +15,7 @@
  *
  * Choix d'infra : contexte, stores et listeners RÉELS (seul PeerJS est mocké via alias).
  * L'autorisation de la connexion entrante passe par le chemin « appel direct » (mapping
- * peerId vérifié) pour ne pas avoir à peupler `usersInRoom`, dont la synchronisation
+ * peerId vérifié) pour ne pas avoir à peupler `remotePeers`, dont la synchronisation
  * déclencherait de vraies requêtes de signalisation.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'

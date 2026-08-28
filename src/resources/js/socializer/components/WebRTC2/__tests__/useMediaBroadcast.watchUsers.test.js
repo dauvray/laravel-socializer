@@ -43,7 +43,7 @@ describe('useMediaBroadcast.watchUsers', () => {
     it('transmet la LISTE VIDE — c\'est le seul tour qui purge le dernier partant', () => {
         // ⭐ La régression à empêcher. Le garde retiré ici sortait sur `length === 0` : la
         // room qui se vide n'était jamais synchronisée, et ses membres restaient dans
-        // `usersInRoom`, c'est-à-dire dans l'allowlist des gardes d'autorisation.
+        // `remotePeers`, c'est-à-dire dans l'allowlist des gardes d'autorisation.
         api.watchUsers([])
 
         expect(orchestratorDouble.syncUsersConnections).toHaveBeenCalledWith([])

@@ -62,7 +62,7 @@
  * sur un canal déjà rejoint et déjà autorisé. Il ferme du même geste le client non-hub en
  * star, qui ne demande jamais le peerId d'un diffuseur autre que le hub.
  *
- * Ce qu'il ne ferme pas : l'instant avant que `usersInRoom` soit peuplé — le fait arrive,
+ * Ce qu'il ne ferme pas : l'instant avant que `remotePeers` soit peuplé — le fait arrive,
  * mais `useAwaitedStreams` intersecte les annonces avec la composition de la room, écrite
  * après `waitForMeReady`. Borne d'AFFICHAGE, plus de porteur, et mesurée courte (592 ms).
  *
@@ -132,7 +132,7 @@ export function useBroadcastPresence(ctx, { transport, reverb = null }) {
      * C'est le chemin qui informe les arrivants : quand un pair rejoint la room alors
      * que je diffuse déjà, `syncUsersConnections` ouvre la connexion vers lui, et c'est
      * à cet instant précis — canal ouvert, donc envoi fiable — qu'il doit apprendre mon
-     * état. Un `watch` sur `usersInRoom` serait trop tôt (canal pas encore monté).
+     * état. Un `watch` sur `remotePeers` serait trop tôt (canal pas encore monté).
      *
      * Silencieux quand je ne diffuse pas : l'absence d'annonce vaut « pas de flux en
      * route », qui est l'état par défaut côté récepteur.
@@ -262,7 +262,7 @@ export function useBroadcastPresence(ctx, { transport, reverb = null }) {
             return false
         }
 
-        // Annuaire écrit par le seul écrivain de `usersInRoom`
+        // Annuaire écrit par le seul écrivain de `remotePeers`
         // (`usePeerConnections._doGetRoomUsersDiff`) : un `user_id` qui n'y est pas n'est
         // pas un membre observé de la room, et ne peut donc rien y annoncer.
         const remoteSlug = ctx.connection.slugByUserId.get(String(userId))
@@ -327,7 +327,7 @@ export function useBroadcastPresence(ctx, { transport, reverb = null }) {
     // ⚠️ Un seul whisper par tour, jamais un par arrivant : la charge utile ne nomme
     // personne, elle diffuse à tout le canal. Trois arrivées simultanées, une annonce.
     const unwatchRoom = watch(
-        () => [...(ctx.connection.usersInRoom ?? [])],
+        () => [...(ctx.connection.remotePeers ?? [])],
         (slugs, previousSlugs) => {
             const present = new Set(slugs)
             for (const slug of [...ctx.media.announcedStreamsMap.keys()]) {

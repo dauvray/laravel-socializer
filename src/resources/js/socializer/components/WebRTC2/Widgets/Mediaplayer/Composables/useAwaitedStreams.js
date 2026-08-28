@@ -10,7 +10,7 @@
  *   qui s'appuie sur les events du <video> et n'a donc besoin d'aucune heuristique
  *
  * ✅ PLUS D'HEURISTIQUE (2026-08-13). Ce composable attendait auparavant **tout** pair
- * présent dans `usersInRoom`, faute de pouvoir savoir localement qui diffuse : un
+ * présent dans `remotePeers`, faute de pouvoir savoir localement qui diffuse : un
  * membre qui ne diffusait pas affichait donc une vignette d'attente pendant tout le
  * délai d'abandon (symptôme rapporté : « le spinner s'affiche même si aucun stream
  * n'est actif, puis disparaît »). La source est désormais un FAIT, `announcedStreamPeers`
@@ -60,10 +60,10 @@ export function useAwaitedStreams(api, { timeoutMs = AWAITED_STREAM_TIMEOUT_MS }
     // Pairs dont un flux est annoncé (data channel) ou déjà en route (appel entrant).
     const announcedSlugs = computed(() => new Set(_read(api?.announcedStreamPeers)))
 
-    // Intersection avec `usersInRoom` : une annonce résiduelle d'un pair déjà parti ne
+    // Intersection avec `remotePeers` : une annonce résiduelle d'un pair déjà parti ne
     // doit rien afficher, quel que soit l'ordre des purges.
     const awaitedPeers = computed(() =>
-        _read(api?.usersInRoom).filter(
+        _read(api?.remotePeers).filter(
             (slug) => slug
                 && announcedSlugs.value.has(slug)
                 && !streamingSlugs.value.has(slug)

@@ -329,19 +329,19 @@ function _resolveSenderSlugFromIncomingConn(conn, ctx) {
     const senderPeerId = conn?.peer ? String(conn.peer) : null
     if (!senderPeerId) return null
 
-    const usersInRoom = Array.isArray(ctx?.connection?.usersInRoom)
-        ? ctx.connection.usersInRoom
+    const remotePeers = Array.isArray(ctx?.connection?.remotePeers)
+        ? ctx.connection.remotePeers
         : []
 
     // Priorité: ne considérer que les membres connus de la room courante.
-    for (const slug of usersInRoom) {
+    for (const slug of remotePeers) {
         const mappedPeerId = ctx?.peerStore?.getRemotePeerId?.(slug)
         if (mappedPeerId && String(mappedPeerId) === senderPeerId) {
             return slug
         }
     }
 
-    // Fallback défensif: parcourt la map complète si usersInRoom est temporairement vide.
+    // Fallback défensif: parcourt la map complète si remotePeers est temporairement vide.
     // ⚠️ Via le getter, jamais à la main : l'entrée du store est `{ peerId, learnedAt }`,
     // et une comparaison écrite ici sur la valeur brute rendrait `'[object Object]'` —
     // donc jamais d'égalité, et aucune erreur levée. Le getter est aveugle au bail à
@@ -358,7 +358,7 @@ function _resolveSenderSlugFromIncomingConn(conn, ctx) {
 // Règle d'admission (appliquée AVANT setUpConnectionListeners / call.answer):
 //   1. `metadata.from` doit avoir un format de slug valide (_isValidSlug)
 //   2. L'émetteur doit être autorisé via L'UN des deux chemins suivants :
-//      (a) Chemin présence : `metadata.from` ∈ `ctx.connection.usersInRoom` — cas
+//      (a) Chemin présence : `metadata.from` ∈ `ctx.connection.remotePeers` — cas
 //          diffusion/chat dans une room de présence Reverb partagée.
 //      (b) Chemin appel direct : `peerStore.getRemotePeerId(metadata.from)` existe
 //          ET est égal à l'identité PeerJS réelle de la connexion (`conn.peer`).
@@ -376,7 +376,7 @@ function _resolveSenderSlugFromIncomingConn(conn, ctx) {
 //      room (mesuré par scenarios/incomingMappingInvariant.test.js).
 //      Cette règle n'est PAS une défense-en-profondeur : c'est le seul anti-usurpation
 //      du chemin (a), qui n'exige rien d'autre qu'un slug déclaré présent dans
-//      `usersInRoom`. La corroboration autoritative appartient au backend (lot C).
+//      `remotePeers`. La corroboration autoritative appartient au backend (lot C).
 //
 // Important : `ctx.session.currentCallUsers` n'est PAS consulté ici. C'est un état UI
 // (qui voir/raccrocher) alimenté à partir de la même signalisation, mais réutiliser un
@@ -399,12 +399,12 @@ function _isAuthorizedIncomingPeer(metadata, conn, ctx, { quiet = false } = {}) 
         return false
     }
 
-    const usersInRoom = Array.isArray(ctx?.connection?.usersInRoom)
-        ? ctx.connection.usersInRoom
+    const remotePeers = Array.isArray(ctx?.connection?.remotePeers)
+        ? ctx.connection.remotePeers
         : []
     const senderPeerId = conn?.peer ? String(conn.peer) : null
 
-    const isRoomMember = usersInRoom.includes(declaredFrom)
+    const isRoomMember = remotePeers.includes(declaredFrom)
 
     // Chemin (b) — appel direct vérifié : exige le mapping signalé ET la correspondance
     // avec le peerId PeerJS réel. Les deux vérifications sont fusionnées : si l'une
@@ -416,7 +416,7 @@ function _isAuthorizedIncomingPeer(metadata, conn, ctx, { quiet = false } = {}) 
     if (!isRoomMember && !isVerifiedDirectCallPeer) {
         warn(
             "[WebRTC2] Connexion entrante refusée: émetteur ni membre de la room ni interlocuteur autorisé (mapping peerId absent/non concordant)",
-            { declaredFrom, senderPeerId, usersInRoom, hasMappedPeerId: !!mappedPeerId }
+            { declaredFrom, senderPeerId, remotePeers, hasMappedPeerId: !!mappedPeerId }
         )
         return false
     }
@@ -451,7 +451,7 @@ function _isAuthorizedIncomingPeer(metadata, conn, ctx, { quiet = false } = {}) 
 /**
  * `_isAuthorizedIncomingPeer`, mais qui ne conclut jamais sur une ignorance.
  *
- * Le chemin (a) du garde lit `usersInRoom` : tant que le contexte n'a pas synchronisé sa
+ * Le chemin (a) du garde lit `remotePeers` : tant que le contexte n'a pas synchronisé sa
  * présence, cette liste est vide et le garde refuse TOUT — y compris le `peer.call` qui
  * apporte son flux à un arrivant. Or ce refus-là est définitif dans les deux sens : la
  * MediaConnection refusée n'est notifiée à personne (PeerJS ne signale pas le `close()`
@@ -1148,7 +1148,7 @@ export function usePeerTransport(ctx) {
     const getDataReachablePeers = () => {
         const room = ctx.session.onAirRoom
         const type = ctx.session.currentType
-        const users = Array.isArray(ctx.connection.usersInRoom) ? ctx.connection.usersInRoom : []
+        const users = Array.isArray(ctx.connection.remotePeers) ? ctx.connection.remotePeers : []
 
         return users.filter(userSlug => !!_getOpenDataConnection(room, userSlug, type))
     }
@@ -1222,8 +1222,8 @@ export function usePeerTransport(ctx) {
         const type = ctx.session.currentType
 
         // Membres réels de la room : seule source de vérité pour les destinataires.
-        const roomMembers = Array.isArray(ctx.connection.usersInRoom)
-            ? ctx.connection.usersInRoom
+        const remotePeers = Array.isArray(ctx.connection.remotePeers)
+            ? ctx.connection.remotePeers
             : []
 
         // Si `to` est fourni, on le traite comme une demande de ciblage NON fiable :
@@ -1234,10 +1234,10 @@ export function usePeerTransport(ctx) {
         let targets
         if (Array.isArray(envelope.to)) {
             targets = envelope.to.filter(slug =>
-                _isValidSlug(slug) && roomMembers.includes(slug)
+                _isValidSlug(slug) && remotePeers.includes(slug)
             )
         } else {
-            targets = [...roomMembers]
+            targets = [...remotePeers]
         }
         targets = targets.filter(slug => slug !== senderSlug)
 
@@ -1308,7 +1308,7 @@ export function usePeerTransport(ctx) {
             // MAX_PAYLOAD_BYTES (JSON + binaire).
             if (!isPayloadWithinLimit(data, '[Mesh]')) return
 
-            const targets = destUserSlugs || ctx.connection.usersInRoom
+            const targets = destUserSlugs || ctx.connection.remotePeers
             targets.forEach(userSlug => {
                 const conn = _getOpenDataConnection(room, userSlug, type)
                 if (!conn) {
@@ -1326,7 +1326,7 @@ export function usePeerTransport(ctx) {
             // CAS 1 — Je suis le hub
             // Le hub est connecté à tout le monde → envoi direct aux destinataires.
             if (ctx.isHub.value) {
-                const targets = destUserSlugs || ctx.connection.usersInRoom
+                const targets = destUserSlugs || ctx.connection.remotePeers
                 targets.forEach(userSlug => {
                     const conn = _getOpenDataConnection(room, userSlug, type)
                     if (!conn) {

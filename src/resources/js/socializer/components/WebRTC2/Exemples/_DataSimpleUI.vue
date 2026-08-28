@@ -11,7 +11,7 @@
             Type : {{ api.currentType }}
         </li>
         <li>
-            Users : {{ api.usersInRoom }}
+            Users : {{ api.remotePeers }}
         </li>
     </ul>
 </template>

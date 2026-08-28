@@ -12,7 +12,7 @@
  * Deux chemins d'autorisation, exactement les deux mêmes que l'admission entrante :
  *
  *   (a) Présence — le pair est membre de la room courante du contexte
- *       (`connection.usersInRoom`, alimenté par le canal de présence Reverb). Cas
+ *       (`connection.remotePeers`, alimenté par le canal de présence Reverb). Cas
  *       diffusion, chat, salons.
  *   (b) Appel direct — le pair est inscrit dans `session.authorizedCallPeers`, registre
  *       dédié dont `useCallManager` est le seul écrivain : il marque à l'acceptation
@@ -39,13 +39,13 @@ import { isValidSlug } from './validators.js'
 export const isAuthorizedPeer = (userSlug, ctx) => {
     if (!isValidSlug(userSlug)) return false
 
-    // Lecture défensive : `usersInRoom` peut être transitoirement absent d'un contexte
+    // Lecture défensive : `remotePeers` peut être transitoirement absent d'un contexte
     // en cours de montage ou de teardown.
-    const usersInRoom = Array.isArray(ctx?.connection?.usersInRoom)
-        ? ctx.connection.usersInRoom
+    const remotePeers = Array.isArray(ctx?.connection?.remotePeers)
+        ? ctx.connection.remotePeers
         : []
 
-    if (usersInRoom.includes(userSlug)) return true
+    if (remotePeers.includes(userSlug)) return true
 
     return ctx?.isAuthorizedCallPeer?.(userSlug) === true
 }

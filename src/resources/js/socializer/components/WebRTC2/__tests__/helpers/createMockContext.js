@@ -78,12 +78,12 @@ export function createMockContext(overrides = {}) {
 
     // ── Connection state ──────────────────────────────────────────────────────
     // `presenceSynced: true` par défaut — un contexte de test qui se voit attribuer un
-    // `usersInRoom` (fût-il vide) décrit une room qu'il CONNAÎT. Le laisser à false
+    // `remotePeers` (fût-il vide) décrit une room qu'il CONNAÎT. Le laisser à false
     // ferait basculer chaque garde d'admission sur le chemin « je ne sais pas encore »
     // et rendrait les tests de refus dépendants d'un timeout. Les tests qui visent
     // précisément le démarrage d'un contexte le passent explicitement à false.
     const connection = reactive({
-        usersInRoom: [],
+        remotePeers: [],
         presenceSynced: true,
         // Annuaire `user_id` → slug, `markRaw` comme dans createPeerContext : `reactive()`
         // convertirait la Map en collection réactive, et le double cesserait de se
@@ -92,6 +92,7 @@ export function createMockContext(overrides = {}) {
         slugByUserId: markRaw(new Map()),
         ...(overrides.connection ?? {}),
     })
+
 
     // ── Lifecycle state (garde de teardown partagé) ───────────────────────────
     // Compteur ré-entrant, comme createPeerContext : `endShutdown` ne relâche le
@@ -533,18 +534,16 @@ export function createMockContext(overrides = {}) {
     const onAirRoom          = computed(() => session.onAirRoom)
     const currentCallRoomId  = computed(() => session.currentCallRoomId)
     const currentCallUsers   = computed(() => session.currentCallUsers)
-    const usersInRoom        = computed(() => connection.usersInRoom)
-    const allUsersInRoom     = computed(() => {
-        const mySlug = meStore.getMe?.slug
-        if (!mySlug || connection.usersInRoom.includes(mySlug)) return [...connection.usersInRoom]
-        return [...connection.usersInRoom, mySlug]
-    })
+    const remotePeers        = computed(() => connection.remotePeers)
     const topology           = computed(() => session.topology)
     const hubSlug            = computed(() => session.hubSlug)
     const isHub              = computed(() => session.isHub)
-    const isHubConnected     = computed(
-        () => !!session.hubSlug && allUsersInRoom.value.includes(session.hubSlug)
-    )
+    // Copie conforme de la production : les deux moitiés du prédicat dites séparément.
+    const isHubConnected     = computed(() => {
+        if (!session.hubSlug) return false
+        return session.hubSlug === meStore.getMe?.slug
+            || connection.remotePeers.includes(session.hubSlug)
+    })
     const currentStream      = computed(() => media.currentStream)
     const isStreaming        = computed(() => media.isStreaming)
     const isCapturing        = computed(() => media.isCapturing)
@@ -674,7 +673,7 @@ export function createMockContext(overrides = {}) {
         media.isStreaming = false
         media.isCapturing = false
         callMachine.reset()
-        connection.usersInRoom = []
+        connection.remotePeers = []
         connection.presenceSynced = false
         session.authorizedCallPeers.clear()
     })
@@ -710,8 +709,7 @@ export function createMockContext(overrides = {}) {
         callInprogress: callMachine.callInprogress,
         callStatus: computed(() => callMachine.callState.value),
         isShuttingDown: computed(() => lifecycle.shutdownCount > 0),
-        usersInRoom,
-        allUsersInRoom,
+        remotePeers,
         topology,
         hubSlug,
         isHub,

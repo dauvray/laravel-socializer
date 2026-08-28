@@ -294,12 +294,12 @@ export async function connectRoom(peers, { rounds = 4 } = {}) {
     // ⚠️ Concurrent, jamais séquentiel. En production, la présence Reverb livre la
     // composition de la room à tous les clients quasi simultanément, AVANT que le P2P
     // démarre. Enchaîner les `syncUsersConnections` un par un laisse le premier pair
-    // ouvrir sa connexion alors que le second n'a pas encore peuplé son `usersInRoom` :
+    // ouvrir sa connexion alors que le second n'a pas encore peuplé son `remotePeers` :
     // `_isAuthorizedIncomingPeer` la refuse (« émetteur ni membre de la room ni
     // interlocuteur autorisé »), et le test échoue pour une raison de harnais.
     //
     // ⚠️ ANGLE MORT ASSUMÉ, et il a coûté une régression. « Quasi simultanément » n'est
-    // pas « dans le même tick » : chez l'arrivant, `usersInRoom` n'est écrit qu'après
+    // pas « dans le même tick » : chez l'arrivant, `remotePeers` n'est écrit qu'après
     // `waitForMeReady` — donc après le peerId local — alors que la demande du diffuseur
     // ne coûte qu'un aller-retour HTTP + Reverb. La fenêtre « je connais mon peerId, pas
     // encore ma room » existe donc bel et bien, et ce helper la referme avant de

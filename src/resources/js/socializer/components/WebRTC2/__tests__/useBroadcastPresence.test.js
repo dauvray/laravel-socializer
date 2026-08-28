@@ -64,7 +64,7 @@ describe('useBroadcastPresence', () => {
         ctx = createMockContext({
             meStore: { getMe: { slug: MY_SLUG, name: 'Me' } },
             session: { currentType: 'stream', onAirRoom: 'app' },
-            connection: { usersInRoom: ['alice', 'bob'] },
+            connection: { remotePeers: ['alice', 'bob'] },
         })
         // L'annuaire que `_doGetRoomUsersDiff` écrit en production : sans lui, aucun
         // `user_id` de whisper n'est traduisible en slug.
@@ -391,7 +391,7 @@ describe('useBroadcastPresence', () => {
             mount()
             reverb.whisper.mockClear()
 
-            ctx.connection.usersInRoom = ['alice', 'bob', 'carol']
+            ctx.connection.remotePeers = ['alice', 'bob', 'carol']
             await nextTick()
 
             expect(reverb.whisper).toHaveBeenCalledTimes(1)
@@ -402,7 +402,7 @@ describe('useBroadcastPresence', () => {
             mount()
             reverb.whisper.mockClear()
 
-            ctx.connection.usersInRoom = ['alice']
+            ctx.connection.remotePeers = ['alice']
             await nextTick()
 
             expect(reverb.whisper).not.toHaveBeenCalled()
@@ -411,7 +411,7 @@ describe('useBroadcastPresence', () => {
         it('reste muet à l\'arrivée d\'un pair quand je ne diffuse pas', async () => {
             mount()
 
-            ctx.connection.usersInRoom = ['alice', 'bob', 'carol']
+            ctx.connection.remotePeers = ['alice', 'bob', 'carol']
             await nextTick()
 
             expect(reverb.whisper).not.toHaveBeenCalled()
@@ -556,7 +556,7 @@ describe('useBroadcastPresence', () => {
             )
             expect(ctx.announcedStreamPeers.value).toEqual(['alice'])
 
-            ctx.connection.usersInRoom = ['bob']
+            ctx.connection.remotePeers = ['bob']
             await nextTick()
 
             expect(ctx.announcedStreamPeers.value).toEqual([])
@@ -569,7 +569,7 @@ describe('useBroadcastPresence', () => {
                 incomingConn('alice')
             )
 
-            ctx.connection.usersInRoom = ['alice']
+            ctx.connection.remotePeers = ['alice']
             await nextTick()
 
             expect(ctx.announcedStreamPeers.value).toEqual(['alice'])

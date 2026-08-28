@@ -51,9 +51,8 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}, dep
         isHubConnected, // le hub de diffusion est-il présent dans la room.
 
         // connection
-        usersInRoom, // liste des utilisateurs remote présents dans la room
-        allUsersInRoom, // liste de tous les utilisateurs présents dans la room (y compris le local)
-        presenceSynced, // la composition de la room a-t-elle été synchronisée au moins une fois ? (un usersInRoom vide ne dit pas « personne », il dit « je ne sais pas encore »)
+        remotePeers, // les pairs distants présents dans la room (mon slug en est exclu)
+        presenceSynced, // la composition de la room a-t-elle été synchronisée au moins une fois ? (un remotePeers vide ne dit pas « personne », il dit « je ne sais pas encore »)
 
         // media
         currentStream, // flux média local (MediaStream) créé par getUserMedia
@@ -137,7 +136,7 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}, dep
 
     // Watcher de la liste de présence : chaque composition reçue est synchronisée, y
     // compris la LISTE VIDE. C'est le seul tour capable de purger le dernier partant — le
-    // tenir dehors laissait son fantôme dans `usersInRoom`, c'est-à-dire dans l'allowlist
+    // tenir dehors laissait son fantôme dans `remotePeers`, c'est-à-dire dans l'allowlist
     // que lisent les deux gardes d'autorisation, le ciblage de `forwardStarMessage` et les
     // destinataires par défaut de `sendData`.
     //
@@ -264,7 +263,7 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}, dep
         isHubConnected,
 
         // connection
-        usersInRoom,
+        remotePeers,
         presenceSynced,
 
         // media

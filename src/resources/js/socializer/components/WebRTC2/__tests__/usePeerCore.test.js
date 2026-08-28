@@ -332,7 +332,7 @@ describe('usePeerCore', () => {
         // déclaré présent pour que les cas nominaux ci-dessous décrivent bien le chemin
         // nominal — les cas du garde, eux, repartent d'une room vide.
         beforeEach(() => {
-            ctx.connection.usersInRoom = ['bob']
+            ctx.connection.remotePeers = ['bob']
         })
 
         it('envoie un POST à RESPONSE_TO_PEER_ID avec le peerId local et les métadonnées du payload', async () => {
@@ -482,7 +482,7 @@ describe('usePeerCore', () => {
         })
 
         it('répond normalement à un membre de la room', async () => {
-            ctx.connection.usersInRoom = ['mallory']
+            ctx.connection.remotePeers = ['mallory']
 
             const result = await core.responseRemotePeerConnection(buildPayload())
 
@@ -494,7 +494,7 @@ describe('usePeerCore', () => {
             // Non-régression essentielle : la visio 1-à-1 n'a AUCUNE room commune, elle
             // ne passe que par le registre `authorizedCallPeers` (chemin (b)). C'est
             // exactement le cas que le correctif entrant de mai avait cassé.
-            ctx.connection.usersInRoom = []
+            ctx.connection.remotePeers = []
             ctx.markAuthorizedCallPeer('mallory')
 
             const result = await core.responseRemotePeerConnection(buildPayload())
@@ -518,16 +518,16 @@ describe('usePeerCore', () => {
 
         // ── Contexte au démarrage : la présence n'est pas encore connue ─────────
         //
-        // `usersInRoom` vide ne dit pas « ce pair n'est pas membre », il dit « je ne
+        // `remotePeers` vide ne dit pas « ce pair n'est pas membre », il dit « je ne
         // sais pas encore qui est membre ». Et l'ordre de production met l'arrivant du
-        // mauvais côté à tous les coups : son `usersInRoom` n'est écrit qu'après
+        // mauvais côté à tous les coups : son `remotePeers` n'est écrit qu'après
         // `waitForMeReady` (donc après le peerId local), alors que la demande du
         // diffuseur ne coûte qu'un aller-retour HTTP + Reverb. Refuser ici, c'est
         // refuser le seul contact qui pouvait amener le flux.
 
         it('attend la première synchronisation de présence avant de refuser', async () => {
             ctx.connection.presenceSynced = false
-            ctx.connection.usersInRoom = []
+            ctx.connection.remotePeers = []
 
             const pending = core.responseRemotePeerConnection(buildPayload())
 
@@ -536,7 +536,7 @@ describe('usePeerCore', () => {
             expect(postsToResponseEndpoint()).toHaveLength(0)
 
             // La présence arrive — mallory était membre depuis le début.
-            ctx.connection.usersInRoom = ['mallory']
+            ctx.connection.remotePeers = ['mallory']
             ctx.connection.presenceSynced = true
 
             await expect(pending).resolves.toBe(true)
@@ -549,11 +549,11 @@ describe('usePeerCore', () => {
 
         it('attendre n\'est pas admettre : refuse si la présence ne le nomme pas', async () => {
             ctx.connection.presenceSynced = false
-            ctx.connection.usersInRoom = []
+            ctx.connection.remotePeers = []
 
             const pending = core.responseRemotePeerConnection(buildPayload())
 
-            ctx.connection.usersInRoom = ['alice']
+            ctx.connection.remotePeers = ['alice']
             ctx.connection.presenceSynced = true
 
             await expect(pending).resolves.toBe(false)

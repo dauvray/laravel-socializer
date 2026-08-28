@@ -441,7 +441,7 @@ export function useConnectionPool(ctx, { core, connections }) {
         // Le garde porte sur le BLOC, pas sur la seule branche fautive : la règle est
         // « pas d'observation, pas d'émission », et elle ne doit pas dépendre du fait que
         // mesh / hub / sfu itèrent aujourd'hui `newUsers`, vide ici par construction. Le
-        // jour où l'une d'elles itérera `usersInRoom` — comme le fait déjà
+        // jour où l'une d'elles itérera `remotePeers` — comme le fait déjà
         // `startWebcamStream` — la protection incidente disparaîtrait sans un mot.
         //
         // ⚠️ Le prédicat porte sur `users`, l'entrée du tour, et surtout PAS sur
@@ -495,13 +495,13 @@ export function useConnectionPool(ctx, { core, connections }) {
         // provider (`{ immediate: true }`, liste vide) composerait une room entière de
         // mémoire — « pas d'observation, pas d'émission » tomberait.
         //
-        // Lecture de `ctx.connection.usersInRoom` : c'est la composition que
+        // Lecture de `ctx.connection.remotePeers` : c'est la composition que
         // `getRoomUsersDiff` vient d'écrire, et la même que lisent les deux gardes
         // d'autorisation. Aucun état n'est ajouté ici.
         const newSlugs = new Set(newUsers.map(user => user.slug))
         const targets = [...new Set([
             ...newSlugs,
-            ...ctx.connection.usersInRoom.filter(
+            ...ctx.connection.remotePeers.filter(
                 slug => !connections.isConnectionEstablished(slug)
             ),
         ])]
@@ -516,7 +516,7 @@ export function useConnectionPool(ctx, { core, connections }) {
                 // ⚠️ Réservé aux ARRIVANTS, hors réconciliation : `isConnectionEstablished`
                 // ci-dessus porte sur le type courant, pas sur 'screen', et la reprise d'un
                 // partage vers un membre déjà connu appartient à `startScreenCapture`, qui
-                // itère `usersInRoom` à l'ouverture de la capture.
+                // itère `remotePeers` à l'ouverture de la capture.
                 if (ctx.media.isCapturing && newSlugs.has(userSlug)) {
                     requestOrConnectPeer(userSlug, 'screen')
                 }
@@ -547,7 +547,7 @@ export function useConnectionPool(ctx, { core, connections }) {
             // soit annoncé. L'ordre des deux passes était donc contraint, et le rappeler évite
             // qu'on le re-dérive à l'envers.
             //
-            // Borne assumée : `targets` se construit sur `ctx.connection.usersInRoom`, donc
+            // Borne assumée : `targets` se construit sur `ctx.connection.remotePeers`, donc
             // seul le chemin (a) de l'autorisation (présence) est couvert — un hub qui ne
             // serait admis que par (b) `authorizedCallPeers` ne serait plus composé ici. C'est
             // exactement la borne qu'accepte déjà le mesh, et un hub de diffusion n'est pas un
@@ -566,7 +566,7 @@ export function useConnectionPool(ctx, { core, connections }) {
      *
      * ⚠️ Le verrou COALESCE, il ne jette pas. Un `return` sec sur verrou tenu perdait la
      * composition reçue — et pas seulement une action : `getRoomUsersDiff` est l'unique
-     * écrivain de `usersInRoom`, `presenceSynced` et `roomMembers`. Un tour sauté laissait
+     * écrivain de `remotePeers`, `presenceSynced` et `roomMembers`. Un tour sauté laissait
      * donc trois états périmés d'un coup, dont l'allowlist de présence que lisent les deux
      * gardes d'autorisation. La fenêtre est celle de `waitForMeReady` (jusqu'à 15 s au
      * démarrage), c'est-à-dire le moment où la composition bouge le plus.

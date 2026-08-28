@@ -188,7 +188,7 @@ export const STREAM_WAIT_TIMEOUT_MS = 5_000
  * Durée maximale (ms) d'attente de la PREMIÈRE synchronisation de présence d'un
  * contexte, avant de conclure sur un pair que rien n'autorise encore.
  *
- * ⚠️ Ce n'est pas un délai de politesse : `usersInRoom` vide ne dit pas « ce pair n'est
+ * ⚠️ Ce n'est pas un délai de politesse : `remotePeers` vide ne dit pas « ce pair n'est
  * pas membre », il dit « je ne sais pas encore qui est membre ». Les deux gardes
  * d'admission (`responseRemotePeerConnection`, `_isAuthorizedIncomingPeer`) doivent
  * distinguer les deux, sans quoi tout contact légitime reçu pendant le démarrage d'un

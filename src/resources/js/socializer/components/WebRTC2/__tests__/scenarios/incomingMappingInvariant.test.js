@@ -7,7 +7,7 @@
  * ── La question ───────────────────────────────────────────────────────────────
  *
  * `_isAuthorizedIncomingPeer` a deux chemins d'admission. Le chemin (a), présence,
- * n'exige qu'un `metadata.from` déclaré présent dans `usersInRoom` ; son anti-usurpation
+ * n'exige qu'un `metadata.from` déclaré présent dans `remotePeers` ; son anti-usurpation
  * (règle 3) ne se déclenche que **si** le peerId entrant se résout à un slug connu. Un
  * membre de la room qui ouvre un second `new Peer()` — UUID neuf, donc non mappé —
  * échappe donc à la règle et parle sous l'identité de n'importe quel autre membre.
@@ -244,7 +244,7 @@ describe('B0 — présence du mapping peerId au moment de l\'admission entrante'
             // Contrôle de harnais : l'admission a bien abouti — sans flux reçu, la
             // présence du mapping ne dirait rien de l'admission.
             expect(bobApp.receivedStreamsFrom()).toContain('alice')
-            expect(bobApp.api.usersInRoom.value).not.toContain('alice')
+            expect(bobApp.api.remotePeers.value).not.toContain('alice')
 
             const admission = admissionFor(admissions, { from: 'alice', type: 'visio' })
             expect(admission).not.toBeNull()

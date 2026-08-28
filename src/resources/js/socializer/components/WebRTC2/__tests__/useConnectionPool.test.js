@@ -716,7 +716,7 @@ describe('useConnectionPool', () => {
         })
 
         it('star : un client ne se connecte qu\'au hub', async () => {
-            // ⚠️ Le pré-semis de `usersInRoom` n'est pas décoratif : ce fichier stube
+            // ⚠️ Le pré-semis de `remotePeers` n'est pas décoratif : ce fichier stube
             // `getRoomUsersDiff`, donc la composition n'est jamais écrite et le hub ne
             // serait membre d'aucune room. Sans lui, ce cas verdirait par ABSENCE du hub
             // dans les cibles — c'est-à-dire pour la raison exactement inverse de ce
@@ -725,7 +725,7 @@ describe('useConnectionPool', () => {
             ctx.session.topology = 'star'
             ctx.session.hubSlug = 'teacher'
             ctx.session.isHub = false
-            ctx.connection.usersInRoom = ['teacher', 'alice', 'bob']
+            ctx.connection.remotePeers = ['teacher', 'alice', 'bob']
             connections.getRoomUsersDiff.mockResolvedValue({
                 newUsers: [{ slug: 'alice' }, { slug: 'bob' }],
                 removedUsers: [],
@@ -752,7 +752,7 @@ describe('useConnectionPool', () => {
             ctx.session.topology = 'star'
             ctx.session.hubSlug = 'teacher'
             ctx.session.isHub = false
-            ctx.connection.usersInRoom = ['alice']
+            ctx.connection.remotePeers = ['alice']
             connections.getRoomUsersDiff.mockResolvedValue({
                 newUsers: [{ slug: 'alice' }],
                 removedUsers: [],
@@ -768,7 +768,7 @@ describe('useConnectionPool', () => {
             ctx.session.topology = 'star'
             ctx.session.hubSlug = 'teacher'
             ctx.session.isHub = false
-            ctx.connection.usersInRoom = ['teacher']
+            ctx.connection.remotePeers = ['teacher']
             connections.isConnectionEstablished.mockReturnValue(true)
             connections.getRoomUsersDiff.mockResolvedValue({ newUsers: [], removedUsers: [] })
 
@@ -788,7 +788,7 @@ describe('useConnectionPool', () => {
             ctx.session.topology = 'star'
             ctx.session.hubSlug = 'teacher'
             ctx.session.isHub = false
-            ctx.connection.usersInRoom = ['teacher']
+            ctx.connection.remotePeers = ['teacher']
             connections.getRoomUsersDiff.mockResolvedValue({
                 newUsers: [{ slug: 'teacher' }],
                 removedUsers: [],
@@ -861,13 +861,13 @@ describe('useConnectionPool', () => {
         // `previousSlugs` ET `nextSlugs`. L'autorité est donc « membre de la room ET rien
         // d'établi ».
         //
-        // ⚠️ Ce fichier stube `getRoomUsersDiff`, donc `ctx.connection.usersInRoom` n'est
+        // ⚠️ Ce fichier stube `getRoomUsersDiff`, donc `ctx.connection.remotePeers` n'est
         // JAMAIS écrit ici : ces trois cas doivent le pré-semer eux-mêmes. Sans ce
         // pré-semis, la réconciliation ne voit aucun membre et les cas verdissent pour la
         // mauvaise raison. Le bout-en-bout du même défaut vit dans
         // `scenarios/peerDeparture.test.js`.
         it('compose un membre présent des deux côtés du diff avec qui rien n\'est établi', async () => {
-            ctx.connection.usersInRoom = ['alice']
+            ctx.connection.remotePeers = ['alice']
             // Ni arrivante ni partante : la composition n'a pas bougé d'un iota.
             connections.getRoomUsersDiff.mockResolvedValue({ newUsers: [], removedUsers: [] })
 
@@ -877,7 +877,7 @@ describe('useConnectionPool', () => {
         })
 
         it('ne recompose pas un membre déjà établi', async () => {
-            ctx.connection.usersInRoom = ['alice']
+            ctx.connection.remotePeers = ['alice']
             connections.isConnectionEstablished.mockReturnValue(true)
             connections.getRoomUsersDiff.mockResolvedValue({ newUsers: [], removedUsers: [] })
 
@@ -892,7 +892,7 @@ describe('useConnectionPool', () => {
             // commence par `clearRetry`, donc une réconciliation qui repasse à chaque tour
             // de présence remettrait `attempt` à zéro — MAX_RETRY_ATTEMPTS ne serait jamais
             // atteint et un pair injoignable serait rappelé indéfiniment.
-            ctx.connection.usersInRoom = ['alice']
+            ctx.connection.remotePeers = ['alice']
             connections.getRoomUsersDiff.mockResolvedValue({
                 newUsers: [{ slug: 'alice' }],
                 removedUsers: [],
@@ -952,7 +952,7 @@ describe('useConnectionPool', () => {
         it('reste armé et redemande tant que le pair est présent', async () => {
             // La demande part (mock) mais n'écrit aucun waiting : exactement l'état laissé
             // par un POST plus lent que ce tour-ci, ou par le plafond de cadence.
-            ctx.connection.usersInRoom = ['alice']
+            ctx.connection.remotePeers = ['alice']
 
             pool.requestOrConnectPeer('alice')
             expect(core.requestRemotePeerConnection).toHaveBeenCalledTimes(1)
@@ -971,9 +971,9 @@ describe('useConnectionPool', () => {
 
         it('mais s\'arrête pour de bon si le pair n\'est plus nulle part', async () => {
             // Le pendant indispensable : sans lui, le correctif ci-dessus deviendrait un
-            // insisteur perpétuel sur des pairs réellement partis. `usersInRoom` vide ET
+            // insisteur perpétuel sur des pairs réellement partis. `remotePeers` vide ET
             // aucun appel autorisé ⇒ plus rien ne concerne ce pair.
-            ctx.connection.usersInRoom = []
+            ctx.connection.remotePeers = []
             ctx.isAuthorizedCallPeer.mockReturnValue(false)
 
             pool.requestOrConnectPeer('alice')
@@ -1020,7 +1020,7 @@ describe('useConnectionPool', () => {
         })
 
         it('ne redemande pas si CE contexte a déjà une demande en vol, et reste armé', async () => {
-            ctx.connection.usersInRoom = ['alice']
+            ctx.connection.remotePeers = ['alice']
             ctx.peerStore.addRemotePeerId('alice', 'peer-alice')
             ageLease()
             // APRÈS le saut d'horloge : posée avant, la demande serait stale elle aussi et le
@@ -1039,7 +1039,7 @@ describe('useConnectionPool', () => {
         })
 
         it('⭐ le moteur de retry bascule de « composer » à « demander » sans s\'éteindre', async () => {
-            ctx.connection.usersInRoom = ['alice']
+            ctx.connection.remotePeers = ['alice']
             ctx.peerStore.addRemotePeerId('alice', 'peer-alice')
 
             pool.requestOrConnectPeer('alice')
@@ -1065,7 +1065,7 @@ describe('useConnectionPool', () => {
             // La branche « ni ID, ni demande » est désormais atteignable par une voie
             // nouvelle. Elle doit rester gardée : un bail échu n'autorise pas à redemander
             // le peerId d'un pair que plus rien ne concerne.
-            ctx.connection.usersInRoom = []
+            ctx.connection.remotePeers = []
             ctx.isAuthorizedCallPeer.mockReturnValue(false)
             ctx.peerStore.addRemotePeerId('alice', 'peer-alice')
             ageLease()
@@ -1167,7 +1167,7 @@ describe('useConnectionPool', () => {
     // AUCUN événement de présence, donc aucun tour n'a lieu et rien de fondé sur la
     // présence ne peut faire mieux.
     //
-    // ⚠️ Ce fichier stube `getRoomUsersDiff`, donc `ctx.connection.usersInRoom` n'est
+    // ⚠️ Ce fichier stube `getRoomUsersDiff`, donc `ctx.connection.remotePeers` n'est
     // JAMAIS écrit ici : chaque cas qui doit franchir le garde d'autorisation le
     // pré-sème lui-même. Sans ce pré-semis ils verdiraient par le mauvais bout — le
     // garde sortirait avant même d'atteindre la composition.
@@ -1177,7 +1177,7 @@ describe('useConnectionPool', () => {
     describe('re-composition sur perte de connexion', () => {
 
         it('recompose le pair perdu et remet le signal à null', async () => {
-            ctx.connection.usersInRoom = ['alice']
+            ctx.connection.remotePeers = ['alice']
 
             ctx.connectionLostSignal.value = 'alice'
             await nextTick()
@@ -1187,7 +1187,7 @@ describe('useConnectionPool', () => {
         })
 
         it('compose directement quand le peerId est encore sous bail', async () => {
-            ctx.connection.usersInRoom = ['alice']
+            ctx.connection.remotePeers = ['alice']
             ctx.peerStore.addRemotePeerId('alice', 'peer-alice')
 
             ctx.connectionLostSignal.value = 'alice'
@@ -1203,7 +1203,7 @@ describe('useConnectionPool', () => {
             // ce watcher n'a donc pas de garde de format à lui. D'où la composition
             // empoisonnée : sans elle, le cas sortirait sur « pas membre » et n'épinglerait
             // pas ce qu'il croit.
-            ctx.connection.usersInRoom = ['not a valid slug!']
+            ctx.connection.remotePeers = ['not a valid slug!']
 
             ctx.connectionLostSignal.value = 'not a valid slug!'
             await nextTick()
@@ -1213,7 +1213,7 @@ describe('useConnectionPool', () => {
         })
 
         it('ignore le signal pendant un teardown', async () => {
-            ctx.connection.usersInRoom = ['alice']
+            ctx.connection.remotePeers = ['alice']
             ctx.beginShutdown()
 
             ctx.connectionLostSignal.value = 'alice'
@@ -1223,7 +1223,7 @@ describe('useConnectionPool', () => {
         })
 
         it('ne recompose pas un pair qui n\'est plus autorisé', async () => {
-            // `usersInRoom` vide et aucune autorisation d'appel : le pair est réellement
+            // `remotePeers` vide et aucune autorisation d'appel : le pair est réellement
             // parti. Sans ce garde, la perte relancerait une composition sur un absent —
             // un POST, un jeton du plafond de cadence et un retry armé sur rien, que
             // `_handleConnectionAttempt` ne rattraperait qu'un tour plus tard.
@@ -1246,7 +1246,7 @@ describe('useConnectionPool', () => {
             //
             // Autrement dit, ce déclencheur ne vise QUE le régime établi : une connexion
             // qui vivait a éteint son moteur, et plus personne ne veille quand elle tombe.
-            ctx.connection.usersInRoom = ['alice']
+            ctx.connection.remotePeers = ['alice']
             connections.connectToPeer.mockReturnValue(false)
             pool.requestOrConnectPeer('alice')   // arme une chaîne pour 'alice'
             core.requestRemotePeerConnection.mockClear()
@@ -1268,7 +1268,7 @@ describe('useConnectionPool', () => {
             app.unmount()
             ctx = createMockContext({ session: { currentType: 'stream' } })
             mountPool(ctx)
-            ctx.connection.usersInRoom = ['alice']
+            ctx.connection.remotePeers = ['alice']
 
             ctx.connectionLostSignal.value = 'alice'
             await nextTick()
@@ -1283,7 +1283,7 @@ describe('useConnectionPool', () => {
             app.unmount()
             ctx = createMockContext({ session: { currentType: 'stream' } })
             mountPool(ctx)
-            ctx.connection.usersInRoom = ['alice']
+            ctx.connection.remotePeers = ['alice']
             ctx.media.currentStream = liveStream()
 
             ctx.connectionLostSignal.value = 'alice'
