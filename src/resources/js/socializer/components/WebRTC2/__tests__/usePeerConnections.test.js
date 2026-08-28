@@ -120,12 +120,6 @@ describe('usePeerConnections', () => {
             expect(diff.newUsers.map((u) => u.slug)).toEqual(['bob'])
         })
 
-        it('getNewUsersInRoom ne renvoie que les arrivants', async () => {
-            const newUsers = await connections.getNewUsersInRoom([{ slug: 'alice' }])
-
-            expect(newUsers.map((u) => u.slug)).toEqual(['alice'])
-        })
-
         // ── Synchroniser n'est pas savoir ─────────────────────────────────────
         //
         // `usersInRoom` et `presenceSynced` ont le même écrivain — celui-ci — mais plus le

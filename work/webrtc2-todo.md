@@ -340,12 +340,12 @@ avant le déménagement revient à les jeter.
   appelant de production** de `getRoomUsersDiff`. Le mutex ne garde donc plus qu'un export public
   que personne n'exerce en parallèle — coût nul, à retirer avec la migration, pas avant ni
   séparément.
-- [ ] **`getNewUsersInRoom` est un export mort** `[S]`
-  Zéro appelant de production dans le paquet **et** dans l'hôte (vérifié au grep le 27/08/2026) :
-  seul `usePeerConnections.test.js:123` le maintient en vie, et ce test n'épingle donc rien
-  d'observable. Sortie B (supprimer) ou C (assumer comme surface publique documentée) — pas les
-  deux. Le retirer emporte son test.
-  ℹ️ Une **projection** existe déjà : `peerStore.roomMembers[contextId]`, écrite par
+- [x] **`getNewUsersInRoom` est un export mort** `[S]` — **fermé le 28/08/2026, sortie B** : la
+  fonction (un simple `await getRoomUsersDiff(users)` dont on ne garde que `newUsers`), son export
+  et son unique test sont supprimés. Aucun appelant de production ne le lisait, dans le paquet
+  comme dans l'hôte, donc rien d'observable n'a changé — un test de moins, et c'était le bon.
+  ℹ️ **Ce qui reste vrai après lui, et qui cadre la migration Pinia** : une **projection** de la
+  composition existe déjà — `peerStore.roomMembers[contextId]`, écrite par
   `_doGetRoomUsersDiff` et lue par le prédicat de `removeRemotePeerId` (cf.
   [architecture.md](../docs/modules/webrtc2/architecture.md#un-onglet-plusieurs-contextes--la-granularité-des-clés-du-store)).
   Ce n'est PAS la migration : la source de vérité reste `ctx.connection`, et la duplication est

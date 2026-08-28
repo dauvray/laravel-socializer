@@ -142,11 +142,6 @@ export function usePeerConnections(ctx) {
         return current
     }
 
-    const getNewUsersInRoom = async (users = []) => {
-        const diff = await getRoomUsersDiff(users)
-        return diff.newUsers
-    }
-
     /**
      * Les connexions stockées pour ce pair, sous ce type, dans cette room.
      * Extrait parce que deux prédicats de sens opposé lisent exactement la même liste.
@@ -600,7 +595,6 @@ export function usePeerConnections(ctx) {
     // instanciable et testable hors setup()).
 
     return {
-        getNewUsersInRoom,
         getRoomUsersDiff,
         hasOpenConnection,
         isConnectionEstablished,
