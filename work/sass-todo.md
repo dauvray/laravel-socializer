@@ -11,22 +11,6 @@
 > Deux axes : (a) **centralisation des tokens** — couleurs et tailles en dur dispersées, ce qui
 > casse le thème sombre — et (b) **sortie de l'anti-pattern `@extend .bootstrap-class`**.
 
-## 🔴 Priorité haute — casse une fonctionnalité livrée
-
-- [ ] **`.video-loading` n'a aucune surface sans `<video>` : la vignette d'attente est invisible**
-      — `_socializer.scss:184-193` et `:240-256`, consommé par
-      `WebRTC2/Exemples/StreamSimple/StreamSimpleUI.vue:42-47`.
-      Mesuré le 28/08/2026 : `.draggable-video` **h=0**, `.video-loading` (`absolute; inset:0`)
-      **h=0**, le label rendu à y=792 hors du parent `.col.overflow-hidden` (722→756) qui le
-      **clippe**. Le commentaire de `:238-239` dit que ce style a été écrit pour « recouvrir le cadre
-      noir du `<video>` » — il n'y en a pas ici.
-      Conséquence : tout le mécanisme d'annonce de diffusion (livré le 27/08, correct et mesuré à
-      607 ms jusqu'au DOM) **ne se voit jamais à l'écran**.
-      → donner une hauteur au conteneur quand il n'a pas de flux, sans casser les players réels qui
-      partagent ces classes. ⚠️ **Le SCSS du paquet est copié dans l'hôte et c'est la copie qui est
-      compilée** : deux fichiers à modifier (`docs/architecture/conventions.md#scss`).
-      Contexte et pièges de mesure : [webrtc2-todo.md](webrtc2-todo.md) § « Annonce de diffusion ».
-
 ## 🔴 Priorité haute — casse le thème sombre
 
 - [ ] **`date-separator` illisible en dark mode** — `components/_chat.scss:36-49`

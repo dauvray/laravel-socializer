@@ -152,9 +152,9 @@ avant le déménagement revient à les jeter.
 > dont la troisième a été trouvée par la mesure du 28/08 et n'est pas de même nature que les deux
 > autres : ce n'est pas « la vignette arrive tard », c'est « le fait n'arrive pas ».
 >
-> ⚠️ **Et une vignette qui n'est jamais visible** — défaut de rendu, étage CSS, item séparé plus bas.
-> Les deux se cumulaient : c'est pourquoi la mesure a dû instrumenter le DOM et la géométrie, pas
-> l'écran.
+> ℹ️ S'y cumulait **une vignette jamais visible** — défaut de rendu à l'étage CSS, fermé le 28/08
+> (item plus bas). C'est ce cumul qui a obligé la mesure à instrumenter le DOM et la géométrie plutôt
+> que l'écran.
 
 - [ ] **Les deux premières fenêtres résiduelles** `[M]` — **aucune des deux n'est fatale** : la
   vignette d'attente y arrive tard, elle n'y est jamais fausse. Les trois chemins d'annonce et leurs
@@ -215,34 +215,31 @@ avant le déménagement revient à les jeter.
   seul qui ferme un cas où *aucun* échange de peerId n'a lieu. Adosser l'annonce aux routes de peerId
   est structurellement limité — elle ne peut rien dire quand il n'y a rien à demander.
 
-- [ ] 🔴 **La vignette n'est JAMAIS visible : `.draggable-video` sans `<video>` s'effondre à 0 px**
-  `[S]` — défaut de **rendu**, étage CSS, indépendant des trois fenêtres ci-dessus. Le nœud est bien
-  dans le DOM, à l'heure : il n'apparaît simplement pas à l'écran, sur la seule page qui le rend.
+- [x] 🔴 **La vignette n'est JAMAIS visible : `.draggable-video` sans `<video>` s'effondre à 0 px**
+  `[S]` — **fermé le 28/08/2026.** Un enfant unique en `position:absolute` ne contribue pas à la
+  hauteur du parent : le cadre valait 0 px, `.video-loading` (`inset:0`) avec lui, et le label
+  débordait dans le `.col.overflow-hidden` qui le clippait.
 
-  Géométrie mesurée (28/08/2026, viewport 1440×1000, `StreamSimpleUI` en contexte `stream`) :
-
-  | Élément | hauteur | y |
-  |---|---|---|
-  | `.draggable-video` | **0 px** | 757 |
-  | `.video-loading` (`position:absolute; inset:0`) | **0 px** | 757 |
-  | `.video-loading-label` | 26 px | **792** |
-  | `.col.overflow-hidden` (parent) | 34 px | 722 → **756** |
-
-  `_socializer.scss:240-256` a été écrit pour **recouvrir le cadre noir d'un `<video>`** — son
-  commentaire le dit. Dans `StreamSimpleUI.vue:42-47` le `.draggable-video` n'a pas de `<video>` :
-  sans enfant en flux, sa hauteur de contenu est 0, `inset:0` donne donc une surface nulle à
-  l'overlay, le label déborde à y=792 et le `.col.overflow-hidden` de `:31` — posé exprès pour le
-  problème de `min-width` des `<video>` — **le clippe**.
+  Correctif : une classe d'intention `.video-awaited` sur le seul site sans `<video>`
+  (`StreamSimpleUI.vue:42`), et dans `_socializer.scss` le gabarit de la règle `video` voisine
+  (`width:100%; aspect-ratio:16/9`) — donc la vignette occupe déjà la place du flux, sans saut de
+  mise en page à l'arrivée. Les players réels ne portent pas la classe : par construction, aucun
+  effet sur eux. **Aucun `_variables.scss` n'a été nécessaire** — le couplage que cet item annonçait
+  avec [sass-todo.md](sass-todo.md) n'existait pas, `aspect-ratio` ne demande aucune valeur en dur.
 
   ⚠️ **Piège de vérification à retenir** : `isVisible()` de Playwright rend **`true`** (boîte non
   vide, `visibility:visible`, `opacity:1`) — il ne teste pas le clipping par un ancêtre. Un test qui
   s'y fierait serait vert sur une vignette invisible. Ce qui tranche, c'est la géométrie comparée à
   celle de l'ancêtre, ou une capture d'écran relue.
 
-  Ce n'est **pas** un correctif d'une ligne : donner une hauteur au `.draggable-video` sans `<video>`
-  touche un SCSS partagé avec les players réels, et **le SCSS du paquet est copié dans l'hôte, c'est
-  la copie qui est compilée** (deux fichiers à modifier). À traiter avec [sass-todo.md](sass-todo.md),
-  qui porte déjà l'arbitrage `_variables.scss` propre au paquet.
+  Vérifié sur la **CSS réellement compilée** (chaîne `app.scss` entière, viewport 1440×1000) dans un
+  harnais reproduisant la chaîne d'ancêtres, à deux runs — contrôle sans la classe, puis avec :
+  0 px → 391 px, label clippé → label centré dans le parent, captures relues. Le contrôle n'est pas
+  décoratif : le **premier** harnais donnait la même valeur aux deux runs parce que `setContent()`
+  part de `about:blank` et n'y charge aucun `<link href="file://">`. Sans run de contrôle, « h=51 dans
+  les deux cas » se lisait comme « le correctif ne sert à rien » sur une page **sans aucune CSS**.
+  Ce que le harnais ne couvre pas — que `awaitedPeers` rende bien un nœud — est ce que la mesure à
+  deux onglets du 28/08 avait déjà établi (nœud DOM à 607 ms).
 
 - [x] **Vérifier à la main que la vignette arrive tôt** `[S]` — **fait le 28/08/2026**, et le résultat
   n'est pas celui attendu : le correctif `10d634f` fonctionne, l'UI ne le montre pas, et le cas

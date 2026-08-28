@@ -39,7 +39,7 @@
                         Un pair qui ne diffuse pas n'apparaît JAMAIS ici — cf.
                         useAwaitedStreams / useBroadcastPresence.
                     -->
-                    <div v-for="slug in awaitedPeers" :key="`awaited-${slug}`" class="draggable-video">
+                    <div v-for="slug in awaitedPeers" :key="`awaited-${slug}`" class="draggable-video video-awaited">
                         <div class="video-loading">
                             <Spinner color="#ffffff" />
                             <span class="video-loading-label">{{ slug }} — en attente du flux…</span>

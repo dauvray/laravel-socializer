@@ -255,6 +255,16 @@ $message_width: 60%;
         }
     }
 
+    // Flux ANNONCÉ mais pas encore arrivé : il n'y a pas de <video>, donc aucun
+    // enfant en flux — le cadre s'effondrait à 0 px, et `.video-loading` (inset:0)
+    // avec lui, jusqu'à un label clippé par le parent overflow-hidden. Même gabarit
+    // que la règle `video` ci-dessous : la vignette occupe déjà la place du flux,
+    // donc aucun saut de mise en page à son arrivée.
+    &.video-awaited {
+        width: 100%;
+        aspect-ratio: 16 / 9;
+    }
+
     &:hover {
         .video-controls {
             display: block!important;
