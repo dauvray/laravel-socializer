@@ -144,24 +144,30 @@ avant le déménagement revient à les jeter.
   question de conception un étage au-dessus — à traiter avec « Migrer `usersInRoom` vers Pinia »
   ci-dessous, pas avant. Le préjudice résiduel se limite désormais à la longévité de l'entrée
   d'allowlist, qui reste gardée par l'égalité `conn.peer`.
-- [ ] **Le client star compose son hub même absent de la room** `[S]`
-  `useConnectionPool._doSyncUsersConnections`, branche star client : `requestOrConnectPeer(hubSlug)`
-  est appelé sans regarder `newUsers` ni la composition — donc à **chaque** tour de présence, y
-  compris ceux où le hub n'est pas membre. Un POST `/ask-to-peer-id` part, un slot du plafond de
-  cadence est consommé, un retry s'arme ; le garde d'`isAuthorizedPeer` ne le rattrape qu'un tour
-  plus tard, dans `_handleConnectionAttempt`.
-  ℹ️ Le garde « pas d'observation, pas d'émission » (27/08/2026) neutralise le cas du **tour vide**,
-  pas celui d'une room peuplée sans le hub. `ctx.isHubConnected` (`createPeerContext.js:218`) existe
-  déjà pour l'exprimer. Laissé ouvert délibérément : c'est un autre mécanisme, et le corriger dans
-  la même passe rendait indécidable lequel des deux avait fait le travail. Le reprendre demande de
-  réécrire « star : un client ne se connecte qu'au hub » (`useConnectionPool.test.js`), qui stube
-  `getRoomUsersDiff` et laisse donc `usersInRoom` vide.
-  ⚠️ **COUPLAGE, découvert le 28/08/2026 : ne pas le corriger seul.** Cet appel inconditionnel était,
-  par accident, la **seule réconciliation** que le module possédait — la branche star client est la
-  seule qui rattrapait un hub ayant rechargé sans que son départ soit annoncé. Depuis que le fan-out
-  réconcilie (28/08), la règle générale couvre le cas ; l'item devient donc une **simplification**
-  sous tests verts, à faire **après**, jamais avant. Le prédicat à poser est le même que celui de la
-  réconciliation, restreint au hub : membre de la room **et** rien d'établi.
+- [x] **Le client star compose son hub même absent de la room** `[S]` — **fermé le 28/08/2026**, sous
+  tests verts, comme la simplification annoncée. La branche client est devenue la branche mesh
+  filtrée : `targets.includes(hubSlug)`, avec le même `preserveRetry`. Le couplage annoncé s'est
+  **vérifié** — rien n'aurait pu être resserré avant que le fan-out réconcilie. La règle, sa borne
+  (chemin (a) de l'autorisation seulement) et le récit du couplage vivent dans
+  [architecture.md § Conventions de code](../docs/modules/webrtc2/architecture.md#conventions-de-code).
+
+  **Deux écarts avec l'énoncé ci-dessus, à ne pas re-dériver :**
+
+  1. **`ctx.isHubConnected` n'a PAS été utilisé**, alors que l'item le nommait comme « existant déjà
+     pour l'exprimer ». Il ne dit que la moitié du prédicat — l'appartenance, pas l'établissement —
+     et la dit via `allUsersInRoom`, qui rajoute mon slug pour rien dans une branche où
+     `hubSlug !== mySlug` par construction. `targets`, déjà calculé quinze lignes plus haut, porte
+     les deux moitiés sans ajouter de seconde source de vérité.
+  2. **Un second défaut au même site d'appel, absent de l'énoncé** : la branche client était la
+     dernière du fan-out à ne pas passer `preserveRetry`. Un tour de présence est l'appelant
+     PÉRIODIQUE type, et `scheduleRetry(slug, 0, …)` commence par `clearRetry` : `attempt` repartait
+     de zéro à chaque tour, donc l'horizon d'abandon de ≈55 s ne tombait jamais. Corrigé du même
+     geste, épinglé à part.
+
+  La réécriture prévue de « star : un client ne se connecte qu'au hub » était bien nécessaire, et le
+  **contrôle négatif l'a confirmée load-bearing** : pré-semis de `usersInRoom` retiré, le cas
+  rougit — sans lui il aurait verdi par absence du hub dans `targets`, soit pour la raison inverse
+  de ce qu'il épingle.
 - [ ] **Un canal de présence mémoïsé peut rendre `users` définitivement vide** `[S]` — piège latent,
   **aucun consommateur vivant ne l'atteint aujourd'hui**, d'où l'effort `[S]` et pas de correction
   dans la passe où il a été trouvé (28/08/2026).

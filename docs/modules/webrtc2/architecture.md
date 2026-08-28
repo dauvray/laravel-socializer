@@ -486,8 +486,20 @@ scénarios) et `_hubRateLimiter` (arbitrage « verbe `.reset()` plutôt que Pini
   de zéro à chaque tour de présence et l'horizon d'abandon de ≈55 s ne tomberait jamais. Réparation
   **opportuniste**, pas garantie : PeerJS ne ferme que sur `iceConnectionState` `failed`/`closed` et
   ne fait rien sur `disconnected`, donc le tour de présence peut arriver avant que la dégradation
-  soit visible. Épinglé par `scenarios/peerDeparture.test.js` (« A recharge sans que B voie son
-  départ ») et `useConnectionPool.test.js`
+  soit visible. **Le fan-out star obéit au même prédicat, des deux côtés** : le hub itère `targets`,
+  et le client — qui n'a qu'une cible — la compose seulement si le hub y figure, avec le même
+  `preserveRetry`. Cette branche client était longtemps **inconditionnelle**, ce qui coûtait à chaque
+  tour de présence un POST `/ask-to-peer-id`, un jeton du plafond de cadence et un retry armé, même
+  hub absent de la room — `isAuthorizedPeer` ne rattrapant qu'au tour suivant, dans
+  `_handleConnectionAttempt`. Elle n'a pu être resserrée qu'**après** la réconciliation, et l'ordre
+  était contraint : cet appel inconditionnel *était*, par accident, la seule réconciliation que le
+  module possédait — la seule à rattraper un hub ayant rechargé sans que son départ soit annoncé.
+  **Borne assumée** : `targets` se construit sur `usersInRoom`, donc seul le chemin **(a)** de
+  l'autorisation (présence) est couvert ; un hub admis par le seul chemin **(b)**
+  (`authorizedCallPeers`, l'appel direct hors room) ne serait pas composé par un tour de présence —
+  même borne que le mesh, et un hub de diffusion n'est pas un interlocuteur d'appel direct.
+  Épinglé par `scenarios/peerDeparture.test.js` (« A recharge sans que B voie son départ ») et
+  `useConnectionPool.test.js` (§ `syncUsersConnections`, dont les trois cas « star : un client… »)
 - **La PERTE d'une connexion est le SECOND déclencheur de composition**, et c'est ce qui ferme le
   cas **(b)** ci-dessus. La réconciliation le borne sans le fermer : sans aucun événement de
   présence, aucun tour n'a lieu, et rien de fondé sur la présence ne peut faire mieux — le fait qui

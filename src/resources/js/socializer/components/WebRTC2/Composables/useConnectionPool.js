@@ -522,18 +522,40 @@ export function useConnectionPool(ctx, { core, connections }) {
                 }
             })
         }
-        // Star: le hub se connecte à tout le monde, les clients seulement au hub.
+        // Star: le hub se connecte à tout le monde, les clients seulement au hub —
+        // et des deux côtés, aux seules cibles que la réconciliation ci-dessus a retenues.
         else if (ctx.topology.value === 'star' && ctx.hubSlug.value) {
             if (ctx.isHub.value) {
                 targets.forEach(userSlug => {
                     requestOrConnectPeer(userSlug, null, { preserveRetry: !newSlugs.has(userSlug) })
                 })
-            } else {
-                // ⚠️ Inconditionnel, et c'est un défaut connu (`work/webrtc2-todo.md`) : le
-                // client compose son hub même absent de la room. Laissé tel quel ici — c'est
-                // aussi, par accident, la seule réconciliation qui existait, donc le corriger
-                // avant celle ci-dessus régresserait la reprise d'un hub qui recharge.
-                requestOrConnectPeer(ctx.hubSlug.value)
+            }
+            // Le client n'a qu'une cible, mais elle obéit au MÊME prédicat que les autres :
+            // `targets` restreint au hub. Cette branche est donc la branche mesh filtrée, et
+            // non une règle à part.
+            //
+            // ⚠️ Elle était INCONDITIONNELLE, et c'était double faute : le hub était composé
+            // même absent de la room — un POST /ask-to-peer-id, un jeton du plafond de cadence
+            // et un retry armé à chaque tour de présence, rattrapés seulement au tour suivant
+            // par `isAuthorizedPeer` dans `_handleConnectionAttempt` — et sans `preserveRetry`,
+            // alors qu'un tour de présence est l'appelant PÉRIODIQUE type : l'horizon d'abandon
+            // de ≈55 s ne tombait jamais.
+            //
+            // ⚠️ Elle n'a pu être resserrée qu'APRÈS que le fan-out réconcilie : cet appel
+            // inconditionnel était, par accident, la seule réconciliation que le module
+            // possédait — la seule à rattraper un hub qui avait rechargé sans que son départ
+            // soit annoncé. L'ordre des deux passes était donc contraint, et le rappeler évite
+            // qu'on le re-dérive à l'envers.
+            //
+            // Borne assumée : `targets` se construit sur `ctx.connection.usersInRoom`, donc
+            // seul le chemin (a) de l'autorisation (présence) est couvert — un hub qui ne
+            // serait admis que par (b) `authorizedCallPeers` ne serait plus composé ici. C'est
+            // exactement la borne qu'accepte déjà le mesh, et un hub de diffusion n'est pas un
+            // interlocuteur d'appel direct.
+            else if (targets.includes(ctx.hubSlug.value)) {
+                requestOrConnectPeer(ctx.hubSlug.value, null, {
+                    preserveRetry: !newSlugs.has(ctx.hubSlug.value),
+                })
             }
         }
         // SFU: pas de maillage pair à pair côté client.

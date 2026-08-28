@@ -716,9 +716,16 @@ describe('useConnectionPool', () => {
         })
 
         it('star : un client ne se connecte qu\'au hub', async () => {
+            // ⚠️ Le pré-semis de `usersInRoom` n'est pas décoratif : ce fichier stube
+            // `getRoomUsersDiff`, donc la composition n'est jamais écrite et le hub ne
+            // serait membre d'aucune room. Sans lui, ce cas verdirait par ABSENCE du hub
+            // dans les cibles — c'est-à-dire pour la raison exactement inverse de ce
+            // qu'il prétend épingler. Avec lui, il dit ce qu'il doit : alice et bob sont
+            // membres eux aussi, et le client les ignore quand même.
             ctx.session.topology = 'star'
             ctx.session.hubSlug = 'teacher'
             ctx.session.isHub = false
+            ctx.connection.usersInRoom = ['teacher', 'alice', 'bob']
             connections.getRoomUsersDiff.mockResolvedValue({
                 newUsers: [{ slug: 'alice' }, { slug: 'bob' }],
                 removedUsers: [],
@@ -730,16 +737,92 @@ describe('useConnectionPool', () => {
             expect(core.requestRemotePeerConnection).toHaveBeenCalledWith('teacher', ctx.session.currentType)
         })
 
+        // ── Le client star applique le prédicat de la réconciliation ──────────
+        //
+        // « Membre de la room ET rien d'établi », restreint au hub : la branche client
+        // est la branche mesh filtrée, pas une règle à part. Ces trois cas épinglent les
+        // trois moitiés du prédicat — l'appartenance, l'établissement, et l'horizon
+        // d'abandon du moteur de retry.
+        it('star : un client ne compose pas un hub absent de la room', async () => {
+            // ⭐ Le défaut corrigé. L'appel au hub était INCONDITIONNEL : à chaque tour de
+            // présence où rien n'est ouvert vers lui, un POST /ask-to-peer-id partait, un
+            // jeton du plafond de cadence était consommé et un retry s'armait — y compris
+            // quand le hub n'est pas dans la room. `isAuthorizedPeer` ne rattrapait qu'un
+            // tour plus tard, dans `_handleConnectionAttempt`, donc après le coût.
+            ctx.session.topology = 'star'
+            ctx.session.hubSlug = 'teacher'
+            ctx.session.isHub = false
+            ctx.connection.usersInRoom = ['alice']
+            connections.getRoomUsersDiff.mockResolvedValue({
+                newUsers: [{ slug: 'alice' }],
+                removedUsers: [],
+            })
+
+            await pool.syncUsersConnections([{ slug: 'alice' }])
+
+            expect(core.requestRemotePeerConnection).not.toHaveBeenCalled()
+            expect(connections.connectToPeer).not.toHaveBeenCalled()
+        })
+
+        it('star : un client ne recompose pas un hub déjà établi', async () => {
+            ctx.session.topology = 'star'
+            ctx.session.hubSlug = 'teacher'
+            ctx.session.isHub = false
+            ctx.connection.usersInRoom = ['teacher']
+            connections.isConnectionEstablished.mockReturnValue(true)
+            connections.getRoomUsersDiff.mockResolvedValue({ newUsers: [], removedUsers: [] })
+
+            await pool.syncUsersConnections([{ slug: 'teacher' }])
+
+            expect(core.requestRemotePeerConnection).not.toHaveBeenCalled()
+            expect(connections.connectToPeer).not.toHaveBeenCalled()
+        })
+
+        it('star : un client ne réarme pas la chaîne de retry du hub', async () => {
+            // Même horizon d'abandon que le mesh, et il se défait de la même façon :
+            // `scheduleRetry(slug, 0, …)` commence par `clearRetry`. Un tour de présence
+            // est un appelant PÉRIODIQUE — il repasse indéfiniment — donc sans
+            // `preserveRetry` il remet `attempt` à zéro à chaque passage et les ≈55 s
+            // d'insistance ne tombent jamais. Le client star était la dernière branche du
+            // fan-out à ne pas porter le garde.
+            ctx.session.topology = 'star'
+            ctx.session.hubSlug = 'teacher'
+            ctx.session.isHub = false
+            ctx.connection.usersInRoom = ['teacher']
+            connections.getRoomUsersDiff.mockResolvedValue({
+                newUsers: [{ slug: 'teacher' }],
+                removedUsers: [],
+            })
+
+            // Tour 1 : le hub est un arrivant, donc une chaîne NEUVE est armée — défaut
+            // inchangé, un fait neuf mérite une chaîne neuve.
+            await pool.syncUsersConnections([{ slug: 'teacher' }])
+
+            // À mi-chemin du premier délai, un tour de présence sans arrivant.
+            await vi.advanceTimersByTimeAsync(700)
+            connections.getRoomUsersDiff.mockResolvedValue({ newUsers: [], removedUsers: [] })
+            await pool.syncUsersConnections([{ slug: 'teacher' }])
+
+            core.requestRemotePeerConnection.mockClear()
+
+            // La chaîne d'origine arrive à échéance : elle a survécu au tour de présence.
+            // Réarmée à zéro par ce tour, elle n'aurait pas encore tiré ici.
+            await vi.advanceTimersByTimeAsync(FIRST_RETRY_MS - 700)
+
+            expect(core.requestRemotePeerConnection).toHaveBeenCalledWith('teacher', ctx.session.currentType)
+        })
+
         // ── Pas d'observation, pas d'émission ─────────────────────────────────
         //
         // Le tour sur liste vide a le droit d'OUBLIER — c'est même le seul qui puisse
         // purger le dernier partant — jamais celui d'OUVRIR. Le garde vit entre la purge
         // et le fan-out ; ces deux cas l'épinglent des deux côtés.
         it('un tour vide purge mais n\'ouvre rien (client star)', async () => {
-            // ⭐ La branche fautive : le client star compose son hub sans regarder
-            // `newUsers`. Le premier tour du provider (`{ immediate: true }` sur une liste
-            // encore vide) enverrait donc un POST de signalisation avant toute
-            // connaissance de la room, et armerait un retry sur rien.
+            // Le garde vit ENTRE la purge et le fan-out, et il porte sur le BLOC : il ne
+            // doit pas dépendre de ce que telle ou telle branche regarde aujourd'hui. Le
+            // client star reste le meilleur révélateur — c'est la branche dont le prédicat
+            // est le plus court — mais la règle qu'on épingle ici est « pas d'observation,
+            // pas d'émission », pas le contenu de cette branche.
             ctx.session.topology = 'star'
             ctx.session.hubSlug = 'teacher'
             ctx.session.isHub = false

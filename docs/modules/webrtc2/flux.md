@@ -157,7 +157,7 @@ useMediaBroadcast.watchUsers
        ├─ nettoyage des removedUsers
        └─ fan-out selon la topologie :
             mesh  → requestOrConnectPeer(arrivant)  (+ 'screen' si isCapturing)
-            star  → hub : tous ; client : seulement hubSlug
+            star  → hub : tous ; client : le hub SEULEMENT s'il est membre et rien d'établi
 useConnectionPool.requestOrConnectPeer
   ├─ remotePeerId connu ?  → connections.connectToPeer directement
   ├─ sinon                 → core.requestRemotePeerConnection(userSlug, type)
