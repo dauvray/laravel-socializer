@@ -184,10 +184,14 @@ comme un contrat de fraîcheur, elle s'est révélée être un contrat de **prop
 Deux règles la portent, chacune sur un mécanisme qui existait déjà :
 
 1. **Un contexte en arrêt n'écrit pas la composition** (`getRoomUsersDiff`, garde sur
-   `ctx.isShuttingDown` juste après la barrière `waitForMeReady`). Sans elle, un tour parti avant
-   l'ouverture du peer local — la barrière dure jusqu'à `ME_READY_TIMEOUT_MS`, et son `effectScope`
-   est détaché, donc `destroy()` ne l'annule pas — reprend après le démontage et **ressuscite**
-   l'entrée que `destroy()` vient de retirer. Plus rien ne la retire ensuite : `clearRoomMembers`
+   `ctx.isShuttingDown` juste après la barrière `waitForMeReady`), et **la barrière elle-même meurt
+   avec le contexte** (`destroy()` résout les attentes en vol à `false`). Deux mécanismes
+   indépendants, et ce n'est pas un doublon : le second éteint la **source** — quatre consommateurs
+   de production reprennent derrière cette barrière, et aucun n'est inerte sur un contexte mort — le
+   premier tient encore si une attente d'une autre nature s'intercale un jour. Sans eux, un tour
+   parti avant l'ouverture du peer local — la barrière dure jusqu'à `ME_READY_TIMEOUT_MS`, et son
+   `effectScope` est détaché — reprend après le démontage et **ressuscite** l'entrée que `destroy()`
+   vient de retirer. Plus rien ne la retire ensuite : `clearRoomMembers`
    n'a qu'un appelant, déjà passé. Cette entrée morte épingle alors ses membres pour la vie de
    l'onglet, `isUserInAnyRoom` balayant tous les contextes. C'était le **seul** épinglage réellement
    permanent du module, et il s'atteint par une simple navigation SPA.

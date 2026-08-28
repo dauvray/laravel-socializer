@@ -299,6 +299,27 @@ export function createPeerContext({ type, room, options = {} }) {
         ? options.meReadyTimeoutMs
         : ME_READY_TIMEOUT_MS
 
+    /**
+     * Les attentes EN VOL de ce contexte — celles de `waitForMeReady` et de
+     * `waitForPresenceSync`, qui partagent le même idiome.
+     *
+     * ⚠️ Leurs `effectScope` sont DÉTACHÉS : sans ce registre, une attente survit à la
+     * destruction de son contexte jusqu'à sa propre alarme (15 s / 5 s), et les
+     * continuations reprennent derrière elle sur un contexte mort. Quatre consommateurs de
+     * production sont concernés — `useConnectionPool`, `usePeerConnections` et les DEUX de
+     * `useStreamManager` —, et ils ne sont pas inertes : `handleStreamReceived` repeuple
+     * `remoteStreamsMap` que `destroy()` vient de vider et peut créer un player DOM pour un
+     * contexte mort, `handleStreamRemoved` appelle `handleRemoteDeparture`, qui avale ses
+     * exceptions.
+     *
+     * `destroy()` les résout donc à `false`, ce qui les fait toutes sortir par le
+     * `if (!ready) return` que chacune écrit DÉJÀ, et qui est déjà testé : on éteint la
+     * source au lieu d'ajouter un garde par consommateur. C'est aussi ce qui rend le garde
+     * de `getRoomUsersDiff` un SECOND mécanisme et pas un doublon — il tient encore si un
+     * jour une attente d'une autre nature s'intercale.
+     */
+    const _pendingWaiters = new Set()
+
     // Attendre que le peer soit prêt (ex: meStore.getMe.slug disponible) avant de faire des actions dépendantes du peerId
     // Utilise un watchEffect réactif (effectScope détaché) plutôt qu'un polling setTimeout.
     // Se résout dès que meStore.getMe.slug ET peerStore.lastLocalPeerId sont disponibles.
@@ -314,10 +335,16 @@ export function createPeerContext({ type, room, options = {} }) {
             const _resolve = (value) => {
                 if (resolved) return
                 resolved = true
+                _pendingWaiters.delete(_resolve)
                 clearTimeout(timeoutId)
                 scope.stop()
                 resolve(value)
             }
+
+            // ⚠️ Inscrit AVANT `scope.run()` : le watchEffect s'exécute immédiatement, donc
+            // `_resolve(true)` peut partir de façon synchrone et se désinscrire aussitôt.
+            // Inscrit après, une attente déjà résolue resterait dans le registre à vie.
+            _pendingWaiters.add(_resolve)
 
             // Timeout de sécurité — une seule alarme, pas de boucle de polling.
             // ⚠️ Armé AVANT scope.run() : le watchEffect s'exécute immédiatement, donc
@@ -370,10 +397,18 @@ export function createPeerContext({ type, room, options = {} }) {
             const _resolve = (value) => {
                 if (resolved) return
                 resolved = true
+                _pendingWaiters.delete(_resolve)
                 clearTimeout(timeoutId)
                 scope.stop()
                 resolve(value)
             }
+
+            // Même registre et même raison que `waitForMeReady` : cette attente-ci garde un
+            // garde d'admission en suspens (`_admitIncoming` l'attend avant de REFUSER).
+            // Sur un contexte détruit, la résoudre à `false` fait conclure le refus tout de
+            // suite au lieu de payer les 5 s. La mémoïsation reste juste : un contexte mort
+            // ne rendra plus jamais « présence connue ».
+            _pendingWaiters.add(_resolve)
 
             // Armé AVANT scope.run() : le watchEffect s'exécute immédiatement et peut
             // résoudre de façon synchrone (même piège que waitForMeReady — un timer
@@ -710,7 +745,26 @@ export function createPeerContext({ type, room, options = {} }) {
 
     // Nettoyage complet du contexte à la destruction du composant propriétaire
     const destroy = () => {
+        // EN PREMIER : ce contexte n'attend plus rien. Les attentes en vol sont des
+        // `effectScope` détachés que rien d'autre n'annule ; les laisser pendantes fait
+        // reprendre leurs quatre consommateurs sur un contexte mort, jusqu'à 15 s plus tard
+        // (cf. `_pendingWaiters`). Résoudre à `false` les fait sortir par le
+        // `if (!ready) return` que chacun écrit déjà.
+        //
+        // Avant les purges, et pas après : les continuations sont des microtâches, donc
+        // elles reprennent de toute façon une fois ce `destroy()` terminé — mais l'ordre
+        // écrit ici dit l'intention, et il évite d'armer une attente pendant le teardown.
+        ;[..._pendingWaiters].forEach((abort) => abort(false))
+        _pendingWaiters.clear()
+
         // Supprime la signal queue room créée dans onBeforeMount
+        //
+        // ⚠️ Pas de garde de propriété ici, contrairement à `clearRoomMembers` juste en
+        // dessous, et c'est mesuré, pas oublié : `clearSignalQueueRoom` n'est pas un verbe
+        // de témoignage — il a deux autres appelants de production, EN PLEINE SESSION
+        // (`usePeerConnections`), pour qui vider sa propre file est normal. Et la collision
+        // d'homonymes y coûte au plus un signal tamponné : `dispatchSignal` recrée la file
+        // si elle manque, et `signalSeq` n'est délibérément pas supprimé, donc aucun rewind.
         peerStore.clearSignalQueueRoom(contextId)
 
         // Ce contexte ne témoigne plus de la présence de personne. Sans ce retrait, un

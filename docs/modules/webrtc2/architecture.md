@@ -444,6 +444,16 @@ scénarios) et `_hubRateLimiter` (arbitrage « verbe `.reset()` plutôt que Pini
   ouvre son propre `effectScope` et arme sa propre alarme de 15 s. Tout code qui la rappelle en
   boucle paie donc l'attente à chaque tour, et un flot d'appels sur un contexte jamais prêt accumule
   autant de timers. Ne pas déduire le comportement de l'une de celui de l'autre
+- **Les attentes d'un contexte MEURENT avec lui.** Leurs `effectScope` sont détachés — c'est ce qui
+  leur permet d'exister hors d'un `setup()` — donc rien ne les annule à sa destruction. `destroy()`
+  les résout à `false` (registre `_pendingWaiters`), et c'est structurel : **quatre** consommateurs
+  de production reprennent derrière `waitForMeReady`, et aucun n'est inerte sur un contexte mort —
+  `handleStreamReceived` repeuple `remoteStreamsMap` que `destroy()` vient de vider et peut créer un
+  player DOM, `handleStreamRemoved` appelle `handleRemoteDeparture`, qui avale ses exceptions, et le
+  tour de présence ressuscitait la composition. Les quatre sortent par le `if (!ready) return`
+  qu'ils écrivent **déjà** : on éteint la source, on n'ajoute pas un garde par consommateur.
+  Corollaire pour tout nouveau consommateur : la sortie `!ready` n'est pas facultative, c'est elle
+  qui porte le teardown
 - **Verrou de `syncUsersConnections`** : il **coalesce**, il ne jette pas — et c'est désormais le
   **seul** verrou du chemin. `getRoomUsersDiff` en a porté un seçond, `_diffLock`, censé garder un
   TOCTOU entre la lecture de la composition précédente et son écriture ; il ne gardait rien, l'unique

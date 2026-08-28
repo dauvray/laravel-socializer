@@ -707,6 +707,45 @@ describe('createPeerContext', () => {
             expect(peerStore.getQueueForRoom(ctx.contextId)).toBeNull()
         })
 
+        // ⭐ Les attentes en vol meurent avec le contexte.
+        //
+        // `waitForMeReady` et `waitForPresenceSync` sont des `effectScope` DÉTACHÉS, avec
+        // chacun son alarme (15 s / 5 s). Rien ne les annulait : un contexte détruit laissait
+        // donc ses attentes pendantes, et QUATRE consommateurs de production reprennent
+        // derrière elles — `useConnectionPool`, `usePeerConnections`, et les deux de
+        // `useStreamManager`. Ces derniers ne sont pas inertes : `handleStreamReceived`
+        // repeuple `remoteStreamsMap` que `destroy()` vient de vider, et peut créer un player
+        // DOM pour un contexte mort ; `handleStreamRemoved` appelle `handleRemoteDeparture`,
+        // qui avale ses exceptions.
+        //
+        // Résoudre `false` fait sortir les quatre par leur `if (!ready) return` DÉJÀ écrit et
+        // déjà testé : on ne leur ajoute aucun chemin, on éteint la source.
+        //
+        // ⚠️ Sans le correctif, ce cas ne rougit pas sur une assertion mais sur le
+        // `testTimeout` (10 s) : la promesse reste pendante jusqu'à sa propre alarme. C'est
+        // volontaire — un `race` contre une sentinelle testerait la sentinelle.
+        it('résout les attentes en vol à false, au lieu de les laisser pendantes', async () => {
+            const ctx = mountContext()
+            const meReady = ctx.waitForMeReady()
+            const presenceSync = ctx.waitForPresenceSync()
+
+            ctx.destroy()
+
+            await expect(meReady).resolves.toBe(false)
+            await expect(presenceSync).resolves.toBe(false)
+        })
+
+        it('n\'annule pas une attente déjà résolue', async () => {
+            peerStore.lastLocalPeerId = 'peer-local'
+            const ctx = mountContext()
+
+            await expect(ctx.waitForMeReady()).resolves.toBe(true)
+
+            // Le garde `resolved` du contexte doit tenir : détruire après coup ne
+            // « re-résout » rien et ne lève pas.
+            expect(() => ctx.destroy()).not.toThrow()
+        })
+
         it('conserve volontairement le garde de teardown actif', () => {
             const ctx = mountContext()
             ctx.beginShutdown()

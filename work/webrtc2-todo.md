@@ -179,6 +179,21 @@ avant le déménagement revient à les jeter.
   **Deux écarts de harnais fermés en chemin** : le double ne portait pas le garde de propriété (il
   aurait été plus permissif que la production sur un chemin de sécurité), et son `getRemotePeerId`
   rendait `null` là où le store rend `undefined` — sept assertions épinglaient la valeur du double.
+
+  **Puis la CAUSE RACINE, fermée dans la foulée** — parce que le premier correctif gardait un
+  consommateur et pas le mécanisme. `waitForMeReady` a **quatre** consommateurs de production, et
+  aucun n'est inerte sur un contexte mort : `handleStreamReceived` repeuple `remoteStreamsMap` que
+  `destroy()` vient de vider et peut créer un player DOM, `handleStreamRemoved` appelle
+  `handleRemoteDeparture` (qui avale ses exceptions). `destroy()` résout désormais les attentes en
+  vol à `false` — les quatre sortent par le `if (!ready) return` qu'ils écrivent déjà, et qui est
+  déjà testé chez chacun. Le garde de `getRoomUsersDiff` reste, comme second mécanisme.
+
+  ⚠️ **Une asymétrie assumée, à ne pas prendre pour un oubli** : `clearSignalQueueRoom` n'a PAS
+  reçu le garde de propriété. Ce n'est pas un verbe de témoignage — il a deux autres appelants de
+  production en pleine session — et la collision d'homonymes y coûte au plus un signal tamponné :
+  `dispatchSignal` recrée la file si elle manque, et `signalSeq` n'est pas supprimé, donc pas de
+  rewind. Idem pour `clearWaitingRemotePeerIdsForContext`, dont la collision coûte un aller-retour
+  de signalisation. Mesuré, puis écarté comme disproportionné.
 - [x] **Le client star compose son hub même absent de la room** `[S]` — **fermé le 28/08/2026**, sous
   tests verts, comme la simplification annoncée. La branche client est devenue la branche mesh
   filtrée : `targets.includes(hubSlug)`, avec le même `preserveRetry`. Le couplage annoncé s'est

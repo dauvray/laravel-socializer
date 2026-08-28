@@ -195,6 +195,12 @@ verbe demanderait de monter `Notifications.vue`, et le scénario ne parlerait pl
   part, sur Pinia réel, par `peers2Store.remotePeerId.test.js`. Même règle que le minuteur ICE
   ci-dessous — **le contrôle de harnais doit neutraliser les deux côtés**, sinon il ne prouve que
   celui qu'on a doublé. (Contre-épreuve faite dans les deux sens le 26/08/2026.)
+- **Une attente pendante rougit par le `testTimeout`, pas par une assertion.** Le cas
+  « `destroy()` résout les attentes en vol à `false` » (`createPeerContext.test.js`) reste pendant
+  jusqu'à l'alarme du contexte (15 s) si le correctif saute : sa contre-épreuve met donc 10 s à
+  rougir, et c'est volontaire. La tentation est d'écrire un `Promise.race` contre une sentinelle —
+  il testerait la sentinelle. Ne pas non plus « accélérer » avec `vi.useFakeTimers()` : l'attente ne
+  dépend pas d'un minuteur, mais d'un `watchEffect` sur deux clés de store.
 - **Le garde de propriété de `clearRoomMembers` a lui aussi deux versants**, et le double le porte
   pour cette raison — pas par symétrie décorative. Mesuré dans les deux sens : neutraliser le verbe
   du **store** fait rougir `createPeerContext.test.js` et `peers2Store.roomMembers.test.js` en
