@@ -111,7 +111,7 @@ describe('usePeerTransport — recovery peer-unavailable', () => {
 
         peerInstance._triggerEvent('error', peerUnavailableError())
 
-        expect(ctx.peerStore.getRemotePeerId('bob')).toBeNull()
+        expect(ctx.peerStore.getRemotePeerId('bob')).toBeUndefined()
         expect(ctx.peerUnavailableSignal.value).toBe('bob')
     })
 
@@ -128,7 +128,7 @@ describe('usePeerTransport — recovery peer-unavailable', () => {
 
         peerInstance._triggerEvent('error', peerUnavailableError())
 
-        expect(ctx.peerStore.getRemotePeerId('bob')).toBeNull()
+        expect(ctx.peerStore.getRemotePeerId('bob')).toBeUndefined()
         expect(ctx.peerUnavailableSignal.value).toBe('bob')
 
         vi.useRealTimers()
@@ -139,7 +139,7 @@ describe('usePeerTransport — recovery peer-unavailable', () => {
         // `failedConns.length === 0` abandonnait alors AVANT toute invalidation.
         peerInstance._triggerEvent('error', peerUnavailableError())
 
-        expect(ctx.peerStore.getRemotePeerId('bob')).toBeNull()
+        expect(ctx.peerStore.getRemotePeerId('bob')).toBeUndefined()
         expect(ctx.peerUnavailableSignal.value).toBe('bob')
     })
 
@@ -154,7 +154,7 @@ describe('usePeerTransport — recovery peer-unavailable', () => {
         expect(ctx.peerStore.removePeerConnectionInstance).toHaveBeenCalledWith(
             ROOM, 'bob', 'screen', failed
         )
-        expect(ctx.peerStore.getRemotePeerId('bob')).toBeNull()
+        expect(ctx.peerStore.getRemotePeerId('bob')).toBeUndefined()
     })
 
     it('purge le drapeau d\'attente pour ne pas étrangler la re-demande', () => {
@@ -204,7 +204,7 @@ describe('usePeerTransport — recovery peer-unavailable', () => {
         peerInstance._triggerEvent('error', peerUnavailableError())
 
         // Le peerId mort est bien oublié — ça, c'est global…
-        expect(ctx.peerStore.getRemotePeerId('bob')).toBeNull()
+        expect(ctx.peerStore.getRemotePeerId('bob')).toBeUndefined()
         // …mais ce contexte-là n'a rien à redemander.
         expect(second.peerUnavailableSignal.value).toBeNull()
 

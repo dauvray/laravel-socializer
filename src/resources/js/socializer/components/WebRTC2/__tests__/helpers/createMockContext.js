@@ -234,7 +234,12 @@ export function createMockContext(overrides = {}) {
         // sur une collection `markRaw`, un getter Pinia mis en cache figerait le registre.
         getRegisteredContexts: vi.fn(() => [..._contextRegistry.values()]),
 
-        getRemotePeerId: vi.fn((slug) => _remotePeerIds.get(slug)?.peerId ?? null),
+        // ⚠️ `undefined` sur entrée absente, comme le vrai getter — c'est le `Map.get`
+        // qu'il remplace, et sa docstring l'énonce. Le double rendait `null` : sans
+        // conséquence sur la production (les deux lecteurs testent la truthiness ou
+        // comparent à `conn.peer`), mais sept assertions épinglaient la valeur du DOUBLE
+        // au lieu du contrat du store. Un mock qui ment est pire qu'un test manquant.
+        getRemotePeerId: vi.fn((slug) => _remotePeerIds.get(slug)?.peerId),
         hasRemotePeerId: vi.fn((slug) => _remotePeerIds.has(slug)),
         addRemotePeerId: vi.fn((slug, peerId) => {
             _remotePeerIds.set(slug, { peerId, learnedAt: Date.now() })
@@ -307,8 +312,21 @@ export function createMockContext(overrides = {}) {
             if (!contextId) return
             _roomMembers[contextId] = Array.isArray(slugs) ? [...slugs] : []
         }),
-        clearRoomMembers: vi.fn((contextId) => {
+        // Porte le MÊME garde de propriété que le vrai verbe, et pas par symétrie
+        // décorative : sans lui, le double serait plus permissif que la production sur un
+        // chemin de sécurité, et un test de la propriété « un mourant n'efface pas
+        // l'allowlist de son homonyme vivant » passerait par ici en restant vert quoi qu'il
+        // arrive au store. C'est la panne n° 2 de mockFidelity.test.js, mot pour mot.
+        //
+        // ⚠️ La sémantique est celle du store, pas celle de `unregisterContext` : on ne
+        // s'abstient que si l'entrée appartient à QUELQU'UN D'AUTRE — un contexte jamais
+        // inscrit purge la sienne.
+        clearRoomMembers: vi.fn((contextId, owner = null) => {
             if (!contextId) return
+
+            const holder = _contextRegistry.get(contextId)
+            if (owner && holder && holder !== owner) return
+
             delete _roomMembers[contextId]
         }),
         isUserInAnyRoom: vi.fn((slug) => {
@@ -754,12 +772,18 @@ export function createMockContext(overrides = {}) {
         // vide ». Le double posait un `[]`, écart sans conséquence sur les lectures mais
         // qui aurait fait divergier la seule chose que cette entrée gouverne encore après
         // la mort du contexte : `isUserInAnyRoom`, qui balaie tous les contextes.
-        peerStore.clearRoomMembers(contextId)
+        //
+        // ⚠️ Se présente comme le vrai `destroy()`. `ctx` est la liaison retournée plus
+        // bas — c'est elle qu'un test inscrit au registre, donc c'est elle qui prouve la
+        // propriété de l'entrée.
+        peerStore.clearRoomMembers(contextId, ctx)
         connection.presenceSynced = false
         session.authorizedCallPeers.clear()
     })
 
-    return {
+    // Liaison NOMMÉE, comme `createPeerContext` : c'est cet objet-ci qu'un test inscrit au
+    // registre, donc c'est lui que `destroy()` doit présenter à `clearRoomMembers`.
+    const ctx = {
         contextId,
         lastRoomSignal,
 
@@ -829,4 +853,6 @@ export function createMockContext(overrides = {}) {
         // destroy
         destroy,
     }
+
+    return ctx
 }

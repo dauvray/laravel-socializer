@@ -171,6 +171,28 @@ describe('roomMembers est la seule source de la composition', () => {
             expect(runs).toBe(2)
         })
 
+        // ⚠️ Ce cas existe pour que le garde de propriété du DOUBLE ne soit pas décoratif.
+        // Mesuré : neutraliser ce garde dans le double laissait la suite entière verte —
+        // « un garde qu'aucune contre-épreuve ne peut faire rougir ment sur son utilité ».
+        // Il est ici l'autre versant obligatoire du contrôle : `createPeerContext.test.js`
+        // épingle le verbe du STORE, ce cas épingle celui du double, et neutraliser l'un
+        // laisse l'autre vert.
+        //
+        // Sans lui, le double serait plus permissif que la production sur un chemin de
+        // sécurité — la panne n° 2 de `mockFidelity.test.js`, mot pour mot.
+        it('n\'efface pas la composition détenue par un homonyme vivant', () => {
+            const mourant = createMockContext({ contextId: 'stream-room-test' })
+            const vivant = createMockContext({ contextId: 'stream-room-test' })
+            // Un seul store par double : on rejoue la collision sur celui du mourant.
+            mourant.peerStore.registerContext(mourant)
+            mourant.peerStore.registerContext(vivant)
+            mourant.peerStore.setRoomMembers('stream-room-test', ['alice'])
+
+            mourant.destroy()
+
+            expect(mourant.peerStore.roomMembers['stream-room-test']).toEqual(['alice'])
+        })
+
         it('isole deux contextes du même onglet par leur clé', () => {
             const a = createMockContext({ contextId: 'data-app' })
             const b = createMockContext({ contextId: 'stream-room-test' })
@@ -240,6 +262,30 @@ describe('roomMembers est la seule source de la composition', () => {
             // teardown passe par `clearRoomMembers`, qui a une autre sémantique (l'entrée
             // disparaît, elle ne devient pas « room vide »).
             expect([...(found.get('setRoomMembers') ?? [])]).toEqual([])
+        })
+
+        // Le pendant du cas ci-dessus pour l'EFFACEMENT. `clearRoomMembers` porte un garde
+        // de propriété — le jumeau de celui de `unregisterContext` — mais ce garde est
+        // conditionné à l'`owner` que l'appelant présente : omis, il ne fait rien. Un
+        // appelant de production qui l'oublierait rendrait le garde décoratif, et AUCUN
+        // test de comportement ne rougirait : les deux contextes de la panne sont
+        // homonymes, donc tous les cas à un seul contexte restent verts.
+        //
+        // On vérifie donc mécaniquement, sur les sources, que l'unique appel de production
+        // se présente. Même mécanique et même raison que le cas précédent.
+        it('n\'efface la composition qu\'en présentant son propriétaire', () => {
+            const clears = /peerStore\s*\.\s*clearRoomMembers\s*\(([^)]*)\)/g
+            const calls = []
+
+            for (const [path, source] of Object.entries(SOURCES)) {
+                for (const match of String(source).matchAll(clears)) {
+                    calls.push({ path: path.replace('../', ''), args: match[1] })
+                }
+            }
+
+            expect(calls.map((call) => call.path)).toEqual(['Composables/createPeerContext.js'])
+            // Deux arguments : le contextId ET le contexte qui retire son témoignage.
+            expect(calls[0].args.split(',').length).toBe(2)
         })
     })
 })

@@ -183,6 +183,60 @@ describe('peers2 — composition des rooms', () => {
             expect(store.getRoomMembers(CTX)).toBe(EMPTY_MEMBERS)
             expect(CTX in store.roomMembers).toBe(false)
         })
+
+        // ── Le garde de propriété ──────────────────────────────────────────────────
+        //
+        // Même garde que `unregisterContext`, et pour la même raison : le contextId est
+        // `type-room`, le registre est last-write-wins VOLONTAIRE (securite.md), donc deux
+        // contextes homonymes se chevauchent à chaque remontage. Sans ce garde,
+        // l'`onUnmounted` du mourant efface la composition détenue par le vivant — qui
+        // garde `presenceSynced` (monotone) et refuse alors TOUTE connexion entrante du
+        // chemin présence, sans erreur console et sans rattrapage.
+        //
+        // La sémantique n'est PAS celle de `unregisterContext` : ici on ne s'abstient que
+        // si l'entrée appartient à QUELQU'UN D'AUTRE. Un contexte jamais inscrit au
+        // registre (`setLocalPeer` non appelé) doit pouvoir purger la sienne, sinon son
+        // entrée fuit pour la vie de l'onglet.
+        describe('garde de propriété', () => {
+            it('purge sans `owner` — le semis de test et les appelants historiques', () => {
+                store.setRoomMembers(CTX, ['alice'])
+
+                store.clearRoomMembers(CTX)
+
+                expect(CTX in store.roomMembers).toBe(false)
+            })
+
+            it('purge quand le registre ne détient personne sur cet id', () => {
+                const orphelin = { contextId: CTX }
+                store.setRoomMembers(CTX, ['alice'])
+
+                store.clearRoomMembers(CTX, orphelin)
+
+                expect(CTX in store.roomMembers).toBe(false)
+            })
+
+            it('purge quand l\'entrée appartient encore à celui qui la retire', () => {
+                const ctx = { contextId: CTX }
+                store.registerContext(ctx)
+                store.setRoomMembers(CTX, ['alice'])
+
+                store.clearRoomMembers(CTX, ctx)
+
+                expect(CTX in store.roomMembers).toBe(false)
+            })
+
+            it('s\'abstient quand l\'entrée est passée à un homonyme vivant', () => {
+                const mourant = { contextId: CTX }
+                const vivant = { contextId: CTX }
+                store.registerContext(mourant)
+                store.registerContext(vivant)   // last-write-wins : le vivant détient l'id
+                store.setRoomMembers(CTX, ['alice'])
+
+                store.clearRoomMembers(CTX, mourant)
+
+                expect(store.getRoomMembers(CTX)).toEqual(['alice'])
+            })
+        })
     })
 
     // ── Réactivité ────────────────────────────────────────────────────────────────

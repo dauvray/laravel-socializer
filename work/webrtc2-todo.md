@@ -138,33 +138,47 @@ avant le déménagement revient à les jeter.
   5. **Un garde retiré parce qu'aucune contre-épreuve ne pouvait le faire rougir** : `isValidSlug`,
      déjà porté par `isAuthorizedPeer` en première ligne. Les quatre autres ont chacun été vus rouges,
      un par un.
-- [ ] **`roomMembers` n'a pas de contrat de fraîcheur** `[M]`
-  `isUserInAnyRoom` (`getters.js`) : un contexte monté qui ne reçoit plus de `props.users` frais
-  épingle le slug pour l'onglet entier, et `removeRemotePeerId` devient un no-op permanent. Le
-  préjudice résiduel se limite à la longévité de l'entrée d'allowlist, qui reste gardée par
-  l'égalité `conn.peer`.
+- [x] **`roomMembers` n'a pas de contrat de fraîcheur** `[M]` — **fermé le 29/08/2026, et pas par le
+  mécanisme que cet item cherchait.** Ce n'était pas un contrat de fraîcheur, c'était un contrat de
+  **propriété** : *une entrée n'existe que tant que son auteur est vivant et détenteur de son
+  `contextId`*. Deux règles, sur deux mécanismes qui existaient déjà — un contexte en arrêt n'écrit
+  pas (`ctx.isShuttingDown` après la barrière `waitForMeReady`), seul le détenteur enregistré efface
+  (`clearRoomMembers(contextId, owner)`, jumeau du garde de `unregisterContext`). Sous ces règles,
+  toute entrée présente est le témoignage courant d'un contexte vivant : `isUserInAnyRoom` et
+  `getRoomMembers` **n'ont pas été touchés**. La règle, les trois pistes écartées et la fenêtre
+  assumée vivent dans [securite.md](../docs/modules/webrtc2/securite.md).
 
-  ⚠️ **La consigne « à traiter avec la migration Pinia, pas avant » est retirée : la migration l'a
-  réfutée** (29/08/2026). Elle ne dit plus où le correctif doit vivre, elle dit où il ne peut PAS
-  vivre. Depuis que `roomMembers[contextId]` est la source, l'entrée porte **deux lecteurs de sens
-  opposé** :
+  **Quatre réfutations de l'énoncé, à ne pas re-dériver :**
 
-  | lecteur | ce que « périmé » devrait vouloir dire |
-  |---|---|
-  | `getRoomMembers` → allowlist du chemin (a) des deux gardes + réconciliation du fan-out | **ne doit jamais expirer** — une room calme reste une room |
-  | `isUserInAnyRoom` → `removeRemotePeerId` | **devrait expirer** — un slug épinglé rend le verbe inerte |
+  1. **Une mise en sourdine passe d'abord par un vidage.** `useReverbChannel.leave()` fait
+     `users.value = []` **avant** de révoquer son jeton → tour de présence vide → composition
+     purgée. L'entrée d'un contexte muet est **vide**, pas périmée. Le « contexte monté devenu
+     muet » que l'item cherchait n'épingle donc rien.
+  2. **L'exemple qui portait l'énoncé est faux.** `roomMembers['data-app']` n'existe **jamais** :
+     `Notifications.vue` appelle `useMediaBroadcast()` sans jamais appeler `watchUsers`, dont le
+     seul appelant de production est `MediaBroadcastProvider`. Ce contexte n'a jamais pu opposer de
+     veto. Trois commentaires de test l'affirmaient comme « configuration réelle » — rustine héritée
+     du prédicat `connections` ; corrigés du même geste.
+  3. **Pendant une coupure pusher — le seul chemin qui périme sans vider — le veto est le
+     comportement CORRECT** : rien n'y prouve un départ, tous les contextes de la même source
+     périment ensemble, et `here()` répare au ré-abonnement avec la liste complète.
+  4. **Un `removeRemotePeerId` plus agressif serait une RÉGRESSION.** Supprimer l'entrée prive
+     `getSlugByRemotePeerId` de sa corroboration : l'admission bascule de « refusée sur
+     contradiction » à « non corroborée ». `securite.md` interdit déjà toute péremption sur cette
+     lecture (« un contournement planifiable »).
 
-  Un `updatedAt` posé sur l'entrée, par analogie avec le `learnedAt` de `remotePeersId`, servirait
-  donc le second en **fermant silencieusement** le premier : `props.users` n'a aucun battement de
-  cœur (`MediaBroadcastProvider` ne pousse la composition que sur changement), donc une room saine
-  et stable ne produit aucun tour de présence pendant un temps arbitraire, et se verrait refuser ses
-  propres membres. Invisible en test, de surcroît : toute suite re-synchronise, et
-  `vi.useFakeTimers()` gèle `Date.now()`.
+  **Le défaut réel, absent de l'énoncé — l'entrée fantôme.** La barrière `waitForMeReady` dure
+  jusqu'à 15 s et son `effectScope` est détaché : `destroy()` ne l'annule pas, et `getRoomUsersDiff`
+  ne lisait aucun garde de teardown. Un tour parti avant l'ouverture du peer local reprend après le
+  démontage et **ressuscite** l'entrée que `destroy()` vient de retirer — que plus rien ne retirera,
+  `clearRoomMembers` n'ayant qu'un appelant, déjà passé. C'était le seul épinglage réellement
+  permanent du module, atteignable par une navigation SPA, et sans aucun rapport avec la présence.
+  Son jumeau fail-**closed** : le démontage d'un homonyme emportait l'allowlist du vivant, qui
+  refusait alors toute connexion entrante du chemin (a) en silence et sans rattrapage.
 
-  La fraîcheur appartient donc à la **lecture** de `isUserInAnyRoom`, pas à l'entrée. Et le fait
-  qu'elle cherche n'est probablement pas un âge mais une **liveness de contexte** — « ce contexte
-  a-t-il encore un flux de présence ? » —, dont la purge au démontage (`clearRoomMembers`) est le
-  cas déjà couvert ; le trou est le contexte **monté** devenu muet.
+  **Deux écarts de harnais fermés en chemin** : le double ne portait pas le garde de propriété (il
+  aurait été plus permissif que la production sur un chemin de sécurité), et son `getRemotePeerId`
+  rendait `null` là où le store rend `undefined` — sept assertions épinglaient la valeur du double.
 - [x] **Le client star compose son hub même absent de la room** `[S]` — **fermé le 28/08/2026**, sous
   tests verts, comme la simplification annoncée. La branche client est devenue la branche mesh
   filtrée : `targets.includes(hubSlug)`, avec le même `preserveRetry`. Le couplage annoncé s'est
@@ -425,6 +439,42 @@ avant le déménagement revient à les jeter.
   entre `ctx.connection.remotePeers` et sa projection `peerStore.roomMembers[contextId]` était
   assumée « tant que les deux écritures restent dans la même fonction ». `roomMembers` est
   maintenant la source et le miroir a disparu — sans troisième état.
+
+---
+
+## Sécurité — fermer le chemin (a), et ça se joue au backend
+
+- [ ] **L'identité déclarée du chemin (a) n'est corroborée par rien** `[L]` — la faille résiduelle
+  de [securite.md](../docs/modules/webrtc2/securite.md), ouverte et assumée depuis août, remontée
+  ici le 29/08/2026 parce que c'est elle qui **domine** le préjudice de tout ce qui touche à la
+  longévité des mappings peerId (c'est l'argument qui a permis d'assumer la fenêtre
+  `subscription_error` en fermant le contrat de propriété de `roomMembers`).
+
+  Un membre de la room qui ouvre un **second** `new Peer()` obtient un UUID non mappé, donc
+  `resolvedSlug = null`, donc aucune contradiction à opposer : il est admis sur la seule foi d'un
+  `metadata.from` déclaratif nommant n'importe quel autre membre, et parle ensuite sous son
+  identité (chat, `BROADCAST_STATE`, `AUDIO_MUTE_TOGGLE` lisent tous `resolveRemoteSlug`).
+
+  **Non fermable côté client — le cas nominal de la présence et l'usurpation ont la même signature
+  locale.** Deux voies, toutes deux backend, à trancher dans leur propre chantier :
+
+  1. **Annuaire d'attestation.** `UserController::responseToPeerId` voit déjà le couple
+     `Auth::user()` + `peerId` et le **relaie sans le retenir**. Qu'il le conserve (TTL calé sur
+     l'`alive_timeout` de 60 s) et expose la route inverse « à qui appartient ce peerId ? » :
+     l'admission du chemin (a) sur peerId inconnu interroge alors l'autorité au lieu de croire
+     `metadata.from`. Coût : un aller-retour à la première connexion de chaque pair, mis en cache
+     par `remotePeersId` ; et la règle « peerId non résolu ne vaut pas refus » devient « ne vaut pas
+     refus **avant** la réponse de l'autorité » — à re-négocier avec « Une liste vide n'est pas une
+     réponse », dont c'est exactement le sujet.
+  2. **Identité intrinsèque au peerId.** Ne plus laisser le client tirer son UUID : le backend
+     l'émet et le signe, validé à l'inscription sur le serveur PeerJS. `conn.peer` **porte** alors
+     l'identité, `metadata.from` devient décoratif, et la classe entière disparaît — plus d'annuaire,
+     plus d'aller-retour, plus d'« admission non corroborée ». C'est la durable, et la plus chère
+     (elle touche l'infra PeerJS, hors paquet).
+
+  ⚠️ Ne pas confondre avec l'usurpation intra-room déjà assumée : c'est la **même** faille, et cet
+  item est la seule chose qui puisse la fermer. Tant qu'il est ouvert, tout durcissement côté client
+  sur la longévité des mappings est décoratif — l'argument est écrit dans `securite.md`.
 
 ---
 

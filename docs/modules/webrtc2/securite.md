@@ -173,6 +173,61 @@ Un pair entrant est admis par **(a)** appartenance à `ctx.connection.remotePeer
 > et aucune source de production n'écrit ni ne mute ce champ — vérifié au grep par
 > `roomMembersSourceOfTruth.test.js`.
 
+#### La validité d'un témoignage est une propriété, pas un âge
+
+**La question de la péremption ne se pose plus, et c'est une décision, pas un oubli.** Cherchée
+comme un contrat de fraîcheur, elle s'est révélée être un contrat de **propriété** :
+
+> Une entrée de `roomMembers` n'existe que tant que son auteur est **vivant** et **détenteur** de
+> son `contextId`.
+
+Deux règles la portent, chacune sur un mécanisme qui existait déjà :
+
+1. **Un contexte en arrêt n'écrit pas la composition** (`getRoomUsersDiff`, garde sur
+   `ctx.isShuttingDown` juste après la barrière `waitForMeReady`). Sans elle, un tour parti avant
+   l'ouverture du peer local — la barrière dure jusqu'à `ME_READY_TIMEOUT_MS`, et son `effectScope`
+   est détaché, donc `destroy()` ne l'annule pas — reprend après le démontage et **ressuscite**
+   l'entrée que `destroy()` vient de retirer. Plus rien ne la retire ensuite : `clearRoomMembers`
+   n'a qu'un appelant, déjà passé. Cette entrée morte épingle alors ses membres pour la vie de
+   l'onglet, `isUserInAnyRoom` balayant tous les contextes. C'était le **seul** épinglage réellement
+   permanent du module, et il s'atteint par une simple navigation SPA.
+2. **Seul le détenteur enregistré efface la composition** (`clearRoomMembers(contextId, owner)`,
+   jumeau du garde d'identité de `unregisterContext`, même raison — cf. « `contextRegistry` :
+   last-write-wins volontaire »). Sans elle, le démontage d'un contexte emporte l'allowlist de son
+   **homonyme vivant**, qui garde `presenceSynced` (monotone) et refuse dès lors toute connexion
+   entrante du chemin (a), sans erreur console et sans rattrapage. Fail-closed, sur des utilisateurs
+   légitimes. ⚠️ La sémantique n'est pas celle de `unregisterContext` : on ne s'abstient que si
+   l'entrée appartient à **quelqu'un d'autre**, sinon un contexte jamais inscrit ne pourrait plus
+   purger la sienne.
+
+Sous ces deux règles, toute entrée présente est le témoignage **courant** d'un contexte vivant :
+`isUserInAnyRoom` n'a besoin d'aucune fraîcheur, et `getRoomMembers` n'expire toujours jamais.
+
+**Trois pistes ont été écartées et ne doivent pas être rouvertes** :
+
+- un `updatedAt`/TTL **sur l'entrée** — `props.users` n'a aucun battement de cœur, donc une room
+  saine et stable se verrait refuser ses propres membres ;
+- un âge sur la **lecture** d'`isUserInAnyRoom` — même défaut d'un cran plus loin, et invisible en
+  test (`vi.useFakeTimers()` gèle `Date.now()`, et toute suite re-synchronise) ;
+- une **liveness du transport de présence** (état pusher routé jusqu'au store) — elle coupleraient
+  le module aux internes d'Echo et exigerait un double qui peut dériver, pour ne fermer que la
+  fenêtre assumée ci-dessous.
+
+**Fenêtre résiduelle assumée — `pusher:subscription_error`.** À la re-souscription (session
+expirée), le handler `error()` de `useReverbChannel` journalise sans vider `users` : contexte monté,
+enregistré, flux mort, composition périmée **non vide**. C'est le seul cas que les deux règles ne
+ferment pas. Il est assumé, parce que son préjudice — la longévité d'un mapping, exploitable
+seulement par qui possède l'UUID exact d'un pair parti et attend son `alive_timeout` — est
+**strictement dominé** par la faille résiduelle du chemin (a) documentée plus bas. Toute autre
+sourdine passe d'abord par un vidage : `leave()` fait `users.value = []` **avant** de révoquer son
+jeton, et le tour vide qui s'ensuit purge la composition.
+
+⚠️ **Corollaire à ne pas re-dériver** : le contexte `data-app` de `System/Notifications.vue` partage
+le store mais n'appelle **jamais** `watchUsers` — le seul appelant de production est
+`MediaBroadcastProvider`. `roomMembers['data-app']` n'existe donc jamais et n'a **jamais pu** opposer
+de veto à `removeRemotePeerId`. Les commentaires de test qui l'affirmaient dataient du prédicat
+`connections`, antérieur à la migration ; ils ont été corrigés.
+
 L'anti-usurpation par **résolution inverse** — le peerId réel de la connexion ne doit être résolu à
 aucun **autre** slug — s'applique ensuite aux **deux** chemins. Sur (b) elle n'est pas redondante :
 la concordance n'y est vérifiée que dans le sens slug → peerId, et laissait donc passer un pair dont

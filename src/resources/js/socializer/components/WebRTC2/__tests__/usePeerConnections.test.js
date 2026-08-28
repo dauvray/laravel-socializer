@@ -98,6 +98,49 @@ describe('usePeerConnections', () => {
             expect(ctx.connection.remotePeers).toEqual([])
         })
 
+        // ⭐ L'ENTRÉE FANTÔME — le seul épinglage réellement permanent du module.
+        //
+        // La barrière `waitForMeReady` dure jusqu'à ME_READY_TIMEOUT_MS (15 s) et son
+        // `effectScope` est DÉTACHÉ : `destroy()` ne l'annule pas. Un tour parti avant que
+        // le peer local soit ouvert peut donc reprendre alors que le contexte est déjà
+        // détruit. S'il écrit, il ressuscite l'entrée que `destroy()` vient de retirer — et
+        // plus rien ne la retirera jamais, `clearRoomMembers` n'ayant qu'un appelant, déjà
+        // passé. `isUserInAnyRoom` balayant TOUS les contextes de l'onglet, cette entrée
+        // morte oppose ensuite son veto à chaque `removeRemotePeerId`, pour la vie de
+        // l'onglet.
+        //
+        // Le cas rejoue l'ordre de production exact : `createPeerContext.destroy()` d'abord
+        // (FIFO des `onUnmounted`), puis `beginShutdown()` posé par l'`onUnmounted` de
+        // `useConnectionPool` — et le réveil de la barrière seulement après.
+        //
+        // Chemin d'accès en production : une navigation SPA pendant l'ouverture du peer
+        // local. Rien à voir avec la présence ni avec pusher.
+        it('n\'écrit pas la composition quand le contexte a été détruit pendant la barrière', async () => {
+            await connections.getRoomUsersDiff([{ slug: 'alice' }, { slug: 'bob' }])
+            ctx.peerStore.addRemotePeerId('alice', 'peer-alice')
+
+            let ouvrirLaBarriere
+            ctx.waitForMeReady.mockImplementationOnce(
+                () => new Promise((resolve) => { ouvrirLaBarriere = () => resolve(true) })
+            )
+
+            const tourEnVol = connections.getRoomUsersDiff([{ slug: 'alice' }, { slug: 'bob' }])
+
+            // Le démontage, dans l'ordre où Vue l'exécute.
+            ctx.peerStore.clearRoomMembers(ctx.contextId)
+            ctx.beginShutdown()
+
+            ouvrirLaBarriere()
+            const diff = await tourEnVol
+
+            expect(diff).toEqual({ newUsers: [], removedUsers: [] })
+            expect(ctx.contextId in ctx.peerStore.roomMembers).toBe(false)
+
+            // Le fait métier, et la raison d'être du cas : le mapping redevient oubliable.
+            ctx.peerStore.removeRemotePeerId('alice')
+            expect(ctx.peerStore.getRemotePeerId('alice')).toBeUndefined()
+        })
+
         // Un mutex à chaîne de promesses a vécu ici, et deux cas le visaient — dont un qui
         // affirmait que « sans le mutex, les deux appels liraient le même `previousSlugs`
         // vide ». C'était faux, et depuis longtemps : l'unique `await` de la fonction
@@ -765,7 +808,7 @@ describe('usePeerConnections', () => {
                 connections.connectToPeer({ userSlug: INTRUS, peerId: 'p-mallory' })
 
                 expect(ctx.peerStore.addRemotePeerId).not.toHaveBeenCalled()
-                expect(ctx.peerStore.getRemotePeerId(INTRUS)).toBeNull()
+                expect(ctx.peerStore.getRemotePeerId(INTRUS)).toBeUndefined()
             })
 
             it.each(['stream', 'screen', 'visio', 'vocal'])(
@@ -856,7 +899,7 @@ describe('usePeerConnections', () => {
         it('oublie le peerId d\'un pair dont la connexion est fermée', () => {
             connections.closePeerConnection({ users: ['alice'] })
 
-            expect(ctx.peerStore.getRemotePeerId('alice')).toBeNull()
+            expect(ctx.peerStore.getRemotePeerId('alice')).toBeUndefined()
             expect(ctx.peerStore.getRemotePeerId('bob')).toBe('p-bob')
         })
 

@@ -195,6 +195,21 @@ verbe demanderait de monter `Notifications.vue`, et le scénario ne parlerait pl
   part, sur Pinia réel, par `peers2Store.remotePeerId.test.js`. Même règle que le minuteur ICE
   ci-dessous — **le contrôle de harnais doit neutraliser les deux côtés**, sinon il ne prouve que
   celui qu'on a doublé. (Contre-épreuve faite dans les deux sens le 26/08/2026.)
+- **Le garde de propriété de `clearRoomMembers` a lui aussi deux versants**, et le double le porte
+  pour cette raison — pas par symétrie décorative. Mesuré dans les deux sens : neutraliser le verbe
+  du **store** fait rougir `createPeerContext.test.js` et `peers2Store.roomMembers.test.js` en
+  laissant vert le cas du double ; neutraliser celui du **double** fait rougir le seul cas de
+  `roomMembersSourceOfTruth.test.js` en laissant les deux autres verts. Sans le versant double, le
+  harnais serait plus permissif que la production sur un chemin de sécurité — la panne n° 2 de
+  `mockFidelity.test.js`. Un troisième filet, mécanique celui-là, vérifie au grep que **l'appel de
+  production présente bien son propriétaire** : le garde est conditionné à cet argument, donc un
+  appelant qui l'oublierait le rendrait décoratif sans qu'aucun test de comportement ne rougisse
+  (les deux contextes de la panne sont homonymes, tous les cas à contexte unique restent verts).
+- **`getRemotePeerId` rend `undefined` sur entrée absente, des deux côtés.** Le double rendait
+  `null` : sans conséquence sur la production (ses lecteurs testent la truthiness ou comparent à
+  `conn.peer`), mais sept assertions épinglaient la valeur du **double** au lieu du contrat du
+  store. Aligné le 29/08/2026. La règle générale : quand un double « normalise » une valeur de
+  retour, ce sont les tests qui finissent par documenter le double.
 - **`hasOpenConnection` ne peut pas servir de prédicat côté récepteur** : `usePeerTransport`
   n'enregistre **jamais** de connexion dans le store (aucun `prepareRoomConnection` /
   `storePeerConnection` dans tout le fichier ; seul `usePeerConnections._saveRoomConnection` en

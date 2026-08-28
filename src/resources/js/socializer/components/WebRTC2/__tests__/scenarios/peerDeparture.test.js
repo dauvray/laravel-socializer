@@ -257,11 +257,16 @@ describe("départ d'un pair", () => {
         await bob.api.syncUsersConnections([{ slug: 'bob' }])
         await settle()
 
-        // Reproduction du mode de défaillance documenté : l'invalidation du peerId est
-        // *annulée* parce qu'un AUTRE contexte partageant le même store Pinia référence
-        // encore le pair (`System/Notifications.vue` monte en permanence un contexte
-        // `data-app`). `removeRemotePeerId` étant conditionnel, le mapping mort survit
-        // au départ. On en reproduit ici l'effet exact, sans monter le second contexte.
+        // On REPOSE le mapping mort à la main, pour placer le pair dans l'état que ce cas
+        // veut éprouver : « B possède un peerId périmé et doit en sortir seul ».
+        //
+        // ⚠️ La justification d'origine était fausse et ne doit pas revenir : elle invoquait
+        // le contexte `data-app` de `System/Notifications.vue` comme second déclarant qui
+        // annulerait `removeRemotePeerId`. Ce contexte n'appelle JAMAIS `watchUsers`, donc
+        // `roomMembers['data-app']` n'existe pas et n'a jamais pu opposer ce veto —
+        // l'affirmation datait du prédicat `connections`, où elle était vraie. Le semis
+        // ci-dessous est donc un ARTIFICE de mise en état, pas la reproduction d'un
+        // mécanisme (cf. la décision du 29/08 dans `docs/modules/webrtc2/securite.md`).
         bob.peerStore.addRemotePeerId('alice', 'peer-alice-v1')
 
         // Alice rouvre l'application : nouvel onglet, nouveau peerId. Elle est « nouvelle »

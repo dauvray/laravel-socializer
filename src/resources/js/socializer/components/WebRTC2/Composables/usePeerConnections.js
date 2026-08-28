@@ -89,6 +89,29 @@ export function usePeerConnections(ctx) {
             return { newUsers: [], removedUsers: [] }
         }
 
+        // ⚠️ La barrière ci-dessus est le seul point de suspension du tour, et elle dure
+        // jusqu'à ME_READY_TIMEOUT_MS (15 s). Son `effectScope` est DÉTACHÉ : `destroy()`
+        // ne l'annule pas. Le contexte peut donc être détruit — et l'arrêt déjà posé par
+        // l'`onUnmounted` de `useConnectionPool` — quand ce tour reprend.
+        //
+        // Écrire alors RESSUSCITE l'entrée que `destroy()` vient de retirer, et plus rien
+        // ne la retirera : `clearRoomMembers` n'a qu'un appelant, déjà passé. Comme
+        // `isUserInAnyRoom` balaie TOUS les contextes de l'onglet, cette entrée morte
+        // oppose ensuite son veto à chaque `removeRemotePeerId`, pour la vie de l'onglet.
+        // C'est le seul épinglage réellement permanent du module, et il n'a rien à voir
+        // avec la fraîcheur de la présence : une navigation SPA pendant l'ouverture du peer
+        // local suffit.
+        //
+        // ⚠️ Deux listes vides, pas seulement l'abandon de l'écriture : un contexte mort n'a
+        // ni purge ni fan-out à faire, et `_doSyncUsersConnections` le déduit de ce retour.
+        //
+        // Distinct du drain de `syncUsersConnections`, qui lit le même drapeau pour décider
+        // du tour SUIVANT (« le tour déjà commencé va jusqu'au bout ») : ce garde-ci porte
+        // sur la seule écriture que le tour en cours ne doit plus faire.
+        if (ctx.isShuttingDown.value) {
+            return { newUsers: [], removedUsers: [] }
+        }
+
         // Ce tour a-t-il OBSERVÉ quelque chose ? Question distincte de « qui est là », et
         // c'est tout le correctif : synchroniser n'est pas savoir.
         //

@@ -716,7 +716,12 @@ export function createPeerContext({ type, room, options = {} }) {
         // Ce contexte ne témoigne plus de la présence de personne. Sans ce retrait, un
         // provider démonté continuerait de « voir » ses pairs dans l'index partagé et
         // empêcherait à jamais l'oubli de leur peerId (cf. peerStore.removeRemotePeerId).
-        peerStore.clearRoomMembers(contextId)
+        //
+        // ⚠️ On se présente : le contextId est `type-room` et le registre est
+        // last-write-wins, donc deux homonymes se chevauchent à chaque remontage. Sans
+        // cette identité, le mourant emporterait l'allowlist du vivant — qui refuserait
+        // alors toute connexion entrante du chemin présence, en silence.
+        peerStore.clearRoomMembers(contextId, context)
 
         // Libère les références aux streams distants
         media.remoteStreamsMap.clear()
@@ -780,7 +785,11 @@ export function createPeerContext({ type, room, options = {} }) {
     // d'entrée universel d'une fermeture.
     const connectionLostSignal = ref(null)
 
-    return {
+    // ⚠️ Liaison NOMMÉE, pas un littéral rendu directement : c'est cet objet-ci qui est
+    // inscrit au `contextRegistry` (via `setLocalPeer`), donc c'est lui que `destroy()`
+    // doit présenter pour prouver que la composition qu'il retire est bien la sienne.
+    // Sans identité à présenter, le garde de `clearRoomMembers` n'aurait rien à comparer.
+    const context = {
         contextId,
         lastRoomSignal,
 
@@ -835,4 +844,6 @@ export function createPeerContext({ type, room, options = {} }) {
         // destruction explicite (cleanup manuel si nécessaire hors lifecycle)
         destroy,
     }
+
+    return context
 }

@@ -538,9 +538,33 @@ export default {
         if (!contextId) return
         this.roomMembers[contextId] = Array.isArray(slugs) ? [...slugs] : []
     },
-    /** Le contexte est détruit : il ne témoigne plus de la présence de personne. */
-    clearRoomMembers(contextId) {
+    /**
+     * Le contexte est détruit : il ne témoigne plus de la présence de personne.
+     *
+     * ⚠️ `owner` — le jumeau du garde de `unregisterContext`, et pour la même raison : le
+     * contextId est `type-room` et le registre est last-write-wins VOLONTAIRE, donc deux
+     * contextes homonymes se chevauchent à chaque remontage. Sans lui, l'`onUnmounted` du
+     * mourant efface la composition détenue par son remplaçant — qui garde `presenceSynced`
+     * (monotone, seul son propre `destroy()` le rabaisse) et va donc droit au verdict avec
+     * une allowlist vide : toute connexion entrante du chemin présence est REFUSÉE, sans
+     * erreur console, et un refus n'est pas rattrapable.
+     *
+     * ⚠️ La sémantique n'est PAS celle de `unregisterContext`, et l'écart est délibéré :
+     * on ne s'abstient que si l'entrée appartient à QUELQU'UN D'AUTRE. Un contexte jamais
+     * inscrit au registre — `setLocalPeer` non appelé, cas d'un provider monté sans peer —
+     * doit pouvoir purger la sienne, sinon son entrée fuit pour la vie de l'onglet et
+     * épingle ses membres, ce que ce garde est précisément là pour empêcher.
+     *
+     * @param {string} contextId
+     * @param {Object|null} [owner] Le contexte qui retire son témoignage. Omis : aucun
+     *                              garde — c'est le verbe de semis des tests.
+     */
+    clearRoomMembers(contextId, owner = null) {
         if (!contextId) return
+
+        const holder = this.contextRegistry.get(contextId)
+        if (owner && holder && holder !== owner) return
+
         delete this.roomMembers[contextId]
     },
 

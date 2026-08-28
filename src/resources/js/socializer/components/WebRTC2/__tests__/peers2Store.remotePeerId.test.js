@@ -1,9 +1,18 @@
 /**
  * peers2Store.remotePeerId.test.js
  *
- * Le store est PARTAGÉ par tous les contextes de l'onglet (`data-app` des notifications
- * + un contexte par MediaBroadcastProvider monté). Ce fichier fige les deux règles
- * d'indexation qui rendent ce partage sûr :
+ * Le store est PARTAGÉ par tous les contextes de l'onglet — un par MediaBroadcastProvider
+ * monté, plus le `data-app` que `System/Notifications.vue` tient en permanence. Ce fichier
+ * fige les deux règles d'indexation qui rendent ce partage sûr :
+ *
+ * ⚠️ `data-app` PARTAGE le store, mais ne déclare AUCUNE composition : `Notifications.vue`
+ * appelle `useMediaBroadcast()` sans jamais appeler `watchUsers` — le seul appelant de
+ * production est `MediaBroadcastProvider`. La clé `roomMembers['data-app']` n'existe donc
+ * jamais, et ce contexte n'a jamais pu opposer de veto à `removeRemotePeerId`. Les semis
+ * `data-app` de ce fichier sont des configurations HYPOTHÉTIQUES, posées à la main pour
+ * exercer la sémantique conditionnelle : elles ne reproduisent aucun état de production.
+ * (L'affirmation inverse traînait ici depuis le prédicat `connections`, où elle était
+ * vraie — cf. la décision du 29/08 dans `docs/modules/webrtc2/securite.md`.)
  *
  * 1. **Un peerId est un fait par onglet distant** (clé: slug), mais sa DURÉE DE VIE
  *    dépend de la présence : on ne l'oublie qu'une fois le pair absent de *toutes* les
@@ -83,8 +92,9 @@ describe('peers2 — cycle de vie des peerId distants', () => {
 
     describe('invalidateRemotePeerId (inconditionnel — peerId mort)', () => {
         it('supprime le mapping même si le pair est présent dans une autre room', () => {
-            // Configuration réelle : le contexte data-app des notifications garde bob
-            // présent en permanence.
+            // Configuration hypothétique (cf. l'en-tête) : un second contexte déclare bob
+            // présent. C'est le seul état capable d'opposer le veto de `removeRemotePeerId`,
+            // et l'objet du cas est que `invalidateRemotePeerId` passe outre.
             store.setRoomMembers('data-app', ['bob'])
 
             store.invalidateRemotePeerId('bob')

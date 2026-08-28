@@ -14,6 +14,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { nextTick } from 'vue'
 import { createPeerContext } from '~socializer/components/WebRTC2/Composables/createPeerContext.js'
+import { isAuthorizedPeer } from '~socializer/components/WebRTC2/Composables/utils/isAuthorizedPeer.js'
 import { usePeer2Store } from '~socializer/stores/peers2.js'
 import { useMeStore } from '~estarter/stores/me.js'
 import { MAX_PAYLOAD_BYTES } from '~socializer/components/WebRTC2/webrtc2.config.js'
@@ -724,6 +725,48 @@ describe('createPeerContext', () => {
 
             expect(ctx.media.remoteStreamsMap.size).toBe(0)
             expect(ctx.connection.remotePeers).toEqual([])
+        })
+
+        // ⭐ Le jumeau manquant du garde de `unregisterContext`.
+        //
+        // Le contextId est `type-room` et le registre est last-write-wins VOLONTAIRE
+        // (securite.md § contextRegistry) : deux contextes homonymes se chevauchent à
+        // chaque remontage — `v-if`, transition de route, provider recréé. `unregisterContext`
+        // a reçu un garde d'identité pour cette raison ; `clearRoomMembers`, appelé vingt
+        // lignes plus loin dans le même teardown, n'en avait pas.
+        //
+        // La panne est fail-CLOSED et muette : le survivant garde `presenceSynced`
+        // (monotone, seul `destroy()` le rabaisse) et va donc droit au verdict avec une
+        // allowlist vide — toute connexion entrante du chemin présence est refusée, sans
+        // erreur console, et un refus n'est pas rattrapable (securite.md § « Une liste vide
+        // n'est pas une réponse »).
+        //
+        // ⚠️ CONTRÔLE DE HARNAIS À DEUX VERSANTS, mesuré dans les deux sens.
+        // `helpers/createMockContext.js` réimplémente `clearRoomMembers`, garde compris.
+        // Neutraliser le verbe du STORE fait rougir ce cas et celui de
+        // `peers2Store.roomMembers.test.js`, et laisse vert celui du double ; neutraliser
+        // celui du DOUBLE fait rougir le seul cas de `roomMembersSourceOfTruth.test.js`,
+        // et laisse ces deux-ci verts. Prouver la propriété exige donc les deux — c'est la
+        // règle du bail (docs/.../tests.md § « un bail a deux versants »).
+        it('ne laisse pas un contexte mourant effacer la composition de son homonyme vivant', () => {
+            const mourant = mountContext({ type: 'stream', room: 'salon' })
+            const vivant = mountContext({ type: 'stream', room: 'salon' })
+            expect(vivant.contextId).toBe(mourant.contextId)
+
+            // L'ordre de production : chacun s'inscrit à son `setLocalPeer`, le dernier gagne.
+            peerStore.registerContext(mourant)
+            peerStore.registerContext(vivant)
+
+            // C'est le VIVANT qui a écrit la composition — son tour de présence est le dernier.
+            peerStore.computeRoomDiff(vivant.contextId, ['alice'])
+
+            apps.shift().unmount()   // le mourant se démonte APRÈS
+
+            expect(peerStore.getRoomMembers(vivant.contextId)).toEqual(['alice'])
+            // Le fait métier : l'allowlist du chemin (a) survit, donc le survivant admet
+            // toujours ses membres. Les deux gardes lisent la même entrée — celui-ci est
+            // simplement le seul importable ici.
+            expect(isAuthorizedPeer('alice', vivant)).toBe(true)
         })
     })
 })
