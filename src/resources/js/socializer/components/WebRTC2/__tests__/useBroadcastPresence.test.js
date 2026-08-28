@@ -1,16 +1,20 @@
 /**
  * useBroadcastPresence.test.js
  *
- * Annonce protocolaire « je diffuse / je ne diffuse plus » sur le data channel.
+ * Annonce « je diffuse / je ne diffuse plus », sur ses DEUX transports : le data channel
+ * (`BROADCAST_STATE`) et le canal de présence Reverb (whisper).
  *
  * Ce qui doit tenir :
  *  - émission au bon MOMENT : à l'ouverture d'une connexion (le seul instant où l'on
  *    peut informer un arrivant de façon fiable) et au changement d'état local ;
  *  - jamais d'envoi dans le vide : `sendData` loggue par destinataire injoignable, un
  *    démarrage sans canal ouvert est un chemin NORMAL qui doit rester silencieux ;
- *  - identité en réception résolue depuis la CONNEXION, jamais depuis le payload
- *    (`data.from` serait usurpable) ;
- *  - un message d'annonce est consommé, donc jamais remonté au métier.
+ *  - identité en réception résolue depuis le TRANSPORT — `conn.metadata` sur le data
+ *    channel, `metadata.user_id` régénéré par Reverb sur le whisper — jamais depuis la
+ *    charge utile, qui est déclarative ;
+ *  - un message d'annonce est consommé, donc jamais remonté au métier ;
+ *  - le whisper informe un arrivant SANS aucun contact P2P, et re-part à chaque arrivée
+ *    (un client event ne s'historise pas).
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { nextTick } from 'vue'
@@ -19,6 +23,7 @@ import { createMockContext } from './helpers/createMockContext.js'
 import {
     useBroadcastPresence,
     BROADCAST_STATE,
+    BROADCAST_STATE_WHISPER,
 } from '~socializer/components/WebRTC2/Composables/useBroadcastPresence.js'
 
 const MY_SLUG = 'me'
@@ -26,13 +31,18 @@ const MY_SLUG = 'me'
 describe('useBroadcastPresence', () => {
     let ctx
     let transport
+    let reverb
     let app
 
     const mount = () => {
-        const [result, mounted] = withSetup(() => useBroadcastPresence(ctx, { transport }))
+        const [result, mounted] = withSetup(() => useBroadcastPresence(ctx, { transport, reverb }))
         app = mounted
         return result
     }
+
+    /** Le handler d'annonce que le composable a branché sur le canal. */
+    const whisperHandler = () => reverb.listenForWhisper.mock.calls
+        .find(([event]) => event === BROADCAST_STATE_WHISPER)?.[1]
 
     /** Connexion entrante ouverte par le distant : `from` = le distant. */
     const incomingConn = (from = 'alice') => ({
@@ -56,9 +66,20 @@ describe('useBroadcastPresence', () => {
             session: { currentType: 'stream', onAirRoom: 'app' },
             connection: { usersInRoom: ['alice', 'bob'] },
         })
+        // L'annuaire que `_doGetRoomUsersDiff` écrit en production : sans lui, aucun
+        // `user_id` de whisper n'est traduisible en slug.
+        ctx.connection.slugByUserId.set('11', 'alice')
+        ctx.connection.slugByUserId.set('12', 'bob')
+        ctx.connection.slugByUserId.set('99', MY_SLUG)
+
         transport = {
             sendData: vi.fn(),
             getDataReachablePeers: vi.fn(() => []),
+        }
+        reverb = {
+            whisper: vi.fn(() => true),
+            listenForWhisper: vi.fn(),
+            stopListeningForWhisper: vi.fn(),
         }
     })
 
@@ -332,6 +353,197 @@ describe('useBroadcastPresence', () => {
                 isBroadcasting: true,
             })).toBe(false)
             expect(ctx.announcedStreamPeers.value).toEqual([])
+        })
+    })
+
+    describe('whisper de présence — émission', () => {
+        // Quatrième chemin d'annonce, et le seul INDÉPENDANT de la signalisation P2P :
+        // les trois autres ne disent rien quand il n'y a rien à demander (peerId déjà
+        // connu sous bail — cas majoritaire d'une navigation SPA).
+        it('annonce sur le canal quand je commence à diffuser', async () => {
+            mount()
+
+            ctx.media.isStreaming = true
+            await nextTick()
+
+            expect(reverb.whisper).toHaveBeenCalledWith(
+                BROADCAST_STATE_WHISPER,
+                { roomId: 'app', isBroadcasting: true }
+            )
+        })
+
+        it('annonce même si AUCUN pair n\'est joignable en data', async () => {
+            // ⭐ La raison d'être du second transport : le premier n'a rien à qui parler.
+            transport.getDataReachablePeers.mockReturnValue([])
+            mount()
+
+            ctx.media.isStreaming = true
+            await nextTick()
+
+            expect(transport.sendData).not.toHaveBeenCalled()
+            expect(reverb.whisper).toHaveBeenCalledTimes(1)
+        })
+
+        it('re-annonce à l\'arrivée d\'un pair, parce qu\'un whisper ne s\'historise pas', async () => {
+            // ⭐ LE cas qui ferme la fenêtre du peerId sous bail : l'arrivant ne peut rien
+            // savoir d'un état antérieur à son arrivée, c'est au diffuseur de re-parler.
+            ctx.media.isStreaming = true
+            mount()
+            reverb.whisper.mockClear()
+
+            ctx.connection.usersInRoom = ['alice', 'bob', 'carol']
+            await nextTick()
+
+            expect(reverb.whisper).toHaveBeenCalledTimes(1)
+        })
+
+        it('ne re-annonce pas quand la composition ne fait que PERDRE un pair', async () => {
+            ctx.media.isStreaming = true
+            mount()
+            reverb.whisper.mockClear()
+
+            ctx.connection.usersInRoom = ['alice']
+            await nextTick()
+
+            expect(reverb.whisper).not.toHaveBeenCalled()
+        })
+
+        it('reste muet à l\'arrivée d\'un pair quand je ne diffuse pas', async () => {
+            mount()
+
+            ctx.connection.usersInRoom = ['alice', 'bob', 'carol']
+            await nextTick()
+
+            expect(reverb.whisper).not.toHaveBeenCalled()
+        })
+
+        it('n\'annonce JAMAIS un arrêt de diffusion', async () => {
+            // La réception ne purge pas (voir plus bas) : un `false` ne servirait personne,
+            // et donnerait à un membre hostile un moyen d'éteindre une vignette vraie.
+            ctx.media.isStreaming = true
+            mount()
+            reverb.whisper.mockClear()
+
+            ctx.media.isStreaming = false
+            await nextTick()
+
+            expect(reverb.whisper).not.toHaveBeenCalled()
+        })
+
+        it('ne jette pas quand l\'hôte ne fournit aucun canal', async () => {
+            // État de production valide : un hôte qui ne `provide` pas REVERB_CHANNEL
+            // garde exactement le comportement d'avant ce transport.
+            reverb = null
+            const presence = mount()
+
+            ctx.media.isStreaming = true
+            await nextTick()
+
+            expect(presence.announceBroadcastStateOnChannel()).toBe(false)
+        })
+    })
+
+    describe('whisper de présence — réception', () => {
+        it('enregistre le pair depuis le user_id que Reverb a posé', () => {
+            const presence = mount()
+
+            const noted = presence.handleBroadcastStateWhisper(
+                { roomId: 'app', isBroadcasting: true },
+                { user_id: 11 }
+            )
+
+            expect(noted).toBe(true)
+            expect(ctx.announcedStreamPeers.value).toEqual(['alice'])
+        })
+
+        it('accepte un user_id numérique comme un user_id chaîne', () => {
+            // Reverb repose le champ tel qu'il l'a reçu de l'auth, pusher-js ne le
+            // convertit pas : comparer des types stricts échouerait en silence.
+            const presence = mount()
+
+            expect(presence.handleBroadcastStateWhisper(
+                { roomId: 'app', isBroadcasting: true },
+                { user_id: '11' }
+            )).toBe(true)
+        })
+
+        it('ignore l\'annonce d\'une AUTRE room du même canal', () => {
+            // Une page monte plusieurs contextes sur un seul canal de présence
+            // (`Exemples/Home.vue` en monte trois) : sans ce filtre, chacun afficherait
+            // les vignettes des autres.
+            const presence = mount()
+
+            expect(presence.handleBroadcastStateWhisper(
+                { roomId: 'une-autre-room', isBroadcasting: true },
+                { user_id: 11 }
+            )).toBe(false)
+            expect(ctx.announcedStreamPeers.value).toEqual([])
+        })
+
+        it('ignore un whisper que Reverb n\'a PAS attribué, et le dit une fois', () => {
+            // ⭐ Fail-closed. Sous `accept_client_events_from: 'all'`, Reverb retransmet
+            // l'événement brut : pas de contrôle d'appartenance, et un `user_id` que
+            // l'émetteur a pu écrire lui-même. Un whisper non attribué n'est pas une
+            // annonce sans nom, c'est une annonce dont le nom est celui de l'émetteur.
+            const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+            const presence = mount()
+
+            expect(presence.handleBroadcastStateWhisper({ roomId: 'app', isBroadcasting: true }, {})).toBe(false)
+            expect(presence.handleBroadcastStateWhisper({ roomId: 'app', isBroadcasting: true }, undefined)).toBe(false)
+            expect(ctx.announcedStreamPeers.value).toEqual([])
+
+            expect(warn).toHaveBeenCalledTimes(1)
+            expect(warn.mock.calls[0][0]).toContain('accept_client_events_from')
+            warn.mockRestore()
+        })
+
+        it('ignore un user_id absent de l\'annuaire de la room', () => {
+            const presence = mount()
+
+            expect(presence.handleBroadcastStateWhisper(
+                { roomId: 'app', isBroadcasting: true },
+                { user_id: 4242 }
+            )).toBe(false)
+            expect(ctx.announcedStreamPeers.value).toEqual([])
+        })
+
+        it('n\'efface JAMAIS une annonce existante sur un whisper à false', () => {
+            const presence = mount()
+            presence.handleBroadcastStateWhisper({ roomId: 'app', isBroadcasting: true }, { user_id: 11 })
+
+            presence.handleBroadcastStateWhisper({ roomId: 'app', isBroadcasting: false }, { user_id: 11 })
+
+            expect(ctx.announcedStreamPeers.value).toEqual(['alice'])
+        })
+
+        it('ne s\'enregistre pas soi-même', () => {
+            const presence = mount()
+
+            expect(presence.handleBroadcastStateWhisper(
+                { roomId: 'app', isBroadcasting: true },
+                { user_id: 99 }
+            )).toBe(false)
+            expect(ctx.announcedStreamPeers.value).toEqual([])
+        })
+
+        it('branche son handler sur le canal dès l\'init, avant tout contact P2P', () => {
+            mount()
+
+            expect(whisperHandler()).toBeTypeOf('function')
+        })
+
+        it('se désabonne en nommant SON handler, pas l\'événement', async () => {
+            // ⭐ Plusieurs contextes partagent un canal : un désabonnement nu les rendrait
+            // tous sourds (cf. `useReverbChannel.removeHandler`).
+            const presence = mount()
+            const handler = whisperHandler()
+
+            presence.stopBroadcastPresence()
+
+            expect(reverb.stopListeningForWhisper).toHaveBeenCalledWith(
+                BROADCAST_STATE_WHISPER,
+                handler
+            )
         })
     })
 

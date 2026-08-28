@@ -276,6 +276,65 @@ describe('useReverbChannel — canal partagé entre composants', () => {
         expect(channels.get(`private-${CHANNEL}`).stopListening)
             .toHaveBeenCalledWith('.MessageSent', expect.any(Function))
     })
+
+    /**
+     * Même défaut de classe que le `Echo.leave()` ci-dessus, un étage plus bas : Echo
+     * mémoïse ses canaux, donc plusieurs consommateurs écoutent le MÊME nom d'événement
+     * sur le MÊME objet. Un `unbind(event)` nu les emporte tous.
+     *
+     * La production en monte le cas : `Exemples/Home.vue` fournit un seul canal de
+     * présence à trois `MediaBroadcastProvider`, dont chacun écoute l'annonce de
+     * diffusion de WebRTC2. Le premier contexte démonté rendait les deux autres sourds.
+     */
+    it("ne désabonne que le handler nommé, pas l'événement entier", () => {
+        const goneHandler = vi.fn()
+        const stayingHandler = vi.fn()
+
+        const [gone] = mountPrivate()
+        const [staying] = mountPrivate()
+        gone.listenForWhisper('broadcast-state', goneHandler)
+        staying.listenForWhisper('broadcast-state', stayingHandler)
+
+        gone.stopListeningForWhisper('broadcast-state', goneHandler)
+        channels.get(`private-${CHANNEL}`).emitWhisper('broadcast-state', { hello: true }, { user_id: 7 })
+
+        expect(goneHandler).not.toHaveBeenCalled()
+        expect(stayingHandler).toHaveBeenCalledWith({ hello: true }, { user_id: 7 })
+    })
+
+    it("retire tout l'événement quand aucun handler n'est nommé", () => {
+        // Repli historique, et le seul usage en place : `useChatSimple` appelle
+        // `stopListeningForWhisper('typing')` nu, en étant seul consommateur.
+        const handler = vi.fn()
+
+        const [api] = mountPrivate()
+        api.listenForWhisper('typing', handler)
+
+        api.stopListeningForWhisper('typing')
+        channels.get(`private-${CHANNEL}`).emitWhisper('typing', {})
+
+        expect(handler).not.toHaveBeenCalled()
+    })
+
+    it('repose le handler après une reconnexion, et le désabonnement ciblé le suit', async () => {
+        // ⚠️ Un rebind fabrique un NOUVEAU wrapper (nouveau jeton de vie) : si l'entrée ne
+        // le note pas, un désabonnement ciblé après reconnexion défait un handler mort et
+        // laisse le vivant branché.
+        const handler = vi.fn()
+        const name = ref('user.7')
+
+        const [api, app] = withSetup(() => useReverbChannel(name, { type: 'private' }))
+        apps.push(app)
+        api.listenForWhisper('typing', handler)
+
+        name.value = 'user.8'
+        await nextTick()
+
+        api.stopListeningForWhisper('typing', handler)
+        channels.get('private-user.8').emitWhisper('typing', {})
+
+        expect(handler).not.toHaveBeenCalled()
+    })
 })
 
 /**

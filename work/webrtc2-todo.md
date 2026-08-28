@@ -144,76 +144,79 @@ avant le déménagement revient à les jeter.
 
 ---
 
-## Annonce de diffusion — ce qui reste après le champ `isBroadcasting`
+## Annonce de diffusion — les quatre chemins, et ce qui reste après eux
 
-> Le champ embarqué sur les deux routes de peerId (livré le 27/08/2026) ferme la fenêtre entre
-> l'arrivée dans la room et le premier contact P2P, où l'arrivant n'avait localement AUCUN moyen de
-> savoir qu'un flux venait. Ce qui suit est ce qu'il ne ferme pas — **trois** fenêtres résiduelles,
-> dont la troisième a été trouvée par la mesure du 28/08 et n'est pas de même nature que les deux
-> autres : ce n'est pas « la vignette arrive tard », c'est « le fait n'arrive pas ».
+> ✅ **Les trois fenêtres sont fermées le 28/08/2026** par un QUATRIÈME chemin d'annonce : un
+> whisper sur le canal de présence Reverb, seul porteur indépendant de la signalisation P2P. Les deux
+> 🔴 de cette section sont tombés. Ce qui reste ici est le résidu d'AFFICHAGE et les bornes de
+> déploiement — plus aucune fenêtre de porteur.
 >
 > ℹ️ S'y cumulait **une vignette jamais visible** — défaut de rendu à l'étage CSS, fermé le 28/08
 > (item plus bas). C'est ce cumul qui a obligé la mesure à instrumenter le DOM et la géométrie plutôt
 > que l'écran.
 
-- [ ] **Les deux premières fenêtres résiduelles** `[M]` — **aucune des deux n'est fatale** : la
-  vignette d'attente y arrive tard, elle n'y est jamais fausse. Les trois chemins d'annonce et leurs
-  bornes : [flux.md](../docs/modules/webrtc2/flux.md#comment-un-arrivant-sait-qui-diffuse).
-  1. **Avant la première demande de peerId** — `syncUsersConnections` attend `waitForMeReady`, donc
-     l'identité locale et le peerId : tant qu'elle n'est pas là, aucun POST n'est parti et il n'y a
-     rien à embarquer. Longue au premier chargement — `/get-ice-servers` est `await`é avant
-     `new Peer` (jusqu'à `ICE_FETCH_TIMEOUT_MS`), puis vient la poignée de main du serveur PeerJS.
-     **Mesurée le 28/08 : 592 ms** entre le `goto` et la frame portant `isBroadcasting`, cache HTTP
-     chaud. Donc bien plus courte que la borne théorique de 3 s.
-     ⚠️ **La phrase « fenêtre courte en régime établi, le `Peer` de l'onglet est déjà ouvert quand on
-     navigue en SPA » était vraie et trompeuse** : le `Peer` survit bien (vérifié, peerId identique
-     avant/après une navigation vue-router), et c'est précisément **ce qui produit la fenêtre 3**.
-  2. **Le client non-hub en topologie star** ne demande que le peerId du hub : il n'échange donc
-     jamais de signalisation avec un diffuseur qui n'est pas le hub, et n'apprend rien de lui. Même
-     borne que l'annonce data channel en star, pour une raison différente — ici il n'y a pas de
-     relais qui perd l'identité, il n'y a pas d'échange du tout.
+- [x] **Les trois fenêtres résiduelles** `[M]` — **fermées le 28/08/2026** par le whisper de présence
+  (`useBroadcastPresence.announceBroadcastStateOnChannel` / `handleBroadcastStateWhisper`), quatrième
+  chemin d'annonce. Les quatre chemins et leurs bornes :
+  [flux.md](../docs/modules/webrtc2/flux.md#comment-un-arrivant-sait-qui-diffuse).
 
-- [ ] 🔴 **Fenêtre 3 — un peerId déjà connu sous bail ne redemande rien, donc n'apprend rien** `[M]`
-  — **trouvée par la mesure du 28/08/2026, et c'est le résultat principal de cette mesure.** Celle-là
-  est fatale : ce n'est pas une vignette tardive, c'est une vignette **absente**.
+  **Ce que la fenêtre 3 avait appris, et qui reste vrai** : les trois premiers chemins partagent une
+  limite structurelle — ils ne disent rien quand il n'y a rien à demander.
+  `useConnectionPool.requestOrConnectPeer` (`:263-279`) lit `getDialableRemotePeerId(userSlug)` et,
+  bail valide, appelle `connectToPeer` directement : **aucun POST, donc aucun porteur**. Mesuré,
+  navigation SPA ordinaire dans le bail de ≈55 s : zéro POST après le retour sur deux runs,
+  `t_vignette = 8 811 ms` puis **`null`**. Le whisper est le seul porteur indépendant de la
+  signalisation P2P, et il ferme du même geste le client non-hub en star (fenêtre 2), qui ne demande
+  jamais le peerId d'un diffuseur autre que le hub.
 
-  Le mécanisme, confirmé aux deux bouts (mesure *et* code) :
-  `useConnectionPool.requestOrConnectPeer` (`:263-279`) lit `getDialableRemotePeerId(userSlug)` ;
-  **si le bail est encore valide, il appelle `connectToPeer` directement et aucun POST ne part.** Or
-  `isBroadcasting` ne voyage que sur ces deux POST. Un arrivant qui possède déjà le peerId du
-  diffuseur n'a donc **aucun** porteur pour le fait — et en contexte `stream` un non-diffuseur
-  n'ouvre pas de canal data, donc le chemin `BROADCAST_STATE` est fermé aussi. Il ne reste que le
-  `peer.call` du diffuseur, c'est-à-dire exactement l'état d'avant le correctif.
+  Épinglé par `scenarios/lateJoiner.test.js` § « le peerId d'A est déjà connu sous bail », dont la
+  contre-épreuve — mêmes coupures, sans canal fourni — **est** la mesure du 28/08 sous forme de test.
 
-  Reproduction (le cas est **majoritaire à l'usage**, pas un cas limite : c'est la navigation SPA
-  ordinaire à l'intérieur du bail de ≈55 s) : B est sur `/app`, quitte par un `RouterLink`, A démarre
-  sa webcam, B revient par `history.back()` — donc sans rechargement, `Peer` préservé.
-  **Deux runs, zéro POST de peerId après le retour dans les deux cas**, et deux issues différentes :
-  `t_vignette = 8 811 ms` (un signal finit par arriver du côté de A) et **`t_vignette = null`** (rien
-  en 25 s). Le non-déterminisme est cohérent avec « il ne reste que le retry de l'autre côté ».
+  **Vérifié à deux onglets le 28/08/2026**, même protocole que la mesure qui avait trouvé la
+  fenêtre 3, sous contrôle positif (`Remote users : ["admin"]`, présence synchronisée) :
 
-  ⚠️ **Ne pas « corriger » en forçant un POST à chaque tour** : ce serait rouvrir l'item « le client
-  star compose son hub même absent de la room », qui consomme un slot du plafond de cadence à chaque
-  tour de présence. Le porteur juste n'est probablement pas la route de peerId — c'est ici que
-  l'option `whisper` écartée ci-dessous reprend de la valeur, puisqu'elle est **indépendante** de la
-  signalisation P2P et fermerait les trois fenêtres. À rouvrir avec cet argument neuf.
+  | Ce qui est mesuré | Avant | Après |
+  |---|---|---|
+  | navigation SPA, bail chaud (`history.back()`) | **8 811 ms**, puis **jamais** | **71 ms** |
+  | frame portant le fait | aucune | `client-webrtc2-broadcast-state`, **68 ms** |
+  | attribution par Reverb | — | `"user_id":"2"` sur l'enveloppe |
+  | coût du front une fois le fait reçu | 15 ms | **3 ms** |
+  | contre-épreuve : personne ne diffuse, sondage 250 ms sur 5 s | 0 vignette | **0 vignette** (20 échantillons) |
 
-  **L'option étudiée, et pourquoi elle n'a pas été prise** : un `whisper` sur le canal de présence
-  fermerait les deux d'un coup (un seul saut WebSocket, avant toute signalisation, et le serveur
-  réémet les client events de présence avec le `user_id` **authentifié** — `accept_client_events_from`
-  vaut `members` par défaut dans Reverb). Son coût n'est pas la latence, c'est le **couplage** :
-  WebRTC2 ne connaît aujourd'hui la présence que par la prop `users` d'un provider, et il faudrait y
-  faire entrer le canal Reverb — `inject(REVERB_CHANNEL, null)`, comme `useChatSimple`, donc optionnel
-  — plus un filtre sur `roomId` puisqu'une page monte plusieurs providers sur **un** canal
-  (`Exemples/Home.vue` en monte trois). Le champ sur la signalisation coûtait deux lignes de PHP,
-  celui-ci est un chantier.
+  ⚠️ **Une passe « régime établi » ne suffit pas à prouver le porteur** — piège rencontré : à son
+  retour, A **redemande** parfois le peerId de B (départ observé ⇒ bail purgé de son côté), et sa
+  demande porte `isBroadcasting`. Premier run : 6 POST à +133 ms. La passe décisive coupe donc
+  `/ask-to-peer-id` **chez A** juste avant le retour — plus aucun `PEER_CONNECTION_REQUEST` n'atteint
+  B, et A ne peut plus ni l'appeler ni lui ouvrir de canal. Le whisper arrive alors à 68 ms, la
+  vignette à 71 ms, et le premier POST résiduel à **131 ms** — soit 60 ms *après* la vignette.
 
-  ✅ **L'arbitrage a changé le 28/08/2026, et c'est l'argument à retenir.** Il avait été écarté sur
-  « à ne rouvrir que si la fenêtre 1 se révèle visible à l'usage » — or la fenêtre 1 s'est révélée
-  **courte** (592 ms mesurés), et c'est la fenêtre 3 qui est fatale. Le couplage reste le même coût,
-  mais il achète désormais autre chose : un porteur **indépendant de la signalisation P2P**, donc le
-  seul qui ferme un cas où *aucun* échange de peerId n'a lieu. Adosser l'annonce aux routes de peerId
-  est structurellement limité — elle ne peut rien dire quand il n'y a rien à demander.
+  ⚠️ **Le correctif écarté reste écarté** : forcer un POST à chaque tour rouvrirait « le client star
+  compose son hub même absent de la room » et son plafond de cadence. Rien n'a été ajouté à la
+  signalisation.
+
+  **Trois choses apprises en le posant**, toutes vérifiées et toutes contre-intuitives :
+  1. **`accept_client_events_from` absent de `config/reverb.php` vaut `'all'`, pas `'members'`** —
+     `ConfigApplicationProvider` lit `?? 'all'`, à l'inverse du défaut du template. Sous `'all'`,
+     Reverb ne contrôle **aucune** appartenance au canal (`EventDispatcher` publie sur le canal nommé
+     par l'émetteur) et retransmet l'enveloppe brute, `user_id` forgeable compris. C'était l'état de
+     l'hôte : le porteur invoqué par l'arbitrage n'existait pas. Corrigé côté projet, et consigné
+     dans [le `work/` de l'hôte](../../../../work/deploiement-tiers.md).
+  2. **Une course réelle entre l'annonce et l'annuaire** : le diffuseur re-annonce dès qu'il voit
+     l'arrivant, or un client event ne se rejoue pas — si l'arrivant ne peut pas encore traduire le
+     `user_id`, le fait est perdu **définitivement**. D'où `_rebuildSlugDirectory` écrit **devant** la
+     barrière `waitForMeReady`, seule écriture de ce tour à la précéder. Elle ne concède rien : la
+     garde d'affichage est l'intersection de `useAwaitedStreams` avec `usersInRoom`, qui reste
+     derrière.
+  3. **`stopListeningForWhisper(event)` emportait les handlers de TOUS les consommateurs du canal** —
+     même défaut de classe que `Echo.leave()`, un étage plus bas, et joignable dès qu'une page monte
+     deux providers sur un canal (`Exemples/Home.vue` en monte trois). `useReverbChannel` désabonne
+     désormais par callback, repli nu conservé pour `useChatSimple`.
+
+  **Ce qui reste, et n'est plus une fenêtre de porteur** : le fait arrive avant que la vignette
+  puisse s'afficher, parce que `awaitedPeers` intersecte `usersInRoom` — écrit derrière
+  `waitForMeReady`, mesuré à 592 ms. Borne d'affichage, pas d'annonce. La fermer voudrait dire
+  toucher à l'intersection, ce qui rouvrirait les vignettes fantômes de pairs déjà partis : **non
+  souhaitable, décision assumée.**
 
 - [x] 🔴 **La vignette n'est JAMAIS visible : `.draggable-video` sans `<video>` s'effondre à 0 px**
   `[S]` — **fermé le 28/08/2026.** Un enfant unique en `position:absolute` ne contribue pas à la

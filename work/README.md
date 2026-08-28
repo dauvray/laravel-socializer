@@ -19,10 +19,10 @@ explicitement :
 
 1. Le module WebRTC2 au fil de l'eau : [webrtc2-todo.md](webrtc2-todo.md),
    [webrtc2-tests-plan.md](webrtc2-tests-plan.md).
-   > ✅ Le verrou qui interdisait toute vérification visuelle de l'annonce de diffusion — vignette
-   > correcte dans le DOM, invisible à l'écran — est **fermé le 28/08**. Une vérification visuelle
-   > peut de nouveau conclure. Reste le 🔴 de la **fenêtre 3** : le cas majoritaire (navigation SPA
-   > sous bail de peerId) n'apprend jamais qu'un pair diffuse.
+   > ✅ **Plus aucun 🔴 dans ce chantier depuis le 28/08.** Les deux sont tombés le même jour : la
+   > vignette invisible à l'écran, puis la fenêtre 3 — le cas majoritaire (navigation SPA sous bail
+   > de peerId) qui n'apprenait jamais qu'un pair diffuse, fermée par un quatrième chemin d'annonce
+   > (whisper sur le canal de présence). Restent des items de pérennisation, tous 🟢/🟠.
 2. [doc-rustines.md](doc-rustines.md) — le volet de ce paquet dans le chantier transverse. L'ordre
    des lots est fixé par [le `work/` du projet hôte](../../../../work/README.md).
 
@@ -36,7 +36,7 @@ explicitement :
 
 | Fichier | État | En une phrase |
 |---|---|---|
-| [webrtc2-todo.md](webrtc2-todo.md) | ouvert, **un 🔴** | items de pérennisation du module : sémantique de `peerInitPromise`, machine à états du cycle de vie du `Peer`, ce qui reste de la chaîne de présence ouverte par le bail des peerId — trois verrous fermés (verrou coalescent et purge d'une room qui se vide le 27/08, fan-out qui réconcilie le 28/08), restent la re-composition sur fermeture de connexion, la fraîcheur de `roomMembers` et le client star qui compose un hub absent, **désormais couplé** au précédent — renommage de `usersInRoom`, observabilité. La section « Annonce de diffusion » porte le résultat de la **vérification à deux onglets, faite le 28/08** : le champ `isBroadcasting` arrive en 592 ms et le front le rend en 15 ms (verdict positif sur `10d634f`), contre-épreuve tenue sous contrôle positif — mais elle a sorti deux 🔴, dont **un reste**. 🔴 **Fenêtre 3** : un peerId déjà connu sous bail ne redemande rien, donc ne porte pas l'annonce ⇒ vignette à 8,8 s ou jamais, et c'est le cas majoritaire (navigation SPA) ; l'option `whisper` écartée y **reprend de la valeur**, l'arbitrage est réécrit. Le second — vignette jamais visible, `.draggable-video` sans `<video>` effondré à 0 px — est **fermé le 28/08** par une classe d'intention `.video-awaited` ; il n'a pas touché à l'arbitrage `_variables.scss`, contrairement à ce que l'item annonçait. Plus un `[L]` **gelé** — déplacer le routage star dans `usePeerTransport` — qui **bloque les tâches 6 et 7** du plan de tests. |
+| [webrtc2-todo.md](webrtc2-todo.md) | ouvert, **aucun 🔴** | items de pérennisation du module : sémantique de `peerInitPromise`, machine à états du cycle de vie du `Peer`, ce qui reste de la chaîne de présence ouverte par le bail des peerId — restent la re-composition sur fermeture de connexion, la fraîcheur de `roomMembers` et le client star qui compose un hub absent —, renommage de `usersInRoom`, observabilité. La section « Annonce de diffusion » est **close le 28/08** : ses trois fenêtres sont fermées par un quatrième chemin, le whisper sur le canal de présence, seul porteur indépendant de la signalisation P2P. Elle garde les trois faits appris en le posant — dont « une clé `accept_client_events_from` absente vaut `'all'` » et la course annonce/annuaire — et nomme la seule borne restante, qui est d'affichage et assumée. Plus un `[L]` **gelé** — déplacer le routage star dans `usePeerTransport` — qui **bloque les tâches 6 et 7** du plan de tests. |
 | [webrtc2-tests-plan.md](webrtc2-tests-plan.md) | ouvert, bien avancé | avancement par fichier et trous restants (`sendData` star, câblage du rate-limit hub, `contextRegistry`, `usePeerCore` partiel). Porte les pièges de harnais mesurés — les lire avant d'écrire un test de ce module. |
 | [doc-rustines.md](doc-rustines.md) | 🟠 démarré — **lot 0 terminé** | rendre la doc exempte d'annotations qui compensent un défaut du code. Le lot 0 (annotations déjà fausses) est fermé. Vient ensuite la v1 WebRTC, déclarée morte mais **encore importée par cinq composants vivants**. |
 | [projection-graphe-todo.md](projection-graphe-todo.md) | ⏸️ **suspendu — au besoin seulement** | suites du correctif « un utilisateur = un mur + un feed ». Rien n'y bloque ; deux items portent une exigence d'exploitation (sauvegarder le space NebulaGraph, que rien ne reconstruira). |

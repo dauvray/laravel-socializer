@@ -40,7 +40,7 @@ et le seul étage où les incendies du paquet étaient détectables). Le harnais
 | Store — `peers2Store` : runtime, observabilité, `remotePeerId` | ✅ | — |
 | UI — `useAwaitedStreams`, `useBroadcastPresence`, `MediaBroadcastPlayer` (identité, spinner) | ✅ | — |
 | Scénarios — smoke, `lateJoiner`, `broadcastLifecycle`, `peerDeparture`, `multiContext`, `incomingMappingInvariant`, `outgoingAuth` | ✅ | — |
-| Hors WebRTC2 — `Chat/dateSeparatorRender`, `System/useReverbChannel`, `User/coverCallButton` | amorces | plan Chat : [chat-tests-plan.md](chat-tests-plan.md) |
+| Hors WebRTC2 — `Chat/dateSeparatorRender`, `System/useReverbChannel` (dont le désabonnement de whisper par callback), `User/coverCallButton` | amorces | plan Chat : [chat-tests-plan.md](chat-tests-plan.md) |
 
 ⛔ **Les tâches 6 et 7 sont volontairement bloquées.** Le wrapping du routage star qu'elles doivent
 couvrir est justement ce que la TODOLIST prévoit de *déplacer* dans `usePeerTransport` (item `[L]`,
@@ -54,6 +54,26 @@ Les couches extraites se testent avec des `vi.fn()` pour les dépendances inject
 l'intérêt de l'injection descendante. `useCallManager` et `useStreamManager` n'enregistrent aucun
 hook de lifecycle et s'appellent **directement**, sans `withSetup` ; `useConnectionPool` et
 `useSignalingQueue` posent un `watch` + un `onUnmounted`, donc `withSetup` y est **obligatoire**.
+
+### Le canal de présence est livrable au harnais depuis le 28/08/2026
+
+`helpers/createFakePresenceChannel.js` rejoue les **client events** d'un canal de présence, et
+`createVirtualPeer({ id, reverb })` les livre à un onglet (un abonnement par onglet, partagé par ses
+contextes — comme en production). Deux fidélités portent tout l'intérêt du double, et les défaire
+rendrait vert un correctif faux :
+
+- **l'émetteur ne reçoit pas son propre whisper** (Reverb exclut la connexion source) — sinon un
+  diffuseur s'annoncerait à lui-même et le garde « pas mon propre slug » masquerait l'erreur ;
+- **`metadata.user_id` vient du serveur, jamais de la charge utile**, comme sous
+  `accept_client_events_from: 'members'`.
+
+⚠️ **`connectRoom` livre désormais `id` ET `slug`**, parce que la production le fait
+(`PresenceUser`). Un pair monté sans `id` laisse l'annuaire vide — état valide pour tout scénario qui
+n'exerce pas les whispers, mais un test d'annonce y serait muet sans rien dire.
+
+ℹ️ **Décision en attente côté Chat** : ce double est le candidat naturel au `mockEcho` partagé que
+[chat-tests-plan.md](chat-tests-plan.md) laisse ouvert. Rien n'a été mutualisé — celui-ci n'imite que
+les client events, pas `here`/`joining`/`leaving`, que le Chat exercera.
 
 ---
 

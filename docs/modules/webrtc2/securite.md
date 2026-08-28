@@ -123,6 +123,36 @@ L'identité de l'émetteur se lit **toujours** depuis la connexion — `resolveR
 - Côté backend, `fromUserSlug` broadcasté est toujours `Auth::user()->slug`, jamais la valeur du
   payload ; `closeConnectionToPeerId` journalise tout écart (`auth_user_id`, `claimed_slug`,
   `target_slug`, `ip`, `user_agent`).
+- **Le whisper d'annonce de diffusion** (canal de présence, `webrtc2-broadcast-state`) lit
+  l'identité dans `metadata.user_id` — le champ que **Reverb régénère** sur l'enveloppe à partir de
+  la connexion authentifiée — puis la traduit en slug par `ctx.connection.slugByUserId`, annuaire
+  écrit depuis la liste de présence par le seul écrivain de `usersInRoom`. Sa charge utile ne porte
+  aucune identité, et un `user_id` absent de l'annuaire ne désigne pas un membre observé de la room :
+  rien n'est enregistré.
+
+#### La borne de déploiement du whisper : `accept_client_events_from`
+
+**Ce chemin n'est sûr que sous `accept_client_events_from: 'members'`**, et ce n'est pas une
+préférence de configuration :
+
+| Valeur | Ce que fait Reverb (`Protocols\Pusher\ClientEvent`) |
+|---|---|
+| `'members'` | vérifie l'appartenance au canal, **régénère** l'enveloppe (`event`, `channel`, `data`) et y pose le `user_id` de la connexion authentifiée |
+| `'all'` | **aucun contrôle d'appartenance** — `EventDispatcher` publie sur le canal *nommé par l'émetteur* — et retransmet l'événement **brut**, `user_id` que l'émetteur a pu écrire lui-même compris |
+
+⚠️ **La clé absente vaut `'all'`, pas `'members'`** : `ConfigApplicationProvider` lit
+`$app['accept_client_events_from'] ?? 'all'`, alors que le `config/reverb.php` du paquet Reverb
+porte `'members'` par défaut. Un `config/reverb.php` publié avant l'ajout de cette clé tourne donc
+en `'all'` **sans que rien ne le dise** — cas rencontré sur un projet hôte le 28/08/2026.
+
+Conséquence côté client, assumée : `handleBroadcastStateWhisper` est **fail-closed**. Un whisper que
+le serveur n'a pas attribué n'est pas « une annonce sans nom », c'est une annonce dont le nom est
+celui que l'émetteur a choisi — il est ignoré, et la cause est journalisée une fois par contexte.
+
+Et ce que le pire cas coûte, sous `'members'`, si un membre légitime forge des annonces : il peut
+faire apparaître une vignette d'attente de trop pendant `AWAITED_STREAM_TIMEOUT_MS`, jamais en
+supprimer une vraie — la réception **marque et ne purge jamais**, exactement comme
+`noteBroadcastFromSignal` et pour une raison de plus que lui.
 
 ### `_isAuthorizedIncomingPeer` — deux chemins disjoints
 

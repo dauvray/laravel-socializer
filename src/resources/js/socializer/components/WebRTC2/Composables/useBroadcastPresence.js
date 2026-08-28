@@ -1,7 +1,7 @@
 /**
  * 📢 useBroadcastPresence (Presence Layer)
  *
- *  annonce protocolaire « je diffuse / je ne diffuse plus » sur le data channel
+ *  un fait métier — « je diffuse / je ne diffuse plus » — et DEUX transports
  *
  * 👉 gère :
  * - l'émission du signal `BROADCAST_STATE` (changement d'état local, et à l'ouverture
@@ -9,10 +9,14 @@
  * - la réception de ce signal et l'écriture dans `ctx.media.announcedStreamsMap`
  * - l'enregistrement de l'état de diffusion embarqué sur les signaux de signalisation
  *   serveur (`noteBroadcastFromSignal`), qui n'exige aucun contact P2P
+ * - l'émission et la réception du whisper de présence, le seul transport qui n'emprunte
+ *   RIEN à la signalisation P2P (cf. « Pourquoi un second transport » ci-dessous)
  * - la purge des annonces des pairs qui ont quitté la room
  *
  * 👉 utilise (par injection, jamais par import) :
  * - usePeerTransport (émission + joignabilité data)
+ * - le canal de présence Reverb, optionnel (`reverb`) : un hôte qui ne le fournit pas
+ *   garde exactement le comportement d'avant ce transport
  *
  * 👉 ne connaît PAS :
  * - l'UI d'attente (`useAwaitedStreams` lit la projection `announcedStreamPeers`)
@@ -43,10 +47,24 @@
  *
  * La fenêtre d'AVANT tout contact P2P — échange de peerId + backoff — est couverte depuis
  * que les deux routes de peerId embarquent `isBroadcasting` (`noteBroadcastFromSignal`
- * ci-dessous) : elle ne l'était par aucun chemin, et le délai se lisait comme une panne.
- * Ce que ce troisième chemin ne couvre toujours pas : l'instant avant la PREMIÈRE demande
- * de peerId (`waitForMeReady`), et le client non-hub en topologie star, qui ne demande que
- * le hub.
+ * ci-dessous).
+ *
+ * ⚠️ POURQUOI UN SECOND TRANSPORT (whisper de présence, 28/08/2026). Les trois chemins
+ * data/signalisation partagent une limite structurelle : ils ne disent rien quand il n'y a
+ * rien à demander. `useConnectionPool.requestOrConnectPeer` ne poste sur les routes de
+ * peerId que si le peerId distant n'est PAS déjà connu sous bail — cas nominal d'une
+ * navigation SPA à l'intérieur de `REMOTE_PEER_ID_LEASE_MS`, donc cas MAJORITAIRE à
+ * l'usage. Un arrivant qui possède déjà le peerId du diffuseur se connecte directement,
+ * sans POST, donc sans porteur ; et en contexte `stream` un non-diffuseur n'ouvre pas de
+ * canal data, ce qui ferme aussi `BROADCAST_STATE`. Mesuré : vignette à 8,8 s, ou jamais.
+ *
+ * Le whisper est le seul porteur INDÉPENDANT de la signalisation P2P — un saut WebSocket
+ * sur un canal déjà rejoint et déjà autorisé. Il ferme du même geste le client non-hub en
+ * star, qui ne demande jamais le peerId d'un diffuseur autre que le hub.
+ *
+ * Ce qu'il ne ferme pas : l'instant avant que `usersInRoom` soit peuplé — le fait arrive,
+ * mais `useAwaitedStreams` intersecte les annonces avec la composition de la room, écrite
+ * après `waitForMeReady`. Borne d'AFFICHAGE, plus de porteur, et mesurée courte (592 ms).
  *
  * ⚠️ LIMITE ASSUMÉE — topologie star : le hub retransmet `envelope.payload` tel quel
  * (cf. `forwardStarMessage`), l'identité de l'émetteur d'origine est donc perdue pour
@@ -61,7 +79,15 @@ import { resolveRemoteSlug } from '~socializer/components/WebRTC2/Composables/ut
 /** Type du signal datachannel d'annonce de diffusion. */
 export const BROADCAST_STATE = 'BROADCAST_STATE'
 
-export function useBroadcastPresence(ctx, { transport }) {
+/**
+ * Nom du client event Reverb portant la même annonce sur le canal de présence.
+ *
+ * Préfixé : le canal est partagé avec le métier de l'hôte (chat, indicateur de frappe),
+ * et un nom nu comme `broadcast-state` finirait par collisionner.
+ */
+export const BROADCAST_STATE_WHISPER = 'webrtc2-broadcast-state'
+
+export function useBroadcastPresence(ctx, { transport, reverb = null }) {
 
     // Webcam/audio OU partage d'écran : du point de vue du récepteur, « un flux de moi
     // est en route » ne se décline pas par type — la vignette d'attente est par pair.
@@ -70,6 +96,9 @@ export function useBroadcastPresence(ctx, { transport }) {
     // l'embarque aussi sur ses deux routes de peerId : deux copies divergeraient. Le verbe
     // reste ici, c'est lui que le reste du composable et ses tests consomment.
     const isBroadcasting = () => ctx.isBroadcasting.value === true
+
+    /** Un seul warn par contexte : un whisper non attribué se répète à chaque annonce. */
+    let _warnedUnattributed = false
 
     const _payload = () => ({
         roomId: ctx.session.onAirRoom,
@@ -164,6 +193,86 @@ export function useBroadcastPresence(ctx, { transport }) {
     }
 
     /**
+     * Annonce mon état de diffusion sur le canal de présence Reverb.
+     *
+     * ⚠️ N'émet QUE quand je diffuse, et c'est le même contrat qu'`announceBroadcastStateTo` :
+     * le silence vaut « pas de flux en route », qui est l'état par défaut côté récepteur.
+     * Émettre un `false` ne servirait personne — la réception ne purge jamais (voir
+     * `handleBroadcastStateWhisper`) — et donnerait à un membre hostile un moyen d'éteindre
+     * une vignette vraie.
+     *
+     * La charge utile ne porte AUCUNE identité : le récepteur lit celle que Reverb pose sur
+     * l'enveloppe. Elle porte en revanche `roomId`, car une page monte plusieurs contextes
+     * sur UN seul canal (`Exemples/Home.vue` en monte trois).
+     *
+     * @returns {boolean} true si le whisper est parti
+     */
+    const announceBroadcastStateOnChannel = () => {
+        if (!isBroadcasting()) return false
+        if (typeof reverb?.whisper !== 'function') return false
+
+        return reverb.whisper(BROADCAST_STATE_WHISPER, {
+            roomId: ctx.session.onAirRoom,
+            isBroadcasting: true,
+        }) === true
+    }
+
+    /**
+     * Consomme un whisper d'annonce reçu sur le canal de présence.
+     *
+     * ⚠️ L'identité vient de `metadata.user_id`, que **Reverb régénère** sur l'enveloppe à
+     * partir de la connexion authentifiée (`ClientEvent`, sous
+     * `accept_client_events_from: 'members'`) — jamais d'un champ de la charge utile, qui
+     * serait déclaratif. C'est l'invariant n°1 du sens entrant (`securite.md`).
+     *
+     * ⚠️ **Fail-closed sur l'absence de `user_id`**, et ce n'est pas de la politesse : sous
+     * `accept_client_events_from: 'all'`, Reverb retransmet l'événement BRUT — aucun contrôle
+     * d'appartenance au canal, et un `user_id` que l'émetteur a pu écrire lui-même. Un
+     * whisper non attribué par le serveur n'est donc pas « une annonce sans nom », c'est une
+     * annonce dont le nom est celui que l'émetteur a choisi. On ne le lit pas.
+     *
+     * ⚠️ **Marque, ne purge JAMAIS**, comme `noteBroadcastFromSignal` : refuser la purge est
+     * ce qui borne le pire cas d'un membre hostile à « faire apparaître une vignette de trop
+     * pendant AWAITED_STREAM_TIMEOUT_MS », sans jamais pouvoir en supprimer une vraie.
+     * L'arrêt de diffusion garde ses trois sorties (`handleRemoteDeparture`,
+     * `BROADCAST_STATE: false`, filet du timeout).
+     *
+     * @param {Object} payload   { roomId, isBroadcasting }
+     * @param {Object} metadata  { user_id } posé par Reverb
+     * @returns {boolean} true si une annonce a été enregistrée
+     */
+    const handleBroadcastStateWhisper = (payload, metadata) => {
+        if (payload?.isBroadcasting !== true) return false
+
+        // Filtre de contexte : sur un canal partagé, l'annonce d'une autre room n'est pas
+        // pour moi. Comparé à `onAirRoom` comme la charge utile datachannel.
+        if (payload.roomId !== ctx.session.onAirRoom) return false
+
+        const userId = metadata?.user_id
+
+        if (userId === null || userId === undefined || userId === '') {
+            if (!_warnedUnattributed) {
+                _warnedUnattributed = true
+                console.warn(
+                    '[useBroadcastPresence] whisper d\'annonce ignoré : Reverb ne l\'a pas attribué. '
+                    + 'Configurer `accept_client_events_from` à `members` (config/reverb.php) — '
+                    + 'sous `all`, les client events sont retransmis bruts et non attribuables.'
+                )
+            }
+            return false
+        }
+
+        // Annuaire écrit par le seul écrivain de `usersInRoom`
+        // (`usePeerConnections._doGetRoomUsersDiff`) : un `user_id` qui n'y est pas n'est
+        // pas un membre observé de la room, et ne peut donc rien y annoncer.
+        const remoteSlug = ctx.connection.slugByUserId.get(String(userId))
+
+        if (!remoteSlug) return false
+
+        return ctx.markAnnouncedStream(remoteSlug, 'presence') === true
+    }
+
+    /**
      * Enregistre l'état de diffusion embarqué sur un signal de signalisation SERVEUR
      * (`.AskToPeerID` / `.ResponseToPeerID`, cf. `usePeerCore`).
      *
@@ -198,24 +307,50 @@ export function useBroadcastPresence(ctx, { transport }) {
     // (handleRemoteDeparture purge l'annonce).
     const unwatchLocalState = watch(
         () => [ctx.media.isStreaming, ctx.media.isCapturing],
-        () => { announceBroadcastState() }
+        () => {
+            announceBroadcastState()
+            // Le canal de présence, lui, n'attend rien : il porte l'annonce même s'il
+            // n'existe aucune connexion data — c'est tout l'intérêt du second transport.
+            announceBroadcastStateOnChannel()
+        }
     )
 
-    // Un pair qui quitte la room n'a plus rien en vol : sans cette purge, son annonce
-    // survivrait à son départ et le ferait attendre s'il revenait sans diffuser.
+    // Deux rôles sur un seul watch de la composition de la room, parce qu'il n'y a qu'un
+    // seul fait à observer — « qui est là a changé » :
+    //
+    //  1. un pair qui QUITTE n'a plus rien en vol : sans cette purge, son annonce
+    //     survivrait à son départ et le ferait attendre s'il revenait sans diffuser ;
+    //  2. un pair qui ARRIVE n'a aucun moyen de connaître un état antérieur à son arrivée
+    //     — un whisper ne s'historise pas. C'est donc au diffuseur de re-annoncer, et
+    //     c'est CETTE branche qui ferme la fenêtre du peerId déjà connu sous bail.
+    //
+    // ⚠️ Un seul whisper par tour, jamais un par arrivant : la charge utile ne nomme
+    // personne, elle diffuse à tout le canal. Trois arrivées simultanées, une annonce.
     const unwatchRoom = watch(
         () => [...(ctx.connection.usersInRoom ?? [])],
-        (slugs) => {
+        (slugs, previousSlugs) => {
             const present = new Set(slugs)
             for (const slug of [...ctx.media.announcedStreamsMap.keys()]) {
                 if (!present.has(slug)) ctx.clearAnnouncedStream(slug)
             }
+
+            const previous = new Set(previousSlugs ?? [])
+            if (slugs.some((slug) => !previous.has(slug))) {
+                announceBroadcastStateOnChannel()
+            }
         }
     )
+
+    // Abonné dès l'init, et pas à l'ouverture d'un canal data : le whisper doit pouvoir
+    // arriver AVANT tout contact P2P, sinon il ne fermerait rien de plus que les autres.
+    reverb?.listenForWhisper?.(BROADCAST_STATE_WHISPER, handleBroadcastStateWhisper)
 
     const stopBroadcastPresence = () => {
         unwatchLocalState()
         unwatchRoom()
+        // ⚠️ Le callback est passé : plusieurs contextes partagent UN canal (trois dans
+        // `Exemples/Home.vue`), et un désabonnement nu les rendrait tous sourds.
+        reverb?.stopListeningForWhisper?.(BROADCAST_STATE_WHISPER, handleBroadcastStateWhisper)
     }
 
     onUnmounted(stopBroadcastPresence)
@@ -224,7 +359,9 @@ export function useBroadcastPresence(ctx, { transport }) {
         isBroadcasting,
         announceBroadcastState,
         announceBroadcastStateTo,
+        announceBroadcastStateOnChannel,
         handleBroadcastStateMessage,
+        handleBroadcastStateWhisper,
         noteBroadcastFromSignal,
         stopBroadcastPresence,
     }

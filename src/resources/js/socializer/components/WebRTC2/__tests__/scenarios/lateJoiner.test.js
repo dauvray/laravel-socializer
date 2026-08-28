@@ -28,8 +28,10 @@ import {
     createMockMediaConnection,
 } from '../__mocks__/peerjs.js'
 import { createFakeSignalingServer } from '../helpers/fakeSignalingServer.js'
+import { createFakePresenceChannel } from '../helpers/createFakePresenceChannel.js'
 import { createVirtualPeer, connectRoom, settle } from '../helpers/createVirtualPeer.js'
 import { installFakeMedia } from '../helpers/fakeMedia.js'
+import { ENDPOINTS } from '~socializer/components/WebRTC2/webrtc2.config.js'
 
 describe("arrivant tardif : A diffuse déjà quand B rejoint", () => {
     let bus
@@ -196,6 +198,138 @@ describe("arrivant tardif : A diffuse déjà quand B rejoint", () => {
         const alice = await spawn({ slug: 'alice' })
         const bob = await spawn({ slug: 'bob' })
 
+        await connectRoom([alice, bob])
+
+        expect(bob.api.announcedStreamPeers.value).toEqual([])
+        expect(alice.api.announcedStreamPeers.value).toEqual([])
+    })
+})
+
+/**
+ * Le cas MAJORITAIRE à l'usage, et celui qu'aucun des trois premiers chemins d'annonce ne
+ * couvre : B revient dans la room avec le peerId d'A **déjà connu sous bail**.
+ *
+ * `useConnectionPool.requestOrConnectPeer` ne poste sur les routes de peerId que si ce
+ * peerId n'est pas déjà composable. Un retour de navigation SPA à l'intérieur de
+ * `REMOTE_PEER_ID_LEASE_MS` (≈55 s) se connecte donc DIRECTEMENT, des deux côtés : aucun
+ * POST ne part, donc aucun porteur pour `isBroadcasting`. Et en contexte `stream`, un
+ * non-diffuseur n'ouvre pas de canal data, ce qui ferme aussi `BROADCAST_STATE`. Il ne
+ * restait que le `peer.call` du diffuseur — mesuré le 28/08/2026 : vignette à 8 811 ms sur
+ * un run, JAMAIS sur l'autre.
+ *
+ * Ces tests exercent le seul porteur qui ne dépende pas de la signalisation P2P : le
+ * whisper sur le canal de présence. Ils coupent les trois autres explicitement — bail chaud
+ * des deux côtés (pas de POST) et P2P sortant d'A neutralisé (ni appel, ni canal data) —
+ * pour qu'un vert ne puisse venir que de lui.
+ */
+describe("arrivant tardif : le peerId d'A est déjà connu sous bail", () => {
+    let bus
+    let server
+    let presence
+    const peers = []
+    const ROOM = 'room-diffusion'
+
+    // Un `id` autant qu'un `slug` : la charge utile d'un canal de présence porte les deux
+    // (`Http\Resources\PresenceUser`), et c'est l'`id` qui rend un whisper attribuable.
+    const ALICE = { id: 11, slug: 'alice' }
+    const BOB = { id: 12, slug: 'bob' }
+
+    const spawn = async (member, { withChannel = true } = {}) => {
+        const peer = await createVirtualPeer({
+            ...member,
+            room: ROOM,
+            type: 'stream',
+            server,
+            reverb: withChannel ? presence.subscribe(member) : null,
+        })
+        peers.push(peer)
+        return peer
+    }
+
+    /**
+     * L'état d'un retour de navigation SPA : le `Peer` de l'onglet a survécu (vérifié en
+     * production, peerId identique avant/après), donc les deux pairs se composent
+     * directement et la signalisation n'a plus rien à transporter.
+     */
+    const warmLeases = (a, b) => {
+        a.peerStore.addRemotePeerId(b.slug, b.peerId)
+        b.peerStore.addRemotePeerId(a.slug, a.peerId)
+    }
+
+    /** Coupe le P2P sortant : un appel et un canal valides, mais reliés à personne. */
+    const muteOutgoingP2P = (peer) => {
+        peer.peerInstance.call = vi.fn((peerId, stream, options) =>
+            createMockMediaConnection(options?.metadata))
+        peer.peerInstance.connect = vi.fn((peerId, options) =>
+            createMockDataConnection(options?.metadata))
+    }
+
+    beforeEach(() => {
+        bus = createPeerBus()
+        server = createFakeSignalingServer()
+        presence = createFakePresenceChannel()
+        installFakeMedia()
+    })
+
+    afterEach(() => {
+        peers.splice(0).forEach((peer) => peer.destroy())
+        presence.destroy()
+        server.destroy()
+        bus.destroy()
+    })
+
+    it('B apprend quand même qu\'A diffuse, par le canal de présence', async () => {
+        const alice = await spawn(ALICE)
+
+        await connectRoom([alice])
+        await alice.api.startWebcamStream()
+        await settle()
+
+        muteOutgoingP2P(alice)
+
+        const bob = await spawn(BOB)
+        warmLeases(alice, bob)
+        server.requests.length = 0
+
+        await connectRoom([alice, bob])
+
+        // Le fait est arrivé…
+        expect(bob.api.announcedStreamPeers.value).toContain('alice')
+        // …et aucun des trois autres chemins ne peut l'expliquer : pas un seul POST de
+        // peerId, donc pas de champ embarqué ; et rien n'a été livré en P2P.
+        expect(server.requestsTo(ENDPOINTS.ASK_TO_PEER_ID)).toEqual([])
+        expect(server.requestsTo(ENDPOINTS.RESPONSE_TO_PEER_ID)).toEqual([])
+        expect(bob.receivedStreamsFrom()).not.toContain('alice')
+    })
+
+    it('sans canal de présence, B n\'apprend RIEN — l\'état d\'avant ce transport', async () => {
+        // ⭐ La contre-épreuve, et la mesure du 28/08 sous forme de test : mêmes coupures,
+        // pas de canal fourni par l'hôte. C'est aussi ce qui garantit que le test ci-dessus
+        // ne verdit pas par un chemin resté ouvert.
+        const alice = await spawn(ALICE, { withChannel: false })
+
+        await connectRoom([alice])
+        await alice.api.startWebcamStream()
+        await settle()
+
+        muteOutgoingP2P(alice)
+
+        const bob = await spawn(BOB, { withChannel: false })
+        warmLeases(alice, bob)
+
+        await connectRoom([alice, bob])
+
+        expect(bob.api.announcedStreamPeers.value).toEqual([])
+    })
+
+    it('un membre qui ne diffuse pas n\'est jamais annoncé par le canal', async () => {
+        // La contre-épreuve du transport lui-même : le canal existe, la présence circule,
+        // et personne ne doit voir de vignette. Un whisper émis « à vide » rouvrirait
+        // exactement l'heuristique que `announcedStreamsMap` a remplacée.
+        const alice = await spawn(ALICE)
+        const bob = await spawn(BOB)
+
+        warmLeases(alice, bob)
         await connectRoom([alice, bob])
 
         expect(bob.api.announcedStreamPeers.value).toEqual([])

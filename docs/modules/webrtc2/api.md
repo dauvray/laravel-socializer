@@ -11,10 +11,16 @@
 
 ```vue
 <script setup>
+import { provide } from 'vue'
 import MediaBroadcastProvider from '~socializer/components/WebRTC2/Widgets/Mediaplayer/MediaBroadcastProvider.vue'
 import { useReverbPresence } from '~socializer/components/System/composables/useReverbChannel.js'
+import { REVERB_CHANNEL } from '~socializer/components/System/system.config.js'
 
-const { users } = useReverbPresence(`server.${serverId}`)
+const reverb = useReverbPresence(`server.${serverId}`)
+const { users } = reverb
+
+// Optionnel, mais c'est ce qui fait exister le 4ᵉ chemin d'annonce de diffusion.
+provide(REVERB_CHANNEL, reverb)
 </script>
 
 <template>
@@ -40,6 +46,14 @@ L'API est exposée de **trois** façons : slot scopé (`v-slot="webrtc"`),
 n'est **pas** appelé par le provider — c'est alors au composant enfant de le faire (modèle de
 `StreamSimpleUI`, qui gère lui-même la réception). Passer `callbacks` **et** initialiser dans
 l'enfant initialiserait deux fois.
+
+ℹ️ **`provide(REVERB_CHANNEL, reverb)` n'est pas une prop, et c'est optionnel** : le provider
+l'`inject` (défaut `null`) et le transmet à la couche présence. Sans lui tout fonctionne, mais
+l'annonce de diffusion perd son seul porteur indépendant de la signalisation P2P — donc la vignette
+d'attente n'apparaît pas quand le peerId du diffuseur est déjà connu sous bail, cas majoritaire d'un
+retour de navigation SPA ([flux.md](flux.md#comment-un-arrivant-sait-qui-diffuse)). Un seul
+`useReverbPresence` par page, partagé par tous ses providers : le filtrage par room est dans la
+charge utile de l'annonce.
 
 Trois usages complets et commentés dans
 [`Exemples/Home.vue`](../../../src/resources/js/socializer/components/WebRTC2/Exemples/Home.vue) :
@@ -101,7 +115,14 @@ Ils sont implicites et cassent **silencieusement**.
   statique `COTURN_USER` / `COTURN_PASS` reste servi, et n'est alors pas rafraîchi. Une clé `VITE_*`
   est inlinée dans le bundle public au `npm run build` ; un identifiant n'y a jamais sa place.
 - **Une source de présence** pour `users` — `useReverbPresence(channel)`, voir
-  [use-reverb-channel.md](../../reference/use-reverb-channel.md).
+  [use-reverb-channel.md](../../reference/use-reverb-channel.md). La charge utile doit porter `id`
+  **et** `slug` (`Http\Resources\PresenceUser` les livre) : le slug est le pivot de l'admission des
+  pairs, l'id celui de l'attribution d'un whisper.
+- **Pour l'annonce de diffusion par whisper, et pour elle seule** : ce même canal `provide`é sous
+  `REVERB_CHANNEL`, **et** Reverb en `accept_client_events_from: 'members'`. Les deux manquent en
+  silence, mais pas au même endroit : sans `provide` le chemin n'existe pas, sans la clé de config il
+  existe et se refuse (`warn` unique nommant la clé) —
+  [securite.md](securite.md#la-borne-de-déploiement-du-whisper--accept_client_events_from).
 - `window.AWN` pour certains widgets.
 
 ---

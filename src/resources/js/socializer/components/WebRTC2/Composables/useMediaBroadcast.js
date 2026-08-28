@@ -21,7 +21,14 @@
 
 import { usePeerOrchestrator } from '~socializer/components/WebRTC2/Composables/usePeerOrchestrator.js'
 
-export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
+/**
+ * @param {string} type
+ * @param {string} room
+ * @param {Object} options
+ * @param {Object} [deps]         Dépendances d'infrastructure, transmises telles quelles à
+ *                                l'orchestrateur (`deps.reverb` : canal de présence)
+ */
+export function useMediaBroadcast(type = 'data', room = 'app', options = {}, deps = {}) {
     
     const {
         contextId, // id du contexte (type-room) 
@@ -107,7 +114,7 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}) {
    
         stopCallInviteRetry, // fonction pour stopper les tentatives de retry d'invitation à un appel (ex: lorsqu'on reçoit une réponse à une invitation)
         clearAllCallInviteRetries, // fonction pour stopper toutes les tentatives de retry d'invitation à un appel (ex: lorsqu'on quitte la room ou que le composant est détruit)
-    } = usePeerOrchestrator( type, room, options)
+    } = usePeerOrchestrator( type, room, options, deps)
 
    
 

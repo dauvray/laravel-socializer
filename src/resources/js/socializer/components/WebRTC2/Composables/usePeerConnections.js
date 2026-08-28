@@ -32,7 +32,45 @@ export function usePeerConnections(ctx) {
     // pour éviter le TOCTOU sur ctx.connection.usersInRoom (lecture puis écriture non atomiques).
     let _diffLock = Promise.resolve()
 
+    /**
+     * Reconstruit l'annuaire `user_id` → slug depuis la liste de présence BRUTE.
+     *
+     * Brute et non filtrée : ce n'est pas une allowlist, c'est un dictionnaire d'identités.
+     * M'y inclure ne m'autorise rien — `markAnnouncedStream` refuse déjà mon propre slug —
+     * et Reverb ne me renvoie jamais mes propres client events.
+     *
+     * Reconstruit (pas fusionné) : un `user_id` qui n'est plus dans la composition ne doit
+     * plus être traduisible, sinon le whisper d'un partant resterait attribuable.
+     *
+     * Clés en STRING : Reverb repose le `user_id` de la connexion tel quel dans
+     * l'enveloppe, et pusher-js ne le convertit pas — comparer un `Number` d'`id` à ce
+     * champ échouerait silencieusement.
+     */
+    const _rebuildSlugDirectory = (users) => {
+        ctx.connection.slugByUserId.clear()
+
+        if (!Array.isArray(users)) return
+
+        for (const user of users) {
+            if (user?.id === null || user?.id === undefined || !user?.slug) continue
+            ctx.connection.slugByUserId.set(String(user.id), user.slug)
+        }
+    }
+
     const _doGetRoomUsersDiff = async (users = []) => {
+        // ⚠️ AVANT la barrière `waitForMeReady`, et c'est la seule écriture de ce tour qui
+        // la précède. Elle ferme une course réelle : un diffuseur re-annonce dès qu'il voit
+        // l'arrivant, or l'arrivant ne peut attribuer ce whisper que si son annuaire est
+        // écrit — et cette barrière attend le peerId local (jusqu'à ME_READY_TIMEOUT_MS).
+        // Un whisper arrivé avant serait rejeté, définitivement : un client event ne se
+        // rejoue pas.
+        //
+        // Écrire tôt ne concède aucun droit : l'annuaire ne fait que traduire un id en
+        // slug. La garde d'affichage est ailleurs — `useAwaitedStreams` intersecte les
+        // annonces avec `usersInRoom`, qui reste, lui, derrière la barrière. Un pair
+        // traduit mais pas encore admis est donc noté sans rien afficher.
+        _rebuildSlugDirectory(users)
+
         const ready = await ctx.waitForMeReady()
         if (!ready) {
             return { newUsers: [], removedUsers: [] }

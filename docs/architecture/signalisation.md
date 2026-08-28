@@ -389,6 +389,34 @@ projections d'état des Widgets — voir
 
 ---
 
+## Les client events, et la clé de configuration dont ils dépendent
+
+Un whisper n'est pas un événement serveur : il ne passe par aucun contrôleur, aucune liste blanche
+de champs, aucun `Auth::user()->slug`. Ce que le serveur y ajoute — ou n'y ajoute pas — dépend d'une
+seule clé de `config/reverb.php`, et **son absence ne vaut pas son défaut** :
+
+| `accept_client_events_from` | Ce que fait Reverb (`Protocols\Pusher\ClientEvent`) |
+|---|---|
+| `'members'` | vérifie l'appartenance au canal, régénère l'enveloppe et y pose le `user_id` **authentifié** |
+| `'all'` | aucun contrôle d'appartenance (`EventDispatcher` publie sur le canal *nommé par l'émetteur*), enveloppe retransmise **brute** |
+| absente | **`'all'`** — `ConfigApplicationProvider` lit `?? 'all'`, alors que le `config/reverb.php` du paquet Reverb porte `'members'` |
+
+Conséquences pour les six whispers en place :
+
+- les cinq whispers de départ et le `ping` de présence n'en dépendent pas : le serveur les traite
+  par leur seul nom d'événement ;
+- **l'indicateur « écrit… »** lit `payload.userId` : cosmétique, et donc usurpable sous `'all'` ;
+- **l'annonce de diffusion de WebRTC2** (`webrtc2-broadcast-state`) est le seul à exiger `'members'`,
+  parce qu'elle refuse par principe l'identité déclarative. Sous `'all'` elle est *fail-closed* —
+  ignorée, avec un `warn` nommant la clé. Le détail et le pire cas :
+  [modules/webrtc2/securite.md](../modules/webrtc2/securite.md#la-borne-de-déploiement-du-whisper--accept_client_events_from).
+
+Un whisper reçu par `useReverbChannel` livre donc **deux** arguments — la charge utile, puis les
+métadonnées du serveur (`{ user_id }`, absent si non attribué). Toute identité doit se lire dans le
+second.
+
+---
+
 ## Ajouter un événement
 
 1. Émettre en PHP : `Broadcast::private("App.Models.User.{$user->id}")->as('.MonEvent')->with([...])->sendNow()`,

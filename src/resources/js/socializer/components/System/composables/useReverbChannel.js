@@ -155,17 +155,59 @@ export function useReverbChannel(channelName, options = {}) {
             }))
     }
 
-    /** Pose un listener et note comment le retirer si le canal survit à ce consommateur. */
+    /**
+     * Pose un listener et note comment le retirer si le canal survit à ce consommateur.
+     *
+     * @returns {Function} le handler réellement posé sur Echo (celui à passer à `unbind`)
+     */
     const bindListener = (ch, event, handler) => {
         const wrapped = guard(handler)
         ch.listen(event, wrapped)
         unbinders.push(channel => channel?.stopListening?.(event, wrapped))
+        return wrapped
     }
 
     const bindWhisperListener = (ch, event, handler) => {
         const wrapped = guard(handler)
         ch.listenForWhisper?.(event, wrapped)
         unbinders.push(channel => channel?.stopListeningForWhisper?.(event, wrapped))
+        return wrapped
+    }
+
+    /**
+     * Retire UN handler d'un événement, ou tous si aucun n'est nommé.
+     *
+     * ⚠️ Le `callback` compte, et c'est le même défaut de classe que le compteur
+     * `consumersByChannel` corrige pour `Echo.leave` : Echo mémoïse ses canaux, donc
+     * plusieurs consommateurs indépendants s'abonnent au MÊME événement du MÊME canal.
+     * Un `unbind(event)` nu les emporte tous — le premier composant démonté rendait les
+     * autres sourds. La production en monte le cas : `Exemples/Home.vue` fournit un seul
+     * canal de présence à trois `MediaBroadcastProvider`, dont chacun écoute l'annonce de
+     * diffusion.
+     *
+     * Le repli sans callback reste : `useChatSimple` appelle `stopListeningForWhisper('typing')`
+     * nu, et il est alors le seul consommateur de cet événement.
+     *
+     * @param {Map} registry           dynamicListeners ou dynamicWhispers
+     * @param {Function} unbindOnEcho  (event, wrapped|undefined) => void
+     */
+    const removeHandler = (registry, unbindOnEcho, event, callback) => {
+        const entries = registry.get(event) ?? []
+
+        if (!callback) {
+            unbindOnEcho(event, undefined)
+            registry.delete(event)
+            return
+        }
+
+        const index = entries.findIndex(entry => entry.handler === callback)
+        if (index === -1) return
+
+        const [entry] = entries.splice(index, 1)
+        // `wrapped` est null quand l'abonnement a été enregistré avant tout `join()` : il
+        // n'y a alors rien à défaire sur Echo, seulement à oublier ici.
+        if (entry.wrapped) unbindOnEcho(event, entry.wrapped)
+        if (!entries.length) registry.delete(event)
     }
 
     const applyCommonHandlers = (ch) => {
@@ -193,14 +235,16 @@ export function useReverbChannel(channelName, options = {}) {
             bindWhisperListener(ch, event, handler)
         })
 
-        // Listeners ajoutés dynamiquement avant un reconnect
-        for (const [event, handlers] of dynamicListeners.entries()) {
-            handlers.forEach(h => bindListener(ch, event, h))
+        // Listeners ajoutés dynamiquement avant un reconnect. Le handler REPOSÉ est un
+        // nouveau `wrapped` (nouveau jeton de vie) : le noter dans l'entrée, sinon un
+        // désabonnement ciblé après reconnexion défairait un handler déjà mort.
+        for (const [event, entries] of dynamicListeners.entries()) {
+            entries.forEach((entry) => { entry.wrapped = bindListener(ch, event, entry.handler) })
         }
 
-        // Whispers dynamiques (client events) ← NOUVEAU
-        for (const [event, handlers] of dynamicWhispers.entries()) {
-            handlers.forEach(h => bindWhisperListener(ch, event, h))
+        // Whispers dynamiques (client events)
+        for (const [event, entries] of dynamicWhispers.entries()) {
+            entries.forEach((entry) => { entry.wrapped = bindWhisperListener(ch, event, entry.handler) })
         }
     }
 
@@ -235,16 +279,22 @@ export function useReverbChannel(channelName, options = {}) {
     /** Ajoute dynamiquement un listener (persiste à travers les reconnexions). */
     const listen = (event, callback) => {
         if (!dynamicListeners.has(event)) dynamicListeners.set(event, [])
-        dynamicListeners.get(event).push(callback)
+        const entry = { handler: callback, wrapped: null }
+        dynamicListeners.get(event).push(entry)
 
         if (currentChannel) {
-            bindListener(currentChannel, event, callback)
+            entry.wrapped = bindListener(currentChannel, event, callback)
         }
     }
 
-    const stopListening = (event) => {
-        currentChannel?.stopListening?.(event)
-        dynamicListeners.delete(event)
+    /** @param {Function} [callback] ne retirer que CE handler — cf. `removeHandler`. */
+    const stopListening = (event, callback = null) => {
+        removeHandler(
+            dynamicListeners,
+            (evt, wrapped) => currentChannel?.stopListening?.(evt, wrapped),
+            event,
+            callback,
+        )
     }
 
     /**
@@ -275,16 +325,22 @@ export function useReverbChannel(channelName, options = {}) {
     /** Ajoute dynamiquement un whisper listener (persiste à travers les reconnexions). */
     const listenForWhisper = (event, callback) => {
         if (!dynamicWhispers.has(event)) dynamicWhispers.set(event, [])
-        dynamicWhispers.get(event).push(callback)
+        const entry = { handler: callback, wrapped: null }
+        dynamicWhispers.get(event).push(entry)
 
         if (currentChannel) {
-            bindWhisperListener(currentChannel, event, callback)
+            entry.wrapped = bindWhisperListener(currentChannel, event, callback)
         }
     }
 
-    const stopListeningForWhisper = (event) => {
-        currentChannel?.stopListeningForWhisper?.(event)
-        dynamicWhispers.delete(event)
+    /** @param {Function} [callback] ne retirer que CE handler — cf. `removeHandler`. */
+    const stopListeningForWhisper = (event, callback = null) => {
+        removeHandler(
+            dynamicWhispers,
+            (evt, wrapped) => currentChannel?.stopListeningForWhisper?.(evt, wrapped),
+            event,
+            callback,
+        )
     }
 
     // --- Auto lifecycle ----------------------------------------------------

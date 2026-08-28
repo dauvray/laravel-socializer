@@ -17,7 +17,7 @@
  * @param {Object} overrides  Overrides partiels appliqués après la création
  * @returns {Object}          Contexte complet compatible avec les composables WebRTC2
  */
-import { reactive, computed, ref, watch } from 'vue'
+import { reactive, computed, ref, watch, markRaw } from 'vue'
 import { vi } from 'vitest'
 import { createCallStateMachine } from '~socializer/components/WebRTC2/Composables/utils/useCallStateMachine.js'
 import { isValidSlug } from '~socializer/components/WebRTC2/Composables/utils/validators.js'
@@ -85,6 +85,11 @@ export function createMockContext(overrides = {}) {
     const connection = reactive({
         usersInRoom: [],
         presenceSynced: true,
+        // Annuaire `user_id` → slug, `markRaw` comme dans createPeerContext : `reactive()`
+        // convertirait la Map en collection réactive, et le double cesserait de se
+        // comporter comme la production sur le seul point qui compte ici (une lecture
+        // impérative, sans traçage).
+        slugByUserId: markRaw(new Map()),
         ...(overrides.connection ?? {}),
     })
 

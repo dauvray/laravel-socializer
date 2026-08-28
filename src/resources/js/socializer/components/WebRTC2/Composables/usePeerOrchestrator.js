@@ -39,12 +39,28 @@ import { useBroadcastPresence } from '~socializer/components/WebRTC2/Composables
 import { useSignalingQueue } from '~socializer/components/WebRTC2/Composables/useSignalingQueue.js'
 import { isValidCallType } from '~socializer/components/WebRTC2/Composables/utils/validators.js'
 
-export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) {
+/**
+ * @param {string} type
+ * @param {string} room
+ * @param {Object} options
+ * @param {Object} [deps]         Dépendances d'infrastructure fournies par l'appelant
+ * @param {Object} [deps.reverb]  Canal de présence Reverb (useReverbPresence), optionnel
+ */
+export function usePeerOrchestrator( type = 'data', room = 'app', options = {}, deps = {}) {
 
     // ── Validation des inputs ────────────────────────────────────────────────
     const normalizedType = isValidCallType(type) ? type : 'data'
     const normalizedRoom = (typeof room === 'string' && room.trim().length > 0) ? room.trim() : 'app'
     // ─────────────────────────────────────────────────────────────────────────
+
+    // ⚠️ Le canal Reverb arrive en PARAMÈTRE, jamais par un `inject` posé ici. Deux
+    // raisons, et la seconde est décisive : c'est la règle de composition du module (une
+    // couche reçoit ses dépendances, elle ne va pas les chercher), et `withSetup` — le
+    // harnais de test — pose ses `provides` avec `Object.entries`, qui IGNORE les clés
+    // Symbol. Un `inject(REVERB_CHANNEL)` enfoui ici serait invisible depuis
+    // `createVirtualPeer`, donc intestable en scénario. L'unique `inject` vit dans
+    // `MediaBroadcastProvider.vue`, qui est un composant.
+    const { reverb = null } = deps
 
     // 1. Initialisation du Contexte et des Sous-Modules
     const context = createPeerContext({
@@ -66,11 +82,13 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}) 
     // 4. Couche streams : elle dépend de la couche appels, jamais l'inverse
     const streamManager = useStreamManager(context, { media, callManager })
 
-    // 5. Couche présence de diffusion : annonce `BROADCAST_STATE` sur le data channel.
-    //    Ne dépend que du transport. Seule la couche signalisation ci-dessous consomme un
-    //    de ses verbes (`noteBroadcastFromSignal`), et elle est instanciée APRÈS : aucun
-    //    cycle possible. L'UI, elle, ne lit que la projection `announcedStreamPeers`.
-    const presence = useBroadcastPresence(context, { transport })
+    // 5. Couche présence de diffusion : le fait « je diffuse », sur deux transports —
+    //    `BROADCAST_STATE` sur le data channel, et un whisper sur le canal de présence.
+    //    Ne dépend que du transport et du canal. Seule la couche signalisation ci-dessous
+    //    consomme un de ses verbes (`noteBroadcastFromSignal`), et elle est instanciée
+    //    APRÈS : aucun cycle possible. L'UI, elle, ne lit que la projection
+    //    `announcedStreamPeers`.
+    const presence = useBroadcastPresence(context, { transport, reverb })
 
     // 6. Couche signalisation : route les signaux serveur entrants vers les handlers.
     //    Instanciée en dernier — personne ne consomme ses verbes, donc elle peut router

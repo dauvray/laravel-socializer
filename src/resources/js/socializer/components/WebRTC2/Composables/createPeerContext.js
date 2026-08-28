@@ -19,7 +19,7 @@
  * - fournir une "source de vérité" unique à tous les composables techniques
  */
 
-import { reactive, computed, ref, inject, onBeforeMount, onUnmounted, watchEffect, effectScope, shallowReactive } from 'vue'
+import { reactive, computed, ref, inject, onBeforeMount, onUnmounted, watchEffect, effectScope, shallowReactive, markRaw } from 'vue'
 import { useAjaxService } from '~estarter/services/AjaxService.js'
 import { usePeer2Store } from '~socializer/stores/peers2.js'
 import { useServerStore } from '~socializer/stores/server.js'
@@ -88,7 +88,9 @@ export function createPeerContext({ type, room, options = {} }) {
         // `usersInRoom` ne peut pas donner (il liste les présents, diffuseurs ou non).
         // Deux écrivains, chacun sur la seule information qu'il voit passer — cf. la
         // table des propriétaires dans CONVENTIONS.md :
-        //   - useBroadcastPresence : annonce `BROADCAST_STATE` reçue sur le data channel
+        //   - useBroadcastPresence : ses trois chemins d'annonce (`BROADCAST_STATE` sur le
+        //                            data channel, `isBroadcasting` embarqué sur les deux
+        //                            routes de peerId, whisper sur le canal de présence)
         //   - usePeerTransport     : appel one-way entrant (`peer.on('call')`), qui
         //                            n'existe que si le distant a un flux vivant
         // Vidé au départ du pair (useCallManager.handleRemoteDeparture).
@@ -123,6 +125,25 @@ export function createPeerContext({ type, room, options = {} }) {
         // déclarer connu. L'invariant que l'écrivain unique garantit est donc directionnel
         // — la connaissance n'avance jamais sans la liste — et non simultané.
         presenceSynced: false,
+
+        // Annuaire `user_id` → slug des membres observés de la room (clés en STRING).
+        //
+        // Sert un seul besoin, et il est de sécurité : un client event Reverb (whisper)
+        // n'est attribuable que par le `user_id` que le serveur régénère sur l'enveloppe
+        // (`accept_client_events_from: 'members'`), or tout le reste du module raisonne en
+        // slugs. Sans annuaire, la seule identité disponible dans une charge utile de
+        // whisper serait celle que l'émetteur a écrite — ce que `securite.md` interdit.
+        //
+        // Même écrivain unique que `usersInRoom`, au même endroit et au même tour : la
+        // seule source qui porte les deux champs est la liste de présence
+        // (`Http/Resources/PresenceUser` : `id` ET `slug`).
+        //
+        // `markRaw` volontaire, et pas de la décoration : `reactive()` convertit les Map
+        // imbriquées en collections réactives, si bien qu'un `.set()` par tour de présence
+        // réveillerait tout `computed` qui l'aurait lue. Cet annuaire n'est lu
+        // qu'impérativement, à la réception d'un whisper — il n'a aucune raison de
+        // participer à la réactivité, et toutes les raisons de ne pas y participer.
+        slugByUserId: markRaw(new Map()),
     })
 
     // LIFECYCLE STATE
@@ -583,13 +604,13 @@ export function createPeerContext({ type, room, options = {} }) {
      * Accesseurs de `media.announcedStreamsMap` — « un flux de ce pair est en route ».
      *
      * Accesseurs plutôt qu'écriture directe, pour la même raison que
-     * beginShutdown/endShutdown : TROIS chemins y écrivent (annonce data channel, appel
-     * entrant, état embarqué sur les deux routes de peerId), la validation du slug doit
-     * donc tenir à un seul endroit.
+     * beginShutdown/endShutdown : QUATRE chemins y écrivent (annonce data channel, appel
+     * entrant, état embarqué sur les deux routes de peerId, whisper sur le canal de
+     * présence), la validation du slug doit donc tenir à un seul endroit.
      * `source` n'est que de la traçabilité (debug) : la présence de la clé est le fait.
      *
      * @param {string} userSlug
-     * @param {'signal'|'call'|'peer-id'} source
+     * @param {'signal'|'call'|'peer-id'|'presence'} source
      */
     const markAnnouncedStream = (userSlug, source = 'signal') => {
         if (!isValidSlug(userSlug)) return false
@@ -685,6 +706,10 @@ export function createPeerContext({ type, room, options = {} }) {
         // un contexte détruit ne sait plus qui est membre, il ne sait pas « personne ».
         connection.usersInRoom = []
         connection.presenceSynced = false
+        // Même raison, et une de plus : l'annuaire est ce qui rend un `user_id` de whisper
+        // traduisible. Le laisser survivre à un contexte détruit laisserait attribuable
+        // une annonce arrivée après la mort du contexte.
+        connection.slugByUserId.clear()
 
         // ⚠️ lifecycle.shutdownCount n'est PAS réinitialisé : le garde doit rester
         // actif après le teardown terminal pour bloquer tout retry résiduel.

@@ -12,6 +12,11 @@ puis suivre sa table de routage vers `docs/INDEX.md`. Ne pas explorer le code au
   symbole trouvé au grep peut venir de la v1.
 - **Imports front toujours via l'alias `~socializer`**, jamais en relatif profond. L'alias est défini
   côté hôte dans `vite.config.js` **et** `vitest.config.js` ; un relatif casserait l'un des deux.
+- **Les whispers Reverb ne sont attribuables que sous `accept_client_events_from: 'members'`, et une
+  clé ABSENTE de `config/reverb.php` vaut `'all'`** (`ConfigApplicationProvider` lit `?? 'all'`, à
+  l'inverse du défaut du paquet Reverb). Sous `'all'`, aucun contrôle d'appartenance au canal et
+  `user_id` forgeable : l'annonce de diffusion de WebRTC2 se refuse alors, en le journalisant une
+  fois — `docs/modules/webrtc2/securite.md`.
 
 @scoped(['vendor/dauvray/laravel-socializer/**'])
 # Travailler dans le paquet socializer

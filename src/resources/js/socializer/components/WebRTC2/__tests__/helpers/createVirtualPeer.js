@@ -76,22 +76,33 @@ export async function settle(rounds = 6) {
  *
  * @param {Object}   config
  * @param {string}   config.slug      Identité du participant (unique par test)
+ * @param {number}   [config.id]      Id utilisateur, tel que le porte la liste de présence
+ *        (`Http\Resources\PresenceUser` livre `id` ET `slug`). Nécessaire au seul chemin
+ *        qui raisonne en id : l'attribution d'un whisper par `metadata.user_id`. Doit être
+ *        LE MÊME que celui donné à `createFakePresenceChannel().subscribe()`.
  * @param {Object}   config.server    Instance de createFakeSignalingServer()
  * @param {string}   [config.room]    Room WebRTC
  * @param {string}   [config.type]    Mode du contexte ('stream', 'data', 'visio'…)
  * @param {string}   [config.peerId]  PeerId PeerJS (déterministe par défaut)
  * @param {Object}   [config.options] Options passées à l'orchestrateur (topology, hubSlug…)
  * @param {Object}   [config.callbacks] Callbacks applicatifs (onDataReceived…)
+ * @param {Object}   [config.reverb]  Abonnement au canal de présence
+ *        (`createFakePresenceChannel().subscribe(...)`). Un seul par ONGLET, partagé par
+ *        tous ses contextes — comme en production, où la page fournit un
+ *        `useReverbPresence` unique à tous ses providers. Absent = aucun whisper, ce qui
+ *        est un état de production valide (hôte qui ne fournit pas son canal).
  * @returns {Promise<Object>} Le pair virtuel
  */
 export async function createVirtualPeer({
     slug,
+    id = null,
     server,
     room = 'room-test',
     type = 'stream',
     peerId = `peer-${slug}`,
     options = {},
     callbacks = {},
+    reverb = null,
 }) {
     // Copie neuve du graphe de modules pour ce pair (cf. en-tête).
     vi.resetModules()
@@ -114,7 +125,7 @@ export async function createVirtualPeer({
     ])
 
     const meStore = useMeStore()
-    meStore.user = { slug, name: slug }
+    meStore.user = { id, slug, name: slug }
 
     const peerStore = usePeer2Store()
     const eventBus = mockEventBus()
@@ -123,8 +134,11 @@ export async function createVirtualPeer({
     // renvoyer le Peer d'un pair monté précédemment.
     resetPeerMock()
 
+    // ⚠️ `reverb` passe en PARAMÈTRE, pas par `provides` : `withSetup` pose ses provides
+    // avec `Object.entries`, qui ignore les clés Symbol — or `REVERB_CHANNEL` en est une.
+    // C'est aussi pourquoi l'orchestrateur reçoit ses dépendances au lieu de les injecter.
     const [api, app] = withSetup(
-        () => usePeerOrchestrator(type, room, options),
+        () => usePeerOrchestrator(type, room, options, { reverb }),
         { provides: { eventBus }, plugins: [pinia] }
     )
 
@@ -174,7 +188,10 @@ export async function createVirtualPeer({
         setActivePinia(pinia)
 
         const [ctxApi, ctxApp] = withSetup(
-            () => usePeerOrchestrator(ctxType, ctxRoom, ctxOptions),
+            // Le même abonnement de présence que le contexte principal : un onglet, un
+            // canal. C'est la configuration qui révèle les collisions entre contextes
+            // (trois providers sur un canal dans `Exemples/Home.vue`).
+            () => usePeerOrchestrator(ctxType, ctxRoom, ctxOptions, { reverb }),
             { provides: { eventBus }, plugins: [pinia] }
         )
 
@@ -207,6 +224,7 @@ export async function createVirtualPeer({
 
     return {
         slug,
+        id,
         peerId,
         room,
         type,
@@ -259,7 +277,11 @@ export async function createVirtualPeer({
  * de microtâches ; `rounds` laisse aux retries le temps de conclure.
  */
 export async function connectRoom(peers, { rounds = 4 } = {}) {
-    const users = peers.map((peer) => ({ slug: peer.slug }))
+    // `id` autant que `slug` : la charge utile d'un canal de présence porte les deux
+    // (`PresenceUser`), et c'est l'`id` qui rend un whisper attribuable. Un pair monté
+    // sans `id` le laisse à `null`, ce que l'annuaire ignore — état de production valide
+    // pour tout scénario qui n'exerce pas les whispers.
+    const users = peers.map((peer) => ({ id: peer.id ?? null, slug: peer.slug }))
 
     // Tous les contextes de chaque onglet reçoivent la composition : en production, un
     // seul canal de présence Reverb alimente le `users` de TOUS les providers de la page

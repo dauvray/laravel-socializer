@@ -177,6 +177,74 @@ describe('usePeerConnections', () => {
             expect(ctx.connection.usersInRoom).toEqual([])
             expect(ctx.connection.presenceSynced).toBe(true)
         })
+
+        // ── L'annuaire user_id → slug ─────────────────────────────────────────
+        //
+        // Troisième écriture de ce même tour, et la seule qui raisonne en id. Elle sert un
+        // besoin de sécurité : un client event Reverb n'est attribuable que par le
+        // `user_id` que le serveur régénère, or tout le module raisonne en slugs. Sans
+        // annuaire, la seule identité lisible dans un whisper serait celle que l'émetteur
+        // a écrite — ce que `securite.md` interdit.
+        it('traduit chaque membre de la liste brute, moi compris', async () => {
+            // Moi compris : ce n'est pas une allowlist mais un dictionnaire, et
+            // `markAnnouncedStream` refuse déjà mon propre slug.
+            await connections.getRoomUsersDiff([
+                { id: 7, slug: ME },
+                { id: 11, slug: 'alice' },
+            ])
+
+            expect(ctx.connection.slugByUserId.get('11')).toBe('alice')
+            expect(ctx.connection.slugByUserId.get('7')).toBe(ME)
+        })
+
+        it('indexe en CHAÎNE, parce que Reverb ne convertit pas le user_id', async () => {
+            await connections.getRoomUsersDiff([{ id: 11, slug: 'alice' }])
+
+            expect([...ctx.connection.slugByUserId.keys()]).toEqual(['11'])
+        })
+
+        it('RECONSTRUIT à chaque tour : un partant n\'est plus traduisible', async () => {
+            // ⭐ Reconstruit et non fusionné : un `user_id` qui n'est plus dans la
+            // composition ne doit plus pouvoir attribuer un whisper.
+            await connections.getRoomUsersDiff([{ id: 11, slug: 'alice' }, { id: 12, slug: 'bob' }])
+
+            await connections.getRoomUsersDiff([{ id: 12, slug: 'bob' }])
+
+            expect(ctx.connection.slugByUserId.get('11')).toBeUndefined()
+            expect(ctx.connection.slugByUserId.get('12')).toBe('bob')
+        })
+
+        it('un tour vide vide l\'annuaire, comme il vide la room', async () => {
+            await connections.getRoomUsersDiff([{ id: 11, slug: 'alice' }])
+
+            await connections.getRoomUsersDiff([])
+
+            expect(ctx.connection.slugByUserId.size).toBe(0)
+        })
+
+        it('est écrit même quand la barrière `waitForMeReady` refuse le tour', async () => {
+            // ⭐ La course que ça ferme : le diffuseur re-annonce dès qu'il voit l'arrivant,
+            // et un client event ne se rejoue pas. Si l'annuaire attendait le peerId local,
+            // le whisper arriverait avant d'être attribuable, et serait perdu pour de bon.
+            ctx = makeCtx()
+            ctx.waitForMeReady = vi.fn(async () => false)
+            const notReady = usePeerConnections(ctx)
+
+            const diff = await notReady.getRoomUsersDiff([{ id: 11, slug: 'alice' }])
+
+            expect(diff.newUsers).toEqual([])
+            expect(ctx.connection.usersInRoom).toEqual([])
+            expect(ctx.connection.slugByUserId.get('11')).toBe('alice')
+        })
+
+        it('ignore un membre sans id — état d\'une charge utile de présence incomplète', async () => {
+            await connections.getRoomUsersDiff([{ slug: 'alice' }, { id: null, slug: 'bob' }])
+
+            expect(ctx.connection.slugByUserId.size).toBe(0)
+            // Et la composition, elle, reste complète : l'annuaire est un service annexe,
+            // pas une condition d'admission.
+            expect(ctx.connection.usersInRoom).toEqual(['alice', 'bob'])
+        })
     })
 
     // ── hasOpenConnection ─────────────────────────────────────────────────────

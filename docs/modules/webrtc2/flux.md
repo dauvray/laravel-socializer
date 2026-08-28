@@ -169,15 +169,16 @@ useConnectionPool.requestOrConnectPeer
 useBroadcastPresence.announceBroadcastStateTo(conn)  → BROADCAST_STATE
 ```
 
-`BROADCAST_STATE` à l'ouverture de connexion est **le** chemin qui informe un arrivant qu'un
-pair diffuse déjà. C'est le seul instant fiable : un `watch` sur `usersInRoom` serait trop tôt,
-le canal n'existe pas encore.
+`BROADCAST_STATE` à l'ouverture de connexion est le chemin qui informe un arrivant qu'un pair
+diffuse déjà **sur le data channel**. C'est le seul instant fiable pour ce transport-là : un `watch`
+sur `usersInRoom` serait trop tôt, le canal n'existe pas encore. Le whisper de présence, lui, n'a
+rien à attendre — c'est justement pourquoi il existe (§ suivant, chemin 4).
 
 ### Comment un arrivant sait qui diffuse
 
-`ctx.media.announcedStreamsMap` (projeté par `ctx.announcedStreamPeers`) est alimenté par **trois
+`ctx.media.announcedStreamsMap` (projeté par `ctx.announcedStreamPeers`) est alimenté par **quatre
 chemins exacts et complémentaires** — c'est un fait, plus une heuristique. Le `source` enregistré
-avec chaque entrée dit lequel des trois a parlé :
+avec chaque entrée dit lequel des quatre a parlé :
 
 1. **Annonce `BROADCAST_STATE`** sur le data channel (`useBroadcastPresence`, source `signal`),
    émise au changement d'état local **et** à l'ouverture de chaque connexion data.
@@ -186,10 +187,15 @@ avec chaque entrée dit lequel des trois a parlé :
    avant le `stream`. C'est ce qui couvre « A diffuse déjà, B arrive » — que l'annonce seule ne
    couvre pas, la connexion data d'un contexte `stream` naissant *avec* l'appel média.
 3. **État embarqué sur les deux routes de peerId** (`isBroadcasting` sur `.AskToPeerID` et
-   `.ResponseToPeerID`, source `peer-id`) : le seul chemin qui n'exige **aucun** contact P2P.
+   `.ResponseToPeerID`, source `peer-id`) : le premier chemin qui n'exige **aucun** contact P2P.
    `usePeerCore` y joint son propre `ctx.isBroadcasting` à chaque demande et à chaque réponse ;
    la table `routes` de l'orchestrateur le note avant de déléguer
    (`useBroadcastPresence.noteBroadcastFromSignal`).
+4. **Whisper sur le canal de présence Reverb** (`webrtc2-broadcast-state`, source `presence`) : le
+   seul chemin qui n'emprunte **rien** à la signalisation P2P — ni route, ni peerId, ni canal data.
+   Émis par le diffuseur au changement d'état local **et** à chaque arrivée observée dans
+   `usersInRoom` (un client event ne s'historise pas : l'arrivant ne peut rien savoir d'un état
+   antérieur à son arrivée, c'est donc au diffuseur de re-parler).
 
 Avant ce mécanisme, `useAwaitedStreams` attendait **tout** pair de `usersInRoom` sans flux : tout
 membre non-diffuseur affichait un spinner pendant `AWAITED_STREAM_TIMEOUT_MS`, et un flux plus lent
@@ -208,23 +214,34 @@ un chemin HTTP + Reverb sans garantie d'ordre — un `false` en retard effacerai
 L'arrêt de diffusion garde ses purges existantes (`handleRemoteDeparture`, `BROADCAST_STATE: false`)
 et le filet `AWAITED_STREAM_TIMEOUT_MS`.
 
-**Ce qui reste non couvert** : l'instant avant la **première** demande de peerId (`waitForMeReady`),
-et le **client non-hub en topologie star**, qui ne demande que le hub. Sur ce dernier point, même
-limite que pour l'annonce data channel : le hub retransmet `envelope.payload` tel quel, l'identité
-d'origine est perdue au-delà de lui — seul le hub enregistre les annonces de ses clients (comme
-`AUDIO_MUTE_TOGGLE`).
+**Pourquoi le quatrième existe** : les trois premiers partagent une limite structurelle — **ils ne
+disent rien quand il n'y a rien à demander.** `requestOrConnectPeer` ne poste sur les routes de
+peerId que si le peerId distant n'est **pas** déjà connu sous bail (`useConnectionPool.js`, lecture
+de `getDialableRemotePeerId` avant l'alternative connexion directe / demande). Un contexte qui
+remonte avec un bail encore valide — cas nominal, et **majoritaire**, d'une navigation SPA à
+l'intérieur de `REMOTE_PEER_ID_LEASE_MS` — se connecte directement, **sans POST, donc sans porteur
+pour `isBroadcasting`** ; et en contexte `stream` un non-diffuseur n'ouvre pas de canal data, ce qui
+ferme aussi le chemin 1. Il ne restait alors que le `peer.call` du diffuseur (chemin 2) : mesuré le
+28/08/2026, vignette à **8 811 ms** sur un run et **jamais** sur l'autre. Le whisper est indépendant
+de tout ça — un saut WebSocket sur un canal déjà rejoint et déjà autorisé — et il ferme du même
+geste le **client non-hub en star**, qui ne demande jamais le peerId d'un diffuseur autre que le hub.
+Épinglé par `scenarios/lateJoiner.test.js`, § « le peerId d'A est déjà connu sous bail », dont la
+contre-épreuve (mêmes coupures, sans canal) est la mesure du 28/08 sous forme de test.
 
-> ⚠️ **Limite structurelle du chemin 3, à connaître avant de compter sur lui : il ne dit rien quand
-> il n'y a rien à demander.** `requestOrConnectPeer` ne poste sur les routes de peerId que si le
-> peerId distant n'est **pas** déjà connu sous bail (`useConnectionPool.js`, lecture de
-> `getDialableRemotePeerId` avant l'alternative connexion directe / demande). Un contexte qui remonte
-> avec un bail encore valide — cas nominal d'une navigation SPA à l'intérieur de
-> `REMOTE_PEER_ID_LEASE_MS` — se connecte directement, **sans POST, donc sans porteur pour
-> `isBroadcasting`** ; et en contexte `stream` un non-diffuseur n'ouvre pas de canal data, ce qui
-> ferme aussi le chemin 1. Il ne reste alors que le `peer.call` du diffuseur (chemin 2), c'est-à-dire
-> l'état d'avant ce mécanisme. Mesuré : la vignette arrive à ≈8,8 s, ou pas du tout.
-> Le suivi est dans [work/webrtc2-todo.md](../../../work/webrtc2-todo.md), § « Annonce de
-> diffusion », fenêtre 3.
+**Ce qui reste non couvert**, et ce n'est plus un problème de porteur mais d'**affichage** :
+`useAwaitedStreams` intersecte les annonces avec `usersInRoom`, écrit derrière `waitForMeReady`. Le
+fait arrive donc avant que la vignette puisse s'afficher, et l'attente est celle du peerId local —
+mesurée à 592 ms. L'annuaire d'identité, lui, est volontairement écrit **devant** cette barrière
+(`_rebuildSlugDirectory`) : sans ça un whisper arrivé tôt serait rejeté définitivement, faute d'être
+traduisible.
+
+> ⚠️ **Deux conditions pour que le chemin 4 existe, et aucune n'est dans le paquet.**
+> 1. L'hôte doit fournir son canal : `provide(REVERB_CHANNEL, reverb)` au-dessus des
+>    `MediaBroadcastProvider` (cf. `Exemples/Home.vue`). Sans lui, tout fonctionne comme avant —
+>    l'injection est optionnelle par contrat.
+> 2. Reverb doit être en `accept_client_events_from: 'members'`. Sous `'all'` il retransmet les
+>    client events **bruts**, sans attribution : la réception est alors *fail-closed* et journalise
+>    la cause une fois. Voir [securite.md](securite.md#identité--jamais-le-champ-déclaratif).
 
 ### Lire l'état du Peer local
 
@@ -272,6 +289,7 @@ PeerJS avec les `GET /app` de nginx pour les distinguer.
 | Appel `vocal` : aucun flux ne part | pas de branche `vocal` dans `connectToPeer`, et le `return true` final annulait le retry | fusionnée avec la branche `visio` (mêmes préconditions de flux) |
 | A diffuse, B arrive, rien ; `Could not connect to peer <uuid>` chez **A** (celui qui diffuse), aléatoire et de longue date | le serveur PeerJS fauche tout pair 60 s après son dernier `HEARTBEAT` (`alive_timeout`) ; le client émet alors `disconnected`, et le `setTimeout` de reconnexion exécutait `peer.id = …` **avant** `peer.reconnect()`. Or `id` est un accesseur **sans setter** (peerjs 1.5.4) et un module ES est en mode strict : `TypeError`, `reconnect()` jamais atteint. Le peer restait mort jusqu'au rechargement de l'onglet, sans rien dire — et l'`OFFER` d'en face, mis en file pour un destinataire inconnu, revenait en `EXPIRE` après `expire_timeout` (5 s) sous la forme de ce message. Vert en test : le mock portait `id` en propriété simple | `peer._lastServerId` seul (le champ dont `reconnect()` repart), et `id` reproduit en accesseur sans setter dans `__mocks__/peerjs.js` |
 | B arrive, **aucune vignette** pendant plusieurs secondes : l'écran reste vide, puis le spinner apparaît — indistinguable d'une panne | les deux seuls chemins d'annonce exigeaient un contact P2P, or B qui ne diffuse pas n'ouvre rien : il ne pouvait rien savoir avant le `peer.call` d'A (échange de peerId complet, sinon le pas de retry suivant) | `isBroadcasting` embarqué sur les deux routes de peerId (§ ci-dessus, chemin 3) |
+| B revient par une navigation SPA, **aucune vignette du tout** (mesuré : 8,8 s, ou jamais) — et c'est le cas majoritaire | le peerId d'A est encore sous bail des deux côtés : `requestOrConnectPeer` compose directement, **aucun POST ne part**, donc le chemin 3 n'a pas de porteur. Adosser l'annonce à la signalisation ne peut rien dire quand il n'y a rien à demander | whisper sur le canal de présence (§ ci-dessus, chemin 4), indépendant de la signalisation P2P |
 | Appel direct : le flux arrive, mais les deux vignettes affichent « Inconnu 👁 0 » (et ma voix me revient) | `usePeerMedia._acquireSlot` forçait `metadata: {}`. Les seuls champs transmis au player du pool (`nickname`, `peer`, `roomId`) ne sont pas des props déclarées de `MediaBroadcastPlayer` : ils retombaient en attributs HTML. Le player n'affichant QUE `streamData.metadata`, tout flux passé par le pool était anonyme — et `isMe` absent laissait le player local non muté | `options.metadata` transmis par le pool, construit par `useStreamManager.handleStreamReceived` (distant) et `useCallManager._enterCallSession` (local) |
 
 ---

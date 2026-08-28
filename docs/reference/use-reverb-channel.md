@@ -25,6 +25,8 @@ Composable Vue 3 permettant de gérer simplement les canaux **Laravel Reverb / E
    - [Nom de canal réactif](#nom-de-canal-réactif)
    - [Listeners dynamiques](#listeners-dynamiques)
    - [Whispers (events client)](#whispers-events-client)
+     - [Le handler reçoit DEUX arguments, et l'identité est dans le second](#le-handler-reçoit-deux-arguments-et-lidentité-est-dans-le-second)
+     - [Se désabonner : nommer son handler, pas l'événement](#se-désabonner--nommer-son-handler-pas-lévénement)
    - [Notifications Laravel](#notifications-laravel)
    - [Contrôle manuel du cycle de vie](#contrôle-manuel-du-cycle-de-vie)
    - [Un canal partagé se libère au compteur](#un-canal-partagé-se-libère-au-compteur)
@@ -126,8 +128,8 @@ useReverbChannel(channelName, options?)
 | `leave()`       | `() => void`                          | Quitte le canal. Appelé automatiquement au démontage. |
 | `listen(event, cb)` | `(string, Function) => void`      | Ajoute un listener dynamique. Persiste à travers les reconnexions. |
 | `stopListening(event)` | `(string) => void`             | ⚠️ Appelle le `stopListening` d'Echo : coupe **tous** les handlers de cet event, y compris ceux déclarés dans `options.listeners`. Le retrait est donc **durable** pour un listener dynamique et **temporaire** pour un statique, que le prochain re-join réapplique. |
-| `listenForWhisper(event, cb)` | `(string, Function) => void` | Écoute un *client event*. Persiste à travers les reconnexions — c'est ce qui évite de passer par `channel().listenForWhisper()`. |
-| `stopListeningForWhisper(event)` | `(string) => void`      | Symétrique de `listenForWhisper`. |
+| `listenForWhisper(event, cb)` | `(string, Function) => void` | Écoute un *client event*. Persiste à travers les reconnexions — c'est ce qui évite de passer par `channel().listenForWhisper()`. Le handler reçoit `(payload, metadata)` : l'identité est dans `metadata.user_id`, [jamais dans le payload](#le-handler-reçoit-deux-arguments-et-lidentité-est-dans-le-second). |
+| `stopListeningForWhisper(event, cb?)` | `(string, Function?) => void` | Symétrique de `listenForWhisper`. **Nommer le handler** sur un canal partagé : sans lui, retire ceux de tous les autres consommateurs — [pourquoi](#se-désabonner--nommer-son-handler-pas-lévénement). |
 | `whisper(event, payload)` | `(string, any) => boolean`  | Émet un *client event* (whisper). Rend `false` — **sans jamais lever** — si la souscription n'est plus vivante. |
 | `channel()`     | `() => EchoChannel \| null`           | Retourne l'instance Echo brute (échappatoire). |
 
@@ -304,6 +306,42 @@ const onInput = () => {
 ```
 
 > ⚠️ Les whispers ne sont disponibles que sur les canaux **privés**, **présence** ou **chiffrés** (ils nécessitent l'authentification).
+
+#### Le handler reçoit DEUX arguments, et l'identité est dans le second
+
+```js
+listenForWhisper('typing', (payload, metadata) => {
+  // payload  : ce que l'émetteur a écrit — déclaratif, donc usurpable
+  // metadata : { user_id } que REVERB a posé sur l'enveloppe — ou rien
+})
+```
+
+Sous `accept_client_events_from: 'members'`, Reverb régénère l'enveloppe et y met le `user_id` de la
+connexion authentifiée ; pusher-js le livre en second argument. Sous `'all'` — **la valeur effective
+quand la clé est absente de `config/reverb.php`** — il retransmet l'événement brut : aucun contrôle
+d'appartenance au canal, et un `user_id` que l'émetteur a pu écrire lui-même.
+
+Tout ce qui doit être *attribué* se lit donc dans `metadata`, et se refuse quand il est absent. Le
+tableau des trois valeurs et leurs conséquences sur les six whispers en place :
+[architecture/signalisation.md](../architecture/signalisation.md#les-client-events-et-la-clé-de-configuration-dont-ils-dépendent).
+
+#### Se désabonner : nommer son handler, pas l'événement
+
+```js
+const onAnnounce = (payload, metadata) => { /* … */ }
+listenForWhisper('broadcast-state', onAnnounce)
+
+stopListeningForWhisper('broadcast-state', onAnnounce)  // ce handler-là
+stopListeningForWhisper('broadcast-state')              // TOUS les handlers de l'événement
+```
+
+⚠️ **Le second argument n'est pas décoratif** — même défaut de classe que `Echo.leave()` sur un canal
+partagé, un étage plus bas. Echo mémoïse ses canaux, donc plusieurs consommateurs indépendants
+écoutent le même nom d'événement sur le même objet, et un `unbind(event)` nu les emporte tous. La
+production en monte le cas : `WebRTC2/Exemples/Home.vue` fournit **un** canal de présence à trois
+`MediaBroadcastProvider`, dont chacun écoute l'annonce de diffusion — sans handler nommé, le premier
+contexte démonté rendait les deux autres sourds. Le repli sans callback reste, pour le consommateur
+qui sait être seul (`useChatSimple` et son `'typing'`).
 
 ---
 

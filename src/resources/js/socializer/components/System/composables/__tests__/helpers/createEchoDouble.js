@@ -19,19 +19,47 @@ import { vi } from 'vitest'
  * production : `PusherPrivateChannel.whisper()` déréférence `pusher.channels.channels[name]` sans
  * garde, donc une souscription révoquée fait lever un `TypeError`.
  */
-export const createFakePrivateChannel = () => ({
-    subscribed: true,
-    listen: vi.fn(),
-    stopListening: vi.fn(),
-    listenForWhisper: vi.fn(),
-    stopListeningForWhisper: vi.fn(),
-    error: vi.fn(),
-    whisper: vi.fn(function () {
-        if (!this.subscribed) {
-            throw new TypeError("Cannot read properties of undefined (reading 'trigger')")
-        }
-    }),
-})
+export const createFakePrivateChannel = () => {
+    /** event → Set<handler>, comme le `bind`/`unbind` de pusher-js sous Echo. */
+    const whisperHandlers = new Map()
+
+    return {
+        subscribed: true,
+        listen: vi.fn(),
+        stopListening: vi.fn(),
+
+        // ⚠️ Ces deux-là ne peuvent PAS être des `vi.fn()` nus : ce qu'on teste au-dessus
+        // d'eux, c'est précisément la granularité du désabonnement (un handler, ou tous).
+        // Un espion sans registre rendrait vert un `unbind(event)` qui emporte les
+        // handlers des autres consommateurs du canal mémoïsé.
+        listenForWhisper: vi.fn((event, handler) => {
+            if (!whisperHandlers.has(event)) whisperHandlers.set(event, new Set())
+            whisperHandlers.get(event).add(handler)
+        }),
+        /** Sans `handler`, retire tout l'événement — sémantique d'`unbind(name)`. */
+        stopListeningForWhisper: vi.fn((event, handler = null) => {
+            if (!handler) {
+                whisperHandlers.delete(event)
+                return
+            }
+            whisperHandlers.get(event)?.delete(handler)
+        }),
+
+        error: vi.fn(),
+        whisper: vi.fn(function () {
+            if (!this.subscribed) {
+                throw new TypeError("Cannot read properties of undefined (reading 'trigger')")
+            }
+        }),
+
+        /** Rejoue un client event entrant : charge utile, puis métadonnées du serveur. */
+        emitWhisper(event, payload, metadata = {}) {
+            for (const handler of whisperHandlers.get(event) ?? []) {
+                handler(payload, metadata)
+            }
+        },
+    }
+}
 
 /** Partie présence de la doublure : chaînable comme Echo, et sans désabonnement possible. */
 export const withPresenceApi = (channel) => {
