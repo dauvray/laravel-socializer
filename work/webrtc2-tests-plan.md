@@ -131,7 +131,7 @@ factice qui est un objet nu — sont dans
 #### ✅ Déjà couvert (6 fichiers, 56 tests)
 
 - [✅] **`usePeerTransport.incomingAuth.test.js`** (15) — `_isAuthorizedIncomingPeer` :
-  - accepte/rejette une connexion data selon l'appartenance à `usersInRoom`
+  - accepte/rejette une connexion data selon l'appartenance à `remotePeers`
   - rejette `from` absent / format de slug invalide
   - anti-usurpation : rejet si peerId réel mappé ≠ `from` déclaré ; accepte si concordance
   - répond/rejette un appel one-way selon l'auth

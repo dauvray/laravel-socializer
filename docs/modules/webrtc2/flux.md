@@ -171,7 +171,7 @@ useBroadcastPresence.announceBroadcastStateTo(conn)  → BROADCAST_STATE
 
 `BROADCAST_STATE` à l'ouverture de connexion est le chemin qui informe un arrivant qu'un pair
 diffuse déjà **sur le data channel**. C'est le seul instant fiable pour ce transport-là : un `watch`
-sur `usersInRoom` serait trop tôt, le canal n'existe pas encore. Le whisper de présence, lui, n'a
+sur `remotePeers` serait trop tôt, le canal n'existe pas encore. Le whisper de présence, lui, n'a
 rien à attendre — c'est justement pourquoi il existe (§ suivant, chemin 4).
 
 ### Comment un arrivant sait qui diffuse
@@ -194,10 +194,10 @@ avec chaque entrée dit lequel des quatre a parlé :
 4. **Whisper sur le canal de présence Reverb** (`webrtc2-broadcast-state`, source `presence`) : le
    seul chemin qui n'emprunte **rien** à la signalisation P2P — ni route, ni peerId, ni canal data.
    Émis par le diffuseur au changement d'état local **et** à chaque arrivée observée dans
-   `usersInRoom` (un client event ne s'historise pas : l'arrivant ne peut rien savoir d'un état
+   `remotePeers` (un client event ne s'historise pas : l'arrivant ne peut rien savoir d'un état
    antérieur à son arrivée, c'est donc au diffuseur de re-parler).
 
-Avant ce mécanisme, `useAwaitedStreams` attendait **tout** pair de `usersInRoom` sans flux : tout
+Avant ce mécanisme, `useAwaitedStreams` attendait **tout** pair de `remotePeers` sans flux : tout
 membre non-diffuseur affichait un spinner pendant `AWAITED_STREAM_TIMEOUT_MS`, et un flux plus lent
 que ce délai n'en affichait plus.
 
@@ -229,7 +229,7 @@ geste le **client non-hub en star**, qui ne demande jamais le peerId d'un diffus
 contre-épreuve (mêmes coupures, sans canal) est la mesure du 28/08 sous forme de test.
 
 **Ce qui reste non couvert**, et ce n'est plus un problème de porteur mais d'**affichage** :
-`useAwaitedStreams` intersecte les annonces avec `usersInRoom`, écrit derrière `waitForMeReady`. Le
+`useAwaitedStreams` intersecte les annonces avec `remotePeers`, écrit derrière `waitForMeReady`. Le
 fait arrive donc avant que la vignette puisse s'afficher, et l'attente est celle du peerId local —
 mesurée à 592 ms. L'annuaire d'identité, lui, est volontairement écrit **devant** cette barrière
 (`_rebuildSlugDirectory`) : sans ça un whisper arrivé tôt serait rejeté définitivement, faute d'être

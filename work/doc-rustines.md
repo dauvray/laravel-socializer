@@ -24,8 +24,8 @@ composer install && vendor/bin/phpunit  # PHP — depuis ce paquet
 ```
 
 > ⚠️ **Ne pas dupliquer les chantiers déjà ouverts.** Plusieurs rustines de la doc y sont déjà
-> cadrées, avec leur analyse : [webrtc2-todo.md](webrtc2-todo.md) (renommage `usersInRoom`,
-> sémantique de `peerInitPromise`, peerId fantôme),
+> cadrées, avec leur analyse : [webrtc2-todo.md](webrtc2-todo.md) (sémantique de
+> `peerInitPromise`, peerId fantôme),
 > [webrtc2-tests-plan.md](webrtc2-tests-plan.md) (trous de couverture),
 > [sass-todo.md](sass-todo.md) (thème sombre, `@extend`). Ce fichier y **renvoie** — une règle, un
 > seul endroit.
@@ -273,8 +273,9 @@ plusieurs de ces noms ont **déjà coûté des régressions**.
       (`resizable_height.js` / `resizable_width.js`, épinglé par
       `directives/__tests__/resizableNaming.test.js`).
 
-- [ ] **`usersInRoom`** — déjà cadré dans [webrtc2-todo.md](webrtc2-todo.md) (150 occurrences /
-      33 fichiers). **Ne pas dupliquer.**
+- [x] **`usersInRoom`** — **fermé le 28/08/2026** : renommé en `connection.remotePeers`, partout
+      y compris sur la surface publique. Le récit et les trois écarts avec l'énoncé sont dans
+      [webrtc2-todo.md](webrtc2-todo.md) — **ne pas dupliquer ici.**
 
 ## Lot 4 — Épingler par un test · sortie C
 

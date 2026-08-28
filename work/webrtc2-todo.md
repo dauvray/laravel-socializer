@@ -89,7 +89,7 @@ avant le déménagement revient à les jeter.
      `(remove, add)` en deux frames — traité correctement — soit **rien du tout** ;
   3. **la branche coalescente de `syncUsersConnections` n'a aucun chemin d'entrée** — en régime
      établi un tour est borné aux microtâches, et la seule fenêtre large (`waitForMeReady` pendant)
-     est celle où le diff n'a **rien** écrit, donc où `usersInRoom` est vide et où personne n'est
+     est celle où le diff n'a **rien** écrit, donc où `remotePeers` est vide et où personne n'est
      perdu. `lastLocalPeerId` ne tombe que quand le dernier consommateur se démonte.
 
   Les deux mécanismes qui produisaient réellement le dommage — **(a)** coupure de présence au
@@ -141,7 +141,7 @@ avant le déménagement revient à les jeter.
 - [ ] **`roomMembers` n'a pas de contrat de fraîcheur** `[M]`
   `getters.js:180` (`isUserInAnyRoom`) : un contexte monté qui ne reçoit plus de `props.users` frais
   épingle le slug pour l'onglet entier, et `removeRemotePeerId` devient un no-op permanent. Même
-  question de conception un étage au-dessus — à traiter avec « Migrer `usersInRoom` vers Pinia »
+  question de conception un étage au-dessus — à traiter avec « Migrer `remotePeers` vers Pinia »
   ci-dessous, pas avant. Le préjudice résiduel se limite désormais à la longévité de l'entrée
   d'allowlist, qui reste gardée par l'égalité `conn.peer`.
 - [x] **Le client star compose son hub même absent de la room** `[S]` — **fermé le 28/08/2026**, sous
@@ -155,8 +155,9 @@ avant le déménagement revient à les jeter.
 
   1. **`ctx.isHubConnected` n'a PAS été utilisé**, alors que l'item le nommait comme « existant déjà
      pour l'exprimer ». Il ne dit que la moitié du prédicat — l'appartenance, pas l'établissement —
-     et la dit via `allUsersInRoom`, qui rajoute mon slug pour rien dans une branche où
-     `hubSlug !== mySlug` par construction. `targets`, déjà calculé quinze lignes plus haut, porte
+     et la disait alors via un computed compensatoire qui rajoutait mon slug pour rien dans une
+     branche où `hubSlug !== mySlug` par construction (ce computed a disparu depuis, avec le
+     renommage plus bas). `targets`, déjà calculé quinze lignes plus haut, porte
      les deux moitiés sans ajouter de seconde source de vérité.
   2. **Un second défaut au même site d'appel, absent de l'énoncé** : la branche client était la
      dernière du fan-out à ne pas passer `preserveRetry`. Un tour de présence est l'appelant
@@ -165,7 +166,7 @@ avant le déménagement revient à les jeter.
      geste, épinglé à part.
 
   La réécriture prévue de « star : un client ne se connecte qu'au hub » était bien nécessaire, et le
-  **contrôle négatif l'a confirmée load-bearing** : pré-semis de `usersInRoom` retiré, le cas
+  **contrôle négatif l'a confirmée load-bearing** : pré-semis de `remotePeers` retiré, le cas
   rougit — sans lui il aurait verdi par absence du hub dans `targets`, soit pour la raison inverse
   de ce qu'il épingle.
 - [ ] **Un canal de présence mémoïsé peut rendre `users` définitivement vide** `[S]` — piège latent,
@@ -175,7 +176,7 @@ avant le déménagement revient à les jeter.
   compteur de consommateurs, qui est là pour ça) — mais Echo mémoïse ses canaux, donc le canal pusher
   sous-jacent reste `subscribed: true`. Un consommateur qui se démonte puis se remonte sur ce nom
   re-branche son `here()` sur un canal qui ne ré-émettra **jamais** `subscription_succeeded` : son
-  `users` reste à `[]` pour de bon, alors que `leave()` vient de le vider. `usersInRoom` étant
+  `users` reste à `[]` pour de bon, alors que `leave()` vient de le vider. `remotePeers` étant
   l'allowlist des deux gardes d'autorisation, le contexte n'admettrait plus personne.
   Non joignable aujourd'hui : `Exemples/Home.vue` est le seul consommateur de présence de son canal,
   et `Server.vue`, `Room.vue`, `ChatComponent.vue` utilisent des noms distincts. Le jour où deux
@@ -244,7 +245,7 @@ avant le déménagement revient à les jeter.
      l'arrivant, or un client event ne se rejoue pas — si l'arrivant ne peut pas encore traduire le
      `user_id`, le fait est perdu **définitivement**. D'où `_rebuildSlugDirectory` écrit **devant** la
      barrière `waitForMeReady`, seule écriture de ce tour à la précéder. Elle ne concède rien : la
-     garde d'affichage est l'intersection de `useAwaitedStreams` avec `usersInRoom`, qui reste
+     garde d'affichage est l'intersection de `useAwaitedStreams` avec `remotePeers`, qui reste
      derrière.
   3. **`stopListeningForWhisper(event)` emportait les handlers de TOUS les consommateurs du canal** —
      même défaut de classe que `Echo.leave()`, un étage plus bas, et joignable dès qu'une page monte
@@ -252,7 +253,7 @@ avant le déménagement revient à les jeter.
      désormais par callback, repli nu conservé pour `useChatSimple`.
 
   **Ce qui reste, et n'est plus une fenêtre de porteur** : le fait arrive avant que la vignette
-  puisse s'afficher, parce que `awaitedPeers` intersecte `usersInRoom` — écrit derrière
+  puisse s'afficher, parce que `awaitedPeers` intersecte `remotePeers` — écrit derrière
   `waitForMeReady`, mesuré à 592 ms. Borne d'affichage, pas d'annonce. La fermer voudrait dire
   toucher à l'intersection, ce qui rouvrirait les vignettes fantômes de pairs déjà partis : **non
   souhaitable, décision assumée.**
@@ -300,7 +301,7 @@ avant le déménagement revient à les jeter.
   **Verdict sur `10d634f` : positif.** Le champ est sur le fil (frame brute capturée,
   `private-App.Models.User.35`), il arrive en 592 ms, et le front le rend en 15 ms. La contre-épreuve
   du 13/08 tient — et elle tient **sous contrôle positif**, ce qui est le point de méthode à garder :
-  sans vérifier d'abord que B voit `["admin"]` dans `usersInRoom` et que la présence est abonnée,
+  sans vérifier d'abord que B voit `["admin"]` dans `remotePeers` et que la présence est abonnée,
   « aucune vignette » aurait été vert par panne de présence, pas par correction.
 
   Trois pièges de harnais mesurés, à ne pas re-payer :
@@ -320,18 +321,42 @@ avant le déménagement revient à les jeter.
 
 ## usePeerConnections
 
-- [ ] **`usersInRoom` : sémantique trompeuse (filtrage prématuré)** `[M]`
-  `connection.usersInRoom` stocke uniquement les *peers distants* (moi filtré à la source dans
-  `_doGetRoomUsersDiff`) — le nom suggère « tous les users de la room » alors qu'il signifie « peers
-  auxquels je dois me connecter ». `allUsersInRoom` n'existe que pour compenser ce filtrage
-  prématuré (aller-retour : liste complète Reverb → retire moi → rajoute moi).
-  → renommer en `connection.remotePeers`, exposer `usersInRoom = [...remotePeers, mySlug]` (liste
-  neutre complète) et appliquer le filtre `!== mySlug` explicitement dans la logique de connexion.
-  Supprime `allUsersInRoom` comme computed compensatoire.
-  ⚠️ `usersInRoom` sert d'allowlist dans `_isAuthorizedIncomingPeer` et dans le prédicat prévu en
-  A2 de l'audit sécurité — le renommage touche un chemin de sécurité.
-- [ ] **Migrer `usersInRoom` vers Pinia** `[M]`
-  `ctx.connection.usersInRoom` est un tableau mutable partagé hors store. Le déplacer dans
+- [x] **`usersInRoom` : sémantique trompeuse (filtrage prématuré)** `[M]` — **fermé le 28/08/2026**,
+  sous tests verts. `connection.remotePeers` remplace `usersInRoom` **partout**, y compris sur la
+  surface publique (`api.remotePeers`) et dans les consts locales des trois fonctions de garde.
+  Le nom vit dans [architecture.md](../docs/modules/webrtc2/architecture.md) et
+  [securite.md](../docs/modules/webrtc2/securite.md) ; ce qui suit est ce que la passe a appris et
+  qui ne se déduit ni du diff ni de l'énoncé.
+
+  **Trois écarts avec l'énoncé ci-dessus, à ne pas re-dériver :**
+
+  1. **La « liste neutre complète » n'a pas été exposée, et ne doit pas l'être.** L'énoncé prévoyait
+     de garder `usersInRoom = [...remotePeers, mySlug]`. Mesuré : **aucun lecteur ne la voulait** —
+     ni les trois `forEach` de l'orchestrateur, ni `useAwaitedStreams`, ni `StreamSimpleUI`. Elle
+     n'aurait pas *supprimé* le computed compensatoire, elle lui aurait donné le nom qui signifiait
+     jusque-là le contraire : même nom, sens inversé, zéro consommateur — le pire cas d'un
+     renommage, parce qu'il ne lève aucune erreur.
+  2. **`allUsersInRoom` n'avait qu'un seul lecteur réel, `isHubConnected`.** Il était bien destructuré
+     par `useMediaBroadcast`, mais jamais ré-exporté ni utilisé. Le prédicat s'écrit maintenant en
+     deux termes explicites — le hub est moi, ou le hub est dans `remotePeers` — ce qui a rendu le
+     computed supprimable, pas seulement renommable.
+  3. **Le filtre `!== mySlug` « à appliquer explicitement dans la logique de connexion » est devenu
+     sans objet** : la liste ne me contient plus par construction, elle ne l'a d'ailleurs jamais fait.
+     C'était le nom qui suggérait qu'un filtre manquait quelque part.
+
+  **Le mode de panne de cette passe était silencieux**, et c'est le fait le plus réutilisable :
+  `connection` est un `reactive` à spread d'overrides et les deux gardes lisent
+  `Array.isArray(…) ? … : []`. Un site de test oublié n'aurait donc **pas** échoué — il aurait écrit
+  une propriété orpheline, la garde aurait lu `[]`, et le verdict aurait basculé vers « refusé »,
+  que la moitié des tests d'autorisation attend déjà. Parade employée : un accesseur jetant sur
+  l'ancien nom, posé dans `createPeerContext` **et** `createMockContext` le temps de la migration,
+  retiré avant le commit. À reprendre pour tout renommage d'un champ de `connection`.
+
+  ⚠️ **La mention « le prédicat prévu en A2 de l'audit sécurité » était une référence pendante** :
+  `securite.md` ne porte plus de section numérotée, et ce prédicat est **livré** depuis, sous la
+  forme de `utils/isAuthorizedPeer.js`.
+- [ ] **Migrer `remotePeers` vers Pinia** `[M]`
+  `ctx.connection.remotePeers` est un tableau mutable partagé hors store. Le déplacer dans
   `peerStore` avec une action `computeRoomDiff(newSlugs)` synchrone (lecture + écriture atomique)
   supprimerait le mutex `_diffLock` et rendrait la liste réactive dans les composants.
   Dépend du renommage ci-dessus.

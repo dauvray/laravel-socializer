@@ -78,7 +78,7 @@ en clair. Pas de modération centralisée possible : chaque pair reçoit indépe
 d'architecture délibéré**, qui rend possibles côté hub :
 - le rate-limiting par identité PeerJS vérifiée (`_isHubRateLimited`) ;
 - la garde de taille (`MAX_PAYLOAD_BYTES`) ;
-- le filtrage des destinataires (`envelope.to` ∩ `usersInRoom`) ;
+- le filtrage des destinataires (`envelope.to` ∩ `remotePeers`) ;
 - la **modération applicative** (prof relayant des messages d'élèves, filtrage, journalisation).
 
 Si le hub est compromis (compte usurpé, machine vérolée), il a accès à toutes les conversations data
@@ -126,7 +126,7 @@ L'identité de l'émetteur se lit **toujours** depuis la connexion — `resolveR
 - **Le whisper d'annonce de diffusion** (canal de présence, `webrtc2-broadcast-state`) lit
   l'identité dans `metadata.user_id` — le champ que **Reverb régénère** sur l'enveloppe à partir de
   la connexion authentifiée — puis la traduit en slug par `ctx.connection.slugByUserId`, annuaire
-  écrit depuis la liste de présence par le seul écrivain de `usersInRoom`. Sa charge utile ne porte
+  écrit depuis la liste de présence par le seul écrivain de `remotePeers`. Sa charge utile ne porte
   aucune identité, et un `user_id` absent de l'annuaire ne désigne pas un membre observé de la room :
   rien n'est enregistré.
 
@@ -156,7 +156,7 @@ supprimer une vraie — la réception **marque et ne purge jamais**, exactement 
 
 ### `_isAuthorizedIncomingPeer` — deux chemins disjoints
 
-Un pair entrant est admis par **(a)** appartenance à `ctx.connection.usersInRoom` (présence Reverb),
+Un pair entrant est admis par **(a)** appartenance à `ctx.connection.remotePeers` (présence Reverb),
 **ou** **(b)** appel direct vérifié : `peerStore.getRemotePeerId(from)` existe **et** correspond à
 `conn.peer` — allowlist et anti-usurpation fusionnées en une seule condition stricte.
 
@@ -213,11 +213,11 @@ l'admission.
 
 ### Une liste vide n'est pas une réponse
 
-`usersInRoom` vide ne dit pas « ce pair n'est pas membre », il dit « je ne sais pas encore qui est
+`remotePeers` vide ne dit pas « ce pair n'est pas membre », il dit « je ne sais pas encore qui est
 membre ». Les deux gardes qui lisent le chemin (a) — `_isAuthorizedIncomingPeer` et
 `responseRemotePeerConnection` — **attendent la première synchronisation de présence du contexte
 avant de refuser** (`ctx.waitForPresenceSync`, adossé au fait `connection.presenceSynced` qu'écrit
-l'unique écrivain de `usersInRoom`). Jamais avant d'admettre : le chemin (b) reste immédiat, donc la
+l'unique écrivain de `remotePeers`). Jamais avant d'admettre : le chemin (b) reste immédiat, donc la
 visio n'est pas ralentie et `data-app` — qui n'a aucun canal de présence — n'attend rien.
 
 Sans cette distinction, tout contact légitime reçu pendant le démarrage d'un contexte est refusé, et
@@ -225,7 +225,7 @@ Sans cette distinction, tout contact légitime reçu pendant le démarrage d'un 
 tard (`SIGNALING_STALE_MS`), et une MediaConnection refusée n'est notifiée à personne (PeerJS ne
 signale pas le `close()` d'un appel jamais répondu) — l'émetteur voit son `peerConnection` en
 `connecting`, donc `hasOpenConnection` vraie, donc son moteur de retry s'arrête. L'ordre de
-production met systématiquement l'arrivant du mauvais côté : son `usersInRoom` n'est écrit qu'après
+production met systématiquement l'arrivant du mauvais côté : son `remotePeers` n'est écrit qu'après
 `waitForMeReady` (donc après le peerId local), alors que la demande du diffuseur ne coûte qu'un
 aller-retour HTTP + Reverb.
 
@@ -342,7 +342,7 @@ est le cas particulier (poids 1).
 
 `Composables/utils/isAuthorizedPeer.js` répond à une seule question — « ai-je le droit d'ouvrir une
 connexion vers ce pair ? » — et rend `true` sur **exactement les deux chemins** de l'admission
-entrante : slug valide, **et** (membre de `connection.usersInRoom`, **ou** inscrit dans
+entrante : slug valide, **et** (membre de `connection.remotePeers`, **ou** inscrit dans
 `session.authorizedCallPeers`). C'est un utilitaire pur, sans état, importable de partout ; la
 symétrie avec `_isAuthorizedIncomingPeer` est délibérée, une seule définition de « pair légitime »
 par contexte.
@@ -363,7 +363,7 @@ est la bonne. Distinguer « ce pair est parti » de « je ne lui ai pas encore d
 
 **Le garde de `connectToPeer` va au plus tôt, pas dans la section critique.** Le plan d'origine le
 voulait après l'acquisition du verrou `inFlightConnections` ; c'est inutile — `connectToPeer` est
-**entièrement synchrone**, rien ne peut s'intercaler entre la lecture de `usersInRoom` et
+**entièrement synchrone**, rien ne peut s'intercaler entre la lecture de `remotePeers` et
 `peer.call()`. L'exigence réelle est « avant `addRemotePeerId` » : cette écriture vit **hors** du
 verrou, et empoisonner le mapping est la seconde moitié de la faille — le mapping sert d'allowlist
 au chemin (b) de l'admission entrante, donc un attaquant qui s'y inscrit s'auto-délivre un brevet
@@ -372,7 +372,7 @@ d'« interlocuteur d'appel vérifié ».
 **Le second garde ne peut casser aucun chemin que le premier n'ait déjà fermé** : c'est le *même*
 prédicat sur le *même* contexte. Refuser de livrer son peerId à un pair vers lequel `connectToPeer`
 refuserait d'ouvrir ne retire rien. La symétrie tient parce que les deux chemins d'autorisation sont
-eux-mêmes symétriques : `usersInRoom` vient du même canal Reverb pour les deux parties, et
+eux-mêmes symétriques : `remotePeers` vient du même canal Reverb pour les deux parties, et
 `authorizedCallPeers` est marqué **des deux côtés** par `useCallManager` (`acceptCallFromPeer` chez
 l'appelé, `openCallBetweenPeer` chez l'appelant).
 
@@ -419,7 +419,7 @@ sans passer par là.
 > « nominaux » de `openCallBetweenPeer` et de `responseRemotePeerConnection` décrivaient, sans le
 > dire, le chemin que ces gardes ferment : le premier appelait bien `startCallWithPeer` mais sur un
 > `core` mocké qui n'enregistrait **aucune** demande en vol, le second répondait à `bob` avec un
-> `usersInRoom` vide. Un `beforeEach` qui pose la précondition n'est pas un assouplissement du
+> `remotePeers` vide. Un `beforeEach` qui pose la précondition n'est pas un assouplissement du
 > test — c'est l'inverse. Quand un garde nouvellement posé laisse une suite entière verte,
 > l'hypothèse à écarter en premier est que le harnais décrivait déjà le trou.
 

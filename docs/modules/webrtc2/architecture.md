@@ -84,8 +84,8 @@ Un invariant se tient à un seul endroit, vérifiable au grep.
 | timers de retry connexion | `useConnectionPool` | `clearRetry` / `clearAllRetries` |
 | routage des signaux serveur | `useSignalingQueue` (table `routes` construite par l'orchestrateur) | exposer un verbe et l'inscrire dans la table — pas de `watch` sur `ctx.lastRoomSignal` ailleurs |
 | `media.announcedStreamsMap` | deux écrivains assumés, chacun sur la seule information qu'il voit : `useBroadcastPresence` — qui porte à lui seul **trois** des quatre chemins d'annonce (`BROADCAST_STATE` sur le data channel, `noteBroadcastFromSignal` pour l'`isBroadcasting` des routes de peerId, `handleBroadcastStateWhisper` pour le canal de présence) — et `usePeerTransport` (appel one-way entrant) ; purge par `useCallManager.handleRemoteDeparture`. ⚠️ les chemins `peer-id` et `presence` marquent mais ne purgent **jamais**, cf. [flux.md](flux.md#comment-un-arrivant-sait-qui-diffuse) | `ctx.markAnnouncedStream` / `ctx.clearAnnouncedStream` (jamais d'écriture directe), lecture via `ctx.announcedStreamPeers` |
-| `peerStore.roomMembers[contextId]` (index de présence) | `usePeerConnections._doGetRoomUsersDiff`, unique producteur de `usersInRoom` ; purgé par `createPeerContext.destroy` | `peerStore.isUserInAnyRoom(slug)` en lecture — c'est le prédicat de `removeRemotePeerId` |
-| `connection.slugByUserId` (annuaire d'identité de la room) | `usePeerConnections._doGetRoomUsersDiff`, même écrivain que `usersInRoom` mais **écrit devant la barrière `waitForMeReady`** : un whisper arrivé tôt doit rester traduisible, et l'annuaire n'autorise rien (la garde d'affichage est l'intersection de `useAwaitedStreams` avec `usersInRoom`) ; purgé par `createPeerContext.destroy` | lecture directe, uniquement pour traduire un `metadata.user_id` de client event en slug |
+| `peerStore.roomMembers[contextId]` (index de présence) | `usePeerConnections._doGetRoomUsersDiff`, unique producteur de `remotePeers` ; purgé par `createPeerContext.destroy` | `peerStore.isUserInAnyRoom(slug)` en lecture — c'est le prédicat de `removeRemotePeerId` |
+| `connection.slugByUserId` (annuaire d'identité de la room) | `usePeerConnections._doGetRoomUsersDiff`, même écrivain que `remotePeers` mais **écrit devant la barrière `waitForMeReady`** : un whisper arrivé tôt doit rester traduisible, et l'annuaire n'autorise rien (la garde d'affichage est l'intersection de `useAwaitedStreams` avec `remotePeers`) ; purgé par `createPeerContext.destroy` | lecture directe, uniquement pour traduire un `metadata.user_id` de client event en slug |
 | `session.authorizedCallPeers` (allowlist du garde sortant) | `useCallManager`, **seul écrivain** : marque à l'acceptation (`acceptCallFromPeer`) et à l'ouverture (`openCallBetweenPeer`) — les deux marquages sont eux-mêmes gardés, cf. ci-dessous —, purge au départ du pair et au `resetCallState` | `ctx.markAuthorizedCallPeer` / `isAuthorizedCallPeer` / `clearAuthorizedCallPeer` / `clearAllAuthorizedCallPeers` — jamais d'écriture directe, et **jamais** `session.currentCallUsers` à sa place (état d'affichage, cf. [securite.md](securite.md)) |
 
 L'état *plat* partagé (`session.currentCallUsers`, via `ctx.addCurrentCallUser` &co.) n'a
@@ -432,7 +432,7 @@ scénarios) et `_hubRateLimiter` (arbitrage « verbe `.reset()` plutôt que Pini
   autant de timers. Ne pas déduire le comportement de l'une de celui de l'autre
 - **Verrou de `syncUsersConnections`** : il **coalesce**, il ne jette pas. Un `return` sec sur
   verrou tenu ne perdait pas qu'une action : `getRoomUsersDiff` est l'unique écrivain de
-  `usersInRoom`, `presenceSynced` et `roomMembers`, donc un tour sauté laissait **trois** états
+  `remotePeers`, `presenceSynced` et `roomMembers`, donc un tour sauté laissait **trois** états
   périmés d'un coup — dont l'allowlist de présence que lisent les deux gardes d'autorisation. Et la
   fenêtre est celle de `waitForMeReady` (jusqu'à 15 s au démarrage), c'est-à-dire le moment où la
   composition bouge le plus. On retient donc la **dernière** liste reçue pendant le tour et on la
@@ -440,7 +440,7 @@ scénarios) et `_hubRateLimiter` (arbitrage « verbe `.reset()` plutôt que Pini
   présence n'ayant pas d'historique. Le drain s'arrête sur `isShuttingDown` — rejouer après
   `beginShutdown()` rouvrirait ce que le teardown vient de fermer — mais les appelants coalescés
   résolvent **toujours**. Épinglé par `useConnectionPool.test.js` (§ `syncUsersConnections`)
-- **Synchroniser n'est pas savoir.** `_doGetRoomUsersDiff` écrit `usersInRoom` et `roomMembers` à
+- **Synchroniser n'est pas savoir.** `_doGetRoomUsersDiff` écrit `remotePeers` et `roomMembers` à
   **tous** les tours, `presenceSynced` seulement sur un tour qui a **observé** quelque chose —
   `users.length > 0`, mesuré sur la liste **brute**, avant le filtrage de mon propre slug. Les deux
   moitiés comptent. Le tour sur liste vide est le **seul** capable de purger le dernier partant
@@ -494,7 +494,7 @@ scénarios) et `_hubRateLimiter` (arbitrage « verbe `.reset()` plutôt que Pini
   `_handleConnectionAttempt`. Elle n'a pu être resserrée qu'**après** la réconciliation, et l'ordre
   était contraint : cet appel inconditionnel *était*, par accident, la seule réconciliation que le
   module possédait — la seule à rattraper un hub ayant rechargé sans que son départ soit annoncé.
-  **Borne assumée** : `targets` se construit sur `usersInRoom`, donc seul le chemin **(a)** de
+  **Borne assumée** : `targets` se construit sur `remotePeers`, donc seul le chemin **(a)** de
   l'autorisation (présence) est couvert ; un hub admis par le seul chemin **(b)**
   (`authorizedCallPeers`, l'appel direct hors room) ne serait pas composé par un tour de présence —
   même borne que le mesh, et un hub de diffusion n'est pas un interlocuteur d'appel direct.

@@ -77,7 +77,7 @@ Verbes : `initialize` · `cleanup` · `watchUsers` · `sendData` · `getWebcamSt
 `clearSeenInvites` / `isInviteDuplicate`.
 
 État exposé : `currentStream` · `screenStream` · `remoteStreams` · `remoteScreens` ·
-`announcedStreamPeers` · `usersInRoom` · `isStreaming` · `isCapturing` · `isAudioStream` ·
+`announcedStreamPeers` · `remotePeers` · `isStreaming` · `isCapturing` · `isAudioStream` ·
 `callState` · `callStatus` · `isCallInProgress` · `currentCallUsers` · `inviteAbandonedSignal` ·
 `isMuted` ·
 `isVideoEnabled` · `streamStates` · `topology` / `hubSlug` / `isHub` / `isHubConnected` ·

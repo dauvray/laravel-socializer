@@ -111,7 +111,7 @@ de présence re-déclenche le watcher à chaque changement. Voir `syncSequential
 
 ⚠️ **Entre onglets, `connectRoom` est concurrent — et c'est un angle mort.** Il livre la présence à
 tous les pairs dans le même tick, ce qui referme avant de l'ouvrir la fenêtre « je connais mon peerId,
-pas encore ma room » : chez un arrivant, `usersInRoom` n'est écrit qu'après `waitForMeReady` (donc
+pas encore ma room » : chez un arrivant, `remotePeers` n'est écrit qu'après `waitForMeReady` (donc
 après le peerId local), alors que la demande du diffuseur ne coûte qu'un aller-retour HTTP + Reverb.
 Cette fenêtre est réelle et a produit une régression (les gardes d'admission y refusaient tout
 contact légitime). Un scénario qui la vise livre donc la présence explicitement, un pair après
@@ -249,7 +249,7 @@ verbe demanderait de monter `Notifications.vue`, et le scénario ne parlerait pl
   ce qu'il initie fonctionne sans correctif. En mode `stream` le flux ne part que du diffuseur : il
   faut donc **faire diffuser le survivant** et asserter que le revenant reçoit son flux. Se tromper
   de direction donne un test vert qui ne prouve rien.
-- **`useConnectionPool.test.js` stube `getRoomUsersDiff`**, donc `ctx.connection.usersInRoom` n'y est
+- **`useConnectionPool.test.js` stube `getRoomUsersDiff`**, donc `ctx.connection.remotePeers` n'y est
   jamais réellement écrit : tout cas qui exerce une lecture de la composition doit la **pré-semer**
   lui-même. Sans ce pré-semis, un test de réconciliation ne voit aucun membre et verdit pour la
   mauvaise raison.
@@ -273,7 +273,7 @@ verbe demanderait de monter `Notifications.vue`, et le scénario ne parlerait pl
 - **Un garde qu'aucune contre-épreuve ne peut faire rougir ment sur son utilité.** En neutralisant les
   gardes un par un du watcher de perte, l'un d'eux — `isValidSlug` — n'a fait rougir aucun cas :
   `isAuthorizedPeer` le porte déjà en première ligne. Il a été retiré, pas commenté. Corollaire pour
-  le test qui vise ce refus : il doit **empoisonner la composition** (`usersInRoom = ['slug invalide']`),
+  le test qui vise ce refus : il doit **empoisonner la composition** (`remotePeers = ['slug invalide']`),
   sinon il sort sur « pas membre » et n'épingle pas ce qu'il croit.
 - **Trois chemins alimentent `announcedStreamPeers` : un scénario qui n'en coupe aucun ne prouve
   aucun des trois.** C'est la version « annonce » du piège de direction ci-dessus. Pour isoler le
