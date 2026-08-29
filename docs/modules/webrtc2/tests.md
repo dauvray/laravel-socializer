@@ -360,6 +360,21 @@ verbe demanderait de monter `Notifications.vue`, et le scénario ne parlerait pl
   (`lateJoiner`) — et **le cas pré-existant « B est averti qu'A diffuse » reste vert**, puisqu'il
   passe par le data channel. C'est ce dernier point qui donne le rayon d'action : une contre-épreuve
   qui fait tomber plus que prévu dit qu'on a couplé deux chemins.
+- **Un seul pair, une seule connexion, un seul type : c'est là que naissent les verts gratuits.**
+  Quatre contre-épreuves ont rougi **zéro** cas en écrivant `usePeerOrchestrator.*`
+  (29/08/2026), et les quatre fois la faute était dans le test. Le motif est toujours le même —
+  **un périmètre à un seul élément ne distingue pas « cible précise » de « tout le monde »** :
+
+  | Ce que le cas croyait prouver | Pourquoi il était vert sans le code |
+  |---|---|
+  | `sendDataToPeer` transmet ses destinataires | avec un seul pair, diffuser à toute la room, c'est lui |
+  | `stopScreenCapture` ne ferme QUE `screen` | sans connexion `stream` à côté, rien ne distingue les deux types |
+  | la garde `isCapturing` de l'arrêt natif | la première fermeture vide la room, la seconde sort par l'early-return de `closePeerConnection` |
+  | le wrap de fermeture n'est pas posé hors `stream` | le flux semé était d'un AUTRE type que la connexion, or `handleRemoteDeparture` n'emporte que le type qui se ferme |
+
+  La parade est mécanique : **deux pairs, deux connexions, deux types** dès qu'un cas affirme une
+  portée. Et le commentaire qui dit pourquoi le second existe, sans quoi un lecteur le retirera
+  « pour simplifier ».
 
 ---
 
@@ -368,9 +383,12 @@ verbe demanderait de monter `Notifications.vue`, et le scénario ne parlerait pl
 Sans décompte, parce qu'il pourrit : l'état exact se lit dans
 [`work/webrtc2-tests-plan.md`](../../../work/webrtc2-tests-plan.md).
 
-- `usePeerOrchestrator` — largement à écrire, et **plus bloqué depuis le 29/08/2026**. Un seul cas
-  attend le déménagement du déballage d'enveloppe star dans `usePeerTransport` : celui du wrap
-  `onDataReceived`. Tout le reste n'asserte rien sur le routage star et lui survivra.
+- `usePeerOrchestrator` — **couvert depuis le 29/08/2026**, en quatre fichiers : le câblage de
+  l'annonce de diffusion (`.broadcastPresence`), les wraps de callbacks et la normalisation des
+  entrées (`.callbacks`), le teardown (`.teardown`), les flux locaux et les bascules (`.media`).
+  Un seul cas reste ouvert, et il attend le déménagement du déballage d'enveloppe star dans
+  `usePeerTransport` : la branche hub du wrap `onDataReceived`. Rien d'autre n'asserte sur le
+  routage star.
 - `useMediaBroadcast` — à écrire, sans dépendance au point précédent.
 - `usePeerTransport` — couvert depuis le 29/08/2026 : `sendData` star
   (`usePeerTransport.star.test.js`), le **câblage** du rate-limiting hub et la taille du chemin hub

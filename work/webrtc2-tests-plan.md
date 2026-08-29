@@ -34,7 +34,7 @@ et le seul étage où les incendies du paquet étaient détectables). Le harnais
 | Tâche 3 · `usePeerMedia` — `.players` + `.streams` | ✅ | — |
 | Tâche 4 · `usePeerTransport` — 8 fichiers (sécurité, `peer-unavailable`, singleton, mesh, **star**, reconnexion, `forwardStar`, `iceRefresh`) | ✅ | — |
 | Tâche 5 · `createPeerContext` | ✅ | — |
-| Tâche 6 · `usePeerOrchestrator` | **ouverte** (1 cas sur 16 en attente) | seul `broadcastPresence` est couvert ; tout est écrivable sauf le wrap `onDataReceived` |
+| Tâche 6 · `usePeerOrchestrator` — 4 fichiers (`broadcastPresence`, **`callbacks`**, **`teardown`**, **`media`**) | ✅ sauf 1 cas | la branche **hub** du wrap `onDataReceived`, qui attend le chemin (a) du routage star |
 | Tâche 7 · `useMediaBroadcast` | **ouverte** | seul `watchUsers` est couvert ; plus rien ne la bloque |
 | Couches extraites de l'orchestrateur — `useConnectionPool`, `useCallManager`, `useStreamManager`, `useSignalingQueue` | ✅ | — |
 | Store — `peers2Store` : runtime, observabilité, `remotePeerId`, **phase du Peer**, **registre des contextes** | ✅ | — |
@@ -44,14 +44,18 @@ et le seul étage où les incendies du paquet étaient détectables). Le harnais
 | Perte de connexion → re-composition — `scenarios/peerDeparture` (« A recharge en chevauchement »), `useConnectionPool`, `createPeerContext` | ✅ | — |
 | Hors WebRTC2 — `Chat/dateSeparatorRender`, `System/useReverbChannel` (dont le désabonnement de whisper par callback), `User/coverCallButton` | amorces | plan Chat : [chat-tests-plan.md](chat-tests-plan.md) |
 
-✅ **Les tâches 6 et 7 ne sont plus bloquées (29/08/2026).** Elles l'ont été du 13/08 au 29/08, sur
-une affirmation vérifiée depuis et trouvée **beaucoup trop large** : le déménagement du routage star
-ne concerne qu'**un cas sur 27**, celui du wrap `onDataReceived` de la tâche 6. Tous les autres —
-`syncUsersConnections`, `_requestOrConnectPeer`, les deux `handleStream*`, `stopCallWithPeers`,
-`isShuttingDown`, `cleanupPeerConnection`, `onUnmounted`, et les flux d'appel complets de la tâche 7
-— n'assertent rien sur le routage star et survivront au déplacement. L'analyse complète, et les deux
-travaux qui se cachaient sous un seul item `[L]`, sont dans
-[webrtc2-todo.md](webrtc2-todo.md#-routage-star--dégelé-et-scindé-le-29082026).
+✅ **La tâche 6 est fermée le 29/08/2026, sauf son cas star** — et le dégel a été confirmé par les
+faits : le déménagement du routage star ne concernait bien qu'**un cas**, la branche hub du wrap
+`onDataReceived`. Tout le reste a été écrit et n'asserte rien sur le routage star.
+
+⚠️ **Ce que la passe a trouvé et que l'énoncé ne disait pas : il décrivait un fichier qui n'existe
+plus.** Écrit avant l'extraction des couches, il visait un orchestrateur monolithique ; le fichier
+réel fait 466 lignes et ne porte que la composition. Sept de ses cases étaient déjà vertes chez
+`useConnectionPool`, `useStreamManager` et `useCallManager` — les rejouer aurait produit des
+doublons. En revanche il **ne listait pas** ce qui restait vraiment : `toggleAudioState`,
+`toggleVideoState` et `stopAudioStream` n'avaient aucun test nulle part. Le tableau de renvois est
+dans la tâche 6 ci-dessous. La leçon vaut pour la tâche 7, écrite le même jour : **relire le code
+avant de croire l'énoncé.**
 
 ⚠️ **Ce qui reste vrai** : `useMediaBroadcast.watchUsers.test.js` (27/08/2026) mocke l'orchestrateur
 en entier pour épingler le seul point d'entrée de la chaîne de présence — son en-tête explique
@@ -213,32 +217,66 @@ Périmètre couvert. Deux contraintes de harnais à ne pas défaire : `withSetup
 à ce que ce plan prévoyait : `peers2`, `me` et `server` sont de vrais stores Pinia, et les doubler
 ferait passer le test à côté de ce qu'il croit exercer.
 
-### Tâche 6 — `usePeerOrchestrator.test.js` (Orchestration — intégration)
+### Tâche 6 — `usePeerOrchestrator.*.test.js` ✅ (sauf le cas star)
 
-**Périmètre** : coordination des sous-modules, guard `isShuttingDown`, machine d'état appel.
+**Périmètre RÉEL** : la composition, et rien d'autre. ⚠️ L'énoncé de cette tâche a été écrit avant
+l'extraction des couches et décrivait un fichier qui n'existe plus — **988 lignes juste avant
+l'extraction (`2aa4a8b~1`), 466 aujourd'hui**, dont ~180 de commentaires. Les cases visant
+`syncUsersConnections`, `requestOrConnectPeer`,
+les deux `handleStream*`, `stopCallWithPeers`, le garde `isShuttingDown` et le watcher
+`peerUnavailableSignal` **ont déménagé avec le code** — elles sont vertes chez leur nouveau
+propriétaire, et les rejouer ici n'aurait produit que des doublons. Le tableau de renvois est plus bas.
 
-- [ ] ⏸️ **LE SEUL CAS EN ATTENTE** — `initializePeerConnection` : callbacks stockés dans `connectionEvents` ; en topologie star + hub, `onDataReceived` est wrappé (enveloppe `__starRoute` interceptée, payload remonté). À écrire **après** le travail (a) de [webrtc2-todo.md](webrtc2-todo.md), qui descend le déballage d'enveloppe dans `usePeerTransport` : la partie « callbacks stockés » ne bougera pas, la partie « enveloppe interceptée » deviendra un appel à un verbe du transport
-- [ ] `initializePeerConnection` wrapping `onStreamReceived` : `handleStreamReceived` interne est chaîné **avant** le callback utilisateur (quel que soit le type) ; le callback utilisateur reste appelé ensuite si fourni
-- [ ] `initializePeerConnection` wrapping `onConnectionClose` stream : uniquement pour `type === 'stream'`, `handleStreamRemoved` interne est chaîné avant le callback utilisateur ; pour les autres types (`data`, `visio`…) la fermeture n'est pas wrappée
-- [ ] `syncUsersConnections` topologie mesh : `_requestOrConnectPeer` appelé pour chaque new user
-- [ ] `syncUsersConnections` topologie star hub : se connecte à tous les new users
-- [ ] `syncUsersConnections` topologie star client : se connecte uniquement au hub
-- [✅] ~~`syncUsersConnections` lock~~ : couvert un étage plus bas, dans `useConnectionPool.test.js`
-  — et pas sous le contrat prévu ici. Le verrou ne sérialise pas (« le 2e attend la fin du 1er »),
-  il **coalesce** : la dernière liste reçue pendant le tour est rejouée, les intermédiaires sont
-  écrasées. Six cas, dont l'arrêt du drain sur `isShuttingDown`
-- [ ] `_requestOrConnectPeer` : connexion directe si `remotePeerId` connu ; sinon `requestRemotePeerConnection` ; retry `scheduleRetry` lancé dans tous les cas
-- [ ] `handleStreamReceived` mode `stream` : peuple `remoteStreamsMap` (clé `${slug}-${type}`) **sans** appeler `createVideoElement` — l'UI consomme `remoteStreams` via le slot
-- [ ] `handleStreamReceived` autres modes (visio, vocal…) : peuple `remoteStreamsMap` **et** crée le player DOM via `createVideoElement`, transition RECEIVING→CONNECTED
-- [ ] `handleStreamRemoved` mode `stream` : retire l'entrée de `remoteStreamsMap`, `removeVideoElement` est appelé (no-op si absent), `removeCurrentCallUser` mis à jour
-- [ ] `stopCallWithPeers` mode `full` : `closePeerConnection` global, `stopCurrentStream`, reset `callMachine`, `isShuttingDown` repasse à false en fin
-- [ ] `stopCallWithPeers` mode `partial` : fermeture sélective, `isShuttingDown` repasse à false, `callMachine` reste en CONNECTED
-- [ ] `isShuttingDown` guard : watcher `peerUnavailableSignal` et `_handleConnectionAttempt` ne s'exécutent pas si true
-- [ ] Watcher `peerUnavailableSignal` : déclenche `_requestOrConnectPeer` puis reset le signal à null
-- [ ] `cleanupPeerConnection` : `isShuttingDown` permanent, watcher arrêté, retries vidés, `unregisterLocalContext` appelé
-- [ ] `onUnmounted` : stoppe le watcher + vide les retries (guard `isShuttingDown`)
+Quatre fichiers, écrits le 29/08/2026 pour les trois derniers :
 
-**Prérequis** : `vi.mock` pour `usePeerCore`, `usePeerMedia`, `usePeerConnections`, `usePeerTransport` — ou `createMockContext` enrichi avec des sous-modules fictifs ; `vi.useFakeTimers()`.
+- [✅] **`.broadcastPresence`** (27/08) — le câblage de l'annonce de diffusion, ses trois chemins
+- [✅] **`.callbacks`** — le stockage des callbacks (dont le **write-once par clé** de
+  `storeConnectionEventCallbacks` : une seconde initialisation garde silencieusement les premiers),
+  le wrap `onStreamReceived` (chaîné **et attendu**), le wrap `onConnectionClose` limité à
+  `type === 'stream'` avec son garde « ma connexion sortante ne purge rien », et la normalisation
+  type/room
+- [✅] **`.teardown`** — `cleanupPeerConnection` : garde **permanent** (aucun `endShutdown`),
+  signalisation coupée, whispers de présence coupés, demandes de peerId purgées **par contexte**
+  (le cas que `closePeerConnection` ne peut pas couvrir, son early-return l'en empêchant), room
+  d'appel privilégiée, players détruits, contexte retiré du registre
+- [✅] **`.media`** — fan-out des trois démarrages de flux, arrêt **natif** du partage d'écran et son
+  garde de ré-entrée, `try/finally` de `stopWebcamStream` (y compris quand une étape lève), les deux
+  asymétries de `clearSignalQueue`, le type `'screen'` en dur, les deux bascules, `sendDataToPeer`
+
+- [ ] ⏸️ **LE SEUL CAS EN ATTENTE** — la branche **hub** du wrap `onDataReceived` : en topologie star,
+  une enveloppe `__starRoute` est retransmise puis son `payload` remonté au callback avec l'arité 1.
+  À écrire **après** le travail (a) de [webrtc2-todo.md](webrtc2-todo.md), qui descend le déballage
+  dans `usePeerTransport`. Le reste du wrap (annonces consommées, message métier remonté avec son
+  arité 3) est déjà couvert par `.broadcastPresence`.
+
+**Deux replis du prédicat de fermeture ne sont PAS couverts, et c'est écrit dans l'en-tête du
+fichier** : `!senderSlug` (une connexion sans `metadata.from` est refusée en amont, ses listeners ne
+sont jamais branchés) et `!mySlug` (sans identité locale, `handleStreamRemoved` suspend sur
+`waitForMeReady` jusqu'au timeout). Gardes défensifs, pas des chemins.
+
+#### Où sont parties les cases de l'énoncé d'origine
+
+| Case | Couverte par |
+|---|---|
+| `syncUsersConnections` mesh / star hub / star client | `useConnectionPool.test.js` § `syncUsersConnections` |
+| `_requestOrConnectPeer` (nom réel : `requestOrConnectPeer`) | `useConnectionPool.test.js` § `requestOrConnectPeer` + § logique de tentative |
+| `syncUsersConnections` lock | `useConnectionPool.test.js` — et pas sous le contrat prévu ici : le verrou ne sérialise pas, il **coalesce** |
+| `handleStreamReceived` (stream vs visio, clé `slug-type`, RECEIVING→CONNECTED) | `useStreamManager.test.js` |
+| `handleStreamRemoved` | `useStreamManager.test.js` |
+| `stopCallWithPeers` `full` / `partial` | `useCallManager.test.js` § `stopCallWithPeers` |
+| garde `isShuttingDown`, watcher `peerUnavailableSignal` | `useConnectionPool.test.js` § recovery + § cleanup |
+| `onUnmounted` (watcher stoppé, retries vidés) | `useConnectionPool.test.js` § cleanup |
+
+**Prérequis — l'énoncé se trompait aussi là-dessus.** Il annonçait `vi.mock` sur les quatre
+sous-modules : c'est le mauvais choix, les dix sont des imports ESM statiques appelés dans le corps
+du composable, sans injection. Les quatre fichiers montent **contexte, stores et couches réels** et
+ne mockent que PeerJS — même réfutation que la tâche 5 pour `createPeerContext`. Horloge réelle,
+`installFakeMedia()` obligatoire dès qu'un flux est en jeu.
+
+**28 contre-épreuves mesurées** et consignées dans les trois en-têtes. Quatre ont rougi **zéro** cas
+au premier passage, et les quatre fois la faute était dans le test : la leçon générale — un périmètre
+à un seul élément ne distingue pas « cible précise » de « tout le monde » — est remontée dans
+[docs/modules/webrtc2/tests.md](../docs/modules/webrtc2/tests.md#ce-quil-faut-savoir-avant-décrire).
 
 ---
 
