@@ -584,6 +584,111 @@ describe('useCallManager', () => {
         })
     })
 
+    // ── Le cycle complet, d'un bloc ─────────────────────────────────────────
+    //
+    // Chaque transition est déjà couverte isolément au-dessus, mais toujours depuis un état
+    // POSÉ à la main (`ctx.callMachine.transition(CONNECTED)` en tête du bloc précédent).
+    // Ces deux cas sont les seuls à ne rien poser : ils enchaînent les verbes de production
+    // dans l'ordre où l'UI les appelle, ce qui est le seul moyen de voir une fuite d'état
+    // entre deux étapes — un `currentCallRoomId` que l'étape suivante lit et qui n'a pas
+    // survécu, un participant retiré trop tôt.
+    //
+    // Ils assertent la SUITE des transitions, pas seulement l'état final : CLOSING est
+    // traversé sans jamais être observable en fin de course, et c'est lui qui sert de mutex.
+    //
+    // ── CONTRÔLES DE HARNAIS, mesurés le 2026-08-29 ─────────────────────────
+    //
+    //   A. la transition CLOSING du chemin `full` retirée ............ 4 cas, dont ces 2
+    //   B. la remise à null de `currentCallRoomId` — DEUX mécanismes, mesurés séparément :
+    //        B1. seule la ligne directe (`useCallManager.js:367`) retirée ....... 0 cas
+    //        B2. seul le `setCurrentCallRoomId(null)` de `resetCallState` retiré  1 cas
+    //        B3. LES DEUX retirés .............................. 4 cas, dont ces 2
+    //
+    // ⚠️ **B1 rougit ZÉRO cas, et la faute n'est ni dans le test ni dans le contrôle : la
+    // ligne 367 est strictement redondante.** `resetCallState()`, appelé juste après, refait
+    // le travail par le setter. C'est le cas que `docs/architecture/tests.md` décrit — deux
+    // mécanismes indépendants tiennent la même propriété, il faut les neutraliser tous les
+    // deux pour prouver quoi que ce soit. Ne pas conclure de B1 que l'assertion est inutile.
+    describe('le cycle complet', () => {
+
+        /** Les états demandés à la FSM, dans l'ordre, quel qu'ait été le verdict. */
+        let transitionSpy
+
+        beforeEach(() => {
+            transitionSpy = vi.spyOn(ctx.callMachine, 'transition')
+        })
+
+        const requestedStates = () => transitionSpy.mock.calls.map(([state]) => state)
+
+        it('initiateur : IDLE → CALLING → CONNECTED → CLOSING → IDLE sans état posé à la main', async () => {
+            // ⚠️ Comme dans le bloc `openCallBetweenPeer` : le double DOIT écrire la demande
+            // en vol, c'est le fait que lit la garde d'ouverture. Un mock nu ferait passer ce
+            // cas par le chemin « acceptation sans invitation », qui n'ouvre rien.
+            core.requestAuthorizationRemotePeerId = vi.fn(async ({ toUserSlug, type }) => {
+                ctx.peerStore.addWaitingRemotePeerId(toUserSlug, {
+                    room: ctx.session.currentCallRoomId,
+                    type,
+                    contextId: ctx.contextId,
+                })
+                return 'invite-1'
+            })
+
+            expect(ctx.callMachine.callState.value).toBe(CALL_STATES.IDLE)
+
+            cm.startCallWithPeer({ toUserSlug: 'alice', type: 'visio', room: 'call-room-1' })
+            expect(ctx.callMachine.callState.value).toBe(CALL_STATES.CALLING)
+
+            await cm.openCallBetweenPeer({
+                fromUserSlug: 'alice',
+                status: true,
+                options: { room: 'call-room-1', type: 'visio', peerId: 'peer-alice' },
+            })
+            expect(ctx.callMachine.callState.value).toBe(CALL_STATES.CONNECTED)
+
+            await cm.stopCallWithPeers([], false)
+
+            expect(requestedStates()).toEqual([
+                CALL_STATES.CALLING,
+                CALL_STATES.CONNECTED,
+                CALL_STATES.CLOSING,
+            ])
+            expect(ctx.callMachine.callState.value).toBe(CALL_STATES.IDLE)
+
+            // La session est rendue, pas seulement la FSM : un appel suivant repartirait
+            // sinon sur la room et les participants du précédent.
+            expect(ctx.session.currentCallRoomId).toBe(null)
+            expect(ctx.session.currentCallUsers).toEqual([])
+            expect(ctx.session.authorizedCallPeers.size).toBe(0)
+        })
+
+        it('récepteur : IDLE → RECEIVING → CONNECTED → CLOSING → IDLE sans état posé à la main', async () => {
+            expect(ctx.callMachine.callState.value).toBe(CALL_STATES.IDLE)
+
+            await cm.acceptCallFromPeer({
+                fromUserSlug: 'alice',
+                status: true,
+                options: { room: 'call-room-1', type: 'visio', peerId: 'peer-alice', inviteId: 'invite-1' },
+            })
+            expect(ctx.callMachine.callState.value).toBe(CALL_STATES.RECEIVING)
+
+            // C'est l'arrivée du flux distant qui referme la boucle côté récepteur, pas une
+            // action de l'utilisateur : `useStreamManager` appelle ce verbe et rien d'autre.
+            expect(cm.markCallConnected()).toBe(true)
+            expect(ctx.callMachine.callState.value).toBe(CALL_STATES.CONNECTED)
+
+            await cm.stopCallWithPeers([], false)
+
+            expect(requestedStates()).toEqual([
+                CALL_STATES.RECEIVING,
+                CALL_STATES.CONNECTED,
+                CALL_STATES.CLOSING,
+            ])
+            expect(ctx.callMachine.callState.value).toBe(CALL_STATES.IDLE)
+            expect(ctx.session.currentCallRoomId).toBe(null)
+            expect(ctx.session.currentCallUsers).toEqual([])
+        })
+    })
+
     // ── remoteStopCall ──────────────────────────────────────────────────────
 
     describe('remoteStopCall', () => {

@@ -897,6 +897,34 @@ extractions : c'est 18 lignes, sous un filet cinq fois plus dense.
 
 ## Robustesse
 
+- [ ] 🟠 **Un refus de permission caméra ne produit RIEN à l'écran** `[S]` — relevé le 29/08/2026 en
+  fermant la tâche 7 des tests.
+
+  La moitié basse est faite : `useMediaBroadcast.getWebcamStream` / `getAudioStream` /
+  `startCapture` **rendent désormais la promesse** de leur verbe `async` (elles la jetaient), donc
+  un appelant peut enfin la traiter. Épinglé par `useMediaBroadcast.test.js` § démarrages de flux.
+
+  **Ce qui reste est la moitié UI, et personne ne la fait** : `Widgets/UI/Buttons/GroupLocalStreamBtn.vue`
+  appelle les trois verbes sans `await` ni `.catch`. Rien n'attrape le rejet sur toute la chaîne —
+  `usePeerMedia` appelle `getUserMedia` / `getDisplayMedia` nus. Un `NotAllowedError` (l'utilisateur
+  refuse) ou un `NotFoundError` (pas de périphérique) devient donc un rejet non traité : pas de
+  toast, pas de changement d'état, `isStreaming` reste faux, et le bouton semble mort. C'est le
+  symptôme le plus courant d'un premier usage, et il est indistinguable d'une panne réseau.
+
+  ⚠️ **Bloqué par l'étage sans tests** : ce composant est un des 12 `Widgets/**` sans aucun test
+  (tâche 8 du [plan de tests](webrtc2-tests-plan.md)). Y poser un `.catch` + `window.AWN` sans filet,
+  c'est écrire du code d'erreur qu'aucune contre-épreuve ne peut faire rougir — exactement ce qui
+  avait laissé passer la vignette à 0 px. Faire la tâche 8 d'abord, ou au minimum couvrir ce bouton.
+
+- [ ] 🟢 **Une remise à zéro en double dans `useCallManager`** `[S]` — mesuré le 29/08/2026 par
+  contre-épreuve. `ctx.session.currentCallRoomId = null` (chemin `full` de `stopCallWithPeers`) est
+  **strictement redondant** : `resetCallState()`, appelé juste après, refait le travail par
+  `setCurrentCallRoomId(null)`. Neutraliser la ligne seule rougit **zéro** cas ; neutraliser le
+  setter seul en rougit un ; neutraliser les deux en rougit quatre. Rien n'est cassé — c'est du
+  code mort qui donne l'illusion d'un invariant tenu à deux endroits. Le supprimer, ou l'assumer
+  par un commentaire disant qu'il est là pour l'ordre des opérations (il ne l'est pas : le setter
+  du reset suit immédiatement).
+
 - [ ] **Graceful degradation eventBus** : si l'eventBus est indisponible, logger au lieu de crasher.
   Partiellement en place (`createPeerContext` pose un no-op et warn) — reste à vérifier les
   widgets qui l'injectent directement.

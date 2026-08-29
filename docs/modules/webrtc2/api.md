@@ -87,6 +87,15 @@ Verbes : `initialize` · `cleanup` · `watchUsers` · `sendData` · `getWebcamSt
 sont des `computed` filtrant `remoteStreamsMap` sur `remoteType !== 'screen'` dans
 `createPeerContext.js`. Consommer `remoteStreams` seul rend tout partage d'écran invisible.
 
+⚠️ **`getWebcamStream`, `getAudioStream` et `startCapture` rendent une promesse — les seuls des
+verbes de flux.** Elle peut rejeter, et c'est le cas nominal : l'utilisateur refuse la permission
+(`NotAllowedError`) ou n'a pas de périphérique (`NotFoundError`). Rien ne l'attrape sur toute la
+chaîne — `usePeerMedia` appelle `getUserMedia` / `getDisplayMedia` nus. **Un appelant qui ignore la
+valeur de retour transforme donc un refus en rejet non traité** : pas de toast, pas de changement
+d'état, un bouton qui semble mort. Les trois verbes d'arrêt sont synchrones et ne rendent rien.
+Borne assumée au 29/08/2026 : les boutons livrés (`GroupLocalStreamBtn`) ne traitent pas encore ce
+rejet — la façade rend la promesse, la moitié UI reste à faire.
+
 ### Niveau 3 — `usePeerOrchestrator(type, room, options)`
 
 Façade technique. Rarement nécessaire hors tests.

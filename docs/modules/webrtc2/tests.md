@@ -389,7 +389,14 @@ Sans décompte, parce qu'il pourrit : l'état exact se lit dans
   Un seul cas reste ouvert, et il attend le déménagement du déballage d'enveloppe star dans
   `usePeerTransport` : la branche hub du wrap `onDataReceived`. Rien d'autre n'asserte sur le
   routage star.
-- `useMediaBroadcast` — à écrire, sans dépendance au point précédent.
+- `useMediaBroadcast` — **couvert depuis le 29/08/2026**, en deux fichiers dont la séparation est un
+  fait mesuré, pas un rangement : le fichier de comportement double l'orchestrateur en entier (il
+  n'y a derrière que des passthroughs), et **un double définit la surface**, donc il est structurel-
+  lement aveugle à un renommage en amont — une clé renommée dans le `return` de l'orchestrateur
+  deviendrait un `undefined` ré-exporté sans qu'un seul cas de la suite ne bouge. C'est
+  `useMediaBroadcast.surface.test.js`, monté sur l'orchestrateur réel, qui tient ce contrat-là.
+  ⚠️ Il vérifie aussi que les états restent des **refs** : un ref déballé rend une valeur définie,
+  donc le garde « rien n'est `undefined` » le laisse passer.
 - `usePeerTransport` — couvert depuis le 29/08/2026 : `sendData` star
   (`usePeerTransport.star.test.js`), le **câblage** du rate-limiting hub et la taille du chemin hub
   (`usePeerTransport.forwardStar.test.js`), le registre des contextes des deux côtés

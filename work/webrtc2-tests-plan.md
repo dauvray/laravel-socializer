@@ -35,7 +35,7 @@ et le seul étage où les incendies du paquet étaient détectables). Le harnais
 | Tâche 4 · `usePeerTransport` — 8 fichiers (sécurité, `peer-unavailable`, singleton, mesh, **star**, reconnexion, `forwardStar`, `iceRefresh`) | ✅ | — |
 | Tâche 5 · `createPeerContext` | ✅ | — |
 | Tâche 6 · `usePeerOrchestrator` — 4 fichiers (`broadcastPresence`, **`callbacks`**, **`teardown`**, **`media`**) | ✅ sauf 1 cas | la branche **hub** du wrap `onDataReceived`, qui attend le chemin (a) du routage star |
-| Tâche 7 · `useMediaBroadcast` | **ouverte** | seul `watchUsers` est couvert ; plus rien ne la bloque |
+| Tâche 7 · `useMediaBroadcast` — 2 fichiers (façade doublée, **surface** sur l'orchestrateur réel) | ✅ | — |
 | Couches extraites de l'orchestrateur — `useConnectionPool`, `useCallManager`, `useStreamManager`, `useSignalingQueue` | ✅ | — |
 | Store — `peers2Store` : runtime, observabilité, `remotePeerId`, **phase du Peer**, **registre des contextes** | ✅ | — |
 | Composables d'UI — `useAwaitedStreams`, `useBroadcastPresence` | ✅ | — |
@@ -54,12 +54,24 @@ réel fait 466 lignes et ne porte que la composition. Sept de ses cases étaient
 `useConnectionPool`, `useStreamManager` et `useCallManager` — les rejouer aurait produit des
 doublons. En revanche il **ne listait pas** ce qui restait vraiment : `toggleAudioState`,
 `toggleVideoState` et `stopAudioStream` n'avaient aucun test nulle part. Le tableau de renvois est
-dans la tâche 6 ci-dessous. La leçon vaut pour la tâche 7, écrite le même jour : **relire le code
+dans la tâche 6 ci-dessous. La leçon valait pour la tâche 7, écrite le même jour : **relire le code
 avant de croire l'énoncé.**
+
+✅ **La tâche 7 est fermée le 29/08/2026, et la leçon a payé deux fois.** Son énoncé décrivait un
+test « bout en bout » de flux d'appel là où le fichier est une façade : **huit de ses onze cases
+étaient des doublons stricts**, trois n'étaient couvertes que par morceaux, et **la dixième était
+fausse** — l'écrire aurait rougi contre un
+comportement épinglé à l'envers par `useStreamManager.test.js`. Ce qui restait n'était dans aucune
+case : la mémoire d'invitations, et le fait que trois wrappers jetaient la promesse d'un verbe
+`async`. **Un énoncé périmé ne se contente pas de faire perdre du temps : il fait écrire un test
+qui demande au code de régresser.** Le détail est dans la tâche 7 ci-dessous.
 
 ⚠️ **Ce qui reste vrai** : `useMediaBroadcast.watchUsers.test.js` (27/08/2026) mocke l'orchestrateur
 en entier pour épingler le seul point d'entrée de la chaîne de présence — son en-tête explique
-pourquoi, et cette contrainte-là n'a rien à voir avec le gel.
+pourquoi, et cette contrainte-là n'a rien à voir avec le gel. Ce choix vaut pour toute assertion de
+comportement sur la façade ; il a en revanche un prix, **mesuré** en fermant la tâche 7 : un double
+définit la surface, donc aucun de ces fichiers ne peut voir un renommage en amont. D'où le second
+fichier, `useMediaBroadcast.surface.test.js`, qui monte l'orchestrateur réel et ne fait que ça.
 
 Les couches extraites se testent avec des `vi.fn()` pour les dépendances injectées — c'est tout
 l'intérêt de l'injection descendante. `useCallManager` et `useStreamManager` n'enregistrent aucun
@@ -280,23 +292,73 @@ au premier passage, et les quatre fois la faute était dans le test : la leçon 
 
 ---
 
-### Tâche 7 — `useMediaBroadcast.test.js` (Feature layer — bout en bout)
+### Tâche 7 — `useMediaBroadcast` ✅ (fermée le 29/08/2026, en deux fichiers)
 
-**Périmètre** : couche métier, flux complets appel + données + events Vue.
+**Périmètre RÉEL** : ce que la façade possède en propre, et rien d'autre.
 
-- [ ] Lifecycle data channel : `initializePeerConnection` → `syncUsersConnections` → `cleanupPeerConnection` appelés dans l'ordre
-- [ ] `sendDataToPeer` : délègue à `transport.sendData` avec le bon payload
-- [ ] `onDataReceived` callback : exécuté quand une donnée arrive via la connexion
-- [ ] Flux appel complet initiateur : `startCallWithPeer` → `openCallBetweenPeer` → `stopCallWithPeers` (IDLE→CALLING→CONNECTED→CLOSING→IDLE)
-- [ ] Flux appel complet récepteur : `acceptCallFromPeer` (status true) → `stopCallWithPeers`
-- [ ] Refus d'appel : `acceptCallFromPeer` (status false) → aucun stream démarré, callMachine reste IDLE
-- [ ] `remoteStopCall` : ferme le stream distant, supprime le videoElement, émet `close-call`
-- [ ] `handleStreamReceived` mode `stream` (via `initializePeerConnection`) : `remoteStreams` (computed) passe de longueur 0 à 1 après réception ; **aucun** `createVideoElement` appelé
-- [ ] `handleStreamReceived` mode `visio` : `createVideoElement` appelé, transition RECEIVING→CONNECTED
-- [ ] `handleStreamRemoved` : supprime le videoElement (si présent), `remoteStreams` revient à longueur 0, si dernier user → `stopCallWithPeers` full
-- [ ] Événements exposés : `close-call` émis avec le bon payload
+⚠️ **L'énoncé de cette tâche décrivait un test qui n'avait pas lieu d'être** — écrit le même
+jour que celui de la tâche 6, il a reproduit la même erreur en pire. Il annonçait un test
+« bout en bout » des flux d'appel ; or `useMediaBroadcast` n'écrit aucun de ces flux. Sur ses
+288 lignes, ~110 sont une déstructuration de `usePeerOrchestrator`, ~90 un `return` qui la
+ré-expose, 11 wrappers d'une ligne. Les sept verbes d'appel et de flux qu'il voulait tester
+sont des **passthroughs verbatim** : les asserter ici testerait une identité de référence.
+Décompte exact : **huit de ses onze cases étaient des doublons stricts** de cas existants
+(`useCallManager`, `useStreamManager`, `useConnectionPool`), et **trois n'étaient couvertes
+que par morceaux** — les deux flux d'appel complets et la jonction RECEIVING→CONNECTED d'un
+flux visio, qui n'était affirmée d'un bout à l'autre par aucun cas unique.
 
-**Prérequis** : `usePeerOrchestrator` entièrement mocké via `vi.mock` (résultat de la tâche 6) ou intégration complète avec tous les sous-modules mockés.
+⚠️ **Et sa case 10 était FAUSSE.** « `handleStreamRemoved` supprime le videoElement » : elle
+ne supprime plus rien depuis l'extraction des couches, ce qui est épinglé **à l'envers** par
+`useStreamManager.test.js` (« ne nettoie plus rien elle-même : le registre et les players sont
+du ressort du CallManager »). L'écrire telle quelle aurait produit un test rouge contre le
+code voulu — et, pire, une « correction » du code pour le faire passer.
+
+Deux fichiers écrits, et la séparation n'est pas cosmétique :
+
+- [✅] **`useMediaBroadcast.test.js`** — orchestrateur doublé en entier. La **mémoire
+  d'invitations** (`isInviteDuplicate` / `clearSeenInvites`), seule vraie logique du fichier
+  et **absente des 11 cases de l'énoncé** ; le contrat de renommage des 11 wrappers, avec
+  l'assertion négative sur les dix autres verbes qui seule rend un câblage croisé visible ;
+  le défaut `destUserSlugs = null` de `sendData` ; et l'attendabilité des trois démarrages
+  de flux.
+- [✅] **`useMediaBroadcast.surface.test.js`** — orchestrateur RÉEL, seul PeerJS mocké. Le
+  contrat façade ↔ orchestrateur : rien d'exposé n'est `undefined`, et les états restent des
+  refs. **Mesuré** : renommer `remotePeers` en `peers` dans le `return` de l'orchestrateur ne
+  rougit QUE ce fichier — les deux autres doublent l'orchestrateur, donc le renommage n'existe
+  pas pour eux. Sans ce fichier, la clé disparaîtrait de la façade sans qu'un seul des cas de
+  la suite ne bouge.
+
+**Un cas neuf ailleurs** : les points 4 et 5 de l'énoncé (les deux flux d'appel complets)
+étaient couverts transition par transition, mais toujours depuis un état POSÉ à la main. Deux
+cas d'enchaînement les jouent d'un bloc — `useCallManager.test.js` § `le cycle complet`, leur
+place naturelle.
+
+**Volet code, deux sorties de la doctrine** — `getWebcamStream` / `getAudioStream` /
+`startCapture` appelaient des verbes `async` **sans `return`** (sortie A : la promesse est
+rendue à l'appelant, sinon un refus de permission caméra part en rejet non traité) ; et
+`contextId` était déstructuré sans jamais être ré-exporté (sortie B). La moitié UI du premier
+— traiter le refus côté bouton — est un item de [webrtc2-todo.md](webrtc2-todo.md), bloqué par
+l'absence de test de l'étage `Widgets/**`.
+
+#### Où sont parties les cases de l'énoncé d'origine
+
+| Case | Couverte par |
+|---|---|
+| lifecycle data channel (init → sync → cleanup) | `usePeerOrchestrator.callbacks.test.js` (init), `useConnectionPool.test.js` (sync), `usePeerOrchestrator.teardown.test.js` (cleanup), et les scénarios pour la séquence |
+| `sendDataToPeer` → `transport.sendData` | `usePeerOrchestrator.media.test.js` § `sendDataToPeer`, `usePeerTransport.mesh/star` |
+| `onDataReceived` exécuté à l'arrivée | `createPeerContext.test.js` § réception de données, `usePeerOrchestrator.broadcastPresence.test.js` |
+| flux initiateur / récepteur complets | `useCallManager.test.js` § **`le cycle complet`** (neuf), + chaque transition isolément |
+| refus d'appel (`status: false`) | `useCallManager.test.js` § `acceptCallFromPeer` — doublon strict de l'énoncé |
+| `remoteStopCall` (stream, videoElement, `close-call`) | `useCallManager.test.js` § `remoteStopCall` — les trois assertions demandées, à l'identique |
+| `handleStreamReceived` modes `stream` / `visio` | `useStreamManager.test.js` + `usePeerOrchestrator.callbacks.test.js` (`remoteStreams` 0→1) |
+| `handleStreamRemoved` | `useStreamManager.test.js` — **et l'énoncé est périmé**, voir ci-dessus |
+| `close-call` avec le bon payload | `useCallManager.test.js` (3 fois) |
+
+⚠️ **La case `close-call` a failli être écrite contre un module mort.** `EventBus/webrtc2Events.js`
+normalise un payload à six champs que **personne n'émet** : la production émet la forme brute à
+deux (`useCallManager.js`), et le module n'est importé nulle part. Sa suppression est déjà un item
+de [doc-rustines.md](doc-rustines.md) (lot 1) — re-confirmée au grep le 29/08, ne pas en ouvrir un
+second.
 
 ---
 
