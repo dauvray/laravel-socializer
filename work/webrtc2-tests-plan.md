@@ -29,15 +29,15 @@ et le seul étage où les incendies du paquet étaient détectables). Le harnais
 | Périmètre | État | Ce qui reste |
 |---|---|---|
 | `utils/` — FSM d'appel, retry, rate limiter, taille de payload, sanitisation, `fetchIceServers` | ✅ | — |
-| Tâche 1 · `usePeerCore` — Ajax + signalisation pure | ◐ | 3 items, ci-dessous |
+| Tâche 1 · `usePeerCore` — Ajax + signalisation pure | ✅ | — |
 | Tâche 2 · `usePeerConnections` | ✅ | — |
 | Tâche 3 · `usePeerMedia` — `.players` + `.streams` | ✅ | — |
-| Tâche 4 · `usePeerTransport` — 7 fichiers (sécurité, `peer-unavailable`, singleton, mesh, reconnexion, `forwardStar`, `iceRefresh`) | ◐ | 4 items, ci-dessous |
+| Tâche 4 · `usePeerTransport` — 8 fichiers (sécurité, `peer-unavailable`, singleton, mesh, **star**, reconnexion, `forwardStar`, `iceRefresh`) | ✅ | — |
 | Tâche 5 · `createPeerContext` | ✅ | — |
 | Tâche 6 · `usePeerOrchestrator` | ⛔ **bloquée** | voir ci-dessous ; seul `broadcastPresence` est couvert |
 | Tâche 7 · `useMediaBroadcast` | ⛔ **bloquée** | après la tâche 6 ; seul `watchUsers` est couvert |
 | Couches extraites de l'orchestrateur — `useConnectionPool`, `useCallManager`, `useStreamManager`, `useSignalingQueue` | ✅ | — |
-| Store — `peers2Store` : runtime, observabilité, `remotePeerId`, **phase du Peer** | ✅ | — |
+| Store — `peers2Store` : runtime, observabilité, `remotePeerId`, **phase du Peer**, **registre des contextes** | ✅ | — |
 | UI — `useAwaitedStreams`, `useBroadcastPresence`, `MediaBroadcastPlayer` (identité, spinner) | ✅ | — |
 | Scénarios — smoke, `lateJoiner`, `broadcastLifecycle`, `peerDeparture`, `multiContext`, `incomingMappingInvariant`, `outgoingAuth` | ✅ | — |
 | Perte de connexion → re-composition — `scenarios/peerDeparture` (« A recharge en chevauchement »), `useConnectionPool`, `createPeerContext` | ✅ | — |
@@ -114,7 +114,7 @@ les client events, pas `here`/`joining`/`leaving`, que le Chat exercera.
 
 ## Tâches restantes
 
-### Tâche 1 — `usePeerCore.test.js` (Signaling layer)
+### Tâche 1 — `usePeerCore.test.js` (Signaling layer) ✅
 
 **Périmètre** : couche HTTP/Ajax pure, sans WebRTC.
 
@@ -123,11 +123,11 @@ les client events, pas `here`/`joining`/`leaving`, que le Chat exercera.
 - [✅] `responseRemotePeerConnection` : POST avec `peerId` local correct, garde d'identité publiable — `peerIdentity().state !== 'ready'` ⇒ aucun POST, `false` —, booléen de retour
 - [✅] `requestAuthorizationRemotePeerId` : envoi immédiat + retry via `inviteRetryManager`, retourne un `inviteId`
 - [✅] `sendAuthorizationRemotePeerId` : envoi avec `status: true` (inclut peerId) vs `status: false` (type seulement)
-- [ ] `notifyCloseConnectionToPeer` : POST avec room/type/fromUserSlug
+- [✅] `notifyCloseConnectionToPeer` : POST avec room/type/fromUserSlug, les **trois** étages de repli de `room`, le repli de `type` sur le littéral `'visio'` (et non le type du contexte), les deux sorties anticipées, et le retour `undefined` sur échec. ⚠️ Le cas « aucune room » exige d'annuler `currentCallRoomId` **et** `currentRoom` : le double pose `'app'` sur le second
 - [✅] ~~Signal watcher~~ : déplacé dans `useSignalingQueue.test.js` (le routage ne vit plus ici)
-- [ ] `stopCallInviteRetry` / `stopCallInviteRetryForUser` / `clearAllCallInviteRetries` : cancellent les retries correspondants
+- [✅] `stopCallInviteRetry` / `stopCallInviteRetryForUser` / `clearAllCallInviteRetries` : cancellent les retries correspondants, avec la contre-épreuve de l'`inviteId` inconnu (sans elle, un `clearAll()` déguisé passerait). **A révélé un défaut réel**, désormais épinglé : la clé de minuteur porte `currentType`/`currentRoom`, donc un changement de room entre invitation et annulation fait survivre la MAUVAISE chaîne — voir le 🟠 de [webrtc2-todo.md](webrtc2-todo.md)
 - [✅] Limite `MAX_INVITE_RETRIES` : la plus ancienne entrée est évincée quand la Map est pleine *(couvert dans requestAuthorizationRemotePeerId)*
-- [ ] `onUnmounted` : inviteRetryManager vidé
+- [✅] `onUnmounted` : inviteRetryManager vidé — écrit comme **filet structurel**, et son contrôle négatif est mesuré dans le docblock : neutraliser le seul hook de `usePeerCore` laisse le cas VERT (`usePeerRetry` enregistre le sien avant), il faut neutraliser **les deux**. Le seul effet exclusif du hook, `userSlugToInviteId.clear()`, n'est observable que hors production — pas de cas écrit dessus
 
 **Prérequis** : `createMockContext()` suffit (AjaxService injecté via ctx) ; `vi.useFakeTimers()` pour les retries.
 
@@ -186,14 +186,15 @@ factice qui est un objet nu — sont dans
   - un backoff armé pendant le délai de grâce ne survit pas à la destruction (aucun timer résiduel)
   - une **destruction volontaire n'est pas une coupure réseau** : ni tentative consommée, ni `warn` de reconnexion, ni fausse alerte `abandon` au plafond. `destroy()` émet `disconnected` avant de poser son drapeau (`bundler.mjs:1810` / `:1781`) — sans détachement explicite, le garde `localPeer.destroyed` du handler ne voit rien
 
-#### 📋 Restant à couvrir
+#### ✅ Fermé le 29/08/2026 — les quatre derniers items
 
-- [ ] `sendData` star (client) : enveloppe `__starRoute` (`to`, `from`, `payload`) construite et envoyée au **hub uniquement**
-- [ ] `sendData` star (hub) : envoi **direct** aux destinataires (pas d'enveloppe)
-- [ ] `forwardStarMessage` rate limiting : excédent ignoré au **point d'appel** du hub, clé = peerId entrant réel (non `envelope.from`). ⚠️ Partiellement couvert depuis 2026-08-14 : la **mécanique** (plafond `HUB_MAX_MESSAGES_PER_WINDOW` / `HUB_RATE_WINDOW_MS`) vit désormais dans `utils/createRateLimiter.js` et y est testée ; reste à couvrir le **câblage** — que le hub passe bien `senderIdentity` et abandonne le message
-- [ ] `forwardStarMessage` limite de taille payload : rejet > `MAX_PAYLOAD_BYTES` (JSON + binaire) et payload invalide
+- [✅] **`usePeerTransport.star.test.js`** (14) — `sendData` en star, des deux côtés : le client emballe et n'adresse **que** le hub (enveloppe assertée entière), le hub envoie les données **nues**, `hubSlug` vide fait sortir en silence (aucun envoi, **aucun warn**). Deux faits y sont **épinglés**, pas corrigés :
+  - ⭐ **`destUserSlugs = []` veut dire « personne »** — `[]` est *truthy*, il traverse les deux replis `|| …` et produit un fan-out nul. Le correctif tentant (`?.length ? … : null`) inverserait la sémantique sans lever. L'énoncé de cet item, qui annonçait `to: null`, était **faux**.
+  - **Aucun contrôle de `MAX_PAYLOAD_BYTES` sur les deux branches star**, là où le mesh contrôle. Voir le 🟢 de [webrtc2-todo.md](webrtc2-todo.md). Contrôle négatif **inversé** : il faut *ajouter* le contrôle pour voir le rouge, et `mesh.test.js` reste vert.
+- [✅] `forwardStarMessage` rate limiting — le **câblage** (la mécanique reste dans `utils/createRateLimiter.test.js`) : deux `from` déclarés différents depuis la **même** connexion partagent le quota ; deux connexions déclarant le **même** `from` ne partagent rien ; et un message rejeté pour sa **taille** a quand même consommé un jeton — seul cas du module dont la couleur dépend de l'**ordre** des gardes, et il exige d'asserter le *texte* du warn
+- [✅] `forwardStarMessage` limite de taille payload : JSON et binaire au-delà, binaire **pile** à la limite (accepté), et enveloppe **sans `payload`** — la seule forme d'invalidité atteignable en production. ⚠️ Messages **sans accent** sur ce chemin (`Enveloppe star ignoree`), le hub n'appelant pas `isPayloadWithinLimit`
 - [✅] Purge throttlée des expéditeurs inactifs (pas de fuite mémoire sur rotation de room) — logique déplacée de `_sweepHubRateWindows` vers `utils/createRateLimiter.js`, couverte par `utils/createRateLimiter.test.js`
-- [ ] `contextRegistry` : `unregisterContext` last-write-wins (ne supprime que si l'entrée appartient toujours au ctx — cf. note), retiré à l'`onUnmounted`, pas de fuite
+- [✅] `contextRegistry` — **deux versants, tous deux obligatoires** : la sémantique sur le vrai store (`peers2Store.contextRegistry.test.js`, 12 cas — dont le `markRaw`, sans lequel `get() === ctx` est faux et le garde d'identité ne supprime plus rien), et le câblage dans `usePeerTransport.singleton.test.js` (inscription à `setLocalPeer`, retrait à l'`onUnmounted` **et** par `unregisterLocalContext`, remontage sous le même id, pas de fuite). Le double porte les deux mêmes gardes : un test écrit contre lui seul serait resté vert
 
 **Prérequis** : `getLastPeerInstance()` + `resetPeerMock()` + `instance._triggerEvent('open', 'peer-id')` de `__mocks__/peerjs.js` ; **tout démarrage passe par `helpers/bootLocalPeer.js`** — l'init ne se règle plus avant l'`'open'`, donc un `await setLocalPeer()` sans `'open'` interbloque, et sous `vi.useFakeTimers()` il faut `waitForInstance: waitForPeerInstance` (cf. [tests.md](../docs/modules/webrtc2/tests.md)) ; `vi.useFakeTimers()` pour le délai de destruction et le backoff de reconnexion ; `vi.resetModules()` entre les tests pour réinitialiser ce qui reste au niveau du module (`contextRegistry`, `_hubRateLimiter`) — **le mock PeerJS doit être ré-importé après le même reset**, sinon `getLastPeerInstance()` ne voit pas les instances créées par la copie sous test. L'état du Peer singleton (ref-counting, garde d'init, reconnexion) vit désormais dans `peerStore` : une Pinia fraîche (posée par `setup.js`) ou un `ctx` neuf suffit à l'isoler.
 

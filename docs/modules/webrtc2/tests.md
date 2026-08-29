@@ -55,11 +55,14 @@ documents à la fois. Il se relit dans la sortie du runner, et n'a rien à faire
 `__tests__/helpers/createVirtualPeer.js`, `helpers/fakeSignalingServer.js`,
 `__mocks__/peerjs.js` (mode bus).
 
-- **`vi.resetModules()` par pair.** `usePeerTransport` porte encore deux variables module-level
-  (`contextRegistry`, `_hubRateLimiter`) ; sans reset, deux pairs partagent le même registre de
-  contextes et ne sont qu'un seul participant. Corollaire : monter les pairs **séquentiellement**.
+- **`vi.resetModules()` par pair.** `usePeerTransport` porte deux variables module-level, et deux
+  seulement : `_hubRateLimiter` et `_hubByteLimiter`, les compteurs du hub star. Sans reset, deux
+  pairs partagent la même fenêtre de débit. Corollaire : monter les pairs **séquentiellement**.
   ⚠️ Le mock PeerJS doit être **ré-importé après le même reset**, sinon `getLastPeerInstance()` ne
   voit pas les instances créées par la copie sous test.
+  ℹ️ `contextRegistry` **n'est plus module-level** : il vit dans `stores/peers2/state.js` depuis que
+  les dispatchers du Peer ont dû le consulter au travers d'un HMR. C'est donc la Pinia neuve de
+  `setup.js` qui l'isole, pas le reset de modules.
 - **`destroy()` du mock émet `disconnected` et conserve `_handlers`.** Par fidélité au vrai
   (`bundler.mjs:1810` et `:1789`) — c'est ce qui rend observable le détachement explicite des
   listeners. Les vider « pour faire propre » rendrait vert un correctif inerte, et c'est exactement
@@ -371,6 +374,12 @@ Sans décompte, parce qu'il pourrit : l'état exact se lit dans
   `usePeerOrchestrator.broadcastPresence.test.js`, qui n'asserte rien sur le routage star et survivra
   donc au déplacement.
 - `useMediaBroadcast` — dépend du point précédent.
-- `usePeerTransport` — restent `sendData` star (client/hub), le **câblage** du rate-limiting hub (la
-  mécanique est couverte dans `utils/createRateLimiter.test.js`), et `contextRegistry`.
-- `usePeerCore` — restent `notifyCloseConnectionToPeer`, `stopCallInviteRetry*`, `onUnmounted`.
+- `usePeerTransport` — couvert depuis le 29/08/2026 : `sendData` star
+  (`usePeerTransport.star.test.js`), le **câblage** du rate-limiting hub et la taille du chemin hub
+  (`usePeerTransport.forwardStar.test.js`), le registre des contextes des deux côtés
+  (`peers2Store.contextRegistry.test.js` pour la sémantique, `usePeerTransport.singleton.test.js`
+  pour le câblage).
+- `usePeerCore` — couvert depuis le 29/08/2026 : `notifyCloseConnectionToPeer`,
+  `stopCallInviteRetry*` et `onUnmounted`. Ce dernier porte un contrôle négatif **mesuré** :
+  neutraliser le seul hook de `usePeerCore` le laisse vert, parce que `usePeerRetry` enregistre le
+  sien avant — il faut neutraliser les deux.

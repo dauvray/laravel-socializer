@@ -1017,6 +1017,149 @@ describe('usePeerTransport — Peer singleton (garde d\'init, ref-counting, dest
         })
     })
 
+    // ── Registre des contextes : le câblage du transport ─────────────────────────
+    //
+    // La SÉMANTIQUE du registre (last-write-wins, garde d'identité au retrait, survie à
+    // `resetPeerState`) est épinglée côté store par `peers2Store.contextRegistry.test.js`.
+    // Ici, on n'épingle que le câblage : QUI inscrit, QUI retire, et QUAND.
+    //
+    // ⚠️ Décision de harnais, et elle n'est pas cosmétique : les deux cas de sémantique
+    // ci-dessous tournent contre le VRAI store Pinia. Le double de `createMockContext`
+    // réimplémente les deux mêmes gardes — neutraliser celui du store réel laisserait donc
+    // un test écrit contre le double parfaitement vert. C'est le piège « deux versants »
+    // de docs/architecture/tests.md#pièges-de-mock.
+
+    describe('registre des contextes — câblage du transport', () => {
+
+        it('inscrit le contexte dès `setLocalPeer`, même quand le Peer est déjà prêt', async () => {
+            // Le second contexte ne construit rien (le Peer existe), mais il DOIT être
+            // inscrit : c'est cette entrée, et elle seule, qui lui vaudra de recevoir les
+            // connexions entrantes portant son `callbackKey`.
+            const { usePeerTransport, lastPeer, peerCount } = await loadTransportCopy()
+            const ctxA = makeCtx('stream-a')
+            const [apiA] = mount(usePeerTransport, ctxA)
+            await boot(apiA, lastPeer)
+
+            const ctxB = makeCtx('data-app', ctxA.peerStore)
+            const [apiB] = mount(usePeerTransport, ctxB)
+            await apiB.setLocalPeer()
+
+            expect(peerCount()).toBe(1)
+            expect(ctxA.peerStore.getContextById('stream-a')).toBe(ctxA)
+            expect(ctxA.peerStore.getContextById('data-app')).toBe(ctxB)
+        })
+
+        it('retire le contexte du registre au démontage', async () => {
+            // ⚠️ Un seul des DEUX mécanismes de production est exercé ici : en régime
+            // nominal, `usePeerOrchestrator.cleanupPeerConnection` appelle d'abord
+            // `unregisterLocalContext` (cas suivant). Cet `onUnmounted` est le filet des
+            // chemins abrupts — navigation, crash de composant.
+            const { usePeerTransport, lastPeer } = await loadTransportCopy()
+            const ctxA = makeCtx('stream-a')
+            const [apiA, appA] = mount(usePeerTransport, ctxA)
+            await boot(apiA, lastPeer)
+
+            expect(ctxA.peerStore.getContextById('stream-a')).toBe(ctxA)
+
+            vi.useFakeTimers()
+            appA.unmount()
+
+            expect(ctxA.peerStore.getContextById('stream-a')).toBeNull()
+        })
+
+        it('`unregisterLocalContext` retire le contexte sans attendre le démontage', async () => {
+            // Le verbe que l'orchestrateur appelle dans son teardown terminal. Il ne touche
+            // QUE le registre : le contexte reste consommateur, donc le Peer survit — c'est
+            // ce qui distingue un teardown de contexte d'un démontage d'onglet.
+            const { usePeerTransport, lastPeer } = await loadTransportCopy()
+            const ctxA = makeCtx('stream-a')
+            const [apiA] = mount(usePeerTransport, ctxA)
+            const peer = await boot(apiA, lastPeer)
+
+            apiA.unregisterLocalContext()
+
+            expect(ctxA.peerStore.getContextById('stream-a')).toBeNull()
+            expect(ctxA.peerStore.peerConsumers.size).toBe(1)
+            expect(peer.destroy).not.toHaveBeenCalled()
+        })
+
+        it('ne laisse aucune entrée derrière lui quand tous les contextes se démontent', async () => {
+            // Sur le VRAI store : le registre y survit à `resetPeerState` (c'est voulu),
+            // donc rien ne le nettoie à la destruction du Peer. Une entrée oubliée ici est
+            // une fuite qui retient un `ctx` complet — et ses closures — pour la vie de
+            // l'onglet.
+            const { usePeerTransport, lastPeer } = await loadTransportCopy()
+            const peerStore = usePeer2Store()
+            const contexts = ['stream-a', 'stream-b', 'data-app']
+                .map((id) => ({ ...makeCtx(id), peerStore }))
+            const mounted = contexts.map((ctx) => mount(usePeerTransport, ctx))
+
+            await boot(mounted[0][0], lastPeer)
+            await Promise.all(mounted.slice(1).map(([api]) => api.setLocalPeer()))
+
+            expect(peerStore.contextRegistry.size).toBe(3)
+
+            vi.useFakeTimers()
+            mounted.forEach(([, app]) => app.unmount())
+
+            expect(peerStore.contextRegistry.size).toBe(0)
+        })
+
+        it('un contexte remonté sous le même id garde le registre quand l\'ancien se démonte', async () => {
+            // ⭐ Le versant TRANSPORT du garde d'identité — l'autre est dans
+            // `peers2Store.contextRegistry.test.js`. C'est la séquence réelle d'une
+            // navigation SPA : Vue monte le remplaçant AVANT de démonter le sortant, donc
+            // l'`onUnmounted` de l'ancien s'exécute alors que l'entrée appartient déjà au
+            // neuf. Sans le garde, le neuf serait effacé du registre sans rien émettre, et
+            // ne recevrait plus aucune connexion entrante.
+            const { usePeerTransport, lastPeer } = await loadTransportCopy()
+            const peerStore = usePeer2Store()
+            const ctxAncien = { ...makeCtx('stream-a'), peerStore }
+            const ctxNeuf = { ...makeCtx('stream-a'), peerStore }
+
+            const [apiAncien, appAncien] = mount(usePeerTransport, ctxAncien)
+            await boot(apiAncien, lastPeer)
+
+            const [apiNeuf] = mount(usePeerTransport, ctxNeuf)
+            await apiNeuf.setLocalPeer()
+
+            expect(peerStore.getContextById('stream-a')).toBe(ctxNeuf)
+
+            vi.useFakeTimers()
+            appAncien.unmount()
+
+            expect(peerStore.getContextById('stream-a')).toBe(ctxNeuf)
+        })
+
+        it('[structurel] retire le contexte AVANT de décompter le consommateur', async () => {
+            // ⚠️ Filet STRUCTUREL, pas fait métier — à lire comme « tous les `off` avant
+            // `destroy()` » plus haut. Sous la configuration actuelle
+            // (`PEER_DESTROY_DELAY_MS > 0`, et `resetPeerState` qui ne touche pas au
+            // registre), AUCUN comportement observable ne dépend de cet ordre : son seul
+            // contrôle négatif est l'inversion des deux lignes de l'`onUnmounted`.
+            // Il tient parce que l'inverse serait fragile — décompter d'abord peut
+            // déclencher une destruction, et un dispatcher du Peer mourant consulterait
+            // alors un registre qui contient encore un contexte en cours de démontage.
+            const { usePeerTransport, lastPeer } = await loadTransportCopy()
+            const ctxA = makeCtx('stream-a')
+            const [apiA, appA] = mount(usePeerTransport, ctxA)
+            await boot(apiA, lastPeer)
+
+            ctxA.peerStore.unregisterContext.mockClear()
+            ctxA.peerStore.removePeerConsumer.mockClear()
+
+            vi.useFakeTimers()
+            appA.unmount()
+
+            const [retrait] = ctxA.peerStore.unregisterContext.mock.invocationCallOrder
+            const [decompte] = ctxA.peerStore.removePeerConsumer.mock.invocationCallOrder
+
+            expect(retrait).toBeDefined()
+            expect(decompte).toBeDefined()
+            expect(retrait).toBeLessThan(decompte)
+        })
+    })
+
     // ── Configuration ICE servie par le serveur ──────────────────────────────────
     //
     // Les identifiants TURN étaient lus dans `import.meta.env.VITE_COTURN_*`, donc inlinés par

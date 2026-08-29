@@ -16,7 +16,12 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createMockContext } from './helpers/createMockContext.js'
 import { withSetup } from './helpers/withSetup.js'
 import { usePeerTransport } from '~socializer/components/WebRTC2/Composables/usePeerTransport.js'
-import { HUB_MAX_BYTES_PER_WINDOW, HUB_RATE_WINDOW_MS } from '~socializer/components/WebRTC2/webrtc2.config.js'
+import {
+    HUB_MAX_BYTES_PER_WINDOW,
+    HUB_MAX_MESSAGES_PER_WINDOW,
+    HUB_RATE_WINDOW_MS,
+    MAX_PAYLOAD_BYTES,
+} from '~socializer/components/WebRTC2/webrtc2.config.js'
 
 describe('usePeerTransport — forwardStarMessage (validation envelope.to)', () => {
     let ctx
@@ -271,6 +276,191 @@ describe('usePeerTransport — forwardStarMessage (validation envelope.to)', () 
             )
 
             expect(sendSpies.carol.mock.calls.length).toBe(sentBefore + 1)
+        })
+    })
+
+    /*--------------------------------------------------------------------------
+    | Câblage du plafond de MESSAGES — la clé, pas la mécanique
+    |--------------------------------------------------------------------------
+    |
+    | La mécanique de la fenêtre glissante (plafond, reprise, purge des expéditeurs
+    | inactifs) vit dans `utils/createRateLimiter.js` et y est testée. La dupliquer ici
+    | donnerait deux domiciles à une même politique — donc deux copies qui divergent.
+    |
+    | Ce qui manque, et que seuls ces cas peuvent dire, c'est le CÂBLAGE : le hub
+    | compte par identité PeerJS réelle (`sourceConn.peer`), jamais par le `from`
+    | déclaré dans l'enveloppe. Confondre les deux rendrait le plafond contournable
+    | par un simple changement de nom déclaré — le champ que le hub qualifie lui-même
+    | de « non fiable ».
+    |
+    | ⚠️ Payloads d'un octet partout ici : le budget d'octets partage la même clé, et
+    | un décor plus lourd le ferait mordre à la place du plafond de messages.
+    */
+
+    describe('câblage du plafond de messages (clé = identité PeerJS)', () => {
+        let warnSpy
+
+        beforeEach(() => {
+            warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        })
+
+        /** Sature la fenêtre de messages de `conn`, sans jamais la dépasser. */
+        const saturate = (conn, declaredFrom = SENDER) => {
+            for (let i = 0; i < HUB_MAX_MESSAGES_PER_WINDOW; i++) {
+                transport.forwardStarMessage(
+                    { __starRoute: true, to: null, from: declaredFrom, payload: 'x' },
+                    conn
+                )
+            }
+        }
+
+        it('partage le quota entre deux `from` déclarés depuis la MÊME connexion', () => {
+            // Une enveloppe sur deux ment sur son expéditeur. La connexion, elle, est la
+            // même : c'est elle qui porte l'identité, donc un seul quota.
+            for (let i = 0; i < HUB_MAX_MESSAGES_PER_WINDOW; i++) {
+                transport.forwardStarMessage(
+                    {
+                        __starRoute: true,
+                        to: null,
+                        from: i % 2 === 0 ? SENDER : 'mallory',
+                        payload: 'x',
+                    },
+                    sourceConn()
+                )
+            }
+
+            expect(sendSpies.bob).toHaveBeenCalledTimes(HUB_MAX_MESSAGES_PER_WINDOW)
+
+            transport.forwardStarMessage(
+                { __starRoute: true, to: null, from: 'mallory', payload: 'x' },
+                sourceConn()
+            )
+
+            expect(sendSpies.bob).toHaveBeenCalledTimes(HUB_MAX_MESSAGES_PER_WINDOW)
+            expect(warnSpy).toHaveBeenCalledWith(
+                expect.stringContaining('[Hub] Rate limit dépassé')
+            )
+        })
+
+        it('ne partage RIEN entre deux connexions qui déclarent le même `from`', () => {
+            // Le miroir, et le plus fort des deux : si le quota était indexé sur le nom
+            // déclaré, l'expéditeur saturé pourrait faire taire un pair innocent en se
+            // faisant passer pour lui.
+            saturate(sourceConn())
+
+            const sentBefore = sendSpies.carol.mock.calls.length
+
+            const bobPeerId = `peer-bob-${_peerSeq++}`
+            ctx.peerStore.addRemotePeerId('bob', bobPeerId)
+
+            transport.forwardStarMessage(
+                { __starRoute: true, to: ['carol'], from: SENDER, payload: 'x' },
+                { peer: bobPeerId }
+            )
+
+            expect(sendSpies.carol.mock.calls.length).toBe(sentBefore + 1)
+        })
+
+        it('un message rejeté pour sa TAILLE a quand même consommé un jeton', () => {
+            // ⭐ Le seul cas dont la couleur dépend de l'ORDRE des gardes et non de leur
+            // présence : le plafond de messages est évalué AVANT le contrôle de taille.
+            // C'est ce qui empêche une rafale de payloads géants d'être gratuite — chaque
+            // tentative a coûté au hub une résolution d'expéditeur et une sérialisation.
+            const huge = 'x'.repeat(MAX_PAYLOAD_BYTES + 1)
+
+            for (let i = 0; i < HUB_MAX_MESSAGES_PER_WINDOW; i++) {
+                transport.forwardStarMessage(
+                    { __starRoute: true, to: null, from: SENDER, payload: huge },
+                    sourceConn()
+                )
+            }
+
+            expect(sendSpies.bob).not.toHaveBeenCalled()
+
+            transport.forwardStarMessage(
+                { __starRoute: true, to: null, from: SENDER, payload: 'x' },
+                sourceConn()
+            )
+
+            expect(sendSpies.bob).not.toHaveBeenCalled()
+            // L'assertion sur le MESSAGE, et pas seulement sur l'absence d'envoi : sans
+            // elle, le cas serait vert dans les deux ordres de gardes — coupé par la
+            // taille ou coupé par le débit, l'effet observable est le même.
+            expect(warnSpy).toHaveBeenLastCalledWith(
+                expect.stringContaining('[Hub] Rate limit dépassé')
+            )
+        })
+    })
+
+    /*--------------------------------------------------------------------------
+    | Limite de taille — le chemin HUB, qui n'est pas celui du mesh
+    |--------------------------------------------------------------------------
+    |
+    | ⚠️ Le hub n'appelle PAS `isPayloadWithinLimit` : il refait le contrôle à la main
+    | (`getPayloadSizeBytes` + deux `return`) pour pouvoir journaliser `senderSlug` et
+    | `senderPeerId`. Ses messages sont donc différents de ceux du mesh, et SANS ACCENT
+    | (« Enveloppe star ignoree »). Ne jamais transposer une assertion de texte de
+    | `mesh.test.js` ici.
+    */
+
+    describe('limite de taille du chemin hub', () => {
+        let warnSpy
+
+        beforeEach(() => {
+            warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        })
+
+        const forward = (payload) => transport.forwardStarMessage(
+            { __starRoute: true, to: null, from: SENDER, payload },
+            sourceConn()
+        )
+
+        it('ignore une enveloppe dont le payload JSON dépasse MAX_PAYLOAD_BYTES', () => {
+            forward('x'.repeat(MAX_PAYLOAD_BYTES + 1))
+
+            expect(sendSpies.bob).not.toHaveBeenCalled()
+            expect(sendSpies.carol).not.toHaveBeenCalled()
+            expect(warnSpy).toHaveBeenCalledWith(
+                expect.stringContaining('payload trop volumineux'),
+                expect.objectContaining({ senderSlug: SENDER })
+            )
+        })
+
+        it('ignore une enveloppe dont le payload BINAIRE dépasse la limite', () => {
+            forward(new ArrayBuffer(MAX_PAYLOAD_BYTES + 1))
+
+            expect(sendSpies.bob).not.toHaveBeenCalled()
+            expect(warnSpy).toHaveBeenCalledWith(
+                expect.stringContaining('payload trop volumineux'),
+                expect.objectContaining({ payloadKind: 'arraybuffer' })
+            )
+        })
+
+        it('retransmet un payload binaire PILE à la limite', () => {
+            // Comparaison stricte `>` : la limite elle-même passe. La contre-épreuve des
+            // deux cas ci-dessus — sans elle, un contrôle trop strict d'un octet passerait.
+            const atLimit = new ArrayBuffer(MAX_PAYLOAD_BYTES)
+
+            forward(atLimit)
+
+            expect(sendSpies.bob).toHaveBeenCalledWith(atLimit)
+            expect(sendSpies.carol).toHaveBeenCalledWith(atLimit)
+        })
+
+        it('ignore une enveloppe SANS payload', () => {
+            // La seule forme d'invalidité réellement atteignable en production : un client
+            // qui pose le marqueur `__starRoute` sans rien à router. Les autres (fonction,
+            // symbole, référence circulaire) ne traversent aucun data channel PeerJS.
+            transport.forwardStarMessage(
+                { __starRoute: true, to: ['bob'], from: SENDER },
+                sourceConn()
+            )
+
+            expect(sendSpies.bob).not.toHaveBeenCalled()
+            expect(warnSpy).toHaveBeenCalledWith(
+                expect.stringContaining('payload invalide'),
+                expect.objectContaining({ senderSlug: SENDER })
+            )
         })
     })
 })

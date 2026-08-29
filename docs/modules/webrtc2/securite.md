@@ -324,9 +324,21 @@ Ne pas lire cette règle comme une défense-en-profondeur : sur le chemin (a) el
 callback métier). Le contrôle en réception est de la défense-en-profondeur : les deux premiers sont
 contournables par un pair qui retire le check client.
 
+⚠️ **`sendData` ne contrôle rien sur ses deux branches star** — ni côté hub, ni côté client, là où
+le mesh contrôle avant sa boucle. Ce n'est pas une brèche : la réception mesure chaque trame
+**avant** que l'orchestrateur ne déballe l'enveloppe, donc le message est jeté à l'arrivée. Le coût
+est un envoi de canal gaspillé. Asymétrie épinglée par
+`usePeerTransport.star.test.js`, arbitrage ouvert dans
+[`work/webrtc2-todo.md`](../../../work/webrtc2-todo.md).
+
 Logique mutualisée dans `Composables/utils/payloadSize.js` (`getPayloadSizeBytes`,
 `isPayloadWithinLimit`) — source de vérité unique pour les trois points. `envelope.to` est filtré
 par `isValidSlug` **et** croisé avec les membres réels de la room avant retransmission.
+
+⚠️ **Un `destUserSlugs` VIDE veut dire « personne », jamais « tout le monde »** : `[]` est *truthy*,
+donc il traverse les deux replis `destUserSlugs || …` et produit un fan-out nul. Le correctif
+tentant (`destUserSlugs?.length ? … : null`) inverserait la sémantique sans lever. Épinglé des deux
+côtés par `usePeerTransport.star.test.js`.
 
 ### Le hub porte deux plafonds, et le second est celui qui compte
 

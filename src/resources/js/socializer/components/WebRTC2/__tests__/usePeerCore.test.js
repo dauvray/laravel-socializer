@@ -959,4 +959,283 @@ describe('usePeerCore', () => {
             expect(ctx.AjaxService.load.mock.calls[0][2].status).toBe(true)
         })
     })
+
+    describe('notifyCloseConnectionToPeer', () => {
+
+        const buildPayload = (overrides = {}) => ({
+            toUserSlug: 'alice',
+            type: 'visio',
+            ...overrides,
+        })
+
+        it('POSTe la fermeture avec le destinataire, MON slug, la room et le type', async () => {
+            ctx.session.currentCallRoomId = 'call-room-7'
+
+            await core.notifyCloseConnectionToPeer(buildPayload())
+
+            expect(ctx.AjaxService.load).toHaveBeenCalledWith(
+                ENDPOINTS.CLOSE_CONNECTION_TO_PEER_ID,
+                'post',
+                {
+                    toUserSlug: 'alice',
+                    // ⚠️ De `ctx.mySlug`, jamais du payload : c'est le destinataire qui
+                    // s'en sert pour savoir QUELLE connexion fermer chez lui.
+                    fromUserSlug: ctx.mySlug.value,
+                    room: 'call-room-7',
+                    type: 'visio',
+                }
+            )
+        })
+
+        // La room a trois étages de repli, et c'est le seul verbe du fichier qui en a
+        // autant : l'avis de fermeture part souvent APRÈS que la session a commencé à se
+        // démonter, quand `currentCallRoomId` a déjà pu être vidé.
+        it('retombe sur `currentCallRoomId` quand la charge ne porte pas de room', async () => {
+            ctx.session.currentCallRoomId = 'call-room-7'
+
+            await core.notifyCloseConnectionToPeer(buildPayload())
+
+            expect(ctx.AjaxService.load).toHaveBeenCalledWith(
+                ENDPOINTS.CLOSE_CONNECTION_TO_PEER_ID, 'post',
+                expect.objectContaining({ room: 'call-room-7' })
+            )
+        })
+
+        it('retombe sur `currentRoom` quand aucune room d\'appel n\'est ouverte', async () => {
+            ctx.session.currentCallRoomId = null
+
+            await core.notifyCloseConnectionToPeer(buildPayload())
+
+            expect(ctx.AjaxService.load).toHaveBeenCalledWith(
+                ENDPOINTS.CLOSE_CONNECTION_TO_PEER_ID, 'post',
+                expect.objectContaining({ room: ctx.session.currentRoom })
+            )
+        })
+
+        it('la room du payload l\'emporte sur les deux replis', async () => {
+            ctx.session.currentCallRoomId = 'call-room-7'
+
+            await core.notifyCloseConnectionToPeer(buildPayload({ room: 'explicite' }))
+
+            expect(ctx.AjaxService.load).toHaveBeenCalledWith(
+                ENDPOINTS.CLOSE_CONNECTION_TO_PEER_ID, 'post',
+                expect.objectContaining({ room: 'explicite' })
+            )
+        })
+
+        // Le littéral `'visio'`, PAS `ctx.session.currentType` : c'est la seule route du
+        // composable qui ne route pas par le type du contexte. Le décor a `currentType:
+        // 'data'`, donc le cas les distingue vraiment.
+        it('retombe sur le type `visio`, et non sur le type du contexte', async () => {
+            await core.notifyCloseConnectionToPeer({ toUserSlug: 'alice' })
+
+            expect(ctx.session.currentType).not.toBe('visio')
+            expect(ctx.AjaxService.load).toHaveBeenCalledWith(
+                ENDPOINTS.CLOSE_CONNECTION_TO_PEER_ID, 'post',
+                expect.objectContaining({ type: 'visio' })
+            )
+        })
+
+        it('n\'émet rien sans destinataire', async () => {
+            await core.notifyCloseConnectionToPeer(buildPayload({ toUserSlug: null }))
+
+            expect(ctx.AjaxService.load).not.toHaveBeenCalled()
+        })
+
+        it('n\'émet rien quand AUCUNE room ne peut être résolue', async () => {
+            // ⚠️ Annuler les DEUX replis. Le double pose `currentRoom: 'app'` : n'annuler
+            // que `currentCallRoomId` ferait passer le cas sans jamais atteindre la sortie
+            // anticipée — vert pour la mauvaise raison.
+            ctx.session.currentCallRoomId = null
+            ctx.session.currentRoom = null
+
+            await core.notifyCloseConnectionToPeer(buildPayload())
+
+            expect(ctx.AjaxService.load).not.toHaveBeenCalled()
+        })
+
+        it('avale l\'échec du POST et ne rend rien', async () => {
+            const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+            ctx.AjaxService.load.mockRejectedValueOnce(new Error('réseau'))
+
+            // ⭐ `undefined` sur TOUS les chemins — asserté, pas déduit. Ce verbe est le
+            // seul du composable à ne rien rendre : aucun appelant ne peut savoir si
+            // l'avis est parti, et `useCallManager` l'appelle d'ailleurs sans `await`.
+            await expect(core.notifyCloseConnectionToPeer(buildPayload())).resolves.toBeUndefined()
+
+            expect(error).toHaveBeenCalledWith(
+                expect.stringContaining('notifyCloseConnectionToPeer failed'),
+                expect.anything()
+            )
+        })
+    })
+
+    describe('les trois annuleurs d\'invitation', () => {
+
+        const buildPayload = (overrides = {}) => ({
+            toUserSlug: 'alice',
+            type: 'visio',
+            ...overrides,
+        })
+
+        /** Nombre de POST d'invitation émis vers `slug`. */
+        const alertsTo = (slug) => ctx.AjaxService.load.mock.calls
+            .filter(([url, , data]) => url === ENDPOINTS.SEND_ALERT_TO_USER && data.toUserSlug === slug)
+            .length
+
+        it('`stopCallInviteRetryForUser` éteint la chaîne du SEUL pair visé', async () => {
+            await core.requestAuthorizationRemotePeerId(buildPayload({ toUserSlug: 'alice' }))
+            await core.requestAuthorizationRemotePeerId(buildPayload({ toUserSlug: 'bob' }))
+
+            core.stopCallInviteRetryForUser('alice')
+
+            await vi.advanceTimersByTimeAsync(10_000)
+
+            expect(alertsTo('alice')).toBe(1)          // l'envoi initial, et rien après
+            expect(alertsTo('bob')).toBeGreaterThan(1) // sa chaîne tourne toujours
+        })
+
+        it('`stopCallInviteRetry` retrouve le pair par son inviteId', async () => {
+            const inviteAlice = await core.requestAuthorizationRemotePeerId(buildPayload({ toUserSlug: 'alice' }))
+            await core.requestAuthorizationRemotePeerId(buildPayload({ toUserSlug: 'bob' }))
+
+            core.stopCallInviteRetry(inviteAlice)
+
+            await vi.advanceTimersByTimeAsync(10_000)
+
+            expect(alertsTo('alice')).toBe(1)
+            expect(alertsTo('bob')).toBeGreaterThan(1)
+        })
+
+        // Contre-épreuve indispensable : sans elle, un `clearAll()` déguisé passerait les
+        // deux cas ci-dessus.
+        it('`stopCallInviteRetry` sur un inviteId inconnu n\'annule rien', async () => {
+            await core.requestAuthorizationRemotePeerId(buildPayload({ toUserSlug: 'alice' }))
+
+            core.stopCallInviteRetry('invite-qui-n-existe-pas')
+
+            await vi.advanceTimersByTimeAsync(10_000)
+
+            expect(alertsTo('alice')).toBeGreaterThan(1)
+        })
+
+        it('`clearAllCallInviteRetries` éteint toutes les chaînes', async () => {
+            await core.requestAuthorizationRemotePeerId(buildPayload({ toUserSlug: 'alice' }))
+            await core.requestAuthorizationRemotePeerId(buildPayload({ toUserSlug: 'bob' }))
+
+            core.clearAllCallInviteRetries()
+
+            await vi.advanceTimersByTimeAsync(10_000)
+
+            expect(alertsTo('alice')).toBe(1)
+            expect(alertsTo('bob')).toBe(1)
+        })
+
+        /**
+         * ⭐ FAIT ÉPINGLÉ, pas un contrat souhaité — et il est pire que « un minuteur
+         * traîne ».
+         *
+         * La clé du minuteur est `${currentType}:${currentRoom}:${userSlug}`
+         * (`utils/usePeerRetry.js`). Changer de room ou de type entre la planification et
+         * l'annulation fait calculer à `clearRetry` une clé qui ne désigne plus rien : le
+         * minuteur de l'ancienne chaîne SURVIT. Seul, il serait inoffensif — sa garde
+         * d'arrêt (`userSlugToInviteId.has`) le tuerait à son réveil.
+         *
+         * Il ne l'est plus dès qu'une NOUVELLE invitation existe pour le même pair, ce que
+         * la production fait sans rien d'exotique (annuler un appel, changer de room,
+         * rappeler la même personne) :
+         *
+         *   1. l'entrée `userSlugToInviteId` est réécrite, donc la chaîne périmée repasse
+         *      sa garde d'arrêt et POSTe une invitation pour la room ABANDONNÉE ;
+         *   2. puis elle se replanifie — et `scheduleRetry` commence par `clearRetry` sous
+         *      la clé COURANTE : elle EFFACE le minuteur de la chaîne vivante.
+         *
+         * Résultat : la chaîne survivante est la mauvaise. L'invitation en cours ne sera
+         * plus jamais relancée, et c'est l'abandonnée qui occupe le créneau.
+         *
+         * ⚠️ Jitter neutralisé (`Math.random → 0`), sans quoi le cas est FLAKY : à jitter
+         * libre, l'ordre de réveil des deux chaînes décide qui écrase qui, et le décompte
+         * vaut 3 ou 4 selon le tirage. Mesuré : 1 vert sur 3 exécutions avant cette
+         * neutralisation. Un test dont la couleur dépend du tirage ne dit rien.
+         *
+         * ⚠️ Contrôle négatif INVERSÉ : indexer la clé sur le seul `userSlug` fait rougir
+         * ce cas. Il rougira donc le jour de la correction, et c'est le signal voulu — le
+         * mettre à jour, pas le supprimer.
+         *
+         * ⚠️ C'est aussi le piège des quatre cas ci-dessus : aucun ne doit toucher
+         * `session.currentRoom` ni `currentType` entre la planification et l'annulation,
+         * sinon il passerait pour la mauvaise raison.
+         */
+        it('[épinglé] changer de room entre l\'invitation et l\'annulation fait survivre la MAUVAISE chaîne', async () => {
+            vi.spyOn(Math, 'random').mockReturnValue(0)
+
+            const roomsInvitees = () => ctx.AjaxService.load.mock.calls
+                .filter(([url]) => url === ENDPOINTS.SEND_ALERT_TO_USER)
+                .map(([, , data]) => data.options.room)
+
+            ctx.session.currentCallRoomId = 'call-1'
+            await core.requestAuthorizationRemotePeerId(buildPayload({ toUserSlug: 'alice' }))
+
+            // L'appel est abandonné, on change de room, puis on rappelle le même pair.
+            ctx.session.currentRoom = 'autre-room'
+            ctx.session.currentCallRoomId = 'call-2'
+            core.stopCallInviteRetryForUser('alice')
+            await core.requestAuthorizationRemotePeerId(buildPayload({ toUserSlug: 'alice' }))
+
+            expect(roomsInvitees()).toEqual(['call-1', 'call-2'])
+
+            // Premier réveil : c'est la chaîne PÉRIMÉE qui relance, pas la vivante.
+            await vi.advanceTimersByTimeAsync(1300)
+
+            expect(roomsInvitees()).toEqual(['call-1', 'call-2', 'call-1'])
+
+            // Et elle a pris la place : plus jamais un seul `call-2`.
+            await vi.advanceTimersByTimeAsync(30_000)
+
+            expect(roomsInvitees().filter((room) => room === 'call-2')).toHaveLength(1)
+        })
+    })
+
+    /**
+     * ⚠️ CONTRÔLE NÉGATIF MESURÉ, et son résultat contredit l'intuition — à lire avant de
+     * toucher à ce bloc.
+     *
+     * Neutraliser le seul `onUnmounted` de `usePeerCore` laisse le cas ci-dessous **VERT**.
+     * `usePeerRetry` enregistre SON PROPRE `onUnmounted(() => clearAll())` au premier
+     * statement du composable, donc AVANT celui-ci, et Vue exécute les hooks dans l'ordre
+     * d'enregistrement : tous les minuteurs sont déjà annulés quand le hook de `usePeerCore`
+     * s'exécute. Il faut neutraliser **les deux** pour voir le rouge. Mesuré le 2026-08-29 ;
+     * c'est le cas prévu par la règle 4 de docs/architecture/tests.md.
+     *
+     * Le cas est écrit quand même, et comme filet STRUCTUREL : il tient la propriété « rien
+     * ne part après démontage » quel que soit celui des deux mécanismes qui la porte.
+     *
+     * Ce qui n'est PAS écrit, et pourquoi : le seul effet exclusif au hook de `usePeerCore`
+     * est `userSlugToInviteId.clear()`. Cette Map est une closure privée, non exposée, qui
+     * meurt avec l'instance — son vidage n'est observable qu'en appelant les verbes du
+     * composable APRÈS son démontage, un chemin que la production n'emprunte jamais. Un cas
+     * construit dessus documenterait un fantôme.
+     */
+    describe('onUnmounted', () => {
+
+        it('éteint les invitations en vol au démontage', async () => {
+            // Montage LOCAL, démonté ici : l'`afterEach` du fichier démonte déjà `app`, et
+            // le réutiliser produirait un double démontage. Une app dédiée coûte moins
+            // qu'un drapeau dans un `afterEach` dont dépendent tous les autres cas.
+            const ctxLocal = createMockContext()
+            seedReadyPeer(ctxLocal.peerStore, 'local-peer-id-mock')
+            const [coreLocal, appLocal] = withSetup(() => usePeerCore(ctxLocal))
+
+            await coreLocal.requestAuthorizationRemotePeerId({ toUserSlug: 'alice', type: 'visio' })
+            expect(ctxLocal.AjaxService.load).toHaveBeenCalledOnce()
+
+            appLocal.unmount()
+
+            await vi.advanceTimersByTimeAsync(60_000)
+
+            // ⚠️ Rien n'est asserté sur `askPeerRateLimiter` : il est au niveau MODULE et
+            // partagé avec le `core` du fichier.
+            expect(ctxLocal.AjaxService.load).toHaveBeenCalledOnce()
+        })
+    })
 })

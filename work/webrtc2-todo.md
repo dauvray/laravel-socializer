@@ -160,6 +160,23 @@ avant le déménagement revient à les jeter.
   `conn.open = true`. Aucun code de production n'y écrit aujourd'hui (vérifié au grep), donc la
   classe de bug est fermée côté production ; l'étendre demande un verbe de mock et la reprise
   des 12 sites.
+- [ ] 🟢 **`sendData` ne contrôle pas la taille sur ses deux branches star** `[S]` — trouvé le
+  29/08/2026 en écrivant `usePeerTransport.star.test.js`, où l'état actuel est **épinglé**.
+
+  La branche mesh appelle `isPayloadWithinLimit` avant sa boucle ; ni la branche hub ni la branche
+  client ne contrôlent quoi que ce soit. Même appel d'API, comportement différent selon la topologie.
+
+  **Ce n'est pas une brèche, et c'est ce qui rend l'arbitrage possible** : `[Recv]`
+  (`createPeerContext`) mesure chaque trame **avant** que l'orchestrateur ne déballe l'enveloppe
+  star. Un payload hors limite est donc jeté à l'arrivée — le coût réel est un envoi de canal
+  gaspillé, pas une amplification. À trancher :
+
+  - **combler** — un `isPayloadWithinLimit` en tête de la branche star. Coût : une sérialisation par
+    envoi sur le chemin chaud du hub, qui relaie déjà à N destinataires ;
+  - **assumer** — écrire la décision et garder les deux cas épinglés comme sa trace.
+
+  ⚠️ Les deux cas `[épinglé]` de `usePeerTransport.star.test.js` **rougiront** le jour où ce sera
+  comblé : c'est le signal voulu. Les mettre à jour, jamais les supprimer.
 
 ---
 
@@ -590,6 +607,39 @@ avant le déménagement revient à les jeter.
   ⚠️ Ne pas confondre avec l'usurpation intra-room déjà assumée : c'est la **même** faille, et cet
   item est la seule chose qui puisse la fermer. Tant qu'il est ouvert, tout durcissement côté client
   sur la longévité des mappings est décoratif — l'argument est écrit dans `securite.md`.
+
+---
+
+## usePeerCore — le moteur de retry d'invitation
+
+- [ ] 🟠 **La clé de minuteur de `usePeerRetry` périme, et la chaîne périmée vole la place de la
+  vivante** `[M]` — trouvé le 29/08/2026 en écrivant les tests des trois annuleurs, où le
+  comportement est **épinglé** (`usePeerCore.test.js`, describe « les trois annuleurs
+  d'invitation »).
+
+  La clé est `` `${ctx.currentType.value}:${ctx.currentRoom.value}:${userSlug}` ``
+  (`utils/usePeerRetry.js`). Changer de room ou de type entre la planification et l'annulation fait
+  donc calculer à `clearRetry` une clé qui ne désigne plus rien : **le minuteur survit**.
+
+  Seul, il serait inoffensif — sa garde d'arrêt (`userSlugToInviteId.has`) le tuerait à son réveil.
+  Il cesse de l'être dès qu'une nouvelle invitation existe pour le même pair, ce que la production
+  produit sans rien d'exotique (annuler un appel, changer de room, rappeler la même personne) :
+
+  1. l'entrée `userSlugToInviteId` est réécrite, donc la chaîne périmée **repasse sa garde d'arrêt**
+     et POSTe une invitation portant la room ABANDONNÉE ;
+  2. puis elle se replanifie — et `scheduleRetry` commence par `clearRetry` sous la clé **courante**,
+     donc elle **efface le minuteur de la chaîne vivante**.
+
+  Résultat : la chaîne survivante est la mauvaise. L'invitation en cours n'est plus jamais relancée,
+  et c'est l'abandonnée qui occupe le créneau — mesuré, `['call-1', 'call-2', 'call-1', 'call-1', …]`.
+
+  ⚠️ **Le cas est flaky sans neutraliser le jitter** (`Math.random → 0`) : à jitter libre, l'ordre
+  de réveil décide qui écrase qui — 1 vert sur 3 exécutions avant neutralisation. Toute reprise de
+  cet item doit garder cette neutralisation.
+
+  ℹ️ `clearAll()` n'a pas le défaut : il itère la Map au lieu de recalculer une clé. Piste la plus
+  simple : indexer `pendingTimers` sur le seul `userSlug`, ou faire porter au minuteur la clé sous
+  laquelle il a été posé. ⚠️ Contrôle négatif **inversé** — le cas épinglé rougira à la correction.
 
 ---
 
