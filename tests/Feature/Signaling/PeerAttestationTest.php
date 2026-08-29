@@ -4,6 +4,7 @@ namespace Dauvray\Socializer\Tests\Feature\Signaling;
 
 use Dauvray\Socializer\Tests\TestCase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Log;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
@@ -103,6 +104,53 @@ class PeerAttestationTest extends TestCase
         return json_decode(base64_decode(strtr($payload, '-_', '+/')), true);
     }
 
+    /**
+     * Tous les `Log::warning` reçus par la doublure, dans l'ordre.
+     *
+     * ⚠️ `Log::spy()` seul ne restitue rien : `shouldHaveReceived(...)->withArgs(...)` ne sait dire
+     * que « un appel correspond » ou « aucun ne correspond ». C'est suffisant pour asserter la
+     * présence d'une clé — la forme qu'emploie `RelationGuardTest` — et insuffisant dès qu'il faut
+     * asserter sur ce qui ne doit PAS s'y trouver : un `withArgs` qui rend `false` produit
+     * « aucun appel ne correspond », pas « l'attestation était dans le contexte ». On capture donc au
+     * passage, et les cas assertent sur la valeur capturée.
+     *
+     * ⚠️ UN SEUL `Log::spy()` PAR CAS, en tête. `Facade::spy()` ne remplace la façade que si elle
+     * n'est pas DÉJÀ doublée : un second appel est un no-op silencieux, et la doublure continue
+     * d'accumuler les appels du premier. Un helper qui re-doublerait à chaque refus compterait donc
+     * tous les précédents.
+     *
+     * @return list<array{message: string, context: array<string, mixed>}>
+     */
+    private function capturedWarnings(): array
+    {
+        $captured = [];
+
+        Log::shouldHaveReceived('warning')
+            ->withArgs(function (string $message, array $context) use (&$captured) {
+                $captured[] = ['message' => $message, 'context' => $context];
+
+                return true;
+            });
+
+        return $captured;
+    }
+
+    /**
+     * Soumet une attestation à la vérification et réasserte que le CORPS ne dit toujours rien.
+     *
+     * L'invariant que ce fichier garde par ailleurs
+     * (`la_verification_ne_dit_jamais_pourquoi_elle_refuse`) est réasserté à chaque refus de la
+     * section « Journal » : c'est ce qui empêche qu'un journal bavard s'accompagne un jour d'une
+     * réponse bavarde — le motif existe désormais, il n'a qu'une sortie autorisée.
+     */
+    private function refuse(string $attestation, string $peerId = self::PEER_ID): void
+    {
+        $this->actingAs($this->makeUser('recepteur-'.uniqid()))
+            ->postJson(self::VERIFY_URI, ['attestation' => $attestation, 'peerId' => $peerId])
+            ->assertOk()
+            ->assertExactJson(['slug' => null]);
+    }
+
     /*
     |--------------------------------------------------------------------------
     | Délivrance
@@ -128,15 +176,14 @@ class PeerAttestationTest extends TestCase
         $this->assertSame($alice->slug, $this->claimsOf($response->json('attestation'))['s']);
     }
 
-    #[Test]
-    public function un_invite_n_atteint_pas_la_route(): void
-    {
-        // La différence de nature avec `/get-ice-servers`, qui est publique et rend toujours 200
-        // parce que la coquille SPA monte `data-app` avant tout login : un invité n'a AUCUNE
-        // identité à faire attester, donc aucune raison d'être servi. Le garde est ici la pile de
-        // middlewares (`auth`), pas une ligne du contrôleur.
-        $this->postJson(self::ISSUE_URI, ['peerId' => self::PEER_ID])->assertUnauthorized();
-    }
+    /*
+    | ⚠️ ICI VIVAIT `un_invite_n_atteint_pas_la_route`, qui assertait `assertUnauthorized()` —
+    | c'est-à-dire qui ÉPINGLAIT la panne. Son commentaire citait `/get-ice-servers` et sa coquille
+    | SPA publique, puis concluait l'inverse : « un invité n'a AUCUNE identité à faire attester,
+    | donc aucune raison d'être servi ». Vrai de l'utilisateur, faux de son navigateur, qui demande
+    | quand même — et le 401 bouclait sur `document.location.reload()`. Remplacé le 29/08/2026 par
+    | la section « La boucle de rechargement » en bas de fichier. Un test peut garder un bug.
+    */
 
     #[Test]
     public function un_peer_id_qui_n_est_pas_un_uuid_est_refuse(): void
@@ -267,7 +314,17 @@ class PeerAttestationTest extends TestCase
     #[Test]
     public function une_attestation_intacte_rend_le_slug_de_son_porteur(): void
     {
-        $this->assertSame('alice', $this->verdictFor($this->issueFor('alice')));
+        // `assertExactJson` et non un `json('slug')` : le corps du SUCCÈS est une liste blanche au
+        // même titre que celui du refus. `attestationVerdict` porte désormais un `reason` et un
+        // `attested_slug` à côté du slug ; sans cette assertion, un `response()->json($verdict)`
+        // distrait les servirait au client sur cette branche-là seulement, et rien ne le verrait.
+        $this->actingAs($this->makeUser('recepteur'))
+            ->postJson(self::VERIFY_URI, [
+                'attestation' => $this->issueFor('alice'),
+                'peerId' => self::PEER_ID,
+            ])
+            ->assertOk()
+            ->assertExactJson(['slug' => 'alice']);
     }
 
     #[Test]
@@ -391,31 +448,238 @@ class PeerAttestationTest extends TestCase
 
     /*
     |--------------------------------------------------------------------------
+    | Journal
+    |--------------------------------------------------------------------------
+    |
+    | POURQUOI CE JOURNAL EXISTE. `signaling.attestation.enforce` est faux par défaut, et la
+    | condition écrite de sa bascule est « le compte des admissions non corroborées cesse de bouger
+    | en usage nominal ». Ce point de code est le SEUL qui voie les refus de tous les utilisateurs ;
+    | le compteur client est par onglet et meurt au rechargement. Sans lui, `enforce` reste faux par
+    | défaut d'observation plutôt que par décision.
+    |
+    | ⚠️ BORNE ASSUMÉE, et elle appartient à ce fichier autant qu'à la doc : ce journal ne voit
+    | JAMAIS le cas d'un pair qui ne présente AUCUNE attestation — un onglet resté sur un bundle
+    | antérieur —, parce que ce cas ne produit aucune requête (`_admitIncoming` conclut sans rien
+    | demander ; épinglé côté JS par `usePeerTransport.incomingAuth.test.js`, « REFUSE sous
+    | `enforce` un pair qui ne présente aucune attestation », qui asserte zéro vérification). Un
+    | journal muet ne prouve donc pas à lui seul qu'on peut basculer.
+    |
+    | Contrôles de harnais (convention du paquet), mesurés le 2026-08-29 :
+    |   - retirer le `Log::warning` de `verifyPeerAttestation` rougit **4 cas** ;
+    |   - le poser sans garde, sur tous les verdicts, rougit **1 cas**
+    |     (`une_verification_reussie_ne_journalise_rien`) ;
+    |   - y ajouter `'attestation' => $data['attestation']` rougit **1 cas**
+    |     (`le_journal_ne_contient_jamais_l_attestation`) ;
+    |   - rendre `attested_slug` avant le contrôle de signature rougit **1 cas**.
+    */
+
+    #[Test]
+    public function un_refus_de_verification_est_journalise_avec_de_quoi_tracer(): void
+    {
+        $recepteur = $this->makeUser('carol');
+
+        Log::spy();
+
+        $this->actingAs($recepteur)
+            ->postJson(self::VERIFY_URI, ['attestation' => 'sans-point', 'peerId' => self::PEER_ID])
+            ->assertOk();
+
+        $warnings = $this->capturedWarnings();
+        $this->assertCount(1, $warnings);
+        ['context' => $context] = $warnings[0];
+
+        // ⚠️ L'utilisateur journalisé est le RÉCEPTEUR — celui qui cherche à qualifier une connexion
+        // entrante —, jamais le porteur de l'attestation, que cette route n'authentifie pas. Le seul
+        // objet que l'on tienne du porteur est le peerId qu'il présente, d'où sa présence.
+        $this->assertSame($recepteur->id, $context['auth_user_id']);
+        $this->assertSame($recepteur->slug, $context['auth_user_slug']);
+        $this->assertSame(self::PEER_ID, $context['peer_id']);
+        $this->assertSame('webrtc.attestation.verify', $context['route']);
+        $this->assertArrayHasKey('ip', $context);
+        $this->assertArrayHasKey('user_agent', $context);
+    }
+
+    #[Test]
+    public function le_journal_nomme_la_cause_que_la_reponse_tait(): void
+    {
+        // Le jumeau de `la_verification_ne_dit_jamais_pourquoi_elle_refuse`, et il doit vivre à côté :
+        // les deux disent la même doctrine dans les deux sens. La réponse tait la cause — la nommer
+        // offrirait un oracle à qui cherche à forger —, le journal la garde, parce qu'un opérateur qui
+        // lit cent « expiration » (un rafraîchissement cassé) et un qui lit cent « signature » (une
+        // forge, ou une rotation d'`APP_KEY`) doivent prendre des décisions opposées. Même précédent
+        // que le `target_exists` du garde de relation.
+        $this->setAttestation('ttl', -60);
+        $expiree = $this->issueFor('alice');
+
+        $this->setAttestation('ttl', 300);
+        [$payload] = explode('.', $this->issueFor('bob'));
+        $discordante = $this->issueFor('dave');
+
+        Log::spy();
+
+        $this->refuse($expiree);
+        $this->refuse($payload.'.signature-forgee');
+        $this->refuse($discordante, self::OTHER_PEER_ID);
+        $this->refuse('sans-point');
+
+        $this->assertSame(
+            ['expired', 'bad_signature', 'peer_id_mismatch', 'malformed'],
+            array_column(array_column($this->capturedWarnings(), 'context'), 'reason')
+        );
+    }
+
+    #[Test]
+    public function le_journal_ne_contient_jamais_l_attestation(): void
+    {
+        // ⚠️ LE CAS PORTEUR DE CETTE SECTION. Une attestation est une identité SIGNÉE, valable
+        // jusqu'à son échéance : la consigner la rendrait rejouable par quiconque lit le journal —
+        // un exploitant, une sauvegarde, un agrégateur de logs. Ce serait élargir la borne de rejeu
+        // déjà assumée (`une_attestation_expiree_ne_vaut_rien`) au lieu de la mesurer, c'est-à-dire
+        // transformer un correctif d'observabilité en faille.
+        //
+        // L'attestation exercée ici est INTACTE et vaut pour un autre peerId : c'est le seul refus
+        // qui porte une attestation réellement rejouable, donc le seul où l'erreur coûterait.
+        $attestation = $this->issueFor('alice');
+        [$payload, $signature] = explode('.', $attestation);
+
+        Log::spy();
+
+        $this->refuse($attestation, self::OTHER_PEER_ID);
+
+        // Sur la trace ENTIÈRE et non sur les clés connues : chercher clé par clé laisserait passer
+        // celle qu'un futur ajout introduirait, c'est-à-dire exactement le cas contre lequel ce test
+        // existe.
+        ['message' => $message, 'context' => $context] = $this->capturedWarnings()[0];
+        $trace = $message.' '.json_encode($context);
+
+        $this->assertStringNotContainsString($attestation, $trace);
+        // Les deux moitiés séparément : la signature seule suffit à reconstituer l'attestation avec
+        // une charge recopiée, et une charge seule nomme déjà le peerId et le slug signés.
+        $this->assertStringNotContainsString($payload, $trace);
+        $this->assertStringNotContainsString($signature, $trace);
+        // Et le PRÉFIXE : un tronçon « pour le diagnostic » ne déclencherait aucune des assertions
+        // ci-dessus tout en rendant l'attestation reconnaissable.
+        $this->assertStringNotContainsString(substr($payload, 0, 32), $trace);
+    }
+
+    #[Test]
+    public function le_slug_revendique_n_est_journalise_qu_une_fois_la_signature_verifiee(): void
+    {
+        // Avant `hash_equals`, la charge est une chaîne fournie par l'émetteur : la consigner comme
+        // « slug attesté » ferait entrer au journal une identité que PERSONNE n'a signée, et un
+        // opérateur y lirait des noms d'utilisateurs choisis par un attaquant.
+        $forge = rtrim(strtr(base64_encode((string) json_encode([
+            'v' => 1,
+            'p' => self::PEER_ID,
+            's' => 'alice',
+            'e' => Carbon::now()->getTimestamp() + 3600,
+        ])), '+/', '-_'), '=');
+
+        // Passé la signature, en revanche, le nom est signé par CE serveur : c'est lui qui rend le
+        // journal exploitable — « l'attestation de bob a expiré » n'est pas « quelqu'un a forgé ».
+        $this->setAttestation('ttl', -60);
+        $expiree = $this->issueFor('bob');
+
+        Log::spy();
+
+        $this->refuse($forge.'.signature-forgee');
+        $this->refuse($expiree);
+
+        $contextes = array_column($this->capturedWarnings(), 'context');
+
+        $this->assertNull($contextes[0]['attested_slug']);
+        $this->assertSame('bob', $contextes[1]['attested_slug']);
+        // Le nom choisi par le forgeur n'entre nulle part, pas seulement pas sous cette clé.
+        $this->assertStringNotContainsString('alice', json_encode($contextes[0]));
+    }
+
+    #[Test]
+    public function une_verification_reussie_ne_journalise_rien(): void
+    {
+        // Le journal mesure une SURFACE, pas un trafic. Sans garde, il consignerait chaque
+        // corroboration nominale — une par peerId inconnu et par room — et la mesure se noierait
+        // dans son propre bruit le jour où elle compte.
+        $attestation = $this->issueFor('alice');
+
+        Log::spy();
+
+        $this->assertSame('alice', $this->verdictFor($attestation));
+
+        Log::shouldNotHaveReceived('warning');
+    }
+
+    /*
+    |--------------------------------------------------------------------------
     | Plafond
     |--------------------------------------------------------------------------
     */
 
     #[Test]
-    public function les_deux_routes_sont_plafonnees_par_le_bucket_mesh(): void
+    public function seule_la_verification_est_plafonnee_par_le_bucket_mesh(): void
     {
-        // Elles ne relaient rien vers un tiers — aucun `sendNow()`, donc aucune victime à protéger
-        // d'une cadence. Le plafond qu'elles portent est celui du groupe, et il est juste ici :
-        // elles sont privées, donc `socializer-signaling` a un émetteur authentifié à mettre en
-        // clé. C'est ce qui les sépare de `/get-ice-servers`, publique et volontairement sans
-        // `throttle`.
+        // La vérification est privée, donc `socializer-signaling` a un émetteur authentifié à
+        // mettre en clé, et elle porte le plafond du groupe. La DÉLIVRANCE, elle, est publique
+        // depuis le 29/08 : la clé d'un limiteur est l'identité de l'émetteur, `null` pour un
+        // invité — tous les invités d'Internet partageraient une clé unique. Même arbitrage, et
+        // même raison, que `/get-ice-servers`.
         $this->app['config']->set('socializer.signaling.throttle.mesh_per_minute', 2);
 
         $alice = $this->makeUser('alice');
+        $corps = ['attestation' => 'sans-point', 'peerId' => self::PEER_ID];
 
-        $this->actingAs($alice)->postJson(self::ISSUE_URI, ['peerId' => self::PEER_ID])->assertOk();
-        $this->actingAs($alice)->postJson(self::ISSUE_URI, ['peerId' => self::PEER_ID])->assertOk();
-        $this->actingAs($alice)->postJson(self::ISSUE_URI, ['peerId' => self::PEER_ID])->assertStatus(429);
+        $this->actingAs($alice)->postJson(self::VERIFY_URI, $corps)->assertOk();
+        $this->actingAs($alice)->postJson(self::VERIFY_URI, $corps)->assertOk();
+        $this->actingAs($alice)->postJson(self::VERIFY_URI, $corps)->assertStatus(429);
 
-        // Même bucket, donc le jeton est déjà consommé : c'est bien UNE cadence par utilisateur
-        // pour les deux routes, et non deux compteurs indépendants.
-        $this->actingAs($alice)->postJson(self::VERIFY_URI, [
-            'attestation' => 'sans-point',
-            'peerId' => self::PEER_ID,
-        ])->assertStatus(429);
+        // Et la délivrance passe encore : elle n'est pas dans le bucket, donc le jeton consommé
+        // ci-dessus ne la concerne pas.
+        $this->actingAs($alice)->postJson(self::ISSUE_URI, ['peerId' => self::PEER_ID])->assertOk();
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | La boucle de rechargement — non-régression
+    |--------------------------------------------------------------------------
+    */
+
+    #[Test]
+    public function un_invite_recoit_200_et_rien__jamais_401(): void
+    {
+        // ⚠️ LE CAS DE LA PANNE DU 29/08/2026, et il ne parle pas d'attestation mais de LOGIN.
+        // La coquille SPA est publique et `Notifications.vue` y monte le contexte `data-app` avant
+        // tout login : le navigateur d'un invité demande donc son attestation. Derrière `auth`, il
+        // recevait 401 ; `AjaxService.load` d'estarter fait `document.location.reload()` sur 401 ;
+        // le rechargement redemandait. Mesuré sur la page d'identification : 168 navigations du
+        // frame principal en 20 s, 55 requêtes — plus personne ne pouvait se connecter.
+        //
+        // Ce que ce cas garde n'est donc pas « un invité n'obtient rien » (c'est le suivant), c'est
+        // **le code de statut**. Tout 4xx rouvrirait la boucle, y compris un 403 « propre ».
+        $reponse = $this->postJson(self::ISSUE_URI, ['peerId' => self::PEER_ID]);
+
+        $reponse->assertOk();
+        $this->assertNotSame(401, $reponse->getStatusCode());
+    }
+
+    #[Test]
+    public function un_invite_n_obtient_aucune_attestation_et_un_enforce_faux(): void
+    {
+        // Le pendant du cas ci-dessus : rendre 200 ne doit pas revenir à servir quelque chose. Et
+        // `enforce` est forcé à faux pour la raison écrite au repli sans secret — annoncer `true`
+        // sans pouvoir délivrer d'attestation ferait refuser des pairs légitimes en se réclamant
+        // d'un contrôle dont l'invité ne dispose pas.
+        $this->setAttestation('enforce', true);
+
+        $this->postJson(self::ISSUE_URI, ['peerId' => self::PEER_ID])
+            ->assertOk()
+            ->assertExactJson(['attestation' => null, 'enforce' => false]);
+    }
+
+    #[Test]
+    public function la_garde_d_invite_precede_la_validation(): void
+    {
+        // Sans cet ordre, un invité au corps malformé recevrait 422 — un 4xx de plus, donc la même
+        // boucle par une autre porte. La garde doit être la PREMIÈRE instruction, avant `validate`.
+        $this->postJson(self::ISSUE_URI, ['peerId' => 'pas-un-uuid'])->assertOk();
+        $this->postJson(self::ISSUE_URI, [])->assertOk();
     }
 }

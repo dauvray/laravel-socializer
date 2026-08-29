@@ -39,7 +39,7 @@ et le seul étage où les incendies du paquet étaient détectables). Le harnais
 | Couches extraites de l'orchestrateur — `useConnectionPool`, `useCallManager`, `useStreamManager`, `useSignalingQueue` | ✅ | — |
 | Store — `peers2Store` : runtime, observabilité, `remotePeerId`, **phase du Peer**, **registre des contextes** | ✅ | — |
 | Composables d'UI — `useAwaitedStreams`, `useBroadcastPresence` | ✅ | — |
-| Tâche 8 · **Composants** `Widgets/**` — 15 fichiers, **2** couverts (`MediaBroadcastPlayer`, `useAwaitedStreams`) | **ouverte** | 13 sans aucun test, dont 11 des 12 composants `.vue` ; c'est l'étage d'où venait le dernier 🔴 |
+| Tâche 8 · **Composants** `Widgets/**` — 15 fichiers, **3** couverts (`MediaBroadcastPlayer`, `useAwaitedStreams`, `Debug`) | **ouverte** | 12 sans aucun test, dont 10 des 12 composants `.vue` ; c'est l'étage d'où venait le dernier 🔴. `Debug` n'est couvert que sur son bloc de corroboration d'identité (29/08) |
 | Scénarios — smoke, `lateJoiner`, `broadcastLifecycle`, `peerDeparture`, `multiContext`, `incomingMappingInvariant`, `outgoingAuth`, `incomingSpoof` | ✅ | — |
 | Perte de connexion → re-composition — `scenarios/peerDeparture` (« A recharge en chevauchement »), `useConnectionPool`, `createPeerContext` | ✅ | — |
 | Hors WebRTC2 — `Chat/dateSeparatorRender`, `System/useReverbChannel` (dont le désabonnement de whisper par callback), `User/coverCallButton` | amorces | plan Chat : [chat-tests-plan.md](chat-tests-plan.md) |
@@ -268,10 +268,15 @@ ferait passer le test à côté de ce qu'il croit exercer.
 — celles-ci visent `usePeerOrchestrator` et `useMediaBroadcast`, des composables. C'est un étage de
 plus, et il n'était au plan d'aucune tâche.
 
-**Le constat, mesuré** : 15 fichiers sous `Widgets/`, **2 couverts** (`MediaBroadcastPlayer` par
-`identity` + `spinner`, `useAwaitedStreams`). Restent 13, dont **11 des 12 composants `.vue`** :
+**Le constat, mesuré** : 15 fichiers sous `Widgets/`, **3 couverts** (`MediaBroadcastPlayer` par
+`identity` + `spinner`, `useAwaitedStreams`, et `Debug` depuis le 29/08 par
+`Debug.attestation.test.js`). Restent 12, dont **10 des 12 composants `.vue`** :
 `MediaBroadcastProvider`, `PlayerHost`, `LocalMediaPlayer`, `RemoteMediaPlayer`, les cinq boutons de
-`UI/Buttons/`, `SpectrumAnalyzer`, `Debug` — plus `useMediaControls` et `useRemotePeerState`.
+`UI/Buttons/`, `SpectrumAnalyzer` — plus `useMediaControls` et `useRemotePeerState`.
+
+> ℹ️ **`Debug` a été couvert par la bande, en fermant la mesure de bascule d'`enforce`** — et
+> seulement sur son bloc de corroboration d'identité, pas sur le reste du panneau. C'est le bon
+> précédent de montage (`mount` + store Pinia semé, `data-role` pour cibler), pas la fin de la tâche.
 
 **Pourquoi ça compte, et ce n'est pas une question de pourcentage** : le dernier 🔴 du module — la
 vignette d'attente effondrée à 0 px, `.draggable-video` sans `<video>` — vivait exactement là. Il a

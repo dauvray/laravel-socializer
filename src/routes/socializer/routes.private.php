@@ -379,22 +379,26 @@ Route::middleware('throttle:socializer-signaling')->group(function () {
         ->name('users.peer.close');
 
     /*
-    | Les deux routes d'attestation. Elles NE RELAIENT RIEN vers un tiers — aucun
-    | `Broadcast::...->sendNow()`, donc aucune victime à protéger d'une cadence : le plafond
-    | qu'elles portent est celui du groupe, pas une borne dimensionnée pour elles. Il est
-    | néanmoins juste ici, contrairement à `/get-ice-servers` qui reste volontairement sans
-    | `throttle` : celle-là est publique, donc sans émetteur à mettre en clé — ces deux-ci sont
-    | privées, et `socializer-signaling` compose sa clé sur l'utilisateur authentifié.
+    | La VÉRIFICATION d'attestation. Sa jumelle, la délivrance, a dû migrer vers les routes
+    | publiques le 29/08/2026 — la coquille SPA est publique et le contexte `data-app` la demande
+    | avant tout login, donc un 401 y bouclait ; le raisonnement est dans `routes.public.php`.
     |
-    | Cadence attendue : une requête d'attestation par cycle de vie de `Peer` puis une par
-    | échéance de TTL (5 min), et une vérification par peerId inconnu — mise en cache côté
-    | client jusqu'à l'échéance de l'attestation. Loin sous le bucket mesh, qui est dimensionné
-    | pour une rafale de join de 14 requêtes dans le même tick.
+    | ⚠️ CELLE-CI RESTE PRIVÉE, et ce n'est pas une symétrie oubliée : le récepteur d'une connexion
+    | entrante est authentifié par construction. La mesure du 29/08 le confirme — 55 requêtes de
+    | délivrance depuis une page de login, ZÉRO vérification. Le seul chemin invité serait un
+    | contexte `data-app` d'invité recevant une connexion entrante, ce qui suppose de connaître son
+    | peerId : un UUID que seules les routes de signalisation privées publient. Borne assumée, à
+    | rouvrir si un chemin d'invité publiait un jour un peerId.
+    |
+    | Elle NE RELAIE RIEN vers un tiers — aucun `Broadcast::...->sendNow()`, donc aucune victime à
+    | protéger d'une cadence : le plafond qu'elle porte est celui du groupe, pas une borne
+    | dimensionnée pour elle. Il est néanmoins juste ici : la route est privée, donc
+    | `socializer-signaling` a un émetteur authentifié à mettre en clé.
+    |
+    | Cadence attendue : une vérification par peerId inconnu, mise en cache côté client jusqu'à
+    | l'échéance de l'attestation. Loin sous le bucket mesh, dimensionné pour une rafale de join de
+    | 14 requêtes dans le même tick.
     */
-
-    Route::post('/attest-peer-id',
-        config('socializer.controllers_front.webrtc').'@attestPeerId')
-        ->name('webrtc.attestation.issue');
 
     Route::post('/verify-peer-attestation',
         config('socializer.controllers_front.webrtc').'@verifyPeerAttestation')

@@ -728,6 +728,12 @@ function _carriesAttestation(conn) {
  * Partagée par le chemin synchrone et le chemin différé — une seule écriture de la politique, sinon
  * les deux divergeraient au premier ajustement.
  *
+ * C'est aussi le SEUL point qui compte la mesure décidant de la bascule d'`enforce`, et il en
+ * distingue trois populations parce qu'elles appellent trois décisions différentes : le serveur a
+ * refusé (enquête — visible aussi dans son journal), le pair n'a rien présenté (attendre le
+ * déploiement — invisible au serveur), le serveur n'a pas répondu (réparer la route — et tant que
+ * ça dure, son silence ne prouve rien).
+ *
  * @param {boolean} verdictKnown  Le serveur a-t-il tranché ? `false` ⇒ il n'a pas répondu.
  * @returns {boolean}
  */
@@ -743,7 +749,13 @@ function _settleAdmission(metadata, conn, ctx, verdictKnown) {
     // indisponibilité d'infra transformerait un incident serveur en coupure de visio non
     // rattrapable — et ce serait un levier offert, puisque rendre la route injoignable suffirait
     // alors à couper toutes les rooms. Un avertissement distinct, pour que la cause soit lisible.
+    //
+    // COMPTÉ À PART, et hors du compteur de décision : ce chiffre-là mesure une panne d'infra, pas
+    // la surface du contrôle. Il n'est pas décoratif pour autant — tant qu'il bouge, le silence du
+    // journal serveur ne prouve rien, puisqu'il ne distingue pas « aucun refus » de « aucune
+    // requête ».
     if (!verdictKnown) {
+        ctx?.peerStore?.noteUnverifiableAdmission?.()
         console.warn(
             '[WebRTC2] Admission entrante NON CORROBORÉE et non vérifiable : le serveur d\'attestation'
             + ' n\'a pas répondu. Admise malgré tout — un refus ici ferait d\'une panne de route une'
@@ -753,7 +765,12 @@ function _settleAdmission(metadata, conn, ctx, verdictKnown) {
         return true
     }
 
-    ctx?.peerStore?.noteUncorroboratedAdmission?.()
+    // `carriedAttestation` sépare deux populations que le même chiffre confondrait, et qui appellent
+    // des décisions opposées : le pair dont l'attestation a été REFUSÉE (forgée, périmée, discordante
+    // — un refus que le journal serveur voit aussi) et celui qui n'a RIEN présenté, qui n'atteint
+    // jamais le serveur (`_admitIncoming` court-circuite sur `nothingToAsk`) et qu'un déploiement,
+    // non une enquête, fait disparaître.
+    ctx?.peerStore?.noteUncorroboratedAdmission?.({ carriedAttestation: _carriesAttestation(conn) })
 
     if (ctx?.peerStore?.attestationEnforce === true) {
         console.warn(

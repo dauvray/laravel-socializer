@@ -337,9 +337,36 @@ export default {
      * Jamais remis à zéro — ni par `resetPeerState`, ni au démontage d'un contexte : c'est une
      * mesure cumulée pour la vie de l'onglet, et une remise à zéro la rendrait dépendante du
      * nombre de navigations SPA.
+     *
+     * ⚠️ `carriedAttestation: false` incrémente EN PLUS `unattestedAdmissions`, jamais À SA PLACE :
+     * c'est un sous-ensemble, et il n'en est un que si personne ne l'oublie. Ce sous-ensemble est le
+     * seul endroit du système où le cas « aucune attestation présentée » soit visible — le serveur
+     * n'en voit rien, faute d'aller-retour.
+     *
+     * @param {{carriedAttestation?: boolean}} [options]
      */
-    noteUncorroboratedAdmission() {
+    noteUncorroboratedAdmission({ carriedAttestation = true } = {}) {
         this.uncorroboratedAdmissions += 1
+
+        if (carriedAttestation !== true) {
+            this.unattestedAdmissions += 1
+        }
+    },
+
+    /**
+     * Compte une admission que PERSONNE n'a pu trancher : le serveur d'attestation n'a pas répondu.
+     *
+     * ⚠️ Un verbe DISTINCT, et non un motif de plus sur le précédent : un compteur nommé « non
+     * corroborée » qui n'incrémenterait pas `uncorroboratedAdmissions` mentirait sur son nom. Le
+     * fait mesuré est d'une autre nature — une panne d'infra, pas une surface de contrôle — et il
+     * est admis fail-open même sous `enforce`.
+     *
+     * Ce qu'il sert : rendre lisible le silence de l'autre moitié de la mesure. Un journal serveur
+     * vide ne distingue pas « aucun refus » de « aucune requête », et basculer `enforce` sur cette
+     * confusion est exactement la panne que ce compteur ferme.
+     */
+    noteUnverifiableAdmission() {
+        this.unverifiableAdmissions += 1
     },
 
     /**

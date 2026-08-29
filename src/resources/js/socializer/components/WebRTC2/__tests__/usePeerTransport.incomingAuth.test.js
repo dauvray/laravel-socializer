@@ -522,6 +522,29 @@ describe('usePeerTransport — authentification des connexions entrantes', () =>
 
             expect(ctx.setUpConnectionListeners).toHaveBeenCalledWith(conn)
             expect(ctx.peerStore.uncorroboratedAdmissions).toBe(1)
+            // Le serveur a TRANCHÉ, et le pair présentait bien quelque chose : ce refus-là existe
+            // aussi dans le journal serveur. Les deux compteurs de nature différente restent à zéro.
+            expect(ctx.peerStore.unattestedAdmissions).toBe(0)
+            expect(ctx.peerStore.unverifiableAdmissions).toBe(0)
+        })
+
+        it('compte À PART un pair admis sans présenter la moindre attestation', async () => {
+            // ⚠️ L'ANGLE MORT DU JOURNAL SERVEUR, et la raison pour laquelle la mesure a deux
+            // moitiés. Ce pair ne présente rien, donc `_admitIncoming` ne DEMANDE rien : aucune
+            // requête ne part et le serveur ne saura jamais qu'il est passé. C'est pourtant le cas
+            // majoritaire de la phase d'observation — l'onglet resté sur un bundle antérieur, celui
+            // pour lequel `enforce` est faux — et le seul que le déploiement, et non une enquête,
+            // fait disparaître. Le confondre avec une forge ferait prendre la décision inverse.
+            const conn = incomingConn({ from: 'bob' }, 'peer-bob-neuf')
+
+            peerInstance._triggerEvent('connection', conn)
+            await laisserConclure()
+
+            expect(ctx.setUpConnectionListeners).toHaveBeenCalledWith(conn)
+            expect(ctx.peerStore.uncorroboratedAdmissions).toBe(1)
+            // SOUS-ENSEMBLE du précédent, jamais à sa place : c'est ce qui rend la somme lisible.
+            expect(ctx.peerStore.unattestedAdmissions).toBe(1)
+            expect(verifications()).toHaveLength(0)
         })
 
         it('REFUSE la même identité non corroborée sous `enforce`', async () => {
@@ -553,7 +576,10 @@ describe('usePeerTransport — authentification des connexions entrantes', () =>
             // transformerait un incident serveur en coupure de visio non rattrapable, et offrirait
             // le levier correspondant : rendre la route injoignable suffirait à fermer les rooms.
             //
-            // Non compté, non plus : ce compteur mesure la surface du contrôle, pas les pannes.
+            // Non compté par le compteur de DÉCISION, non plus : celui-là mesure la surface du
+            // contrôle, pas les pannes. Mais compté à part, et c'est ce qui manquait : un journal
+            // serveur vide ne distingue pas « aucun refus » de « aucune requête », et basculer sur
+            // cette confusion mettrait `enforce` en service sur une mesure qui n'a jamais tourné.
             ctx.peerStore.attestationEnforce = true
             ctx.AjaxService.load.mockRejectedValue(new Error('503'))
             const conn = incomingConn({ from: 'bob', attestation: ATTESTATION }, 'peer-bob-neuf')
@@ -563,6 +589,7 @@ describe('usePeerTransport — authentification des connexions entrantes', () =>
 
             expect(ctx.setUpConnectionListeners).toHaveBeenCalledWith(conn)
             expect(ctx.peerStore.uncorroboratedAdmissions).toBe(0)
+            expect(ctx.peerStore.unverifiableAdmissions).toBe(1)
         })
 
         it('ne paie qu\'UN aller-retour par peerId, refus compris', async () => {

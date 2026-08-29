@@ -67,3 +67,38 @@ Route::post('/get-total-comments',
 Route::get('/get-ice-servers',
     config('socializer.controllers_front.webrtc').'@getIceServers')
     ->name('webrtc.ice.get');
+
+/*----------------------------------------------------------------------
+| WebRTC — délivrance d'attestation de peerId
+|----------------------------------------------------------------------*/
+
+/*
+| ⚠️ ELLE ÉTAIT PRIVÉE JUSQU'AU 29/08/2026, ET C'ÉTAIT UNE BOUCLE DE RECHARGEMENT SUR LE LOGIN.
+| Le raisonnement qui l'y avait mise — « un invité n'a pas d'identité à faire attester, donc aucun
+| `Auth::check()` à écrire » — est vrai de l'UTILISATEUR et faux de son NAVIGATEUR : la coquille SPA
+| est publique, `Notifications.vue` y monte le contexte `data-app` avant tout login, et `_doInit`
+| demande son attestation. Derrière `auth`, l'invité recevait 401, `AjaxService.load` faisait
+| `document.location.reload()`, et le rechargement redemandait. Mesuré sur la page d'identification :
+| **168 navigations du frame principal en 20 s, 55 requêtes** — personne ne pouvait se connecter.
+| C'est mot pour mot la panne que le bloc `/get-ice-servers` ci-dessus décrit et évite ; la garde est
+| donc au même endroit, DANS le contrôleur.
+|
+| Elle n'était pas visible ici : le cache de `route:cache` datait d'avant l'ajout de ces routes, donc
+| l'URI ne rendait que 405. Un `route:cache` de déploiement, lui, l'aurait rendue en production.
+|
+| ⚠️ POST et non GET, contrairement à sa voisine ICE, et l'argument 419 de celle-ci NE SE TRANSPOSE
+| PAS : un invité reçoit une réponse SANS `attestation_ttl`, donc `_scheduleAttestationRefresh`
+| n'arme aucun minuteur (`ttlMs === null` ⇒ `clear` puis retour). Une page de login ne fait donc
+| qu'UNE requête, au montage, avec un jeton frais — il n'y a pas de rejeu pour rencontrer un jeton
+| périmé. Le corps porte par ailleurs un `peerId` à valider, ce qu'un POST exprime mieux.
+|
+| ⚠️ PAS DE `throttle`, pour la raison écrite au bloc ICE et sans rien y ajouter : la clé d'un
+| limiteur est l'identité de l'émetteur, `null` pour un invité — tous les invités d'Internet
+| partageraient une clé unique. La cadence est d'une requête par cycle de vie de `Peer` puis une par
+| échéance de TTL, la réponse ne coûte qu'une lecture de config et un `hash_hmac`, et elle ne relaie
+| rien vers un tiers.
+*/
+
+Route::post('/attest-peer-id',
+    config('socializer.controllers_front.webrtc').'@attestPeerId')
+    ->name('webrtc.attestation.issue');

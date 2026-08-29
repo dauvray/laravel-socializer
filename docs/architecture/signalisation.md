@@ -251,7 +251,7 @@ protéger d'une cadence. Contrôleur : `Front/WebRTCController.php`.
 | Route | Rôle | Pile |
 |---|---|---|
 | `GET /get-ice-servers` | configuration STUN/TURN calculée par le serveur | **publique**, et volontairement **sans `throttle`** — une route ouverte aux invités n'a pas d'émetteur à mettre en clé |
-| `POST /attest-peer-id` | signe `{peerId, slug, exp}` pour le porteur | privée, bucket `socializer-signaling` |
+| `POST /attest-peer-id` | signe `{peerId, slug, exp}` pour le porteur | **publique, garde `Auth::check()` DANS la méthode, sans `throttle`** — comme `/get-ice-servers` et pour la même panne : la coquille SPA est publique, `data-app` demande son attestation avant tout login, et un 401 boucle sur le `document.location.reload()` d'`AjaxService` (vécu le 29/08/2026). Un invité reçoit 200 et rien |
 | `POST /verify-peer-attestation` | rend le slug attesté d'un peerId, ou `null` | privée, bucket `socializer-signaling` |
 
 ⚠️ **Les deux dernières portent l'invariant 1 à son point extrême** : le slug signé est celui

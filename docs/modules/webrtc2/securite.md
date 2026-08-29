@@ -11,6 +11,7 @@
 [Sens sortant](#décisions-en-vigueur-sens-sortant-août-2026) ·
 [Backend](#décisions-en-vigueur-backend-août-2026) ·
 [Attestation d'identité](#lattestation-didentité--ce-qui-ferme-le-chemin-a) ·
+[Basculer `enforce`](#ce-quil-faut-regarder-pour-basculer-enforce) ·
 [Rafraîchissement TURN](#le-rafraîchissement-du-credential-turn) ·
 [Bornes non fermées](#bornes-non-fermées-connues)
 
@@ -23,7 +24,7 @@
 | **Entrant** (`peer.on('connection')`, `peer.on('call')`) | durci côté client, **et corroboré par le serveur depuis le 29/08/2026** | garde `_isAuthorizedIncomingPeer`, anti-usurpation inconditionnelle, gardes de taille, sanitisation — plus une **attestation d'identité signée** portée par la `metadata` de chaque connexion sortante, qui donne enfin au récepteur de quoi contredire un `metadata.from` déclaratif ([décisions](#lattestation-didentité--ce-qui-ferme-le-chemin-a)). ⚠️ **Le REFUS d'une admission non corroborée est un réglage** (`signaling.attestation.enforce`), faux par défaut : tant qu'il l'est, le chemin (a) reste admissif et ne fait que compter |
 | **Sortant** (`connectToPeer`, `responseRemotePeerConnection`) | durci **côté client**, garde autoritatif posé côté serveur | prédicat unique `utils/isAuthorizedPeer.js` : membre de la room **ou** interlocuteur d'appel marqué — [décisions](#décisions-en-vigueur-sens-sortant-août-2026). Son jumeau serveur `Socializable::mayReach` tranche ce que le navigateur ne peut pas voir |
 | **Backend** (`UserController`, routes) | durci | `fromUserSlug` authentifié, liste blanche de champs, `throttle` par utilisateur (deux buckets), `validate()` sur les 5 payloads, **contrôle de relation** émetteur ↔ destinataire en 403 uniforme, et **liste de contacts restreinte aux joignables** sauf permission `list_users` |
-| **Attestation de peerId** | signée par le serveur, **éphémère**, **rafraîchie côté client**, vérifiée par le récepteur | `POST /attest-peer-id` rend `{peerId, slug, exp}` signé en HMAC-SHA256 — **le slug venant d'`Auth::user()`, jamais du corps** : c'est tout le mécanisme. `POST /verify-peer-attestation` rend le slug attesté, ou `null`. TTL 5 min (`signaling.attestation.ttl`), renouvelé avant échéance par le transport. Le secret dérive d'`APP_KEY` si aucune clé dédiée n'est posée — donc aucune variable de déploiement neuve n'est requise |
+| **Attestation de peerId** | signée par le serveur, **éphémère**, **rafraîchie côté client**, vérifiée par le récepteur | `POST /attest-peer-id` rend `{peerId, slug, exp}` signé en HMAC-SHA256 — **le slug venant d'`Auth::user()`, jamais du corps** : c'est tout le mécanisme. ⚠️ Elle est **publique, gardée par `Auth::check()` dans la méthode** — privée, son 401 bouclait sur le rechargement d'`AjaxService` pour tout invité (29/08/2026). `POST /verify-peer-attestation`, elle, reste privée et rend le slug attesté, ou `null`. TTL 5 min (`signaling.attestation.ttl`), renouvelé avant échéance par le transport. Le secret dérive d'`APP_KEY` si aucune clé dédiée n'est posée — donc aucune variable de déploiement neuve n'est requise |
 | **Credentials TURN** | servis par le serveur, **éphémères et signés par utilisateur**, **rafraîchis côté client** | `GET /get-ice-servers` : STUN seul pour un invité, STUN + TURN pour une session authentifiée. TURN REST API — `username = "<expiry>:<userId>"`, `credential = base64(HMAC-SHA1(secret, username))`, TTL 24 h annoncé par `credential_ttl` et renouvelé avant échéance par le transport ([détail](#le-rafraîchissement-du-credential-turn)). Un abus est donc attribuable, plafonnable par personne et révocable en bloc. Le mode statique partagé reste servi si aucun secret n'est configuré, pour ne pas casser un coturn encore en `--user` |
 
 **La leçon réutilisable, et la seule qui compte : un garde d'admission ne sécurise qu'une
@@ -374,29 +375,58 @@ Mesuré : retirer le transport dans la `metadata` ne fait rougir qu'**un** cas d
 `scenarios/incomingSpoof.test.js` — et c'est celui pour lequel tout ceci existe.
 
 **Le déploiement se fait en deux temps, et le premier n'est pas optionnel.**
-`signaling.attestation.enforce` est **faux par défaut** : l'attestation circule, le garde compte
-(`peerStore.uncorroboratedAdmissions`) et ne refuse rien. Un onglet resté sur un bundle antérieur
-n'attesterait rien, et un refus entrant n'est **jamais** rattrapable — basculer d'emblée couperait la
-visio en room pendant toute la fenêtre d'un déploiement mixte. On bascule quand le compteur cesse de
-bouger en usage nominal.
+`signaling.attestation.enforce` est **faux par défaut** : l'attestation circule, le garde compte et
+ne refuse rien. Un onglet resté sur un bundle antérieur n'attesterait rien, et un refus entrant n'est
+**jamais** rattrapable — basculer d'emblée couperait la visio en room pendant toute la fenêtre d'un
+déploiement mixte. Ce qu'il faut regarder pour basculer est ci-dessous, et ce n'est pas un seul
+chiffre.
 
-> ⚠️ **Et c'est précisément ce que personne ne peut observer aujourd'hui — mesuré le 29/08/2026.**
-> `uncorroboratedAdmissions` est incrémenté par `_settleAdmission` et lu par **trois fichiers de
-> test, et rien d'autre** : aucun code de production ne l'expose, `Widgets/UI/Report/Debug.vue`
-> compris (il ne rend que `remotePeersId`, `waitingRemotePeerId` et `getConnections`). Côté serveur
-> non plus : `verifyPeerAttestation` rend `{slug: null}` **sans une ligne de journal**, alors qu'il
-> est le seul point qui voie les refus de **tous** les utilisateurs — le compteur client, lui, est
-> par onglet et meurt au rechargement.
->
-> La condition de bascule est donc écrite mais **non mesurable**, ce qui laisse `enforce` faux par
-> défaut d'observation plutôt que par décision. C'est un item ouvert, pas une borne assumée :
-> [`work/webrtc2-todo.md` § « Le signal qui décide de la bascule d'`enforce` »](../../../work/webrtc2-todo.md).
+#### Ce qu'il faut regarder pour basculer `enforce`
+
+**La mesure a deux moitiés qui voient des populations DISJOINTES, et aucune ne suffit seule.** C'est
+le fait qui rend la procédure moins simple que « attendre que le compteur cesse de bouger », phrase
+qui a tenu lieu de critère jusqu'au 29/08/2026 sans que rien ne la rende mesurable.
+
+| Moitié | Voit | Ne voit pas |
+|---|---|---|
+| `Log::warning('Attestation de pair refusée')` (`WebRTCController`) | **tous les utilisateurs**, avec la cause (`reason`) et le slug signé | les pairs qui ne présentent **aucune** attestation : ils n'appellent jamais la route |
+| Les trois compteurs de `Widgets/UI/Report/Debug.vue` | **tout ce qui entre**, sans exception | au-delà de l'onglet ouvert — en mémoire, perdus au rechargement |
+
+**Terme 1 — le journal serveur s'est tu, sur une fenêtre couvrant un cycle quotidien complet.**
+Le `reason` est ce qui rend le résidu lisible : `expired` en série est un rafraîchissement client
+cassé (donc des pairs légitimes, donc pas de bascule), `bad_signature` répété depuis un seul peerId
+est une forge (donc une enquête, pas une attente). ⚠️ `mechanism_inactive` ne s'attend pas, il se
+**corrige** avant d'ouvrir la fenêtre : c'est une faute de configuration — `APP_KEY` tournée, secret
+retiré — qui désactive en silence le seul anti-usurpation du chemin (a).
+
+**Terme 2 — `unattestedAdmissions` doit être nul.** ⚠️ **Et c'est une borne assumée, pas un oubli :
+ce terme n'est mesurable sur AUCUN serveur.** Un pair qui ne présente rien n'émet aucune requête —
+`_admitIncoming` court-circuite sur `nothingToAsk` —, donc le serveur ne saura jamais qu'il est
+passé, et c'est pourtant le cas majoritaire de la phase d'observation. Il ne s'établit que de deux
+façons, toutes deux plus faibles qu'une mesure, et il faut le savoir en décidant : un **argument de
+déploiement** (le temps écoulé depuis la livraison du bundle porteur dépasse la durée de vie
+plausible d'un onglet ; les noms d'actifs hachés par Vite rendent un bundle antérieur injoignable
+après tout rechargement) et un **échantillon** — ouvrir le panneau sur une room active. Zéro sur
+quelques onglets est un échantillon, pas une preuve.
+
+**Terme 3 — `unverifiableAdmissions` doit être nul, et c'est le piège.** Non nul, il veut dire que
+`/verify-peer-attestation` était injoignable : tout le monde a été admis en fail-open, **aucune
+requête n'est partie, donc aucun refus n'a pu être journalisé** — et le silence du terme 1 ne prouve
+alors plus rien. C'est la raison pour laquelle ce cas est *compté* et pas seulement documenté.
+
+> ⚠️ **Il n'existe pas de chiffre unique qui résume les trois, et en fabriquer un serait pire que
+> l'absence.** Le terme 1 est un taux sur tous les utilisateurs mais sur un sous-ensemble strict des
+> admissions ; les termes 2 et 3 couvrent toutes les admissions d'un seul onglet. Aucun dénominateur
+> commun n'existe, et un compteur de succès côté serveur en produirait un sur la mauvaise population
+> — un nombre qui ressemblerait à la réponse sans en être une.
 
 **Épinglé par** `usePeerTransport.attestation.test.js` (obtention et rafraîchissement),
-`usePeerTransport.incomingAuth.test.js` § corroboration (les quatre issues), `PeerAttestationTest`
-côté PHP (la signature, et le fait que le slug ne vienne jamais du corps), et
-`scenarios/incomingSpoof.test.js` — **le seul étage où la faille soit visible**, parce qu'elle ne
-l'est que du pair d'en face.
+`usePeerTransport.incomingAuth.test.js` § corroboration (les cinq issues, dont la séparation des
+trois compteurs), `Debug.attestation.test.js` (la mesure est **rendue**, et l'attestation locale ne
+l'est jamais), `PeerAttestationTest` côté PHP (la signature, le fait que le slug ne vienne jamais du
+corps, et la section « Journal » : la cause est nommée au journal et tue dans la réponse,
+l'attestation n'entre nulle part), et `scenarios/incomingSpoof.test.js` — **le seul étage où la
+faille soit visible**, parce qu'elle ne l'est que du pair d'en face.
 
 ⚠️ Ne pas lire l'anti-usurpation comme une défense-en-profondeur : sur le chemin (a) elle reste le
 **seul** discriminant, et c'est l'attestation qui lui donne enfin de quoi mordre.

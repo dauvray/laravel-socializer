@@ -437,6 +437,8 @@ export function createMockContext(overrides = {}) {
         localPeerAttestation: peerStoreOverrides.localPeerAttestation ?? null,
         attestationEnforce: peerStoreOverrides.attestationEnforce ?? false,
         uncorroboratedAdmissions: peerStoreOverrides.uncorroboratedAdmissions ?? 0,
+        unattestedAdmissions: peerStoreOverrides.unattestedAdmissions ?? 0,
+        unverifiableAdmissions: peerStoreOverrides.unverifiableAdmissions ?? 0,
 
         // ⚠️ Des JETONS, comme le store réel, et le `null` de retour est le point de
         // fidélité qui compte : un retrait de jeton inconnu rend `null` (« rien à
@@ -602,7 +604,17 @@ export function createMockContext(overrides = {}) {
             }
             return entry
         }),
-        noteUncorroboratedAdmission: vi.fn(() => { peerStore.uncorroboratedAdmissions += 1 }),
+        // Contrat du store réel reproduit à l'identique : le sous-ensemble monte AVEC le total,
+        // jamais à sa place. Un mock qui les incrémenterait séparément rendrait vert un
+        // `_settleAdmission` qui aurait oublié l'un des deux.
+        noteUncorroboratedAdmission: vi.fn(({ carriedAttestation = true } = {}) => {
+            peerStore.uncorroboratedAdmissions += 1
+
+            if (carriedAttestation !== true) {
+                peerStore.unattestedAdmissions += 1
+            }
+        }),
+        noteUnverifiableAdmission: vi.fn(() => { peerStore.unverifiableAdmissions += 1 }),
         // Contrat du store réel reproduit à l'identique — sinon `mockFidelity` garantirait
         // la surface et laisserait passer le mensonge : remplacer une closure **exécute** la
         // précédente, et le détachement vide le champ AVANT d'appeler (jamais rejouer une

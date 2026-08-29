@@ -97,6 +97,65 @@
                         <li v-if="!connections.length"><em>aucune</em></li>
                     </ul>
                 </li>
+
+                <!--
+                    Corroboration d'identité — la mesure qui décide de la bascule d'`enforce`.
+
+                    Par ONGLET, en mémoire, perdue au rechargement : c'est une moitié de la mesure,
+                    et elle est faible seule. L'autre est le journal serveur, qui voit tous les
+                    utilisateurs mais ne voit QUE les attestations présentées. La procédure qui les
+                    croise est dans `docs/modules/webrtc2/securite.md`.
+                -->
+                <li>
+                    Admissions non corroborées (onglet) :
+                    <span
+                        data-role="uncorroborated"
+                        :class="stateClass(peerStore.uncorroboratedAdmissions === 0)">
+                        {{ peerStore.uncorroboratedAdmissions }}
+                    </span>
+                    <em>&nbsp;— seraient refusées si <code>enforce</code> passait à vrai</em>
+                    <ul>
+                        <li>
+                            dont sans aucune attestation :
+                            <span data-role="unattested">{{ peerStore.unattestedAdmissions }}</span>
+                            <em v-if="peerStore.unattestedAdmissions > 0">
+                                — onglet resté sur un bundle antérieur : le déploiement les fait
+                                partir, pas une enquête. Le serveur, lui, n'en voit AUCUNE
+                            </em>
+                        </li>
+                        <li>
+                            Non vérifiables (serveur muet) :
+                            <span
+                                data-role="unverifiable"
+                                :class="stateClass(peerStore.unverifiableAdmissions === 0)">
+                                {{ peerStore.unverifiableAdmissions }}
+                            </span>
+                            <em v-if="peerStore.unverifiableAdmissions > 0">
+                                — la route de vérification n'a pas répondu : le silence du journal
+                                serveur ne prouve alors rien
+                            </em>
+                            <em v-else>— admises même sous <code>enforce</code>, hors du compte ci-dessus</em>
+                        </li>
+                        <li>
+                            Mon attestation :
+                            <span
+                                data-role="local-attestation"
+                                :class="stateClass(!!peerStore.localPeerAttestation)">
+                                {{ peerStore.localPeerAttestation ? 'présente' : 'absente' }}
+                            </span>
+                            <!--
+                                ⚠️ UNE PRÉSENCE, JAMAIS LA CHAÎNE. C'est une identité signée valable
+                                jusqu'à son échéance, et ce panneau est fait pour être montré
+                                pendant un diagnostic : l'afficher la rendrait rejouable par
+                                quiconque voit l'écran ou une capture.
+                            -->
+                        </li>
+                        <li>
+                            <code>enforce</code> (politique du serveur) :
+                            <span data-role="attestation-enforce">{{ peerStore.attestationEnforce }}</span>
+                        </li>
+                    </ul>
+                </li>
             </ul>
         </div>
     </div>

@@ -131,16 +131,39 @@ export default () => {
     // périme est leur propre `expiresAt`.
     attestedPeers: markRaw(new Map()),
 
-    // Combien d'admissions entrantes ont été accordées sans que rien ne rattache le peerId au slug
-    // déclaré. C'est la MESURE de la surface qu'il reste à couvrir, et elle décide du passage de
-    // `enforce` à `true` : tant qu'elle bouge en usage nominal, activer le refus couperait des
-    // pairs légitimes. Lisible dans `Widgets/UI/Report/Debug.vue`.
+    // ─── Ce qui décide de la bascule d'`enforce` — trois compteurs, une décision ─────
     //
-    // ⚠️ Ne compte QUE les non-corroborations sur lesquelles le serveur a tranché. Une route
-    // d'attestation muette produit une admission elle aussi non corroborée, mais elle mesurerait
-    // une panne d'infra, pas la surface — et gonflerait le compteur au point de le rendre illisible
-    // le jour où il compte vraiment.
+    // ⚠️ CES TROIS CHIFFRES SONT LA MOITIÉ CLIENT D'UNE MESURE QUI EN A DEUX. L'autre est le
+    // `Log::warning('Attestation de pair refusée')` de `WebRTCController`, et aucune des deux ne
+    // suffit : le journal voit TOUS les utilisateurs mais seulement les attestations PRÉSENTÉES ;
+    // ceux-ci voient tout ce qui entre, mais dans UN onglet, et meurent au rechargement. La
+    // procédure qui les croise est dans `docs/modules/webrtc2/securite.md`. Ils sont rendus par
+    // `Widgets/UI/Report/Debug.vue`, et `Debug.attestation.test.js` garde le fait qu'ils y soient.
+
+    // Combien d'admissions entrantes ont été accordées sans que rien ne rattache le peerId au slug
+    // déclaré, ET sur lesquelles la question a été TRANCHÉE. Autrement dit : combien de pairs
+    // seraient refusés si l'on basculait maintenant. C'est LE chiffre de la décision.
     uncorroboratedAdmissions: 0,
+    // SOUS-ENSEMBLE du précédent : ceux qui ne présentaient AUCUNE attestation.
+    //
+    // ⚠️ C'est l'angle mort du journal serveur, et c'est ce qui interdit de décider depuis le
+    // serveur seul : un pair sans attestation n'appelle JAMAIS `/verify-peer-attestation`
+    // (`_admitIncoming` court-circuite sur `nothingToAsk`), donc le serveur ne saura jamais qu'il
+    // est passé. C'est pourtant le cas MAJORITAIRE de la phase d'observation — l'onglet resté sur un
+    // bundle antérieur, celui pour lequel `enforce` est faux — et le seul que le DÉPLOIEMENT fait
+    // disparaître, là où le reste appelle une enquête. Le confondre avec une forge ferait prendre la
+    // décision inverse.
+    unattestedAdmissions: 0,
+    // DISJOINT des deux précédents : le serveur n'a pas répondu. Admission fail-open, même sous
+    // `enforce` — refuser sur une indisponibilité d'infra ferait d'un incident serveur une coupure
+    // de visio non rattrapable, et offrirait le levier correspondant.
+    //
+    // ⚠️ Hors du compteur de décision — il mesure une panne d'infra, pas la surface du contrôle, et
+    // les fondre rendrait le premier illisible le jour où il compte vraiment. Mais compté, et non
+    // simplement documenté : un journal serveur vide ne distingue pas « aucun refus » de « aucune
+    // requête », et c'est le seul garde-fou contre une bascule décidée sur une mesure qui n'a jamais
+    // tourné.
+    unverifiableAdmissions: 0,
     // Closure qui débranche les listeners du Peer courant, produite par `_doInit` (seul
     // endroit qui sait ce qui a été branché, et sur quelle instance). Ici pour la même
     // raison que le reste de cette section : le Peer est un singleton que N'IMPORTE QUEL

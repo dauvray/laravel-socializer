@@ -831,9 +831,13 @@ return [
              * donc son moteur de retry s'arrête). Refuser d'emblée couperait donc la visio
              * en room pendant toute la fenêtre d'un déploiement mixte.
              *
-             * La marche à suivre : laisser `false` le temps que la trace
-             * « Admission entrante non corroborée » disparaisse du cas nominal — elle est là
-             * pour mesurer exactement cette surface —, puis passer à `true`.
+             * La marche à suivre n'est pas « attendre », et elle ne se lit pas à un seul
+             * endroit : le `Log::warning('Attestation de pair refusée')` du serveur voit
+             * TOUS les utilisateurs mais seulement les attestations PRÉSENTÉES, et les trois
+             * compteurs de `Widgets/UI/Report/Debug.vue` voient tout ce qui entre mais dans
+             * UN onglet. La procédure exacte, avec ce qui reste une borne assumée — le cas
+             * « aucune attestation présentée » n'est mesurable sur aucun serveur :
+             * `docs/modules/webrtc2/securite.md`, § « Ce qu'il faut regarder pour basculer ».
              *
              * La valeur est servie au client dans la réponse d'attestation : la politique
              * est celle du SERVEUR, elle ne se compile pas dans le bundle.

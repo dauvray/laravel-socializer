@@ -780,45 +780,73 @@ extractions : c'est 18 lignes, sous un filet cinq fois plus dense.
   opérations, pas une timidité — un refus entrant n'est jamais rattrapable, donc la mesure
   (`peerStore.uncorroboratedAdmissions`) précède la coupure.
 
-- [ ] 🟠 **La mesure qui décide de la bascule d'`enforce` n'est observable NULLE PART** `[S]` —
-  trouvé le 29/08/2026 au point d'étape QA, en cherchant à lire le compteur que l'item ci-dessus
-  désigne comme le déclencheur du geste de déploiement.
+- [x] **La mesure qui décide de la bascule d'`enforce` n'est observable NULLE PART** `[S]` —
+  **fermé le 29/08/2026, sortie A.** Un `Log::warning` sur le verdict `null` de
+  `verifyPeerAttestation`, trois compteurs rendus par `Debug.vue`, et la procédure de bascule écrite
+  avec ses termes : [securite.md § « Ce qu'il faut regarder pour basculer
+  `enforce` »](../docs/modules/webrtc2/securite.md#ce-quil-faut-regarder-pour-basculer-enforce).
 
-  L'item précédent se clôt sur « la mesure précède la coupure ». La mesure n'existe pas :
+  **L'énoncé disait « c'est la moitié serveur qui tranche ». C'est faux, et la mesure l'a montré
+  avant le premier commit.** Un pair qui ne présente AUCUNE attestation — l'onglet resté sur un
+  bundle antérieur, c'est-à-dire le risque même pour lequel `enforce` est faux — n'appelle jamais la
+  route : `_admitIncoming` court-circuite sur `nothingToAsk`. Le journal serveur est donc
+  structurellement aveugle au cas MAJORITAIRE de la phase d'observation. C'était déjà épinglé
+  (`incomingAuth.test.js`, « REFUSE sous `enforce` un pair qui ne présente aucune attestation »,
+  asserte zéro vérification) sans que la conséquence sur la mesure ait été tirée. La moitié client
+  n'était donc pas le parent pauvre de l'item : sans elle, un journal muet ne veut rien dire.
 
-  | Où on l'attendrait | Ce qu'on y trouve |
-  |---|---|
-  | `Widgets/UI/Report/Debug.vue` | rien — il ne rend que `remotePeersId`, `waitingRemotePeerId`, `getConnections`. `securite.md` l'affirmait pourtant, **corrigé le 29/08** |
-  | un journal serveur | rien — `verifyPeerAttestation` rend `{slug: null}` sans un `Log::` |
-  | ailleurs en production | rien : les seuls lecteurs de `uncorroboratedAdmissions` sont **trois fichiers de test** |
+  **Trois compteurs et non deux, et le troisième est celui qui n'était pas demandé.**
+  `uncorroboratedAdmissions` (la décision : combien seraient refusés maintenant),
+  `unattestedAdmissions` (son SOUS-ENSEMBLE, l'angle mort du serveur — un déploiement le vide, pas
+  une enquête) et `unverifiableAdmissions` (serveur muet, disjoint, fail-open). Le second sépare
+  deux populations que le même chiffre confondait et qui appellent des décisions **opposées** : une
+  forge s'enquête, un onglet ancien s'attend.
 
-  Conséquence : `enforce` reste faux **par défaut d'observation** et non par décision, ce qui n'est
-  pas ce que l'item précédent a écrit. Tant que ça dure, l'usurpation intra-room reste possible.
+  **La borne assumée, et elle est le prix de la sortie A** : le terme 2 n'est mesurable sur aucun
+  serveur. Il ne s'établit que par un argument de déploiement (durée de vie d'onglet vs actifs
+  hachés par Vite) corroboré par un échantillon au panneau. Écrit comme tel dans `securite.md`,
+  plutôt que masqué derrière un chiffre unique — lequel n'existe pas : les deux moitiés n'ont aucun
+  dénominateur commun, et en fabriquer un donnerait un nombre sur la mauvaise population.
 
-  Deux moitiés, et **c'est la seconde qui tranche** :
+  **Ce que la passe a appris en plus :** un `Log::spy()` répété est un **no-op silencieux**
+  (`Facade::spy()` ne remplace que si la façade n'est pas déjà doublée), donc un helper qui
+  re-double à chaque cas compte tous les précédents ; et le slug revendiqué est **choisi par
+  l'appelant** tant que `hash_equals` n'est pas passé, ce qui place la frontière du journal à une
+  ligne précise de la méthode et non à son bord — sans quoi un inconnu écrirait au journal le nom de
+  qui il veut.
 
-  - **client** `[S]` — exposer le compteur dans `Debug.vue`. Honnête mais faible : par onglet, en
-    mémoire, perdu au rechargement, et il faut que quelqu'un ouvre le panneau au bon moment.
-  - **serveur** `[S]` — journaliser le verdict `null` de
-    `WebRTCController::verifyPeerAttestation`. C'est le **seul** point qui voie les refus de tous les
-    utilisateurs, donc le seul depuis lequel une décision de déploiement puisse se prendre. Forme
-    déjà employée par `closeConnectionToPeerId` : `auth_user_id`, peerId présenté, `ip`,
-    `user_agent`.
-    ⚠️ **Ne jamais journaliser l'attestation elle-même** — c'est une identité signée valable jusqu'à
-    son échéance ; un journal la rendrait rejouable par quiconque le lit, ce qui transformerait un
-    correctif d'observabilité en élargissement de la borne de rejeu déjà assumée ci-dessus.
+- [x] 🔴 **`/attest-peer-id` bouclait le rechargement de la page de login pour tout invité** `[S]` —
+  **trouvé et fermé le 29/08/2026**, en allant simplement REGARDER le panneau que l'item ci-dessus
+  venait d'ajouter. Il affichait « Mon attestation : absente » ; la trace disait 401.
 
-  ⚠️ **Le compteur ne compte pas ce qu'on croit, et c'est à trancher dans la même passe.**
-  `_settleAdmission` (`usePeerTransport.js:756`) n'incrémente **que si `verdictKnown`** : le cas
-  « le serveur n'a pas répondu » — admission non corroborée lui aussi, et **fail-open même sous
-  `enforce`** — n'est pas compté. « Le compteur est stable à zéro » est donc plus optimiste que
-  « aucune admission non corroborée ». Deux sorties : compter les deux cas avec un motif distinct,
-  ou écrire la borne à côté du compteur. Ne pas laisser l'ambiguïté, c'est elle qui autoriserait à
-  basculer sur une mesure fausse.
+  La chaîne : la coquille SPA est publique, `Notifications.vue` y monte `data-app` avant tout login,
+  `_doInit` demande son attestation → route derrière `auth` → **401** → `AjaxService.load` fait
+  `document.location.reload()` → recharge → redemande. **Mesuré sur `/identification` : 168
+  navigations du frame principal en 20 s, 55 requêtes.** Personne ne pouvait se connecter. Après
+  correction : **3 navigations, 1 requête**.
 
-  ℹ️ Cet item est **le préalable** au geste de déploiement annoncé dans
-  [`work/README.md`](README.md) (`SOCIALIZER_PEER_ATTESTATION_ENFORCE=true`), pas un confort
-  d'observabilité — d'où sa place ici et non dans la section « Observabilité ».
+  **C'est mot pour mot la panne contre laquelle le docblock de `getIceServers` avait été écrit** —
+  et `attestPeerId` s'en était dispensée sur une prémisse fausse : « un invité n'a pas d'identité à
+  faire attester » est vrai de l'utilisateur, faux de son NAVIGATEUR. Le test
+  `un_invite_n_atteint_pas_la_route` **épinglait le bug** : son commentaire citait `/get-ice-servers`
+  et sa coquille publique, puis concluait l'inverse. Un test peut garder un défaut.
+
+  ⚠️ **Trois choses à ne pas re-déduire.** Le défaut était invisible ici parce que
+  `bootstrap/cache/routes-v7.php` datait du 25/08, d'avant ces routes : l'URI rendait 405, pas 401 —
+  **un `route:cache` de déploiement l'aurait rendue en production**. La correction garde POST malgré
+  le précédent GET de la route ICE, dont l'argument 419 ne se transpose pas : un invité reçoit une
+  réponse sans `attestation_ttl`, donc `_scheduleAttestationRefresh` n'arme aucun minuteur et la page
+  ne fait qu'une requête, à jeton frais. Et `/verify-peer-attestation` **reste privée** : la mesure
+  a compté zéro vérification depuis une page de login, le seul chemin invité supposant de connaître
+  un peerId que seules les routes privées publient — borne assumée, à rouvrir si un chemin d'invité
+  publiait un peerId.
+
+  **La leçon de méthode, et elle vaut au-delà de cet item : les deux suites étaient vertes, et le
+  mécanisme n'avait jamais tourné une fois sur cette machine.** Aucun test PHP ne pouvait le voir —
+  le harnais Testbench réduit le groupe `public` à `[]` et ne traverse donc jamais la pile de
+  middlewares —, aucun test JS non plus, puisque la panne est un aller-retour réel. C'est en
+  ouvrant la page que ça se voit.
+
 
 ---
 
@@ -930,8 +958,10 @@ prochaine passe ne repaie pas la mesure :
   `defineAsyncComponent`). Le compte de `docs/modules/webrtc2/INDEX.md` est juste ;
 - **`config/reverb.php` de l'hôte porte `accept_client_events_from` avec `'members'` par défaut** —
   la borne de déploiement du whisper de présence est tenue sur cette machine ;
-- **les deux suites sont vertes et n'ont ni `.skip` ni `.only`** — JS 60 fichiers / 1141 cas,
-  PHP 279 tests / 636 assertions. Cinq cas `[épinglé]` au total, tous datés et rattachés à un item
+- **les deux suites sont vertes et n'ont ni `.skip` ni `.only`** — JS 61 fichiers / 1148 cas,
+  PHP 286 tests / 678 assertions — mesuré après la fermeture de la mesure de bascule d'`enforce` et
+  de la boucle de rechargement ; 60 / 1141 et 279 / 636 avant. Cinq cas `[épinglé]` au total, tous
+  datés et rattachés à un item
   ouvert de ce fichier.
 
 ---

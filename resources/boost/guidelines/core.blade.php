@@ -16,11 +16,11 @@ puis suivre sa table de routage vers `docs/INDEX.md`. Ne pas explorer le code au
   COURT intra-module est la norme et reste correct — `docs/architecture/conventions.md`.
 - **L'identité d'un pair entrant WebRTC2 est corroborée par une attestation signée par le serveur,
   et son REFUS est un réglage — `SOCIALIZER_PEER_ATTESTATION_ENFORCE`, faux par défaut.** Le secret
-  dérive d'`APP_KEY` sans variable neuve. Ne l'activer qu'une fois `uncorroboratedAdmissions` (store
-  `peers2`) stable à zéro : un refus entrant n'est jamais rattrapable, et un onglet resté sur un
-  bundle antérieur n'atteste rien. ⚠️ **Ce compteur n'est exposé nulle part aujourd'hui** — ni écran,
-  ni journal serveur : la condition de bascule n'est pas mesurable en l'état
-  — `docs/modules/webrtc2/securite.md`.
+  dérive d'`APP_KEY` sans variable neuve ; un refus entrant n'est jamais rattrapable, et un onglet
+  resté sur un bundle antérieur n'atteste rien. ⚠️ **Ne jamais basculer sur un seul des deux
+  indicateurs** : le journal serveur ne voit QUE les attestations présentées, les trois compteurs de
+  `Debug.vue` ne voient qu'un onglet. La procédure et sa borne assumée —
+  `docs/modules/webrtc2/securite.md`.
 - **Les whispers Reverb ne sont attribuables que sous `accept_client_events_from: 'members'`, et une
   clé ABSENTE de `config/reverb.php` vaut `'all'`** (`ConfigApplicationProvider` lit `?? 'all'`, à
   l'inverse du défaut du paquet Reverb). Sous `'all'`, aucun contrôle d'appartenance au canal et

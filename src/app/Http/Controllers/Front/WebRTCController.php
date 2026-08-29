@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Configuration ICE servie au navigateur, et attestation d'identité des peerId.
@@ -48,9 +49,14 @@ use Illuminate\Support\Facades\Auth;
  *
  * ── L'ATTESTATION DE PEERID ───────────────────────────────────────────────────────────────────
  *
- * PRIVÉE, elle : `attestPeerId` et `verifyPeerAttestation` vivent dans `routes.private.php`, donc
- * derrière `auth`. C'est la différence de nature avec la route ICE — un invité n'a pas d'identité
- * à faire attester, et il n'y a donc aucun `Auth::check()` à écrire dans ces deux méthodes.
+ * ⚠️ DÉSSYMÉTRIQUES, et il a fallu une panne pour l'apprendre. `verifyPeerAttestation` est privée
+ * (le récepteur d'une connexion entrante est authentifié par construction), mais `attestPeerId`
+ * est **publique et gardée dans la méthode**, comme la route ICE. Le raisonnement qui l'avait mise
+ * derrière `auth` — « un invité n'a pas d'identité à faire attester » — est vrai de l'utilisateur
+ * et faux de son NAVIGATEUR : la coquille SPA est publique, le contexte `data-app` y monte avant
+ * tout login et demande son attestation. Le 401 déclenchait le `document.location.reload()`
+ * d'`AjaxService.load`, mesuré le 29/08/2026 à 168 navigations en 20 s sur la page
+ * d'identification — plus personne ne pouvait se connecter. Détail dans `routes.public.php`.
  *
  * Ce qu'elles ferment : le chemin (a) de `_isAuthorizedIncomingPeer` (appartenance à la room)
  * admettait un pair sur la seule foi de `metadata.from`, un champ que l'émetteur choisit. Un membre
@@ -285,6 +291,17 @@ class WebRTCController extends Controller
      */
     public function attestPeerId(Request $request): JsonResponse
     {
+        // ⚠️ LA GARDE EST ICI, exactement comme dans `getIceServers`, et pour la même panne —
+        // celle-ci a été VÉCUE le 29/08/2026, mesurée à 168 navigations en 20 s sur la page
+        // d'identification. La coquille SPA est publique, `Notifications.vue` y monte le contexte
+        // `data-app` avant tout login, et `_doInit` demande son attestation : un 401 déclenche le
+        // `document.location.reload()` d'`AjaxService.load`, qui redemande, qui reçoit 401.
+        // Un invité reçoit donc 200 et RIEN — pas d'attestation, et `enforce` forcé à faux pour la
+        // raison écrite au repli sans secret plus bas.
+        if (! Auth::check()) {
+            return $this->attestationResponse(null, null, false);
+        }
+
         // ⚠️ EN PREMIER et hors de tout `try`, comme les cinq méthodes de signalisation
         // d'`UserController` : `ValidationException` étend `\Exception`, et un `validate()` posé
         // sous un `catch` fourre-tout repartirait en 500.
@@ -349,7 +366,8 @@ class WebRTCController extends Controller
      *
      * ⚠️ Le `null` ne distingue PAS signature invalide, expiration, mauvaise version et peerId
      * discordant. Même doctrine que le 403 uniforme du garde de relation : nommer la cause offrirait
-     * un oracle à qui cherche à forger.
+     * un oracle à qui cherche à forger. **Le JOURNAL, lui, la nomme** — la distinction que la
+     * réponse HTTP tait, il la garde, exactement comme le `target_exists` du garde de relation.
      *
      * Aucun garde de relation ici, et c'est délibéré : cette route ne relaie rien et ne révèle que
      * l'identité inscrite dans une attestation que l'appelant détient DÉJÀ — il l'a reçue par la
@@ -362,14 +380,65 @@ class WebRTCController extends Controller
         $data = $request->validate([
             'attestation' => ['required', 'string', 'max:'.self::MAX_ATTESTATION_LENGTH],
             // Le peerId RÉEL de la connexion entrante (`conn.peer`), pas celui que l'attestation
-            // annonce : c'est leur confrontation qui fait tout le travail (cf. `attestedSlug`).
+            // annonce : c'est leur confrontation qui fait tout le travail (cf. `attestationVerdict`).
             'peerId' => ['required', 'uuid'],
         ]);
 
+        $verdict = $this->attestationVerdict($data['attestation'], $data['peerId']);
+
+        if ($verdict['slug'] === null) {
+            $this->logRefusedAttestation($request, $data['peerId'], $verdict);
+        }
+
         return response()->json(
-            ['slug' => $this->attestedSlug($data['attestation'], $data['peerId'])],
+            ['slug' => $verdict['slug']],
             200
         )->header('Cache-Control', 'no-store, private');
+    }
+
+    /**
+     * Consigne un refus de vérification — le SEUL point qui voie ceux de tous les utilisateurs.
+     *
+     * POURQUOI. `signaling.attestation.enforce` est faux par défaut, et la condition écrite de sa
+     * bascule est « le compte des admissions non corroborées cesse de bouger en usage nominal ».
+     * Le compteur qui la porte (`peerStore.uncorroboratedAdmissions`) est par ONGLET et meurt au
+     * rechargement : sans cette ligne, la condition n'est mesurable nulle part et `enforce` reste
+     * faux par défaut d'observation plutôt que par décision.
+     *
+     * ⚠️ CE JOURNAL NE PORTERA JAMAIS L'ATTESTATION ELLE-MÊME. C'est une identité signée, valable
+     * jusqu'à son échéance : la consigner la rendrait rejouable par quiconque lit le journal — un
+     * exploitant, une sauvegarde, un agrégateur — donc élargirait la borne de rejeu assumée au lieu
+     * de la mesurer. Épinglé par `le_journal_ne_contient_jamais_l_attestation`.
+     *
+     * ⚠️ BORNE, et elle décide de la lecture qu'on peut faire d'un journal muet : un pair qui ne
+     * présente AUCUNE attestation — un onglet resté sur un bundle antérieur, c'est-à-dire le risque
+     * même du déploiement mixte — n'appelle jamais cette route. Le client conclut sans rien demander
+     * (`_admitIncoming`, `nothingToAsk`). Ce journal voit « une attestation a été présentée et n'a
+     * pas vérifié », jamais « aucune n'a été présentée » : le critère de bascule se lit ici ET sur
+     * les trois compteurs du panneau `Widgets/UI/Report/Debug.vue`. La procédure entière, avec cette
+     * borne écrite comme telle : `docs/modules/webrtc2/securite.md`.
+     *
+     * Le niveau et la forme du contexte sont ceux d'`UserController::closeConnectionToPeerId`.
+     *
+     * @param  array{slug: ?string, reason: ?string, attested_slug: ?string}  $verdict
+     */
+    private function logRefusedAttestation(Request $request, string $peerId, array $verdict): void
+    {
+        $user = Auth::user();
+
+        Log::warning('Attestation de pair refusée : identité non corroborée pour ce peerId', [
+            'route' => $request->route()?->getName(),
+            // ⚠️ L'authentifié est ici le RÉCEPTEUR, celui qui cherche à qualifier une connexion
+            // entrante — jamais le porteur de l'attestation, que cette route n'authentifie pas. Le
+            // seul objet que l'on tienne du porteur est le peerId qu'il présente.
+            'auth_user_id' => $user?->id,
+            'auth_user_slug' => $user?->slug,
+            'peer_id' => $peerId,
+            'reason' => $verdict['reason'],
+            'attested_slug' => $verdict['attested_slug'],
+            'ip' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+        ]);
     }
 
     /**
@@ -405,7 +474,7 @@ class WebRTCController extends Controller
     }
 
     /**
-     * Le slug attesté pour ce peerId, ou `null` — jamais une raison.
+     * Le slug attesté pour ce peerId, ou `null` — et la cause, pour le seul journal.
      *
      * Cinq contrôles, et aucun n'est redondant :
      *  1. la signature, en `hash_equals` (cas d'école de l'attaque temporelle, et gratuit ici) ;
@@ -416,48 +485,74 @@ class WebRTCController extends Controller
      *     suffirait à en admettre un autre : elle prouverait « ce couple a été signé », jamais
      *     « c'est CE pair-ci » ;
      *  5. l'échéance, seule borne du rejeu (cf. le docblock de classe).
+     *
+     * ⚠️ `reason` NE SORT JAMAIS PAR LA RÉPONSE. C'est de la matière de journal, et l'inverse
+     * offrirait un oracle à qui cherche à forger — `verifyPeerAttestation` ne rend que `slug`, et
+     * `la_verification_ne_dit_jamais_pourquoi_elle_refuse` le garde.
+     *
+     * ⚠️ `attested_slug` n'est rendu qu'APRÈS `hash_equals`. Avant ce contrôle, la charge est une
+     * chaîne fournie par l'émetteur : la nommer « slug attesté » ferait entrer au journal une
+     * identité que personne n'a signée, choisie par un attaquant.
+     *
+     * @return array{slug: ?string, reason: ?string, attested_slug: ?string}
      */
-    private function attestedSlug(string $attestation, string $peerId): ?string
+    private function attestationVerdict(string $attestation, string $peerId): array
     {
         $secret = $this->attestationSecret();
 
         if ($secret === '') {
-            return null;
+            return $this->attestationRefusal('mechanism_inactive');
         }
 
         $parts = explode('.', $attestation);
 
         if (count($parts) !== 2) {
-            return null;
+            return $this->attestationRefusal('malformed');
         }
 
         [$payload, $signature] = $parts;
 
         if (! hash_equals($this->base64UrlEncode(hash_hmac('sha256', $payload, $secret, true)), $signature)) {
-            return null;
+            return $this->attestationRefusal('bad_signature');
         }
 
         $claims = json_decode($this->base64UrlDecode($payload), true);
 
         if (! is_array($claims) || ($claims['v'] ?? null) !== self::ATTESTATION_VERSION) {
-            return null;
+            return $this->attestationRefusal('bad_claims');
         }
+
+        // À partir d'ici, et pas avant, la charge est signée par NOUS : le slug qu'elle porte peut
+        // être consigné.
+        $attestedSlug = is_string($claims['s'] ?? null) && $claims['s'] !== '' ? $claims['s'] : null;
 
         // Comparaison INSENSIBLE À LA CASSE : un UUID l'est par sa RFC, les deux extrémités le
         // recopient de mains différentes (le signataire depuis le corps du POST, le vérificateur
         // depuis `conn.peer`), et un refus sur une casse divergente serait indistinguable d'une
         // usurpation — c'est-à-dire le pire mode de panne possible sur ce chemin.
         if (! is_string($claims['p'] ?? null) || strcasecmp($claims['p'], $peerId) !== 0) {
-            return null;
+            return $this->attestationRefusal('peer_id_mismatch', $attestedSlug);
         }
 
         if (! is_int($claims['e'] ?? null) || $claims['e'] < now()->getTimestamp()) {
-            return null;
+            return $this->attestationRefusal('expired', $attestedSlug);
         }
 
-        return is_string($claims['s'] ?? null) && $claims['s'] !== ''
-            ? $claims['s']
-            : null;
+        if ($attestedSlug === null) {
+            return $this->attestationRefusal('empty_slug');
+        }
+
+        return ['slug' => $attestedSlug, 'reason' => null, 'attested_slug' => $attestedSlug];
+    }
+
+    /**
+     * Un refus, sa cause, et le slug revendiqué quand la signature l'a déjà validé.
+     *
+     * @return array{slug: null, reason: string, attested_slug: ?string}
+     */
+    private function attestationRefusal(string $reason, ?string $attestedSlug = null): array
+    {
+        return ['slug' => null, 'reason' => $reason, 'attested_slug' => $attestedSlug];
     }
 
     /**
