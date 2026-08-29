@@ -386,9 +386,11 @@ Sans décompte, parce qu'il pourrit : l'état exact se lit dans
 - `usePeerOrchestrator` — **couvert depuis le 29/08/2026**, en quatre fichiers : le câblage de
   l'annonce de diffusion (`.broadcastPresence`), les wraps de callbacks et la normalisation des
   entrées (`.callbacks`), le teardown (`.teardown`), les flux locaux et les bascules (`.media`).
-  Un seul cas reste ouvert, et il attend le déménagement du déballage d'enveloppe star dans
-  `usePeerTransport` : la branche hub du wrap `onDataReceived`. Rien d'autre n'asserte sur le
-  routage star.
+  La branche hub du wrap `onDataReceived` a rejoint `.broadcastPresence` le même jour, une fois la
+  décision de routage descendue dans `usePeerTransport.routeIncomingData`. ⚠️ Le montage d'un hub
+  y demande trois préparations, et deux d'entre elles fabriquent un test **vert par vacuité** si on
+  les oublie : `isHub` vaut `null` tant que `waitForMeReady` n'a pas tourné, et une connexion
+  **entrante** n'est pas enregistrée dans le store — le hub n'a alors personne à qui retransmettre.
 - `useMediaBroadcast` — **couvert depuis le 29/08/2026**, en deux fichiers dont la séparation est un
   fait mesuré, pas un rangement : le fichier de comportement double l'orchestrateur en entier (il
   n'y a derrière que des passthroughs), et **un double définit la surface**, donc il est structurel-

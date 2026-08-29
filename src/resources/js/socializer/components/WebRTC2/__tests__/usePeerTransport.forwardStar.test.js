@@ -1,7 +1,20 @@
 /**
  * usePeerTransport.forwardStar.test.js
- * Périmètre : forwardStarMessage (hub topologie star) — validation de envelope.to,
+ * Périmètre : la retransmission du hub en topologie star — validation de envelope.to,
  * et budget d'octets agrégé (anti-amplification).
+ *
+ * ⚠️ Le point d'entrée est `routeIncomingData`, pas `forwardStarMessage` : depuis que la
+ * décision de topologie est descendue dans le transport, la retransmission n'est plus
+ * exposée et n'est atteignable que par le routeur. Ces cas exercent donc AUSSI le
+ * prédicat de topologie — le harnais monte un contexte `star` + `isHub`.
+ *
+ * Contre-épreuve mesurée (29/08/2026) : passer le harnais en `topology: 'mesh'` rougit
+ * **15 cas sur 17**. Les deux survivants — « ignore les slugs au format invalide » et
+ * « coupe la retransmission quand le coût agrégé dépasse le budget » — n'assertent QUE
+ * des absences d'envoi, et une absence ne distingue pas « refusé pour la bonne raison »
+ * de « jamais exécuté ». Ce n'est pas un trou de ce fichier (leur objet est ailleurs et
+ * il est couvert), c'est la borne d'un cas purement négatif : ne pas conclure d'un de
+ * ces deux-là que le chemin a tourné.
  *
  * Faille couverte : [HAUTE] envelope.to non validé ni restreint aux membres de la room.
  * Le hub ne doit retransmettre qu'aux slugs (a) au format valide ET (b) réellement
@@ -23,7 +36,7 @@ import {
     MAX_PAYLOAD_BYTES,
 } from '~socializer/components/WebRTC2/webrtc2.config.js'
 
-describe('usePeerTransport — forwardStarMessage (validation envelope.to)', () => {
+describe('usePeerTransport — retransmission du hub (validation envelope.to)', () => {
     let ctx
     let app
     let transport
@@ -79,7 +92,7 @@ describe('usePeerTransport — forwardStarMessage (validation envelope.to)', () 
     const sourceConn = () => ({ peer: SENDER_PEER_ID })
 
     it('retransmet uniquement aux membres ciblés présents dans la room', () => {
-        transport.forwardStarMessage(
+        transport.routeIncomingData(
             { __starRoute: true, to: ['bob'], from: SENDER, payload: 'hi' },
             sourceConn()
         )
@@ -89,7 +102,7 @@ describe('usePeerTransport — forwardStarMessage (validation envelope.to)', () 
     })
 
     it('ignore les slugs ciblés absents de la room (ciblage arbitraire)', () => {
-        transport.forwardStarMessage(
+        transport.routeIncomingData(
             { __starRoute: true, to: ['bob', 'mallory'], from: SENDER, payload: 'x' },
             sourceConn()
         )
@@ -110,7 +123,7 @@ describe('usePeerTransport — forwardStarMessage (validation envelope.to)', () 
         // le modèle à copier au prochain test.
         ctx.connection.remotePeers = [...ctx.connection.remotePeers, evil]
 
-        transport.forwardStarMessage(
+        transport.routeIncomingData(
             { __starRoute: true, to: [evil], from: SENDER, payload: 'x' },
             sourceConn()
         )
@@ -121,7 +134,7 @@ describe('usePeerTransport — forwardStarMessage (validation envelope.to)', () 
     it('exclut toujours l\'expéditeur même s\'il est explicitement ciblé', () => {
         const senderSend = addOpenConn(SENDER)
 
-        transport.forwardStarMessage(
+        transport.routeIncomingData(
             { __starRoute: true, to: [SENDER, 'bob'], from: SENDER, payload: 'x' },
             sourceConn()
         )
@@ -131,7 +144,7 @@ describe('usePeerTransport — forwardStarMessage (validation envelope.to)', () 
     })
 
     it('diffuse à tous les membres (sauf expéditeur) quand `to` est absent', () => {
-        transport.forwardStarMessage(
+        transport.routeIncomingData(
             { __starRoute: true, to: null, from: SENDER, payload: 'broadcast' },
             sourceConn()
         )
@@ -169,7 +182,7 @@ describe('usePeerTransport — forwardStarMessage (validation envelope.to)', () 
             expect(SENDS_TO_EXHAUST).toBeLessThan(20)
 
             for (let i = 0; i < SENDS_TO_EXHAUST; i++) {
-                transport.forwardStarMessage(
+                transport.routeIncomingData(
                     { __starRoute: true, to: null, from: SENDER, payload: CHUNK },
                     sourceConn()
                 )
@@ -177,7 +190,7 @@ describe('usePeerTransport — forwardStarMessage (validation envelope.to)', () 
 
             const sentBefore = sendSpies.bob.mock.calls.length
 
-            transport.forwardStarMessage(
+            transport.routeIncomingData(
                 { __starRoute: true, to: null, from: SENDER, payload: CHUNK },
                 sourceConn()
             )
@@ -190,7 +203,7 @@ describe('usePeerTransport — forwardStarMessage (validation envelope.to)', () 
             // 20 messages de 1 Ko à 2 destinataires = 40 Ko, très loin du budget : le
             // plafond de messages doit rester le seul garde qui puisse mordre ici.
             for (let i = 0; i < 20; i++) {
-                transport.forwardStarMessage(
+                transport.routeIncomingData(
                     { __starRoute: true, to: null, from: SENDER, payload: 'y'.repeat(1024) },
                     sourceConn()
                 )
@@ -213,7 +226,7 @@ describe('usePeerTransport — forwardStarMessage (validation envelope.to)', () 
             // 32 Ko × 60 destinataires ≈ 1,9 Mio, au-delà du budget d'une fenêtre.
             expect(CHUNK.length * members.length).toBeGreaterThan(HUB_MAX_BYTES_PER_WINDOW)
 
-            transport.forwardStarMessage(
+            transport.routeIncomingData(
                 { __starRoute: true, to: null, from: SENDER, payload: CHUNK },
                 sourceConn()
             )
@@ -222,7 +235,7 @@ describe('usePeerTransport — forwardStarMessage (validation envelope.to)', () 
             expect(sendSpies[members[59]]).toHaveBeenCalledWith(CHUNK)
 
             // …et il a consommé la fenêtre entière : le suivant est coupé.
-            transport.forwardStarMessage(
+            transport.routeIncomingData(
                 { __starRoute: true, to: null, from: SENDER, payload: 'z' },
                 sourceConn()
             )
@@ -235,7 +248,7 @@ describe('usePeerTransport — forwardStarMessage (validation envelope.to)', () 
 
             try {
                 for (let i = 0; i < SENDS_TO_EXHAUST; i++) {
-                    transport.forwardStarMessage(
+                    transport.routeIncomingData(
                         { __starRoute: true, to: null, from: SENDER, payload: CHUNK },
                         sourceConn()
                     )
@@ -245,7 +258,7 @@ describe('usePeerTransport — forwardStarMessage (validation envelope.to)', () 
 
                 vi.advanceTimersByTime(HUB_RATE_WINDOW_MS + 1)
 
-                transport.forwardStarMessage(
+                transport.routeIncomingData(
                     { __starRoute: true, to: null, from: SENDER, payload: CHUNK },
                     sourceConn()
                 )
@@ -258,7 +271,7 @@ describe('usePeerTransport — forwardStarMessage (validation envelope.to)', () 
 
         it('le budget est par expéditeur : un émetteur saturé n\'affecte pas les autres', () => {
             for (let i = 0; i <= SENDS_TO_EXHAUST; i++) {
-                transport.forwardStarMessage(
+                transport.routeIncomingData(
                     { __starRoute: true, to: null, from: SENDER, payload: CHUNK },
                     sourceConn()
                 )
@@ -270,7 +283,7 @@ describe('usePeerTransport — forwardStarMessage (validation envelope.to)', () 
             const bobPeerId = `peer-bob-${_peerSeq++}`
             ctx.peerStore.addRemotePeerId('bob', bobPeerId)
 
-            transport.forwardStarMessage(
+            transport.routeIncomingData(
                 { __starRoute: true, to: ['carol'], from: 'bob', payload: CHUNK },
                 { peer: bobPeerId }
             )
@@ -307,7 +320,7 @@ describe('usePeerTransport — forwardStarMessage (validation envelope.to)', () 
         /** Sature la fenêtre de messages de `conn`, sans jamais la dépasser. */
         const saturate = (conn, declaredFrom = SENDER) => {
             for (let i = 0; i < HUB_MAX_MESSAGES_PER_WINDOW; i++) {
-                transport.forwardStarMessage(
+                transport.routeIncomingData(
                     { __starRoute: true, to: null, from: declaredFrom, payload: 'x' },
                     conn
                 )
@@ -318,7 +331,7 @@ describe('usePeerTransport — forwardStarMessage (validation envelope.to)', () 
             // Une enveloppe sur deux ment sur son expéditeur. La connexion, elle, est la
             // même : c'est elle qui porte l'identité, donc un seul quota.
             for (let i = 0; i < HUB_MAX_MESSAGES_PER_WINDOW; i++) {
-                transport.forwardStarMessage(
+                transport.routeIncomingData(
                     {
                         __starRoute: true,
                         to: null,
@@ -331,7 +344,7 @@ describe('usePeerTransport — forwardStarMessage (validation envelope.to)', () 
 
             expect(sendSpies.bob).toHaveBeenCalledTimes(HUB_MAX_MESSAGES_PER_WINDOW)
 
-            transport.forwardStarMessage(
+            transport.routeIncomingData(
                 { __starRoute: true, to: null, from: 'mallory', payload: 'x' },
                 sourceConn()
             )
@@ -353,7 +366,7 @@ describe('usePeerTransport — forwardStarMessage (validation envelope.to)', () 
             const bobPeerId = `peer-bob-${_peerSeq++}`
             ctx.peerStore.addRemotePeerId('bob', bobPeerId)
 
-            transport.forwardStarMessage(
+            transport.routeIncomingData(
                 { __starRoute: true, to: ['carol'], from: SENDER, payload: 'x' },
                 { peer: bobPeerId }
             )
@@ -369,7 +382,7 @@ describe('usePeerTransport — forwardStarMessage (validation envelope.to)', () 
             const huge = 'x'.repeat(MAX_PAYLOAD_BYTES + 1)
 
             for (let i = 0; i < HUB_MAX_MESSAGES_PER_WINDOW; i++) {
-                transport.forwardStarMessage(
+                transport.routeIncomingData(
                     { __starRoute: true, to: null, from: SENDER, payload: huge },
                     sourceConn()
                 )
@@ -377,7 +390,7 @@ describe('usePeerTransport — forwardStarMessage (validation envelope.to)', () 
 
             expect(sendSpies.bob).not.toHaveBeenCalled()
 
-            transport.forwardStarMessage(
+            transport.routeIncomingData(
                 { __starRoute: true, to: null, from: SENDER, payload: 'x' },
                 sourceConn()
             )
@@ -410,7 +423,7 @@ describe('usePeerTransport — forwardStarMessage (validation envelope.to)', () 
             warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
         })
 
-        const forward = (payload) => transport.forwardStarMessage(
+        const forward = (payload) => transport.routeIncomingData(
             { __starRoute: true, to: null, from: SENDER, payload },
             sourceConn()
         )
@@ -451,7 +464,7 @@ describe('usePeerTransport — forwardStarMessage (validation envelope.to)', () 
             // La seule forme d'invalidité réellement atteignable en production : un client
             // qui pose le marqueur `__starRoute` sans rien à router. Les autres (fonction,
             // symbole, référence circulaire) ne traversent aucun data channel PeerJS.
-            transport.forwardStarMessage(
+            transport.routeIncomingData(
                 { __starRoute: true, to: ['bob'], from: SENDER },
                 sourceConn()
             )

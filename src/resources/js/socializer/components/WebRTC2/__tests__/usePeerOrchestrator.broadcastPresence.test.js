@@ -229,4 +229,110 @@ describe('usePeerOrchestrator — câblage de l\'annonce de diffusion', () => {
             expect(api.announcedStreamPeers.value).toEqual(['alice'])
         })
     })
+
+    it('livre telle quelle une enveloppe star reçue hors du cas hub', async () => {
+        // Le contexte de ce fichier est `mesh` : `routeIncomingData` ne doit RIEN
+        // intercepter, et surtout pas déballer. Sans ce cas, un routeur qui déballerait
+        // sur le seul marqueur `__starRoute` (sans le prédicat de topologie) resterait vert.
+        const onDataReceived = vi.fn()
+        await initialize({ onDataReceived })
+        const conn = acceptIncomingConn()
+        const envelope = { __starRoute: true, to: null, from: 'alice', payload: { message: 'coucou' } }
+
+        conn._triggerEvent('data', envelope)
+
+        expect(onDataReceived).toHaveBeenCalledWith(envelope, conn, conn.metadata)
+    })
+
+    /**
+     * La branche HUB du wrap — le dernier cas en attente de la tâche 6, débloqué par la
+     * descente de la décision de routage dans `usePeerTransport.routeIncomingData`.
+     *
+     * Trois choses que le montage du `describe` parent ne donne pas, et dont chacune est
+     * une raison de rougir si on l'oublie :
+     *
+     *   1. un contexte `star` dont le hub est MOI ;
+     *   2. `isHub` RÉSOLU — il vaut `null` au montage et n'est écrit que par
+     *      `waitForMeReady`, qu'un tour de synchronisation déclenche. Sur une liste VIDE
+     *      ce tour n'ouvre rien (le garde du fan-out le lui interdit) et n'émet donc
+     *      aucune requête de signalisation : c'est le seul moyen fidèle d'obtenir un hub
+     *      sans peupler la room, ce que l'en-tête de ce fichier cherche à éviter ;
+     *   3. une connexion ouverte VERS bob. Les connexions entrantes ne sont pas
+     *      enregistrées dans le store — le dispatcher ne fait qu'y brancher ses listeners —
+     *      donc sans ce semis le hub n'a personne à qui retransmettre et le fan-out sort
+     *      en silence.
+     */
+    describe('branche hub du wrap onDataReceived (topologie star)', () => {
+        let bobConn
+
+        /** Remonte l'orchestrateur en hub star, initialise, et ouvre le canal vers bob. */
+        const bootAsHub = async (callbacks = {}) => {
+            app.unmount()
+            ;[api, app] = withSetup(
+                () => usePeerOrchestrator('stream', 'app', { topology: 'star', hubSlug: MY_SLUG }),
+                { provides: { eventBus: mockEventBus() } }
+            )
+
+            await initialize(callbacks)
+            await api.syncUsersConnections([])
+            expect(api.isHub.value).toBe(true)
+
+            peerStore.setRoomMembers(CTX_ID, ['alice', 'bob'])
+
+            // Connexion SORTANTE vers bob : `metadata.slug` porte le destinataire, et
+            // c'est cette clé que le registre du store utilise. Les deux verbes sont ceux
+            // de la production (`_saveRoomConnection` : préparer la case, puis pousser).
+            const bobMetadata = {
+                type: 'stream',
+                room: 'app',
+                callbackKey: CTX_ID,
+                from: MY_SLUG,
+                slug: 'bob',
+            }
+            bobConn = createMockDataConnection(bobMetadata)
+            bobConn.open = true
+            peerStore.prepareRoomConnection({ options: { metadata: bobMetadata } })
+            peerStore.storePeerConnection('app', 'bob', 'stream', bobConn)
+        }
+
+        it('retransmet l\'enveloppe d\'un client puis remonte son payload avec l\'arité 1', async () => {
+            const onDataReceived = vi.fn()
+            await bootAsHub({ onDataReceived })
+            const conn = acceptIncomingConn()
+
+            conn._triggerEvent('data', {
+                __starRoute: true,
+                to: ['bob'],
+                from: 'alice',
+                payload: { message: 'coucou' },
+            })
+
+            // Le hub retransmet le payload NU : l'enveloppe de routage ne sort jamais de lui.
+            expect(bobConn.send).toHaveBeenCalledWith({ message: 'coucou' })
+
+            // ARITÉ 1, et c'est le point : `conn` est celle de l'émetteur d'origine, pas
+            // celle du message relayé. `toHaveBeenCalledWith` compare la liste ENTIÈRE des
+            // arguments — un appel à trois arguments rougit ici.
+            expect(onDataReceived).toHaveBeenCalledWith({ message: 'coucou' })
+        })
+
+        it('consomme une annonce de diffusion retransmise sans jamais la remonter à l\'app', async () => {
+            const onDataReceived = vi.fn()
+            await bootAsHub({ onDataReceived })
+            const conn = acceptIncomingConn()
+            const announcement = { type: BROADCAST_STATE, isBroadcasting: true }
+
+            conn._triggerEvent('data', {
+                __starRoute: true,
+                to: ['bob'],
+                from: 'alice',
+                payload: announcement,
+            })
+
+            // Les deux moitiés : le hub relaie POUR ses clients, et consomme POUR lui.
+            expect(bobConn.send).toHaveBeenCalledWith(announcement)
+            expect(api.announcedStreamPeers.value).toEqual(['alice'])
+            expect(onDataReceived).not.toHaveBeenCalled()
+        })
+    })
 })

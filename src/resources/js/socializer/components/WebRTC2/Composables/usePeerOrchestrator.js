@@ -126,8 +126,9 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}, 
         //
         //   1. les enveloppes de routage star (`__starRoute: true`) : quand le hub en
         //      reçoit une, c'est une instruction de retransmission, pas un message.
-        //      Le check isHub se fait ici (et non à l'init) car isHub peut être null au
-        //      moment de l'initialisation (résolu après waitForMeReady).
+        //      La DÉCISION est chez `usePeerTransport.routeIncomingData` — l'étage qui
+        //      porte déjà la topologie côté émission ; il ne reste ici que le sort du
+        //      payload, qui appartient aux couches du dessus.
         //   2. les annonces de diffusion (`BROADCAST_STATE`) : protocole d'infra
         //      (useBroadcastPresence). Consommées ici, elles ne remontent jamais à
         //      l'app — un pair ne peut donc pas les injecter dans un flux de chat.
@@ -142,21 +143,14 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}, 
             : null
 
         wrappedCallbacks.onDataReceived = (data, conn, metadata) => {
-            const isRoutingEnvelope = data?.__starRoute === true
-            const isHubUser = context.isHub.value === true
-
-            // Hub: route l'enveloppe puis traite le message "métier" (payload)
-            if (context.topology.value === 'star' && isRoutingEnvelope && isHubUser) {
-                transport.forwardStarMessage(data, conn)
-
-                if (data?.payload) {
-                    // Le hub est aussi un récepteur : l'annonce d'un de ses clients le
-                    // concerne. Au-delà de lui, l'identité d'origine est perdue par la
-                    // retransmission (cf. limite documentée dans useBroadcastPresence).
-                    if (presence.handleBroadcastStateMessage(data.payload, conn)) return
-
+            // Hub : le transport a déjà retransmis l'enveloppe. Reste le payload, que
+            // le hub consomme comme un récepteur ordinaire — avec l'ARITÉ 1, parce que
+            // `conn` est celle de l'émetteur d'origine et non celle du message relayé.
+            const routed = transport.routeIncomingData(data, conn)
+            if (routed.handled) {
+                if (routed.payload && !presence.handleBroadcastStateMessage(routed.payload, conn)) {
                     // On remonte au chat un objet normalisé pour éviter Invalid Date
-                    originalOnDataReceived?.(data.payload)
+                    originalOnDataReceived?.(routed.payload)
                 }
                 return
             }

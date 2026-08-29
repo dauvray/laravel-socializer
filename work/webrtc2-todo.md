@@ -31,7 +31,8 @@
 Le wrap `onDataReceived` **mixe trois couches**, et son commentaire le revendique (« SEUL endroit
 où on mixe les couches ») :
 
-- **transport** → `transport.forwardStarMessage(data, conn)`
+- **transport** → `transport.forwardStarMessage(data, conn)` — devenu
+  `transport.routeIncomingData(data, conn)` avec (a), la seule des trois qui soit descendue
 - **présence** → `presence.handleBroadcastStateMessage(...)`
 - **applicatif** → `originalOnDataReceived(...)`
 
@@ -43,20 +44,31 @@ demandait donc, en partie, quelque chose qu'on ne veut pas faire.
 
 ### Les deux travaux, désormais séparés
 
-- [ ] **(a) Descendre le déballage d'enveloppe star dans `usePeerTransport`** `[S]`
-  18 lignes. `forwardStarMessage` y vit déjà et **n'est appelé de nulle part ailleurs** : le
-  transport exposerait un verbe qui répond « est-ce une enveloppe pour moi, et si oui voici le
-  payload », et le wrap de l'orchestrateur tomberait de 18 lignes à 3.
-  ⭐ **C'est aussi la préparation d'un futur SFU** — cf. « ce qui tient la porte ouverte » plus
-  bas : SFU est « star dont le hub est un serveur », donc la même question de routage. Après (a),
-  elle se répond au même endroit que `mesh` et `star` ; avant (a), elle devrait se câbler dans la
-  glue qui mixe trois couches.
-  Gain net : `forwardStarMessage` **cesse d'être exporté** — la surface publique du transport
-  rétrécit au lieu de grossir.
-  ⚠️ Le test `isHub` doit rester évalué **par message**, pas à l'init : `isHub` peut valoir `null`
-  au montage (résolu après `waitForMeReady`). Le transport a `ctx`, il peut le lire — mais un
-  portage naïf « à l'init » rouvrirait le bug que ce commentaire signale.
-  Couvert d'avance par `usePeerTransport.star.test.js` (émission) et les 7 scénarios (réception).
+- [x] **(a) Descendre le déballage d'enveloppe star dans `usePeerTransport`** `[S]` — **fait le
+  29/08/2026.** `routeIncomingData(data, conn)` porte le prédicat (`star` ET `__starRoute` ET
+  `isHub`, lu **par message**), `forwardStarMessage` n'est plus exporté, et le wrap de
+  l'orchestrateur ne garde que le sort du payload.
+
+  **Trois affirmations de l'énoncé, re-mesurées avant d'écrire** : « 18 lignes » ✅ exact ;
+  « le wrap tombe à 3 » ❌ — la branche star tombe à **8 lignes, dont 5 de code** (le wrap entier :
+  26 → 19), parce que l'arité 1 et l'interception de présence ne descendent pas ; « appelé de nulle
+  part ailleurs » ✅ — **un seul** appelant de production.
+
+  **Ce que l'énoncé ne chiffrait pas, et qui était le vrai coût** : désexporter voulait dire
+  migrer **22 appels** de `usePeerTransport.forwardStar.test.js`. Gratuit, en fait — les 22
+  passent déjà `__starRoute: true` et le harnais monte déjà `star` + `isHub`, donc le verbe a
+  pu garder la signature `(data, conn)` : renommage mécanique, aucune assertion touchée.
+
+  **Le nom interne `forwardStarMessage` est CONSERVÉ**, seul l'export part : 5 fichiers de
+  production et 3 pages de `docs/` le citent, et le renommer aurait périmé dix références pour
+  rien.
+
+  Contre-épreuves mesurées, chaque moitié séparément : retransmission neutralisée ⇒ **17 cas**
+  rougissent (dont les 2 neufs) ; remontée du payload neutralisée ⇒ **1** (l'arité 1) ; prédicat
+  de topologie neutralisé ⇒ **1** (le fall-through hors cas hub). Et une borne apprise en
+  passant, consignée dans l'en-tête du fichier de tests : forcer le harnais en `mesh` ne rougit
+  que **15 cas sur 17** — les deux survivants n'assertent que des absences d'envoi, et une
+  absence ne distingue pas « refusé » de « jamais exécuté ».
 
 - [✅] **(b) Middleware/pipeline de données, ou composable `usePeerRouter`** `[L]` — **tranché le
   29/08/2026 : ne pas le construire. Sortie D, décision datée.**
@@ -84,25 +96,30 @@ applicatif — un mode SFU devrait s'y câbler aussi, dans la glue. Une fois (a)
 vit dans le transport, et SFU y devient une troisième branche au même endroit que `mesh` et `star`.
 **(a) n'est pas un nettoyage, c'est la préparation demandée.**
 
-**La couture complète : la topologie n'est lue qu'à SEPT endroits, dans QUATRE fichiers** (relevé le
-29/08/2026, `grep -rn topology` hors tests et hors `Debug.vue`). C'est la liste exhaustive de ce
-qu'un mode SFU doit répondre, et la connaître dispense de la redécouvrir :
+**La couture complète : la topologie n'est lue qu'à SEPT endroits, dans TROIS fichiers** (re-relevé
+le 29/08/2026 APRÈS (a), `grep -rn topology` hors tests et hors `Debug.vue`). C'est la liste
+exhaustive de ce qu'un mode SFU doit répondre, et la connaître dispense de la redécouvrir :
 
 | Fichier | Ligne | Ce que la topologie y décide |
 |---|---|---|
 | `useConnectionPool.js` | 510, 527 | à qui je me connecte (mesh : tous ; star : le hub, ou tous si je suis le hub) |
-| `usePeerTransport.js` | 1826, 1846 | à qui j'envoie, et sous quelle forme (nu ou enveloppé) |
-| `usePeerOrchestrator.js` | 149 | qui retransmet (le hub déballe l'enveloppe) — **c'est (a)** |
+| `usePeerTransport.js` | 1883, 1903 | à qui j'envoie, et sous quelle forme (nu ou enveloppé) |
+| `usePeerTransport.js` | 1852 | ce qu'une donnée REÇUE est — enveloppe à retransmettre, ou message |
 | `useBroadcastPresence.js` | 124, 182 | à qui j'annonce ma diffusion, et le cas du client vers son hub |
 
-Rien d'autre. Un mode SFU se répond dans ces quatre fichiers, et `useBroadcastPresence:124`
+⚠️ **(a) n'a pas réduit le compte, elle a réduit le nombre de FICHIERS** — sept sites toujours, mais
+`usePeerOrchestrator` n'en porte plus aucun. C'est ce qui change pour un futur SFU : les deux moitiés
+de la question (« à qui j'envoie », « ce que je reçois ») se répondent désormais dans le même
+fichier, et non plus l'une dans le transport et l'autre dans la glue qui mixe trois couches.
+
+Rien d'autre. Un mode SFU se répond dans ces trois fichiers, et `useBroadcastPresence:124`
 (`targets = mesh ? reachable : null`) est déjà écrit pour le supporter — il traite « pas mesh »
 comme « le transport sait, laisse-le router ».
 
-> ℹ️ **Les lignes de `usePeerTransport` ont bougé (1451, 1471 → 1826, 1846) dès le commit suivant**,
-> celui de l'attestation (`ec5ee5b`) : re-mesuré le 29/08, les six autres sites étaient inchangés et
-> le compte de sept tient. Ce qui se recopie sans risque, c'est **le fichier et la décision** ; le
-> numéro de ligne se re-grep.
+> ℹ️ **Les lignes de `usePeerTransport` ont bougé DEUX fois en deux jours** — 1451, 1471 au relevé
+> d'origine, 1826, 1846 après le commit d'attestation (`ec5ee5b`), 1883, 1903 après (a). Les quatre
+> autres sites n'ont pas bougé une seule fois. Ce qui se recopie sans risque, c'est **le fichier et
+> la décision** ; le numéro de ligne se re-grep, toujours.
 
 - [ ] 🟠 **`topology: 'sfu'` est accepté aujourd'hui et produit un contexte MORT, en silence** `[S]`
   — trouvé le 29/08/2026 en instruisant la question ci-dessus.
@@ -126,13 +143,18 @@ comme « le transport sait, laisse-le router ».
   `createPeerContext` refuse une topologie inconnue ou non implémentée, et le dit. Les trois
   docblocks doivent alors nommer `'sfu'` comme **prévu, non implémenté**, pas comme une option.
 
-### Ce qui est réellement bloqué
+### Ce qui était réellement bloqué — plus rien depuis le 29/08/2026
 
-**Un cas**, celui du wrap `onDataReceived` de la tâche 6. Tout le reste des tâches 6 et 7 est
-écrivable **maintenant** et survivra à (a) : `syncUsersConnections` (mesh / star hub / star client),
-`_requestOrConnectPeer`, `handleStreamReceived`, `handleStreamRemoved`, `stopCallWithPeers`,
-`isShuttingDown`, le watcher `peerUnavailableSignal`, `cleanupPeerConnection`, `onUnmounted`, et les
-flux d'appel complets de la tâche 7.
+**Un cas**, celui du wrap `onDataReceived` de la tâche 6, écrit dans la foulée de (a)
+(`usePeerOrchestrator.broadcastPresence.test.js`, describe « branche hub »). Le reste des tâches 6
+et 7 ne l'a jamais été et est fermé depuis.
+
+⚠️ **Le montage de ce cas coûte trois préparations, et chacune est une raison de rougir** : un
+contexte `star` dont le hub est moi ; `isHub` **résolu** (il vaut `null` au montage et n'est écrit
+que par `waitForMeReady` — un tour de synchronisation sur une liste VIDE le déclenche sans rien
+ouvrir) ; et une connexion sortante semée vers un tiers, car **les connexions entrantes ne sont pas
+enregistrées dans le store** (le dispatcher n'y branche que ses listeners). Sans la troisième, le
+hub n'a personne à qui retransmettre et le fan-out sort en silence — vert par vacuité.
 
 ### Pourquoi le gel avait raison en août, et n'a plus raison
 
@@ -326,6 +348,17 @@ extractions : c'est 18 lignes, sous un filet cinq fois plus dense.
   ICE + attestation, ≈400 lignes contiguës et sans lien avec le routage) est le candidat naturel à
   l'extraction, et il est **indépendant** de (a) — les deux passes ne se gênent pas, l'ordre est
   libre. Le faire d'abord garde le fichier sous les 1500 lignes pendant que (a) le complète.
+
+  ✅ **Question posée et tranchée le 29/08/2026 — sortie D : on n'extrait pas maintenant.** Trois
+  raisons, dans l'ordre de poids : (a) n'a ajouté que **+43 lignes nettes, dont 11 seulement de
+  code** (le fichier est à 1949) — aucun seuil n'est franchi ; la contre-indication écrite quatre
+  lignes plus bas s'applique telle quelle (« ce qui justifierait l'extraction, c'est un second consommateur ou
+  une passe qui touche au cycle de vie — pas le nombre de lignes tout seul ») ; et la passe qui
+  aurait justifié l'extraction, la FSM du cycle de vie, **vient d'être fermée** le même jour.
+
+  **Le déclencheur, pour que la décision ne soit pas un simple report** : la PROCHAINE passe qui
+  touche au cycle de vie extrait — ou le franchissement des **2000 lignes**, quelle qu'en soit la
+  cause. En dessous, ce seuil ne se rouvre pas.
 
   ⚠️ **Ne pas extraire l'admission entrante** : elle lit le registre de contextes, le store et la
   `metadata` de la connexion dans le même souffle, et c'est un chemin de sécurité — la déplacer

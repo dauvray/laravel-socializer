@@ -1821,6 +1821,46 @@ export function usePeerTransport(ctx) {
         })
     }
 
+    /**
+     * 🔀 Déballage d'une donnée entrante du point de vue du ROUTAGE.
+     *
+     * Pendant de `sendData` : celui-ci décide à qui j'envoie et sous quelle forme,
+     * celui-là décide ce qu'une donnée reçue est. La topologie se répond donc des
+     * DEUX côtés au même étage — c'est ce qui permettra à un futur mode SFU d'être
+     * une troisième branche ici, et non une glue de plus chez l'appelant.
+     *
+     * Seule la DÉCISION de routage vit ici. La couche présence et le passe-plat
+     * applicatif restent chez l'orchestrateur, qui est le seul étage autorisé à
+     * mixer les couches.
+     *
+     * ⚠️ `isHub` est lu À CHAQUE MESSAGE, jamais figé à l'init : il peut valoir
+     * `null` au montage (résolu après `waitForMeReady`).
+     *
+     * @param {*} data Donnée brute reçue sur le data channel.
+     * @param {Object|null} sourceConn Connexion entrante (porte l'identité de l'expéditeur).
+     * @returns {{handled: boolean, payload: *}} `handled: false` → l'appelant traite
+     *   `data` tel quel. `handled: true` → l'enveloppe a été retransmise ; `payload`
+     *   est ce qui reste à consommer localement, `null` s'il n'y a rien.
+     */
+    const routeIncomingData = (data, sourceConn = null) => {
+        if (data?.__starRoute !== true) {
+            return { handled: false, payload: null }
+        }
+
+        // Une enveloppe reçue hors du cas hub-star (client, ou mesh) n'est pas une
+        // instruction de retransmission : elle retombe sur le chemin normal.
+        if (ctx.topology.value !== 'star' || ctx.isHub.value !== true) {
+            return { handled: false, payload: null }
+        }
+
+        forwardStarMessage(data, sourceConn)
+
+        // Le hub est aussi un récepteur : le message de l'un de ses clients le
+        // concerne. Au-delà de lui, l'identité d'origine est perdue par la
+        // retransmission (cf. limite documentée dans useBroadcastPresence).
+        return { handled: true, payload: data?.payload ?? null }
+    }
+
     // ─────────────────────────────────────────────────────────────────────────────
     // 📤 sendData — envoie des données à un ou plusieurs peers
     //
@@ -1897,11 +1937,14 @@ export function usePeerTransport(ctx) {
         }
     }
 
+    // `forwardStarMessage` n'est PAS exposé : la retransmission n'est atteignable
+    // que par `routeIncomingData`, qui porte le prédicat de topologie. L'exposer
+    // rouvrirait un chemin de retransmission sans garde de topologie.
     return {
         setLocalPeer,
         unregisterLocalContext,
         sendData,
+        routeIncomingData,
         getDataReachablePeers,
-        forwardStarMessage,
     }
 }

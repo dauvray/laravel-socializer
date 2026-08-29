@@ -34,7 +34,7 @@ et le seul étage où les incendies du paquet étaient détectables). Le harnais
 | Tâche 3 · `usePeerMedia` — `.players` + `.streams` | ✅ | — |
 | Tâche 4 · `usePeerTransport` — 8 fichiers (sécurité, `peer-unavailable`, singleton, mesh, **star**, reconnexion, `forwardStar`, `iceRefresh`) | ✅ | — |
 | Tâche 5 · `createPeerContext` | ✅ | — |
-| Tâche 6 · `usePeerOrchestrator` — 4 fichiers (`broadcastPresence`, **`callbacks`**, **`teardown`**, **`media`**) | ✅ sauf 1 cas | la branche **hub** du wrap `onDataReceived`, qui attend le chemin (a) du routage star |
+| Tâche 6 · `usePeerOrchestrator` — 4 fichiers (`broadcastPresence`, **`callbacks`**, **`teardown`**, **`media`**) | ✅ | — (la branche **hub** du wrap `onDataReceived` est couverte depuis le 29/08, (a) l'ayant débloquée) |
 | Tâche 7 · `useMediaBroadcast` — 2 fichiers (façade doublée, **surface** sur l'orchestrateur réel) | ✅ | — |
 | Couches extraites de l'orchestrateur — `useConnectionPool`, `useCallManager`, `useStreamManager`, `useSignalingQueue` | ✅ | — |
 | Store — `peers2Store` : runtime, observabilité, `remotePeerId`, **phase du Peer**, **registre des contextes** | ✅ | — |
@@ -229,7 +229,7 @@ Périmètre couvert. Deux contraintes de harnais à ne pas défaire : `withSetup
 à ce que ce plan prévoyait : `peers2`, `me` et `server` sont de vrais stores Pinia, et les doubler
 ferait passer le test à côté de ce qu'il croit exercer.
 
-### Tâche 6 — `usePeerOrchestrator.*.test.js` ✅ (sauf le cas star)
+### Tâche 6 — `usePeerOrchestrator.*.test.js` ✅ (fermée le 29/08/2026, cas star compris)
 
 **Périmètre RÉEL** : la composition, et rien d'autre. ⚠️ L'énoncé de cette tâche a été écrit avant
 l'extraction des couches et décrivait un fichier qui n'existe plus — **988 lignes juste avant
@@ -255,11 +255,20 @@ Quatre fichiers, écrits le 29/08/2026 pour les trois derniers :
   garde de ré-entrée, `try/finally` de `stopWebcamStream` (y compris quand une étape lève), les deux
   asymétries de `clearSignalQueue`, le type `'screen'` en dur, les deux bascules, `sendDataToPeer`
 
-- [ ] ⏸️ **LE SEUL CAS EN ATTENTE** — la branche **hub** du wrap `onDataReceived` : en topologie star,
-  une enveloppe `__starRoute` est retransmise puis son `payload` remonté au callback avec l'arité 1.
-  À écrire **après** le travail (a) de [webrtc2-todo.md](webrtc2-todo.md), qui descend le déballage
-  dans `usePeerTransport`. Le reste du wrap (annonces consommées, message métier remonté avec son
-  arité 3) est déjà couvert par `.broadcastPresence`.
+- [✅] **Le dernier cas, écrit le 29/08/2026** dans la foulée de (a) — describe « branche hub du wrap
+  `onDataReceived` » de `.broadcastPresence`. **Trois cas et non un** : la retransmission + la
+  remontée du payload en arité 1 ; une annonce de diffusion retransmise QUI NE REMONTE PAS à l'app ;
+  et le fall-through, une enveloppe reçue hors du cas hub livrée telle quelle en arité 3 — ce
+  dernier est le seul à épingler le prédicat de topologie, et sans lui un routeur qui déballerait
+  sur le seul marqueur `__starRoute` resterait vert.
+
+  ⚠️ **Trois préparations, chacune nécessaire** : un contexte `star` dont le hub est moi ; `isHub`
+  **résolu** — il vaut `null` au montage et n'est écrit que par `waitForMeReady`, qu'un tour de
+  synchronisation sur une liste **vide** déclenche sans rien ouvrir ; et une connexion sortante
+  **semée** vers un tiers (`prepareRoomConnection` puis `storePeerConnection`, la paire de la
+  production), car **les connexions entrantes ne sont pas enregistrées dans le store** — le
+  dispatcher n'y branche que ses listeners. Sans la troisième, le hub n'a personne à qui
+  retransmettre et le cas est vert par vacuité.
 
 **Deux replis du prédicat de fermeture ne sont PAS couverts, et c'est écrit dans l'en-tête du
 fichier** : `!senderSlug` (une connexion sans `metadata.from` est refusée en amont, ses listeners ne
