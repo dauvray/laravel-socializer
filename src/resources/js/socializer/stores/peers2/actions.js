@@ -85,9 +85,10 @@ export default {
     /**
      * Plus de Peer — init échouée, ou instance abandonnée.
      *
-     * ⚠️ Ne touche NI `lastLocalPeerId` NI `localPeer` : l'appelant sait lequel des deux
-     * il laisse derrière lui, et le `.catch` d'init préserve délibérément le premier.
-     * `resetPeerState` est le geste complet ; celui-ci n'est que la phase.
+     * ⚠️ Ne touche NI `lastLocalPeerId` NI `localPeer` : celui-ci n'est que la phase, et
+     * `resetPeerState` est le geste complet. Son unique appelant — le `.catch` d'init —
+     * nulle les deux champs juste avant : il ne laisse plus d'identité derrière lui, et
+     * c'est bien à l'appelant de le faire, lui seul sachant pourquoi le peer s'en va.
      *
      * @param {string} where
      */

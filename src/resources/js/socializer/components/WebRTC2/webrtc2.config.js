@@ -206,8 +206,9 @@ export const PRESENCE_SYNC_TIMEOUT_MS = 5_000
 
 // ─── Attente identité locale (createPeerContext.waitForMeReady) ──────────
 /**
- * Durée maximale (ms) d'attente que `meStore.getMe.slug` ET
- * `peerStore.lastLocalPeerId` soient disponibles avant d'abandonner.
+ * Durée maximale (ms) d'attente que `meStore.getMe.slug` ET une identité locale
+ * RÉELLEMENT joignable (`peerStore.peerIdentity()` en phase `ready`, jamais le champ
+ * historique `lastLocalPeerId`) soient disponibles avant d'abandonner.
  * Surchargeable via `options.meReadyTimeoutMs` à la création du contexte.
  */
 export const ME_READY_TIMEOUT_MS = 15_000

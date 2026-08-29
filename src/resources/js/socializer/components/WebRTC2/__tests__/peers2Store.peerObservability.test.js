@@ -135,11 +135,15 @@ describe('peers2 — observabilité de l\'état du Peer', () => {
             expect(codes()).toContain('pret-sans-peer')
         })
 
-        it('`id-historique-sans-peer` : l\'état que le `.catch` d\'init laisse', () => {
-            // ⚠️ Cet état est VOULU par le code actuel : le `.catch` de `_doInit` nulle
-            // `localPeer` et préserve `lastLocalPeerId`, parce que `waitForMeReady` en dépend.
-            // Le nommer ne le corrige pas — il rend visible que « prêt » y est vrai pour
-            // `waitForMeReady` et faux pour tous les autres lecteurs.
+        it('`id-historique-sans-peer` : un id qui a survécu à son peer', () => {
+            // ⚠️ Plus AUCUN chemin de production ne produit cet état : le `.catch` de
+            // `_doInit` le laissait derrière lui pour un `waitForMeReady` qui lisait l'id
+            // historique, et il nulle désormais les deux faits ensemble (épinglé par
+            // « n'emporte aucun id historique quand une ré-init échoue », dans
+            // `usePeerTransport.singleton.test.js`).
+            //
+            // Le cas reste ici pour la raison qui garde le code : l'état est atteignable, et
+            // le nommer est ce qui en détourne le prochain lecteur.
             store.lastLocalPeerId = 'peer-alice'
 
             expect(codes()).toContain('id-historique-sans-peer')

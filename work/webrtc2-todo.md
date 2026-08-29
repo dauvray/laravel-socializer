@@ -69,15 +69,36 @@ avant le déménagement revient à les jeter.
   - **La surface de `setLocalPeer` n'a pas bougé**, comme prévu : `useCallManager.js` et
     `useCallManager.test.js` sont intacts. L'item voisin `peerInitPromise` reste ouvert et
     séparé.
-- [ ] **L'id historique survit à un échec d'init — contradiction désormais SUPPRIMABLE** `[S]`
-  Trouvé en fermant la FSM, et laissé hors de sa passe à dessein. Le `.catch` de `_doInit` nulle
-  `localPeer` et laisse `lastLocalPeerId` posé — l'audit le signale (`id-historique-sans-peer`).
-  La raison de le préserver était `waitForMeReady`, **qui ne le lit plus**. Les deux seuls
-  lecteurs de production restants (`peer._id` restauré à l'`'open'` d'une reconnexion,
-  `peer._lastServerId` avant `reconnect()`) exigent tous deux une instance vivante, donc aucun
-  n'est sur ce chemin. Le nettoyer supprime la contradiction ; la garder demande un motif que
-  personne n'a plus. ⚠️ Le code de violation, lui, RESTE : l'état est encore atteignable, et
-  c'est ce qui interdit à un futur lecteur de se raccrocher à l'id historique.
+- [x] **L'id historique survit à un échec d'init — contradiction désormais SUPPRIMABLE** `[S]` —
+  **fermé le 29/08/2026**, une ligne dans le `.catch` de `_doInit` (`lastLocalPeerId = null`, sous
+  le `localPeer = null` qui existait) et le code de violation conservé, comme prévu. Ce que la
+  passe établit et qui ne se lit pas dans le diff :
+  - **Un seul enchaînement de production y menait**, et le trouver a été l'essentiel du travail :
+    TOUTE destruction passe par `_destroyPeerSingleton` → `resetPeerState()`, qui nulle déjà l'id.
+    Il faut donc une instance abandonnée **par PeerJS lui-même** (`_abort()` → `destroy()`, sans
+    passer par nous) pour qu'une ré-init reparte — le garde d'instance de `setLocalPeer` ne retient
+    que les peers vivants — avec l'identité de la vie précédente encore publiée, puis que CETTE
+    init échoue. C'est ce que reproduit le test, et rien d'autre.
+  - **`resetPeerState()` dans le `.catch` aurait été le piège** : il nulle aussi `peerInitPromise`,
+    donc le garde d'identité du `.finally` (`peerStore.peerInitPromise === initPromise`) échouerait
+    — plus de nettoyage de la garde d'init, et **plus d'audit**, en silence. D'où l'affectation
+    champ par champ.
+  - **Le `.catch` n'a besoin d'aucun garde d'identité**, vérifié : le seul `await` du corps de
+    `_doInit` est celui de l'ICE, suivi de la garde d'annulation. Tout ce qui peut jeter ensuite
+    est synchrone, donc aucune init plus récente ne peut s'être intercalée — un `.catch` qui
+    nullerait le peer de quelqu'un d'autre n'est pas atteignable.
+  - **Le `.catch` n'était exercé par AUCUN test** — il en a un maintenant, dans
+    `usePeerTransport.singleton.test.js`, vérifié rouge avant le correctif et sur la seule
+    assertion visée (le reste du chemin était déjà juste). Le seuil d'échec est simulé en faisant
+    jeter le premier verbe appelé après `new Peer` : la cause est indifférente, le `.catch` est un
+    filet générique.
+  - ⚠️ Le code de violation RESTE, comme annoncé : l'état demeure atteignable à la main, et c'est
+    ce qui en détourne le prochain lecteur. Le cas de `peers2Store.peerObservability.test.js` reste
+    lui aussi — il ne décrit plus « ce que le `.catch` laisse » mais « un id qui a survécu à son
+    peer ».
+  - Deux résumés périmés par la FSM, ramassés en chemin parce qu'ils portaient sur ce champ
+    exactement : le docblock de `ME_READY_TIMEOUT_MS` et l'en-tête de `waitForMeReady` annonçaient
+    tous deux une attente sur `lastLocalPeerId`.
 - [ ] **Fidélité du mock : `disconnect()` ne met pas `_id` à `null`** `[S]`
   Le vrai `Peer.disconnect()` fait `this._id = null` (`bundler.mjs:1809`) ; le mock conserve
   l'id — écart assumé et documenté (le registre du bus est keyé sur `id`, et trois scénarios

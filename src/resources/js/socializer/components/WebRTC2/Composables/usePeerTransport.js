@@ -1096,11 +1096,21 @@ export function usePeerTransport(ctx) {
                 // les anciens démontent, pouvant déclencher la destruction d'un peer
                 // valide. _destroyPeerSingleton gère explicitement le cas localPeer=null
                 // (resetPeerState, qui ne touche pas aux consommateurs).
-                // ⚠️ Pas de resetPeerState ici : il nullerait aussi `lastLocalPeerId`. Sa
-                // raison d'être — `waitForMeReady` en dépendait — a disparu avec la FSM ;
-                // ce qui reste est une contradiction assumée que le `work/` porte.
+                //
+                // ⚠️ Les DEUX moitiés de l'identité s'oublient ensemble. L'id historique
+                // survivait ici parce que `waitForMeReady` en dépendait ; il ne le lit plus
+                // (il lit l'identité COURANTE), et les deux lecteurs de production restants
+                // — `peer._id` restauré à l'`'open'` d'une reconnexion, `peer._lastServerId`
+                // avant `reconnect()` — exigent tous deux une instance vivante, donc aucun
+                // n'est sur ce chemin. Le laisser posé décrivait un peer que rien ne pouvait
+                // plus joindre (`id-historique-sans-peer`).
+                //
+                // ⚠️ Champ par champ, et surtout PAS `resetPeerState()` : il nullerait aussi
+                // `peerInitPromise`, ce qui ferait échouer le garde d'identité du `.finally`
+                // ci-dessous — plus de nettoyage de la garde, plus d'audit, en silence.
                 console.error('[WebRTC2] Échec d\'initialisation du Peer :', err)
                 peerStore.localPeer = null
+                peerStore.lastLocalPeerId = null
                 peerStore.markPeerAbsent('après échec d\'init du Peer')
                 initFailed = true
             })
@@ -1113,13 +1123,12 @@ export function usePeerTransport(ctx) {
                     peerStore.setPeerInitPromise(null)
 
                     // ⚠️ ICI et pas dans le `.catch` : tant que la garde d'init est posée,
-                    // l'état « pas de peer » est LÉGITIME (c'est la phase `creating`). La
-                    // contradiction n'apparaît qu'à la ligne du dessus. Sur un échec, cet audit
-                    // rougira sur `id-historique-sans-peer` : le `.catch` laisse
-                    // `lastLocalPeerId` posé, ce que plus aucun lecteur n'exige depuis que la
-                    // barrière lit l'identité courante. La contradiction est donc désormais
-                    // supprimable — c'est un item du `work/`, et non un effet de bord de cette
-                    // passe.
+                    // l'état « pas de peer » est LÉGITIME (c'est la phase `creating`). Une
+                    // contradiction ne peut donc apparaître qu'à la ligne du dessus. Sur un
+                    // échec, cet audit est SILENCIEUX, et c'est le fait à tenir : le `.catch`
+                    // n'a plus rien laissé derrière lui — ni instance, ni id historique. Le
+                    // jour où il rougit sur `id-historique-sans-peer`, c'est qu'un chemin a
+                    // recommencé à préserver l'un sans l'autre.
                     //
                     // Et seulement dans ce `if` : si une init plus récente a pris la main,
                     // l'état décrit le peer de QUELQU'UN D'AUTRE et un audit l'imputerait à

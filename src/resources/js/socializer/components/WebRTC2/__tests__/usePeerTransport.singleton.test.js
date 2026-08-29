@@ -33,6 +33,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createMockContext } from './helpers/createMockContext.js'
 import { withSetup } from './helpers/withSetup.js'
+import { bootLocalPeer } from './helpers/bootLocalPeer.js'
 import { usePeer2Store } from '~socializer/stores/peers2.js'
 import { PEER_PHASES } from '~socializer/stores/peers2/phases.js'
 import { ENDPOINTS, PEER_DESTROY_DELAY_MS, STUN_ONLY_ICE_SERVERS } from '~socializer/components/WebRTC2/webrtc2.config.js'
@@ -211,6 +212,47 @@ describe('usePeerTransport — Peer singleton (garde d\'init, ref-counting, dest
 
         expect(lastPeer()).toBe(peer)
         expect(ctxA.peerStore.localPeer).toBe(peer)
+    })
+
+    it('n\'emporte aucun id historique quand une ré-init échoue', async () => {
+        // Le `.catch` de `_doInit` n'était exercé par AUCUN test : il laissait
+        // `lastLocalPeerId` posé sur un peer qu'il venait lui-même de retirer du store —
+        // la contradiction que `peerStateViolations` nomme `id-historique-sans-peer`.
+        //
+        // ⚠️ L'enchaînement compte, et c'est le SEUL de la production qui amène là : toute
+        // destruction passant par `_destroyPeerSingleton` finit sur `resetPeerState()`, qui
+        // nulle déjà l'id. Il faut donc une instance abandonnée PAR PeerJS (`_abort()` →
+        // `destroy()`, sans passer par nous) pour qu'une init reparte — le garde d'instance
+        // ne retient que les peers vivants — avec l'identité de la vie précédente encore
+        // publiée.
+        const { usePeerTransport, lastPeer } = await loadTransportCopy()
+        const ctx = makeCtx('stream-a')
+        const [api] = mount(usePeerTransport, ctx)
+
+        await bootLocalPeer(() => api.setLocalPeer(), { peerId: 'peer-alice', getPeer: lastPeer })
+        expect(ctx.peerStore.lastLocalPeerId).toBe('peer-alice')
+
+        // Le champ PRIVÉ, jamais l'accesseur : `destroyed` est en lecture seule des deux
+        // côtés (cf. les sept accesseurs de `__mocks__/peerjs.js`). Passer par le vrai
+        // `destroy()` émettrait `disconnected` et armerait un backoff — du bruit qui ne
+        // dit rien de plus ici.
+        lastPeer()._destroyed = true
+
+        // La cause exacte de l'échec est indifférente : le `.catch` est un filet générique.
+        // On fait jeter le premier verbe appelé après `new Peer`, donc dans le segment
+        // SYNCHRONE de `_doInit` — celui d'après la garde d'annulation, le seul où une
+        // exception ne peut pas être celle d'une init supplantée.
+        ctx.peerStore.markPeerConnecting.mockImplementationOnce(() => { throw new Error('boom') })
+
+        await api.setLocalPeer()
+
+        expect(ctx.peerStore.localPeer).toBeNull()
+        expect(ctx.peerStore.peerPhase).toBe(PEER_PHASES.ABSENT)
+        // Le fait de l'item : les deux moitiés de l'identité s'oublient ENSEMBLE. Un id
+        // historique sans peer ne trompe plus personne aujourd'hui (la barrière lit
+        // l'identité courante), mais il attend le prochain lecteur qui s'y raccrocherait.
+        expect(ctx.peerStore.lastLocalPeerId).toBeNull()
+        expect(ctx.peerStore.peerStateViolations()).toEqual([])
     })
 
     // ── L'invariant, énoncé une fois ─────────────────────────────────────────────

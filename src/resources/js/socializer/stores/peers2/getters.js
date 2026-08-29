@@ -116,11 +116,14 @@ export default {
         }
 
         if (state.lastLocalPeerId && !peer && state.peerPhase !== PEER_PHASES.CREATING) {
-            // Produit par le `.catch` d'init : il nulle `localPeer` et laisse
-            // `lastLocalPeerId` posé. La raison a DISPARU avec la FSM — `waitForMeReady` ne
-            // lit plus l'id historique —, et plus aucun lecteur de production ne le
-            // consulte sans peer vivant. La contradiction est donc devenue supprimable :
-            // c'est un item du `work/`, pas un effet de bord à prendre au passage.
+            // Le `.catch` d'init le produisait : il nullait `localPeer` en laissant
+            // `lastLocalPeerId` posé, pour un `waitForMeReady` qui lisait l'id historique.
+            // La FSM lui a retiré ce lecteur, et le `.catch` oublie désormais les deux
+            // faits ensemble — plus aucun chemin de production n'atteint cet état.
+            //
+            // Le code RESTE, comme celui de son jumeau ci-dessous : l'état demeure
+            // atteignable à la main, et c'est ce qui le nomme au prochain lecteur qui
+            // voudrait se raccrocher à l'id historique.
             add('id-historique-sans-peer', 'lastLocalPeerId est posé alors qu\'aucun peer n\'existe et qu\'aucune init n\'est en vol')
         }
 

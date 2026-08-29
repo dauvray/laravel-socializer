@@ -265,6 +265,11 @@ désormais l'identité courante** ; ce qui l'épingle, ce sont les trois cas
 de `createPeerContext.test.js`. Le code `id-historique-sur-peer-inutilisable` reste : l'état est
 toujours atteignable, seul son exploitant a disparu.
 
+Son jumeau `id-historique-sans-peer`, lui, n'a plus de **producteur** : le `.catch` d'init nullait
+`localPeer` en préservant l'id historique — pour ce même `waitForMeReady` — et oublie désormais les
+deux faits ensemble. Le code reste pour la raison ci-dessus, mais un audit qui rougirait dessus
+après un échec d'init signale un chemin qui a recommencé à garder l'un sans l'autre.
+
 #### La phase, et ce qu'elle ne décide pas
 
 Un seul fait est **déclaré** — `peerPhase`, dans le store (`absent` · `creating` · `connecting` ·

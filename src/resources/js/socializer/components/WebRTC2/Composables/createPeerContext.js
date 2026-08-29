@@ -329,7 +329,9 @@ export function createPeerContext({ type, room, options = {} }) {
 
     // Attendre que le peer soit prêt (ex: meStore.getMe.slug disponible) avant de faire des actions dépendantes du peerId
     // Utilise un watchEffect réactif (effectScope détaché) plutôt qu'un polling setTimeout.
-    // Se résout dès que meStore.getMe.slug ET peerStore.lastLocalPeerId sont disponibles.
+    // Se résout dès que meStore.getMe.slug ET une identité locale joignable sont
+    // disponibles — `peerIdentity()` en phase `ready`, jamais l'id historique (cf. le
+    // commentaire du watchEffect, qui dit ce que cette distinction a coûté).
     const waitForMeReady = (timeoutMs = _defaultMeReadyTimeoutMs) => {
         return new Promise((resolve) => {
             let resolved = false
