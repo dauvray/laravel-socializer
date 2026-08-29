@@ -34,8 +34,8 @@ et le seul étage où les incendies du paquet étaient détectables). Le harnais
 | Tâche 3 · `usePeerMedia` — `.players` + `.streams` | ✅ | — |
 | Tâche 4 · `usePeerTransport` — 8 fichiers (sécurité, `peer-unavailable`, singleton, mesh, **star**, reconnexion, `forwardStar`, `iceRefresh`) | ✅ | — |
 | Tâche 5 · `createPeerContext` | ✅ | — |
-| Tâche 6 · `usePeerOrchestrator` | ⛔ **bloquée** | voir ci-dessous ; seul `broadcastPresence` est couvert |
-| Tâche 7 · `useMediaBroadcast` | ⛔ **bloquée** | après la tâche 6 ; seul `watchUsers` est couvert |
+| Tâche 6 · `usePeerOrchestrator` | **ouverte** (1 cas sur 16 en attente) | seul `broadcastPresence` est couvert ; tout est écrivable sauf le wrap `onDataReceived` |
+| Tâche 7 · `useMediaBroadcast` | **ouverte** | seul `watchUsers` est couvert ; plus rien ne la bloque |
 | Couches extraites de l'orchestrateur — `useConnectionPool`, `useCallManager`, `useStreamManager`, `useSignalingQueue` | ✅ | — |
 | Store — `peers2Store` : runtime, observabilité, `remotePeerId`, **phase du Peer**, **registre des contextes** | ✅ | — |
 | UI — `useAwaitedStreams`, `useBroadcastPresence`, `MediaBroadcastPlayer` (identité, spinner) | ✅ | — |
@@ -43,13 +43,18 @@ et le seul étage où les incendies du paquet étaient détectables). Le harnais
 | Perte de connexion → re-composition — `scenarios/peerDeparture` (« A recharge en chevauchement »), `useConnectionPool`, `createPeerContext` | ✅ | — |
 | Hors WebRTC2 — `Chat/dateSeparatorRender`, `System/useReverbChannel` (dont le désabonnement de whisper par callback), `User/coverCallButton` | amorces | plan Chat : [chat-tests-plan.md](chat-tests-plan.md) |
 
-⛔ **Les tâches 6 et 7 sont volontairement bloquées.** Le wrapping du routage star qu'elles doivent
-couvrir est justement ce que la TODOLIST prévoit de *déplacer* dans `usePeerTransport` (item `[L]`,
-gelé). Écrire ces tests avant le déménagement revient à les jeter. Deux exceptions ouvertes, et
-elles survivent au déménagement parce qu'aucune n'asserte sur le routage star :
-`usePeerOrchestrator.broadcastPresence.test.js`, et `useMediaBroadcast.watchUsers.test.js` (27/08/2026)
-qui mocke l'orchestrateur en entier pour épingler le seul point d'entrée de la chaîne de présence.
-**Élargir ce second fichier au reste de la façade rouvrirait le blocage** — son en-tête le dit.
+✅ **Les tâches 6 et 7 ne sont plus bloquées (29/08/2026).** Elles l'ont été du 13/08 au 29/08, sur
+une affirmation vérifiée depuis et trouvée **beaucoup trop large** : le déménagement du routage star
+ne concerne qu'**un cas sur 27**, celui du wrap `onDataReceived` de la tâche 6. Tous les autres —
+`syncUsersConnections`, `_requestOrConnectPeer`, les deux `handleStream*`, `stopCallWithPeers`,
+`isShuttingDown`, `cleanupPeerConnection`, `onUnmounted`, et les flux d'appel complets de la tâche 7
+— n'assertent rien sur le routage star et survivront au déplacement. L'analyse complète, et les deux
+travaux qui se cachaient sous un seul item `[L]`, sont dans
+[webrtc2-todo.md](webrtc2-todo.md#-routage-star--dégelé-et-scindé-le-29082026).
+
+⚠️ **Ce qui reste vrai** : `useMediaBroadcast.watchUsers.test.js` (27/08/2026) mocke l'orchestrateur
+en entier pour épingler le seul point d'entrée de la chaîne de présence — son en-tête explique
+pourquoi, et cette contrainte-là n'a rien à voir avec le gel.
 
 Les couches extraites se testent avec des `vi.fn()` pour les dépendances injectées — c'est tout
 l'intérêt de l'injection descendante. `useCallManager` et `useStreamManager` n'enregistrent aucun
@@ -211,7 +216,7 @@ ferait passer le test à côté de ce qu'il croit exercer.
 
 **Périmètre** : coordination des sous-modules, guard `isShuttingDown`, machine d'état appel.
 
-- [ ] `initializePeerConnection` : callbacks stockés dans `connectionEvents` ; en topologie star + hub, `onDataReceived` est wrappé (enveloppe `__starRoute` interceptée, payload remonté)
+- [ ] ⏸️ **LE SEUL CAS EN ATTENTE** — `initializePeerConnection` : callbacks stockés dans `connectionEvents` ; en topologie star + hub, `onDataReceived` est wrappé (enveloppe `__starRoute` interceptée, payload remonté). À écrire **après** le travail (a) de [webrtc2-todo.md](webrtc2-todo.md), qui descend le déballage d'enveloppe dans `usePeerTransport` : la partie « callbacks stockés » ne bougera pas, la partie « enveloppe interceptée » deviendra un appel à un verbe du transport
 - [ ] `initializePeerConnection` wrapping `onStreamReceived` : `handleStreamReceived` interne est chaîné **avant** le callback utilisateur (quel que soit le type) ; le callback utilisateur reste appelé ensuite si fourni
 - [ ] `initializePeerConnection` wrapping `onConnectionClose` stream : uniquement pour `type === 'stream'`, `handleStreamRemoved` interne est chaîné avant le callback utilisateur ; pour les autres types (`data`, `visio`…) la fermeture n'est pas wrappée
 - [ ] `syncUsersConnections` topologie mesh : `_requestOrConnectPeer` appelé pour chaque new user

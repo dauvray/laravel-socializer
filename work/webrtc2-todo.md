@@ -8,17 +8,134 @@
 
 ---
 
-## 🧊 Gelé — déplacer le routage star dans `usePeerTransport` `[L]`
+## 🔓 Routage star — dégelé et SCINDÉ le 29/08/2026
 
-Sortir de `usePeerOrchestrator` le wrapping du routage star, actuellement dans
-`initializePeerConnection` (~245 lignes avec les passthroughs média). Nécessite un
-middleware/pipeline de données dans `createPeerContext`, ou un composable `usePeerRouter` dédié.
+> **À lire en entier avant d'y toucher.** Cet item a été gelé du 13/08 au 29/08 sous le titre
+> « déplacer le routage star dans `usePeerTransport` `[L]` », sur trois affirmations dont **aucune
+> ne tient à la relecture**. Elles sont conservées ci-dessous avec leur réfutation : les effacer
+> ferait refaire l'analyse au prochain lecteur, qui retomberait sur le même plan.
 
-**Gelé pendant la stabilisation.** C'est exactement le type de refacto structurelle qui a produit
-les régressions du 13/08 ; il attend que les scénarios servent de filet.
+### Ce que l'item disait, et ce que dit le code (mesuré le 29/08/2026)
 
-**Bloque** les tâches 6 et 7 de [webrtc2-tests-plan.md](webrtc2-tests-plan.md) : écrire ces tests
-avant le déménagement revient à les jeter.
+| Affirmation d'origine | Vérification |
+|---|---|
+| « ~245 lignes avec les passthroughs média » | `initializePeerConnection` fait **98 lignes** (`usePeerOrchestrator.js:122-219`), et le routage star y occupe **18 lignes** (l.145-162). Les 80 autres sont trois wraps sans rapport : annonce de diffusion à l'ouverture, tracking de `remoteStreamsMap`, cleanup de flux en mode `stream`. Le chiffre datait d'avant l'extraction de `useCallManager`, `useStreamManager`, `useConnectionPool` et `useSignalingQueue`. |
+| « attend que les scénarios servent de filet » | **Condition remplie.** 45 fichiers de test dont 7 scénarios bout-en-bout, 1092 cas. Le filet valait 8 fichiers le 13/08. |
+| « bloque les tâches 6 et 7 » | **Un seul cas sur 27** en dépend : `initializePeerConnection … onDataReceived est wrappé` (tâche 6). Les 15 autres de la tâche 6 et les 11 de la tâche 7 ne touchent pas au routage star. |
+
+> Ces chiffres se re-mesurent, ils ne se recopient pas : `wc -l` sur la fonction, `find __tests__
+> -name '*.test.js' | wc -l`, et la sortie du runner.
+
+### Le fait qui change le plan : on ne peut PAS déplacer le wrap
+
+Le wrap `onDataReceived` **mixe trois couches**, et son commentaire le revendique (« SEUL endroit
+où on mixe les couches ») :
+
+- **transport** → `transport.forwardStarMessage(data, conn)`
+- **présence** → `presence.handleBroadcastStateMessage(...)`
+- **applicatif** → `originalOnDataReceived(...)`
+
+Or `usePeerTransport` **ignore totalement `useBroadcastPresence`** (vérifié : zéro occurrence).
+Déplacer « le routage star » au sens large y ferait donc entrer la couche présence — une inversion
+de l'ordre des couches, pas une simplification. **Seule la DÉCISION star peut descendre ;
+l'interception de présence et le passe-plat applicatif restent où ils sont.** L'item d'origine
+demandait donc, en partie, quelque chose qu'on ne veut pas faire.
+
+### Les deux travaux, désormais séparés
+
+- [ ] **(a) Descendre le déballage d'enveloppe star dans `usePeerTransport`** `[S]`
+  18 lignes. `forwardStarMessage` y vit déjà et **n'est appelé de nulle part ailleurs** : le
+  transport exposerait un verbe qui répond « est-ce une enveloppe pour moi, et si oui voici le
+  payload », et le wrap de l'orchestrateur tomberait de 18 lignes à 3.
+  ⭐ **C'est aussi la préparation d'un futur SFU** — cf. « ce qui tient la porte ouverte » plus
+  bas : SFU est « star dont le hub est un serveur », donc la même question de routage. Après (a),
+  elle se répond au même endroit que `mesh` et `star` ; avant (a), elle devrait se câbler dans la
+  glue qui mixe trois couches.
+  Gain net : `forwardStarMessage` **cesse d'être exporté** — la surface publique du transport
+  rétrécit au lieu de grossir.
+  ⚠️ Le test `isHub` doit rester évalué **par message**, pas à l'init : `isHub` peut valoir `null`
+  au montage (résolu après `waitForMeReady`). Le transport a `ctx`, il peut le lire — mais un
+  portage naïf « à l'init » rouvrirait le bug que ce commentaire signale.
+  Couvert d'avance par `usePeerTransport.star.test.js` (émission) et les 7 scénarios (réception).
+
+- [✅] **(b) Middleware/pipeline de données, ou composable `usePeerRouter`** `[L]` — **tranché le
+  29/08/2026 : ne pas le construire. Sortie D, décision datée.**
+
+  C'était la seconde moitié de l'item d'origine et c'est elle qui portait le `[L]` : une couche
+  architecturale neuve par-dessus `createPeerContext` (934 lignes). La question qui la conditionnait
+  a été posée et répondue (David, 29/08) : **pas de mode SFU pour l'instant, mais la porte doit
+  rester ouverte pour une v2/v3.**
+
+  **Garder la porte ouverte ne veut pas dire construire le routeur maintenant.** Une abstraction
+  bâtie pour un besoin qui n'existe pas se fige sur les hypothèses du moment et devient l'obstacle
+  qu'elle prétendait éviter — c'est déjà l'histoire de cet item, qui a gelé un chantier réel
+  pendant seize jours pour une couche que personne n'a jamais réclamée. Ce qui tient la porte
+  ouverte, c'est **la connaissance de la couture**, et elle est écrite ci-dessous.
+
+### 🚪 Ce qui tient la porte ouverte pour un futur SFU
+
+**Un SFU, dans ce module, c'est « star dont le hub est un serveur ».** Même question à répondre —
+« à qui j'envoie, et qui retransmet pour moi » — avec une troisième réponse. Ce n'est pas une
+topologie d'une autre nature.
+
+**Conséquence directe, et c'est l'argument fort pour (a)** : tant que la décision de routage vit
+dans le wrap `onDataReceived` de l'orchestrateur — l'étage qui mixe transport, présence et
+applicatif — un mode SFU devrait s'y câbler aussi, dans la glue. Une fois (a) faite, la décision
+vit dans le transport, et SFU y devient une troisième branche au même endroit que `mesh` et `star`.
+**(a) n'est pas un nettoyage, c'est la préparation demandée.**
+
+**La couture complète : la topologie n'est lue qu'à SEPT endroits, dans QUATRE fichiers** (relevé le
+29/08/2026, `grep -rn topology` hors tests et hors `Debug.vue`). C'est la liste exhaustive de ce
+qu'un mode SFU doit répondre, et la connaître dispense de la redécouvrir :
+
+| Fichier | Ligne | Ce que la topologie y décide |
+|---|---|---|
+| `useConnectionPool.js` | 510, 527 | à qui je me connecte (mesh : tous ; star : le hub, ou tous si je suis le hub) |
+| `usePeerTransport.js` | 1451, 1471 | à qui j'envoie, et sous quelle forme (nu ou enveloppé) |
+| `usePeerOrchestrator.js` | 149 | qui retransmet (le hub déballe l'enveloppe) — **c'est (a)** |
+| `useBroadcastPresence.js` | 124, 182 | à qui j'annonce ma diffusion, et le cas du client vers son hub |
+
+Rien d'autre. Un mode SFU se répond dans ces quatre fichiers, et `useBroadcastPresence:124`
+(`targets = mesh ? reachable : null`) est déjà écrit pour le supporter — il traite « pas mesh »
+comme « le transport sait, laisse-le router ».
+
+- [ ] 🟠 **`topology: 'sfu'` est accepté aujourd'hui et produit un contexte MORT, en silence** `[S]`
+  — trouvé le 29/08/2026 en instruisant la question ci-dessus.
+
+  La valeur est annoncée comme supportée dans **trois docblocks**
+  (`MediaBroadcastProvider.vue:24`, `useMediaBroadcast.js:48`, `createPeerContext.js:76` :
+  « 'mesh' (pair à pair), 'star' (étoile) ou 'sfu' (serveur de diffusion) »). Passée pour de vrai :
+
+  - `useConnectionPool.syncUsersConnections` — `if (mesh)` … `else if (star && hubSlug)` … et
+    **pas d'`else`** : aucune connexion n'est ouverte vers personne ;
+  - `usePeerTransport.sendData` — traverse ses deux branches sans en prendre aucune : rien n'est
+    envoyé, et il n'y a pas de `console.warn` sur ce chemin ;
+  - `useBroadcastPresence` annonce dans le vide, puisque `sendData` n'envoie rien.
+
+  **Aucune ligne de log.** Un intégrateur qui suit la doc du composant obtient une room où personne
+  ne se connecte et où rien ne circule, sans un seul indice.
+
+  ⚠️ **C'est pire qu'une valeur non implémentée, et c'est ce qui menace la v2** : une future
+  intégration SFU partirait de la prémisse fausse « c'est déjà à moitié câblé ». Le correctif est
+  petit et il est le vrai geste « garder la porte ouverte » : **faire échouer bruyamment** —
+  `createPeerContext` refuse une topologie inconnue ou non implémentée, et le dit. Les trois
+  docblocks doivent alors nommer `'sfu'` comme **prévu, non implémenté**, pas comme une option.
+
+### Ce qui est réellement bloqué
+
+**Un cas**, celui du wrap `onDataReceived` de la tâche 6. Tout le reste des tâches 6 et 7 est
+écrivable **maintenant** et survivra à (a) : `syncUsersConnections` (mesh / star hub / star client),
+`_requestOrConnectPeer`, `handleStreamReceived`, `handleStreamRemoved`, `stopCallWithPeers`,
+`isShuttingDown`, le watcher `peerUnavailableSignal`, `cleanupPeerConnection`, `onUnmounted`, et les
+flux d'appel complets de la tâche 7.
+
+### Pourquoi le gel avait raison en août, et n'a plus raison
+
+Le 13/08, cinq extractions structurelles simultanées (callManager + StreamManager, pool
+d'instances Vue, SignalingQueue, drainage de file) ont été livrées ; le 15/08 arrivait
+`bug fix Régression : A diffuse, B ne voit rien` — le cas majoritaire cassé. Le gel a été écrit
+depuis cette brûlure, et c'était le bon geste. Mais ce qu'il gèle aujourd'hui n'est pas cinq
+extractions : c'est 18 lignes, sous un filet cinq fois plus dense.
 
 ---
 

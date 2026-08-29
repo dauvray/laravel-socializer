@@ -368,12 +368,10 @@ verbe demanderait de monter `Notifications.vue`, et le scénario ne parlerait pl
 Sans décompte, parce qu'il pourrit : l'état exact se lit dans
 [`work/webrtc2-tests-plan.md`](../../../work/webrtc2-tests-plan.md).
 
-- `usePeerOrchestrator` — **volontairement bloqué** : le wrapping du routage star qu'il faudrait
-  couvrir est justement ce qui doit *déménager* dans `usePeerTransport`. Écrire ces tests avant le
-  déménagement revient à les jeter. Exception ouverte :
-  `usePeerOrchestrator.broadcastPresence.test.js`, qui n'asserte rien sur le routage star et survivra
-  donc au déplacement.
-- `useMediaBroadcast` — dépend du point précédent.
+- `usePeerOrchestrator` — largement à écrire, et **plus bloqué depuis le 29/08/2026**. Un seul cas
+  attend le déménagement du déballage d'enveloppe star dans `usePeerTransport` : celui du wrap
+  `onDataReceived`. Tout le reste n'asserte rien sur le routage star et lui survivra.
+- `useMediaBroadcast` — à écrire, sans dépendance au point précédent.
 - `usePeerTransport` — couvert depuis le 29/08/2026 : `sendData` star
   (`usePeerTransport.star.test.js`), le **câblage** du rate-limiting hub et la taille du chemin hub
   (`usePeerTransport.forwardStar.test.js`), le registre des contextes des deux côtés
