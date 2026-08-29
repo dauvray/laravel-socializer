@@ -20,7 +20,7 @@
 | Affirmation d'origine | Vérification |
 |---|---|
 | « ~245 lignes avec les passthroughs média » | `initializePeerConnection` fait **98 lignes** (`usePeerOrchestrator.js:122-219`), et le routage star y occupe **18 lignes** (l.145-162). Les 80 autres sont trois wraps sans rapport : annonce de diffusion à l'ouverture, tracking de `remoteStreamsMap`, cleanup de flux en mode `stream`. Le chiffre datait d'avant l'extraction de `useCallManager`, `useStreamManager`, `useConnectionPool` et `useSignalingQueue`. |
-| « attend que les scénarios servent de filet » | **Condition remplie.** 45 fichiers de test dont 7 scénarios bout-en-bout, 1092 cas. Le filet valait 8 fichiers le 13/08. |
+| « attend que les scénarios servent de filet » | **Condition remplie.** 49 fichiers de test dont 8 scénarios bout-en-bout ; 1141 cas sur la suite entière du paquet (60 fichiers), re-mesuré le 29/08 après l'attestation. Le filet valait 8 fichiers le 13/08. |
 | « bloque les tâches 6 et 7 » | **Un seul cas sur 27** en dépend : `initializePeerConnection … onDataReceived est wrappé` (tâche 6). Les 15 autres de la tâche 6 et les 11 de la tâche 7 ne touchent pas au routage star. |
 
 > Ces chiffres se re-mesurent, ils ne se recopient pas : `wc -l` sur la fonction, `find __tests__
@@ -91,13 +91,18 @@ qu'un mode SFU doit répondre, et la connaître dispense de la redécouvrir :
 | Fichier | Ligne | Ce que la topologie y décide |
 |---|---|---|
 | `useConnectionPool.js` | 510, 527 | à qui je me connecte (mesh : tous ; star : le hub, ou tous si je suis le hub) |
-| `usePeerTransport.js` | 1451, 1471 | à qui j'envoie, et sous quelle forme (nu ou enveloppé) |
+| `usePeerTransport.js` | 1826, 1846 | à qui j'envoie, et sous quelle forme (nu ou enveloppé) |
 | `usePeerOrchestrator.js` | 149 | qui retransmet (le hub déballe l'enveloppe) — **c'est (a)** |
 | `useBroadcastPresence.js` | 124, 182 | à qui j'annonce ma diffusion, et le cas du client vers son hub |
 
 Rien d'autre. Un mode SFU se répond dans ces quatre fichiers, et `useBroadcastPresence:124`
 (`targets = mesh ? reachable : null`) est déjà écrit pour le supporter — il traite « pas mesh »
 comme « le transport sait, laisse-le router ».
+
+> ℹ️ **Les lignes de `usePeerTransport` ont bougé (1451, 1471 → 1826, 1846) dès le commit suivant**,
+> celui de l'attestation (`ec5ee5b`) : re-mesuré le 29/08, les six autres sites étaient inchangés et
+> le compte de sept tient. Ce qui se recopie sans risque, c'est **le fichier et la décision** ; le
+> numéro de ligne se re-grep.
 
 - [ ] 🟠 **`topology: 'sfu'` est accepté aujourd'hui et produit un contexte MORT, en silence** `[S]`
   — trouvé le 29/08/2026 en instruisant la question ci-dessus.
@@ -294,6 +299,40 @@ extractions : c'est 18 lignes, sous un filet cinq fois plus dense.
 
   ⚠️ Les deux cas `[épinglé]` de `usePeerTransport.star.test.js` **rougiront** le jour où ce sera
   comblé : c'est le signal voulu. Les mettre à jour, jamais les supprimer.
+
+- [ ] 🟠 **Le fichier concentre sept responsabilités, et l'item (a) veut lui en ajouter** `[L]` —
+  relevé le 29/08/2026 au point d'étape QA. **Pas une action : un seuil, et une question à poser
+  avant (a).**
+
+  Mesuré : **797 → 1889 lignes du 13/08 au 29/08**, 25 fonctions. C'est le plus gros fichier du
+  module et de loin — `createPeerContext` vient ensuite à 934. Ce qu'il porte :
+
+  | Responsabilité | Ce qui l'a amenée |
+  |---|---|
+  | singleton `Peer` + cycle de vie (`peerPhase`, garde d'instance, `PEER_OPEN_TIMEOUT_MS`) | FSM du 29/08 |
+  | rafraîchissement du credential TURN | 26/08 |
+  | rafraîchissement de l'attestation | 29/08 |
+  | admission entrante (garde, corroboration, `_settleAdmission`, `_concludeIncoming`) | mai → 29/08 |
+  | dispatchers `connection` / `call` + registre de contextes | origine |
+  | routage star (`forwardStarMessage`, plafonds du hub) | origine |
+  | `sendData` et sa décision de topologie | origine |
+
+  **Ce n'est pas de la rustine** — chaque bloc est composé, commenté et testé, et la densité de
+  commentaires du fichier est de 52 %, donc ~900 lignes de code réel. C'est de la **concentration**,
+  et elle a une conséquence datable : l'item **(a)** du routage star y fait descendre le déballage
+  d'enveloppe. Le fichier grossit dans le même geste qui rétrécit l'orchestrateur.
+
+  La question à trancher **avant** (a), et pas après : le **cycle de vie du `Peer`** (singleton +
+  ICE + attestation, ≈400 lignes contiguës et sans lien avec le routage) est le candidat naturel à
+  l'extraction, et il est **indépendant** de (a) — les deux passes ne se gênent pas, l'ordre est
+  libre. Le faire d'abord garde le fichier sous les 1500 lignes pendant que (a) le complète.
+
+  ⚠️ **Ne pas extraire l'admission entrante** : elle lit le registre de contextes, le store et la
+  `metadata` de la connexion dans le même souffle, et c'est un chemin de sécurité — la déplacer
+  coûterait la relecture des quatre issues de corroboration pour un gain de lignes.
+  ℹ️ Contre-indication générale, la même que pour (b) du routage star : **ne pas bâtir l'abstraction
+  d'avance**. Ce qui justifierait l'extraction, c'est un second consommateur ou une passe qui touche
+  au cycle de vie — pas le nombre de lignes tout seul.
 
 ---
 
@@ -741,6 +780,46 @@ extractions : c'est 18 lignes, sous un filet cinq fois plus dense.
   opérations, pas une timidité — un refus entrant n'est jamais rattrapable, donc la mesure
   (`peerStore.uncorroboratedAdmissions`) précède la coupure.
 
+- [ ] 🟠 **La mesure qui décide de la bascule d'`enforce` n'est observable NULLE PART** `[S]` —
+  trouvé le 29/08/2026 au point d'étape QA, en cherchant à lire le compteur que l'item ci-dessus
+  désigne comme le déclencheur du geste de déploiement.
+
+  L'item précédent se clôt sur « la mesure précède la coupure ». La mesure n'existe pas :
+
+  | Où on l'attendrait | Ce qu'on y trouve |
+  |---|---|
+  | `Widgets/UI/Report/Debug.vue` | rien — il ne rend que `remotePeersId`, `waitingRemotePeerId`, `getConnections`. `securite.md` l'affirmait pourtant, **corrigé le 29/08** |
+  | un journal serveur | rien — `verifyPeerAttestation` rend `{slug: null}` sans un `Log::` |
+  | ailleurs en production | rien : les seuls lecteurs de `uncorroboratedAdmissions` sont **trois fichiers de test** |
+
+  Conséquence : `enforce` reste faux **par défaut d'observation** et non par décision, ce qui n'est
+  pas ce que l'item précédent a écrit. Tant que ça dure, l'usurpation intra-room reste possible.
+
+  Deux moitiés, et **c'est la seconde qui tranche** :
+
+  - **client** `[S]` — exposer le compteur dans `Debug.vue`. Honnête mais faible : par onglet, en
+    mémoire, perdu au rechargement, et il faut que quelqu'un ouvre le panneau au bon moment.
+  - **serveur** `[S]` — journaliser le verdict `null` de
+    `WebRTCController::verifyPeerAttestation`. C'est le **seul** point qui voie les refus de tous les
+    utilisateurs, donc le seul depuis lequel une décision de déploiement puisse se prendre. Forme
+    déjà employée par `closeConnectionToPeerId` : `auth_user_id`, peerId présenté, `ip`,
+    `user_agent`.
+    ⚠️ **Ne jamais journaliser l'attestation elle-même** — c'est une identité signée valable jusqu'à
+    son échéance ; un journal la rendrait rejouable par quiconque le lit, ce qui transformerait un
+    correctif d'observabilité en élargissement de la borne de rejeu déjà assumée ci-dessus.
+
+  ⚠️ **Le compteur ne compte pas ce qu'on croit, et c'est à trancher dans la même passe.**
+  `_settleAdmission` (`usePeerTransport.js:756`) n'incrémente **que si `verdictKnown`** : le cas
+  « le serveur n'a pas répondu » — admission non corroborée lui aussi, et **fail-open même sous
+  `enforce`** — n'est pas compté. « Le compteur est stable à zéro » est donc plus optimiste que
+  « aucune admission non corroborée ». Deux sorties : compter les deux cas avec un motif distinct,
+  ou écrire la borne à côté du compteur. Ne pas laisser l'ambiguïté, c'est elle qui autoriserait à
+  basculer sur une mesure fausse.
+
+  ℹ️ Cet item est **le préalable** au geste de déploiement annoncé dans
+  [`work/README.md`](README.md) (`SOCIALIZER_PEER_ATTESTATION_ENFORCE=true`), pas un confort
+  d'observabilité — d'où sa place ici et non dans la section « Observabilité ».
+
 ---
 
 ## usePeerCore — le moteur de retry d'invitation
@@ -822,6 +901,38 @@ extractions : c'est 18 lignes, sous un filet cinq fois plus dense.
      plafond rend aussi tout curseur basé sur `length` faux, d'où le `seq`.
 
   `clearSignalQueueRoom` appelé en pleine session est un **rewind réel**, pas théorique.
+
+---
+
+## Contrôlé le 29/08/2026 et EXACT — ne pas re-mesurer
+
+Le point d'étape QA a recoupé les affirmations vérifiables de la doc contre le code. **Quatre
+étaient fausses** — corrigées le jour même : le compteur prétendu lisible dans `Debug.vue`
+(item de sécurité ci-dessus), la table « quatre lecteurs » d'`isAuthorizedPeer` qui en compte
+**cinq** depuis le 28/08, la règle d'imports « toujours l'alias » que 118 sites contredisent, et deux
+chiffres de ce fichier (l.23, l.94).
+
+Les suivantes ont été vérifiées **une par une et tiennent**. Elles sont listées ici pour que la
+prochaine passe ne repaie pas la mesure :
+
+- **trois écrivains d'`addRemotePeerId`** — `useCallManager:198`, `:289`, `usePeerConnections:375`.
+  Aucun quatrième, aucune auto-inscription réintroduite ;
+- **`computeRoomDiff` est bien le seul écrivain de production de `roomMembers`** — `setRoomMembers`
+  porte son docblock de verbe de semis et n'a aucun appelant de production ; `clearRoomMembers`
+  porte son garde de propriété ;
+- **quatre points d'application de `payloadSize.js`** — émission mesh (`usePeerTransport:1831`),
+  retransmission (`:1721`), réception (`createPeerContext:579`), et la `metadata` en **première**
+  instruction des deux dispatchers (`:1358`, `:1393`) ;
+- **`topology` lue à sept endroits dans quatre fichiers** — le compte tient, seules les lignes de
+  `usePeerTransport` ont bougé ;
+- **cinq composants vivants importent encore la v1 morte** — `ClassRoom`, `AudioRoom`,
+  `Application`, `Whiteboard`, `System/widgets/AlertComponent` (ce dernier en
+  `defineAsyncComponent`). Le compte de `docs/modules/webrtc2/INDEX.md` est juste ;
+- **`config/reverb.php` de l'hôte porte `accept_client_events_from` avec `'members'` par défaut** —
+  la borne de déploiement du whisper de présence est tenue sur cette machine ;
+- **les deux suites sont vertes et n'ont ni `.skip` ni `.only`** — JS 60 fichiers / 1141 cas,
+  PHP 279 tests / 636 assertions. Cinq cas `[épinglé]` au total, tous datés et rattachés à un item
+  ouvert de ce fichier.
 
 ---
 

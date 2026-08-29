@@ -375,10 +375,22 @@ Mesuré : retirer le transport dans la `metadata` ne fait rougir qu'**un** cas d
 
 **Le déploiement se fait en deux temps, et le premier n'est pas optionnel.**
 `signaling.attestation.enforce` est **faux par défaut** : l'attestation circule, le garde compte
-(`peerStore.uncorroboratedAdmissions`, lisible dans `Widgets/UI/Report/Debug.vue`) et n'refuse rien.
-Un onglet resté sur un bundle antérieur n'attesterait rien, et un refus entrant n'est **jamais**
-rattrapable — basculer d'emblée couperait la visio en room pendant toute la fenêtre d'un déploiement
-mixte. On bascule quand le compteur cesse de bouger en usage nominal.
+(`peerStore.uncorroboratedAdmissions`) et ne refuse rien. Un onglet resté sur un bundle antérieur
+n'attesterait rien, et un refus entrant n'est **jamais** rattrapable — basculer d'emblée couperait la
+visio en room pendant toute la fenêtre d'un déploiement mixte. On bascule quand le compteur cesse de
+bouger en usage nominal.
+
+> ⚠️ **Et c'est précisément ce que personne ne peut observer aujourd'hui — mesuré le 29/08/2026.**
+> `uncorroboratedAdmissions` est incrémenté par `_settleAdmission` et lu par **trois fichiers de
+> test, et rien d'autre** : aucun code de production ne l'expose, `Widgets/UI/Report/Debug.vue`
+> compris (il ne rend que `remotePeersId`, `waitingRemotePeerId` et `getConnections`). Côté serveur
+> non plus : `verifyPeerAttestation` rend `{slug: null}` **sans une ligne de journal**, alors qu'il
+> est le seul point qui voie les refus de **tous** les utilisateurs — le compteur client, lui, est
+> par onglet et meurt au rechargement.
+>
+> La condition de bascule est donc écrite mais **non mesurable**, ce qui laisse `enforce` faux par
+> défaut d'observation plutôt que par décision. C'est un item ouvert, pas une borne assumée :
+> [`work/webrtc2-todo.md` § « Le signal qui décide de la bascule d'`enforce` »](../../../work/webrtc2-todo.md).
 
 **Épinglé par** `usePeerTransport.attestation.test.js` (obtention et rafraîchissement),
 `usePeerTransport.incomingAuth.test.js` § corroboration (les quatre issues), `PeerAttestationTest`
@@ -494,7 +506,7 @@ est le cas particulier (poids 1).
 
 ## Décisions en vigueur (sens sortant, août 2026)
 
-### Un prédicat unique, quatre lecteurs
+### Un prédicat unique, cinq lecteurs
 
 `Composables/utils/isAuthorizedPeer.js` répond à une seule question — « ai-je le droit d'ouvrir une
 connexion vers ce pair ? » — et rend `true` sur **exactement les deux chemins** de l'admission
@@ -503,16 +515,23 @@ entrante : slug valide, **et** (membre de `connection.remotePeers`, **ou** inscr
 symétrie avec `_isAuthorizedIncomingPeer` est délibérée, une seule définition de « pair légitime »
 par contexte.
 
-Il est lu à quatre endroits, dont **deux sont des gardes** :
+Il est lu à cinq endroits, dont **deux sont des gardes** :
 
 | Lecteur | Ce qu'il décide | Refus |
 |---|---|---|
 | `usePeerConnections.connectToPeer` | ouvrir une connexion — appelé **avant** `addRemotePeerId` | `return false` (diffère) |
 | `usePeerCore.responseRemotePeerConnection` | livrer mon peerId au demandeur | `return false` (le demandeur re-demandera) |
-| `useConnectionPool` (moteur de retry) | « ce pair me concerne-t-il encore ? » quand ni peerId ni demande en vol | abandon du retry |
+| `useConnectionPool._handleConnectionAttempt` (moteur de retry) | « ce pair me concerne-t-il encore ? » quand ni peerId ni demande en vol | abandon du retry |
+| `useConnectionPool` — watcher `connectionLostSignal` | re-composer, ou non, un pair dont la connexion vient de tomber | ne re-compose pas |
 | `usePeerTransport` (recovery `peer-unavailable`) | quels contextes relancent la demande de peerId | ne relance pas |
 
-Les deux derniers ne sont pas des gardes de sécurité : ils réutilisent la définition parce qu'elle
+> ℹ️ **Le quatrième est arrivé le 28/08/2026** avec « la perte d'une connexion recompose le pair »
+> (`c6c0856`), et il applique le prédicat **en amont** du moteur : le laisser au moteur coûterait un
+> POST, un jeton du plafond de cadence et un retry armé, avant d'être rattrapé un tour plus tard.
+> Cette table est la liste **exhaustive** des dépendants du prédicat — y ajouter un lecteur sans
+> l'inscrire ici, c'est ce qui l'a rendue fausse pendant un jour.
+
+Les trois derniers ne sont pas des gardes de sécurité : ils réutilisent la définition parce qu'elle
 est la bonne. Distinguer « ce pair est parti » de « je ne lui ai pas encore demandé » se fait sur la
 **présence**, pas sur un drapeau de bookkeeping — et le second chemin du prédicat
 (`authorizedCallPeers`) est précisément ce qui préserve la visio 1-à-1, qui n'a aucune room commune.

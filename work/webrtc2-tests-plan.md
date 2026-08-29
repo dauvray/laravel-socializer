@@ -38,8 +38,9 @@ et le seul étage où les incendies du paquet étaient détectables). Le harnais
 | Tâche 7 · `useMediaBroadcast` | **ouverte** | seul `watchUsers` est couvert ; plus rien ne la bloque |
 | Couches extraites de l'orchestrateur — `useConnectionPool`, `useCallManager`, `useStreamManager`, `useSignalingQueue` | ✅ | — |
 | Store — `peers2Store` : runtime, observabilité, `remotePeerId`, **phase du Peer**, **registre des contextes** | ✅ | — |
-| UI — `useAwaitedStreams`, `useBroadcastPresence`, `MediaBroadcastPlayer` (identité, spinner) | ✅ | — |
-| Scénarios — smoke, `lateJoiner`, `broadcastLifecycle`, `peerDeparture`, `multiContext`, `incomingMappingInvariant`, `outgoingAuth` | ✅ | — |
+| Composables d'UI — `useAwaitedStreams`, `useBroadcastPresence` | ✅ | — |
+| Tâche 8 · **Composants** `Widgets/**` — 15 fichiers, **2** couverts (`MediaBroadcastPlayer`, `useAwaitedStreams`) | **ouverte** | 13 sans aucun test, dont 11 des 12 composants `.vue` ; c'est l'étage d'où venait le dernier 🔴 |
+| Scénarios — smoke, `lateJoiner`, `broadcastLifecycle`, `peerDeparture`, `multiContext`, `incomingMappingInvariant`, `outgoingAuth`, `incomingSpoof` | ✅ | — |
 | Perte de connexion → re-composition — `scenarios/peerDeparture` (« A recharge en chevauchement »), `useConnectionPool`, `createPeerContext` | ✅ | — |
 | Hors WebRTC2 — `Chat/dateSeparatorRender`, `System/useReverbChannel` (dont le désabonnement de whisper par callback), `User/coverCallButton` | amorces | plan Chat : [chat-tests-plan.md](chat-tests-plan.md) |
 
@@ -258,3 +259,35 @@ ferait passer le test à côté de ce qu'il croit exercer.
 - [ ] Événements exposés : `close-call` émis avec le bon payload
 
 **Prérequis** : `usePeerOrchestrator` entièrement mocké via `vi.mock` (résultat de la tâche 6) ou intégration complète avec tous les sous-modules mockés.
+
+---
+
+### Tâche 8 — les composants `Widgets/**` (étage de présentation)
+
+**Ouverte, ajoutée le 29/08/2026** au point d'étape QA. Ce n'est **pas** un reste des tâches 6 et 7
+— celles-ci visent `usePeerOrchestrator` et `useMediaBroadcast`, des composables. C'est un étage de
+plus, et il n'était au plan d'aucune tâche.
+
+**Le constat, mesuré** : 15 fichiers sous `Widgets/`, **2 couverts** (`MediaBroadcastPlayer` par
+`identity` + `spinner`, `useAwaitedStreams`). Restent 13, dont **11 des 12 composants `.vue`** :
+`MediaBroadcastProvider`, `PlayerHost`, `LocalMediaPlayer`, `RemoteMediaPlayer`, les cinq boutons de
+`UI/Buttons/`, `SpectrumAnalyzer`, `Debug` — plus `useMediaControls` et `useRemotePeerState`.
+
+**Pourquoi ça compte, et ce n'est pas une question de pourcentage** : le dernier 🔴 du module — la
+vignette d'attente effondrée à 0 px, `.draggable-video` sans `<video>` — vivait exactement là. Il a
+été trouvé par une mesure Playwright manuelle et par une relecture de capture, jamais par la suite,
+qui était verte pendant toute sa durée de vie. Un module dont la logique est couverte à 1141 cas
+peut afficher un écran vide sans qu'un seul test bouge.
+
+⚠️ **Le piège de vérification est déjà payé, ne pas le re-payer** : `isVisible()` de Playwright rend
+**`true`** sur un élément clippé par un ancêtre (boîte non vide, `visibility:visible`, `opacity:1`).
+Un test qui s'y fierait serait vert sur une vignette invisible. Ce qui tranche est la **géométrie
+comparée à celle de l'ancêtre**, ou une capture relue — et il faut un **run de contrôle** sans le
+correctif, sans quoi une page sans aucune CSS donne la même valeur aux deux runs et se lit comme
+« le correctif ne sert à rien » (mesuré le 28/08 : `setContent()` part d'`about:blank` et n'y charge
+aucun `<link href="file://">`).
+
+**À trancher avant d'écrire** : `@vue/test-utils` (déjà employé par les deux tests de
+`MediaBroadcastPlayer`) suffit pour le câblage props/emits/rendu conditionnel, mais **ne dit rien de
+la mise en page** — c'est-à-dire de la classe de défaut qui a produit le 🔴. Les deux étages sont
+donc complémentaires, et l'item ne sera pas fini par le premier seul.
