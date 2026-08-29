@@ -33,6 +33,7 @@ import {
     MAX_METADATA_BYTES,
     MAX_PAYLOAD_BYTES,
     PEER_DESTROY_DELAY_MS,
+    PEER_OPEN_TIMEOUT_MS,
     RECONNECT_BASE_DELAY_MS,
     RECONNECT_MAX_DELAY_MS,
     SLUG_PATTERN,
@@ -559,29 +560,31 @@ export function usePeerTransport(ctx) {
         // Le peer local est déjà prêt: rien à recréer, mais le contexte est bien enregistré.
         if (peerStore.peerIdentity().state === 'ready') return
 
-        // Init EN VOL : le Peer existe déjà, mais son `'open'` n'est pas encore arrivé.
+        // Init EN VOL — le cas de la race condition à deux composants montés dans le même
+        // tick (`DataRoom` + `StreamRoom`, ou `data-app` + `stream-<room>` en production).
+        // Le premier crée la promesse d'init, le second reçoit LA MÊME plutôt que de créer un
+        // second Peer.
         //
-        // ⚠️ Ce garde porte sur l'INSTANCE, et il est indispensable : les deux gardes
-        // voisines laissent une fenêtre de plusieurs centaines de ms grande ouverte, alors que
-        // la phase `ready` attend un aller-retour réseau (`retrieveId` HTTP + WebSocket).
-        // Or la production monte précisément deux consommateurs dans cet intervalle :
-        // `Notifications.vue` crée le contexte permanent `data-app` au tick 0, et le
-        // contexte `stream-<room>` arrive après la résolution de route et un import
-        // dynamique. Sans ce garde, le second créait un SECOND Peer : le premier restait
-        // enregistré côté serveur PeerJS (peerId fantôme), débranché de ses listeners par
-        // `setPeerListenersDetach`, et hors d'atteinte de `_destroyPeerSingleton` qui n'agit
-        // que sur `peerStore.localPeer`. Symptôme : « A diffuse, B reste sur le spinner »,
-        // avec un `Could not connect to peer <uuid>` sur le peerId fantôme.
-        if (peerStore.localPeer && !peerStore.localPeer.destroyed) return
-
-        // Guard contre la race condition : 2 composants peuvent passer simultanément
-        // (ex: DataRoom + StreamRoom au montage). Le premier crée la promesse d'init,
-        // le second attend la même plutôt que de créer un second Peer.
-        //
-        // ⚠️ Depuis que `_doInit` commence par un aller-retour réseau, C'EST CE GARDE-CI qui
-        // tient le DÉBUT de la fenêtre : le garde d'instance ci-dessus ne peut rien voir tant
-        // que le `Peer` n'existe pas. Les deux ne sont plus redondants, ils se relaient.
+        // ⚠️ AVANT le garde d'instance, et c'est ce qui rend la promesse honnête pour TOUS
+        // les appelants, pas seulement pour le premier. Depuis que l'init attend l'`'open'`,
+        // cette promesse couvre la fenêtre ENTIÈRE — récupération ICE, construction, puis
+        // l'aller-retour d'ouverture. Dans l'ordre inverse, un second consommateur monté
+        // pendant cette fenêtre sortait par l'instance avec un `undefined` immédiat alors que
+        // le pair n'était pas joignable : exactement le mensonge que cet `await` supprime.
         if (peerStore.peerInitPromise) return peerStore.peerInitPromise
+
+        // Peer vivant SANS init en vol — reconnexion en cours (phase `disconnected`, backoff
+        // armé), ou init passée dont la promesse est retombée.
+        //
+        // ⚠️ Ce garde porte sur l'INSTANCE, et il reste indispensable : c'est le SEUL à
+        // couvrir cette fenêtre-là, où la promesse est nulle depuis longtemps et où la phase
+        // n'est pas `ready`. Sans lui, un consommateur qui monte pendant un backoff créait un
+        // SECOND Peer : le premier restait enregistré côté serveur PeerJS (peerId fantôme),
+        // débranché de ses listeners par `setPeerListenersDetach`, et hors d'atteinte de
+        // `_destroyPeerSingleton` qui n'agit que sur `peerStore.localPeer`. Symptôme :
+        // « A diffuse, B reste sur le spinner », avec un `Could not connect to peer <uuid>`
+        // sur le peerId fantôme.
+        if (peerStore.localPeer && !peerStore.localPeer.destroyed) return
 
         const _doInit = async () => {
             // ⚠️ LE SEUL `await` avant `new Peer`, et il est ICI — jamais en tête de
@@ -674,6 +677,30 @@ export function usePeerTransport(ctx) {
             // lecteur ne doit jamais pouvoir voir l'un sans l'autre.
             peerStore.markPeerConnecting()
 
+            // ── L'init ne se termine plus ici : elle attend l'`'open'` ────────────
+            //
+            // « Init terminée » doit vouloir dire « pair joignable ». Créée ICI, avant les
+            // `bind` : ce sont les handlers `'open'` et `'error'` qui la règlent, ils doivent
+            // donc la trouver dans leur closure. Le minuteur, lui, n'est armé qu'à l'instant
+            // de l'attendre — dernière ligne de `_doInit` —, jamais avant : entre l'armement
+            // et l'`await` qui l'observe, il n'y a pas une instruction. Le précédent inverse
+            // est `waitForMeReady`, qui armait le sien APRÈS l'effet surveillé et crachait un
+            // faux avertissement quinze secondes plus tard sur un contexte sain.
+            //
+            // ⚠️ Le `catch` inerte n'est pas décoratif : si le branchement qui suit jette,
+            // `_doInit` sort AVANT le `Promise.race` qui observe cette promesse, et un
+            // `'error'` PeerJS arrivé ensuite la rejetterait sans personne pour l'entendre —
+            // une `unhandledRejection`, que vitest fait échouer et que la console de
+            // production affiche. Même hypothèse que le `setPeerListenersDetach` posé avant
+            // les `bind`, dix lignes plus bas, où elle est déjà traitée comme réelle.
+            let resolveOpen = null
+            let rejectOpen = null
+            const openPromise = new Promise((resolve, reject) => {
+                resolveOpen = resolve
+                rejectOpen = reject
+            })
+            openPromise.catch(() => {})
+
             // ── Branchement des listeners du Peer ─────────────────────────────────
             // `bind` est la SEULE porte d'entrée : il enregistre la paire (event, handler)
             // en même temps qu'il l'installe, donc un 6e listener ajouté ici est détaché
@@ -735,6 +762,19 @@ export function usePeerTransport(ctx) {
                 peerStore.markPeerOpen(id)
 
                 peerStore.auditPeerState('après \'open\' du Peer')
+
+                // L'init peut conclure : c'est CET événement, et lui seul, qui rend le pair
+                // joignable. APRÈS la transition et l'audit — ce qui attend cette promesse
+                // doit trouver un store qui dit déjà `ready`.
+                //
+                // ⚠️ SOUS la garde d'identité ci-dessus, et ce n'est pas un oubli : un peer
+                // supplanté ne conclut rien. Ce chemin est de toute façon inatteignable —
+                // toute supplantation passe par `setPeerListenersDetach` (qui exécute le
+                // détachement précédent) ou par `detachPeerListeners`, donc ce handler est
+                // débranché avant qu'un `'open'` puisse l'atteindre. Une résolution posée
+                // au-dessus du garde serait du code qu'aucun test ne peut faire rougir ; le
+                // filet de ce cas est le minuteur, qui porte sa propre garde d'identité.
+                resolveOpen()
             })
 
             bind('error', (err) => {
@@ -750,7 +790,27 @@ export function usePeerTransport(ctx) {
                 // Fix : on supprime la connexion échouée + on invalide le peerId stale
                 //       + on notifie l'orchestrateur pour relancer le cycle complet.
                 // ─────────────────────────────────────────────────────────────────
-                if (err.type !== 'peer-unavailable') return
+                if (err.type !== 'peer-unavailable') {
+                    // L'init attend peut-être encore son `'open'` : cette erreur-là dit qu'il
+                    // ne viendra pas. Le rejet est ICI, sous le prédicat qui filtre déjà la
+                    // recovery, parce que `peer-unavailable` est le SEUL type qui ne parle pas
+                    // de NOTRE pair — il nomme un peerId distant injoignable, et il tombe
+                    // pendant toute la vie du Peer. Idempotent : après l'`'open'` la promesse
+                    // est réglée et ceci est un no-op, une erreur tardive ne casse rien
+                    // d'établi.
+                    //
+                    // ⚠️ Aucune liste d'`err.type` « fatals » à maintenir contre PeerJS, et
+                    // aucune destruction à faire ici : quand il émet une erreur fatale, il
+                    // avorte l'instance lui-même juste après — `_abort()` fait `emitError()`
+                    // PUIS `if (!this._lastServerId) this.destroy()` (peerjs 1.5.4,
+                    // `dist/bundler.mjs:1761-1764`), et `_lastServerId` n'est posé qu'à
+                    // l'`OPEN` (`:1595`). Sa branche alternative, celle qui se contenterait
+                    // d'un `disconnect()` en laissant la socket vivante, exige donc un
+                    // `'open'` déjà reçu — donc une promesse déjà réglée. Il n'existe pas de
+                    // fenêtre où ce rejet laisse un `Peer` vivant derrière lui.
+                    rejectOpen(err)
+                    return
+                }
 
                 // Format du message PeerJS : "Could not connect to peer <peerId>"
                 const msgWords = typeof err.message === 'string' ? err.message.split(' ') : []
@@ -1079,6 +1139,44 @@ export function usePeerTransport(ctx) {
             // précisément ce que `peerStateViolations` est là pour faire remonter.
             _scheduleIceRefresh(peerStore, ctx, peer, credentialTtlMs)
 
+            // ── Dernière étape : attendre que le pair soit réellement joignable ────
+            //
+            // ICI, et rien après : tout ce qui précède décrit le `Peer` qu'on vient de
+            // construire et n'a aucune raison d'attendre le réseau — `_scheduleIceRefresh` le
+            // premier, dont l'échéance se calcule sur le TTL du MÊME aller-retour ICE, un
+            // fait déjà acquis. Corollaire à ne pas perdre : le corps post-`await` est vide,
+            // donc il n'y a PAS de seconde garde d'annulation à écrire. Le jour où une
+            // instruction s'ajoute en dessous, il en faudra une (`peerStore.localPeer !== peer`).
+            let openTimeoutId = null
+
+            await Promise.race([
+                openPromise,
+                new Promise((_resolve, reject) => {
+                    openTimeoutId = setTimeout(() => {
+                        console.error(
+                            `[WebRTC2] Le Peer n'a jamais reçu son 'open' (${PEER_OPEN_TIMEOUT_MS} ms) — init abandonnée.`
+                        )
+
+                        // ⚠️ DÉTRUIRE, pas seulement oublier. Le `.catch` de l'init se contente
+                        // de nuller `localPeer` : sur une instance VIVANTE, cela laisserait une
+                        // socket ouverte et un peerId enregistré côté serveur PeerJS, désormais
+                        // hors d'atteinte de `_destroyPeerSingleton` — qui n'agit que sur
+                        // `peerStore.localPeer`. Ce serait un peerId fantôme de plus, par un
+                        // chemin neuf, et c'est la famille de bugs la plus coûteuse du module.
+                        //
+                        // Garde d'identité : ce minuteur peut se réveiller alors que le
+                        // singleton n'est plus le nôtre (destruction pendant l'attente, init
+                        // plus récente ayant pris la main). Détruire alors, ce serait détruire
+                        // le peer d'un autre.
+                        if (peerStore.localPeer === peer) {
+                            _destroyPeerSingleton(peerStore, `'open' jamais reçu (${PEER_OPEN_TIMEOUT_MS} ms)`)
+                        }
+
+                        reject(new Error(`[WebRTC2] Peer sans 'open' après ${PEER_OPEN_TIMEOUT_MS} ms`))
+                    }, PEER_OPEN_TIMEOUT_MS)
+                }),
+            ]).finally(() => clearTimeout(openTimeoutId))
+
         } // end _doInit
 
         // Sert uniquement à nommer la transition dans l'audit du `finally` (cf. plus bas) :
@@ -1108,6 +1206,34 @@ export function usePeerTransport(ctx) {
                 // ⚠️ Champ par champ, et surtout PAS `resetPeerState()` : il nullerait aussi
                 // `peerInitPromise`, ce qui ferait échouer le garde d'identité du `.finally`
                 // ci-dessous — plus de nettoyage de la garde, plus d'audit, en silence.
+                //
+                // ⚠️ GARDE D'IDENTITÉ, rendue obligatoire par l'attente de l'`'open'`.
+                //
+                // Elle était superflue, et la preuve tenait en une phrase : le seul `await` du
+                // corps de `_doInit` était celui de l'ICE, immédiatement suivi de sa garde
+                // d'annulation ; tout ce qui pouvait jeter ensuite était SYNCHRONE, donc l'init
+                // qui échouait ne pouvait être que la courante. CETTE PREUVE TOMBE — il y a
+                // désormais un second point de suspension, long de plusieurs secondes, et deux
+                // façons d'en sortir en échec (erreur PeerJS tardive, minuteur). Sans ce garde,
+                // une init périmée qui expire nulle le `localPeer` d'une init PLUS RÉCENTE, et
+                // la session repart de zéro sans une ligne d'erreur.
+                //
+                // Ce n'est PAS le piège du `resetPeerState()` ci-dessus : ce garde ne fait que
+                // LIRE. Quand il passe, la promesse est toujours la nôtre et le `.finally` fait
+                // son travail entier ; quand il ne passe pas, l'état décrit le peer de
+                // quelqu'un d'autre et le `.finally` se tait pour exactement la même raison.
+                // Sur le chemin du minuteur, où `_destroyPeerSingleton` a nullé
+                // `peerInitPromise`, l'audit n'est pas perdu pour autant : il le fait lui-même,
+                // sous le nom de la transition qui a réellement eu lieu.
+                if (peerStore.peerInitPromise !== initPromise) {
+                    console.info(
+                        '[WebRTC2] Init du Peer terminée en échec alors qu\'elle n\'est plus la courante ' +
+                        '(abandon, supplantation, ou destruction déjà faite) — l\'état courant n\'est pas touché :',
+                        err
+                    )
+                    return
+                }
+
                 console.error('[WebRTC2] Échec d\'initialisation du Peer :', err)
                 peerStore.localPeer = null
                 peerStore.lastLocalPeerId = null

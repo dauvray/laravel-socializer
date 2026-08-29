@@ -198,6 +198,7 @@ elles bougent, le fichier fait foi.
 | `MAX_RETRY_ATTEMPTS` · `MAX_RECONNECT_ATTEMPTS` | anti-boucle infinie (backoff exponentiel + jitter) |
 | `RECONNECT_BASE_DELAY_MS` · `RECONNECT_MAX_DELAY_MS` | backoff de reconnexion PeerJS |
 | `PEER_DESTROY_DELAY_MS` | délai de grâce avant destruction du Peer singleton |
+| `PEER_OPEN_TIMEOUT_MS` | abandon **et destruction** d'un Peer qui n'a jamais reçu son `'open'` (sous `ME_READY_TIMEOUT_MS`) |
 | `MAX_REMOTE_STREAMS` · `STREAM_STALE_MS` | éviction LRU de `remoteStreamsMap` (anti-leak) |
 | `MAX_PAYLOAD_BYTES` | anti-DoS : émission mesh, retransmission hub **et** réception |
 | `HUB_MAX_MESSAGES_PER_WINDOW` · `HUB_RATE_WINDOW_MS` | rate-limit `forwardStarMessage` |

@@ -38,6 +38,34 @@ export const MAX_RECONNECT_ATTEMPTS = 8
  */
 export const PEER_DESTROY_DELAY_MS = 10_000
 
+// ─── Ouverture du Peer singleton ──────────────────────────────────────────
+/**
+ * Délai (ms) au-delà duquel un `Peer` construit qui n'a jamais reçu son `'open'` est
+ * abandonné : l'init rejette, l'instance est DÉTRUITE, et la phase retombe à `absent`.
+ *
+ * ⚠️ **Une ouverture qui pend est terminale, et rien d'autre ne la borne.** Le seul
+ * événement qui rende un pair joignable est `'open'` — un aller-retour avec le serveur
+ * PeerJS. Rien ne le relance : le backoff de reconnexion ne part que d'un `'disconnected'`,
+ * qui n'arrive jamais dans ce cas. Sans ce délai, le `Peer` reste vivant en phase
+ * `connecting` pour la vie de l'onglet, et la garde d'instance de `setLocalPeer` — qui
+ * respecte tout `Peer` vivant — interdit alors TOUTE ré-init. Seul un F5 réparait.
+ *
+ * Dimensionné strictement SOUS `ME_READY_TIMEOUT_MS` (15 s), qui est le budget des quatre
+ * consommateurs de `waitForMeReady` : pire cas `ICE_FETCH_TIMEOUT_MS` (3 s) + celui-ci,
+ * soit 11 s. Le diagnostic (« `'open'` jamais reçu », instance détruite, phase `absent`)
+ * est donc journalisé AVANT le « waitForMeReady a expiré » qui, seul, ne dit que le
+ * symptôme — et il reste de quoi reconstruire dans le budget de la barrière.
+ *
+ * Borne basse : la poignée de main WSS réelle, sous la seconde en nominal et quelques
+ * secondes sur un réseau mobile dégradé. Trop court, on avorterait des connexions qui
+ * allaient aboutir — sans reprise automatique, puisque rien ne rappelle `setLocalPeer`.
+ *
+ * ℹ️ Corollaire de harnais : la valeur est aussi sous le `testTimeout` de vitest (10 s),
+ * si bien qu'un test qui oublie d'émettre `'open'` échoue sur une assertion lisible
+ * (peer détruit, phase `absent`) plutôt que sur un timeout muet.
+ */
+export const PEER_OPEN_TIMEOUT_MS = 8_000
+
 // ─── Rate limiting hub (topologie star) ───────────────────────────────────
 /**
  * Fenêtre glissante utilisée pour le rate limiting de forwardStarMessage().

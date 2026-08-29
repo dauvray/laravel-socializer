@@ -261,6 +261,28 @@ verbe demanderait de monter `Notifications.vue`, et le scénario ne parlerait pl
   peer n'est pas détruit » serait vert pour rien.
 - **`getLastPeerInstance()` / `resetPeerMock()` / `instance._triggerEvent('open', 'peer-id')`** sont
   les entrées du mock PeerJS ; `vi.useFakeTimers()` pour le délai de destruction et le backoff.
+- **Amener le Peer jusqu'à l'`'open'` est OBLIGATOIRE**, plus seulement de la fidélité :
+  `setLocalPeer()` ne se règle plus avant, donc un `await` sans `'open'` **interbloque**, et une
+  init laissée en vol emporte un minuteur de `PEER_OPEN_TIMEOUT_MS` au-delà du test. Le motif est
+  dans `helpers/bootLocalPeer.js` — lancer sans attendre, attendre l'instance, ouvrir, **puis**
+  attendre l'init.
+  - ⚠️ **Sous `vi.useFakeTimers()`, passer `waitForInstance: waitForPeerInstance`.** `vi.waitFor`
+    avance l'horloge **factice** de 50 ms par tour de sondage, dès le premier appel, qui est
+    synchrone — `checkCallback` commence par `if (vi.isFakeTimers()) vi.advanceTimersByTime(interval)`
+    (vitest 2.1.9, `dist/chunks/vi.DgezovHB.js:3591`). Un fichier qui pilote des échéances à la
+    milliseconde près, comme `iceRefresh.test.js`, verrait son budget entamé avant sa première
+    assertion. `waitForPeerInstance` n'attend que des microtâches : `_doInit` n'a besoin d'aucune
+    horloge, `AjaxService.load` résolvant par microtâche.
+  - ⚠️ **Attendre « une instance non nulle » est faux au SECOND démarrage** d'un même test :
+    `getLastPeerInstance()` rend l'ancienne tant que la nouvelle n'est pas construite. D'où le
+    paramètre `previous`, relevé avant le démarrage. Mesuré : deux cas de `singleton.test.js`
+    verdissaient à l'envers, en asseoirtant sur un peer déjà détruit.
+  - ⚠️ **Répéter `await Promise.resolve()` ne prouve pas qu'une promesse n'est PAS réglée** : la
+    chaîne `_doInit()` → `.catch` → `.finally` → le `.then` du test consomme plusieurs tours, et en
+    compter « assez » donne un vert par budget. Rendre la main sur une **tâche**
+    (`setTimeout(…, 0)`) draine la file de microtâches entière. Mesuré : avec trois tours, le cas
+    « l'init ne se règle pas tant que l'`'open'` n'est pas arrivé » passait sur le code d'AVANT le
+    correctif.
 - **Faire vieillir une horloge : `vi.setSystemTime()`, et surtout pas une avance de minuteurs.**
   Deux pièges distincts, tous deux rencontrés en posant le bail des peerId :
   - Dans un **scénario**, `vi.useFakeTimers()` gèlerait le `setTimeout(…, 0)` du faux serveur de

@@ -54,6 +54,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createMockContext } from './helpers/createMockContext.js'
 import { withSetup } from './helpers/withSetup.js'
+import { bootLocalPeer, waitForPeerInstance } from './helpers/bootLocalPeer.js'
 import { PEER_PHASES } from '~socializer/stores/peers2/phases.js'
 import {
     ENDPOINTS,
@@ -143,10 +144,10 @@ describe('usePeerTransport — rafraîchissement du credential TURN', () => {
         ctx.AjaxService.load.mockResolvedValue(reponseInitiale)
 
         const [api, app] = mount(usePeerTransport, ctx)
-        await api.setLocalPeer()
-
-        const peer = lastPeer()
-        peer._triggerEvent('open', 'peer-alice')
+        const peer = await bootLocalPeer(
+            () => api.setLocalPeer(),
+            { peerId: 'peer-alice', getPeer: lastPeer, waitForInstance: waitForPeerInstance },
+        )
 
         return { ctx, api, app, peer }
     }
@@ -230,9 +231,15 @@ describe('usePeerTransport — rafraîchissement du credential TURN', () => {
         ctx.AjaxService.load.mockRejectedValue(new Error('500'))
 
         const [api] = mount(usePeerTransport, ctx)
-        await api.setLocalPeer()
+        // Jusqu'à l'`'open'`, comme partout ailleurs : l'assertion « aucun minuteur » doit
+        // porter sur un Peer réellement ouvert, sinon elle deviendrait vraie pour la mauvaise
+        // raison le jour où l'armement se déplacerait après l'`'open'`.
+        const peer = await bootLocalPeer(
+            () => api.setLocalPeer(),
+            { peerId: 'peer-alice', getPeer: lastPeer, waitForInstance: waitForPeerInstance },
+        )
 
-        expect(lastPeer().options.config.iceServers).toEqual(STUN_ONLY_ICE_SERVERS)
+        expect(peer.options.config.iceServers).toEqual(STUN_ONLY_ICE_SERVERS)
         expect(ctx.peerStore.peerIceRefreshTimer).toBeNull()
     })
 
@@ -351,9 +358,10 @@ describe('usePeerTransport — rafraîchissement du credential TURN', () => {
         ctx.AjaxService.load.mockResolvedValue({ iceServers: ICE, credential_ttl: TTL_SECONDES })
 
         const [api] = mount(usePeerTransport, ctx)
-        await api.setLocalPeer()
-        const peer = lastPeer()
-        peer._triggerEvent('open', 'peer-alice')
+        const peer = await bootLocalPeer(
+            () => api.setLocalPeer(),
+            { peerId: 'peer-alice', getPeer: lastPeer, waitForInstance: waitForPeerInstance },
+        )
 
         // La récupération du rafraîchissement est tenue en vol.
         let releaseIce
@@ -375,12 +383,15 @@ describe('usePeerTransport — rafraîchissement du credential TURN', () => {
     })
 
     it('cesse d\'interroger la route dès que le Peer singleton est détruit', async () => {
-        const { usePeerTransport } = await loadTransportCopy()
+        const { usePeerTransport, lastPeer } = await loadTransportCopy()
         const ctx = makeCtx('stream-a')
         ctx.AjaxService.load.mockResolvedValue({ iceServers: ICE, credential_ttl: TTL_SECONDES })
 
         const [api, app] = mount(usePeerTransport, ctx)
-        await api.setLocalPeer()
+        await bootLocalPeer(
+            () => api.setLocalPeer(),
+            { peerId: 'peer-alice', getPeer: lastPeer, waitForInstance: waitForPeerInstance },
+        )
 
         app.unmount()
         await vi.advanceTimersByTimeAsync(PEER_DESTROY_DELAY_MS)

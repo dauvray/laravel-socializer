@@ -345,23 +345,70 @@ jamais depuis un champ du payload.
 
 ## Le Peer PeerJS : un seul par onglet
 
-C'est la classe de bug la plus coûteuse du module. Trois gardes empilées, chacune fermant une
-fenêtre que les autres laissent ouverte :
+C'est la classe de bug la plus coûteuse du module. **Quatre** gardes, dans l'ordre du code, et
+chacune couvre une fenêtre que les autres ne voient pas :
 
-1. **Garde d'instance** — `if (peerStore.localPeer && !peerStore.localPeer.destroyed) return`,
-   **en premier**. C'est la seule qui ferme la fenêtre complète, parce que `peerStore.localPeer`
-   est affecté **synchroniquement** dans `_doInit`.
-2. Garde `peerInitPromise` — ne couvre que quelques microtâches : le corps de `_doInit` est
-   synchrone, le seul `await` est *dans* le handler `bind('call')`.
-3. Garde de phase — `peerIdentity().state === 'ready'`, qui n'est vrai qu'après l'événement
-   `'open'`, soit un aller-retour réseau.
+1. **Garde de phase** — `if (peerStore.peerIdentity().state === 'ready') return`. Le peer est
+   joignable : il n'y a rien à faire, le contexte est simplement enregistré.
+2. **Garde d'init en vol** — `if (peerStore.peerInitPromise) return peerStore.peerInitPromise`.
+   Elle couvre **toute** l'init : récupération ICE, construction du `Peer`, puis l'attente de
+   l'`'open'`. Le second appelant reçoit la même attente que le premier.
+3. **Garde d'instance** — `if (peerStore.localPeer && !peerStore.localPeer.destroyed) return`.
+   Elle couvre la seule fenêtre que la précédente ne voit pas : un `Peer` **vivant sans init en
+   vol**, c'est-à-dire une reconnexion en cours (phase `disconnected`, backoff armé).
+4. **Garde d'annulation**, dans `_doInit` après l'`await` ICE —
+   `if (peerStore.peerInitPromise !== initPromise) return`. Le singleton peut avoir été détruit,
+   ou une init plus récente avoir pris la main, pendant l'aller-retour.
 
-Entre 2 et 3 s'ouvrait une fenêtre de plusieurs centaines de ms — et la production monte
-précisément deux consommateurs dans cet intervalle : `System/Notifications.vue` crée le contexte
-permanent `data-app` au tick 0, le contexte `stream-<room>` arrive après résolution de route et
-import dynamique, **sans un seul `await` avant `transport.setLocalPeer()`** sur les deux chemins.
-Le second `Peer` créé restait enregistré côté serveur PeerJS (peerId fantôme) et hors d'atteinte
-de `_destroyPeerSingleton`, qui n'agit que sur `peerStore.localPeer`.
+**L'ordre 2 avant 3 est load-bearing** : dans l'ordre inverse, un consommateur monté pendant
+l'init sortait par l'instance avec un `undefined` immédiat, alors que le pair n'était pas
+joignable. Et la production monte précisément deux consommateurs dans cet intervalle :
+`System/Notifications.vue` crée le contexte permanent `data-app` au tick 0, le contexte
+`stream-<room>` arrive après résolution de route et import dynamique, **sans un seul `await` avant
+`transport.setLocalPeer()`** sur les deux chemins.
+
+> 🕳️ **La fenêtre qui a produit la régression du 14/08 n'existe plus** — mais par construction, pas
+> par empilement. `peerInitPromise` retombait au `new Peer`, donc **au milieu** de la fenêtre
+> qu'elle prétendait garder : entre elle et la phase `ready` s'ouvraient plusieurs centaines de ms
+> où la garde d'instance était seule. Depuis que `_doInit` attend l'`'open'` (voir ci-dessous), la
+> garde 2 couvre l'intervalle entier et la garde 3 est redevenue une ceinture — qu'on conserve
+> parce qu'elle est **seule** sur la fenêtre de reconnexion. Le second `Peer` créé restait
+> enregistré côté serveur PeerJS (peerId fantôme) et hors d'atteinte de `_destroyPeerSingleton`,
+> qui n'agit que sur `peerStore.localPeer`.
+
+### L'init se termine à l'`'open'`, jamais à la construction
+
+`_doInit` n'est pas finie quand le `Peer` existe : elle `await` l'événement `'open'`, seul moment
+où le pair devient joignable. Trois sorties, et une seule est un succès :
+
+| Sortie | Ce qui la déclenche | Ce qu'elle laisse |
+|---|---|---|
+| **`'open'`** | le serveur PeerJS confirme l'id | phase `ready`, identité publiée |
+| **erreur** | tout `err.type` **sauf** `peer-unavailable`, avant l'`'open'` | phase `absent`, `localPeer` et `lastLocalPeerId` nullés ensemble |
+| **délai** (`PEER_OPEN_TIMEOUT_MS`) | l'`'open'` n'arrive jamais | `_destroyPeerSingleton`, donc phase `absent` |
+
+**Le délai n'est pas de la prudence, il ferme un blocage définitif.** Un `Peer` dont la socket
+s'ouvre sans que le serveur envoie son `OPEN` — et sans erreur, donc sans `_abort` — reste vivant
+en phase `connecting` : rien ne le relance (le backoff de reconnexion ne part que d'un
+`'disconnected'`), et la garde d'instance, qui respecte tout `Peer` vivant, **interdit alors toute
+ré-init pour la vie de l'onglet**. Seul un F5 réparait, sans une ligne de log.
+
+⚠️ **À l'expiration, il faut DÉTRUIRE, pas oublier.** Le `.catch` de l'init se contente de nuller
+`localPeer` ; sur une instance vivante, cela laisserait une socket ouverte et un peerId enregistré
+côté serveur, hors d'atteinte de `_destroyPeerSingleton` — un peerId fantôme de plus, par un
+chemin neuf.
+
+⚠️ **Aucune liste d'`err.type` fatals à maintenir**, et c'est vérifié dans la lib : `_abort()` fait
+`emitError(type)` **puis** `if (!this._lastServerId) this.destroy()` (peerjs 1.5.4,
+`dist/bundler.mjs:1761-1764`), et `_lastServerId` n'est posé qu'à l'`OPEN`. Toute erreur fatale
+avant l'ouverture détruit donc l'instance côté PeerJS ; le critère « la promesse est encore
+pendante » suffit, et `peer-unavailable` est le seul type à exclure — il nomme un pair **distant**.
+
+⚠️ **Le `.catch` porte une garde d'identité** (`peerStore.peerInitPromise !== initPromise`), et
+elle est arrivée **avec** cette attente. Elle était superflue tant que le seul `await` du corps
+était celui de l'ICE, immédiatement suivi de sa garde d'annulation : tout ce qui pouvait jeter
+ensuite était synchrone. Un second point de suspension, long, avec deux sorties en échec, rend une
+init périmée capable de nuller le `localPeer` d'une init plus récente.
 
 **Garde d'identité dans les handlers** : `if (peerStore.localPeer !== peer) return` en tête de
 `'open'`, et `peerStore.localPeer !== peer || peer.destroyed` dans `'disconnected'` (handler
@@ -592,8 +639,18 @@ scénarios) et `_hubRateLimiter` (arbitrage « verbe `.reset()` plutôt que Pini
   le garde actif pour de bon
 - **Valeur de retour de `setLocalPeer`** : ne rien en déduire. La fonction est `async` (donc
   toujours truthy) et sort par `undefined` sur tous ses chemins « rien à faire », **y compris quand
-  le peer est déjà prêt** — un `if (!ready) return` est au mieux mort, au pire inversé. L'attente de
-  l'identité locale se fait en aval, par `waitForMeReady`
+  le peer est déjà prêt** — un `if (!ready) return` est au mieux mort, au pire inversé. Ce qui a un
+  sens, c'est de l'**attendre** : la promesse ne se règle plus qu'à l'`'open'`, donc
+  `await setLocalPeer()` puis `peerIdentity()` est une séquence qui dit quelque chose. La promesse
+  porte le *moment*, `peerIdentity()` porte le *verdict*, `waitForMeReady` porte l'attente
+  *contextuelle* — jamais deux réponses à la même question
+- **Les trois appelants de production de `setLocalPeer` sont nus, et doivent le rester** —
+  `useCallManager` (× 2), `usePeerOrchestrator`. Ce n'est pas un oubli et l'attente honnête ne le
+  change pas : `acceptCallFromPeer` pose `addRemotePeerId` huit lignes plus bas, qui **doit**
+  précéder l'arrivée du `peer.call` de l'initiateur — un `await` intercalé le ferait refuser par
+  `_isAuthorizedIncomingPeer`, et **un refus ne revient jamais à l'émetteur**. `startCallWithPeer`
+  est synchrone : l'awaiter déplacerait `callMachine.transition(CALLING)` après un point de
+  suspension, donc deux clics rapides passeraient tous deux le garde anti-double-appel
 - **`connectToPeer` : `return false` pour différer, `return true` pour abandonner.** `true` signifie
   « pas d'erreur » et **annule** le retry. Le prédicat `_canEmitStreamFor(type)` distingue « rien à
   envoyer, abandonner » de « pas encore prêt, réessayer »

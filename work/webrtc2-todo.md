@@ -24,18 +24,62 @@ avant le déménagement revient à les jeter.
 
 ## usePeerTransport
 
-- [ ] **`peerInitPromise` devrait couvrir jusqu'à `'open'`** `[M]`
-  Le garde d'instance ferme la fenêtre, mais le fond du problème reste : « init terminée » ne
-  signifie pas « peer utilisable ». Faire de `_doInit` une promesse qui `await` réellement
-  l'événement `'open'` (avec rejet sur `error` et timeout) rendrait la sémantique honnête et
-  permettrait aux appelants de s'y raccrocher — notamment `useCallManager`, dont le
-  `const ready = transport.setLocalPeer(); if (!ready) return` a été retiré comme garde mort.
-  ⚠️ **Écarté de la passe de régression** : une vingtaine de tests font `await api.setLocalPeer()`
-  **avant** de déclencher `'open'` et se bloqueraient. C'est une refonte du harnais autant que du code.
-  ℹ️ La FSM n'y a pas touché (surface inchangée, décidé avant la passe), mais elle en a **réduit
-  l'enjeu** : « peer utilisable » a désormais un nom lisible de partout (`peerIdentity().state`),
-  et les appelants qui en ont besoin le lisent sans avoir à s'accrocher à la promesse d'init.
-  Le préalable de harnais, lui, est **fait** : `__tests__/helpers/bootLocalPeer.js`.
+- [x] **`peerInitPromise` couvre jusqu'à `'open'`** `[M]` — **fermé le 29/08/2026**, sous tests verts
+  (1034 → 1039 cas). `_doInit` `await` réellement l'`'open'` : résolution dans le handler existant,
+  rejet dans `bind('error')`, et un délai `PEER_OPEN_TIMEOUT_MS` (8 s) qui **détruit** l'instance.
+  Le contrat vit dans
+  [architecture.md § L'init se termine à l'`'open'`](../docs/modules/webrtc2/architecture.md#linit-se-termine-à-lopen-jamais-à-la-construction) ;
+  les trois verbes « lire / attendre » dans [flux.md](../docs/modules/webrtc2/flux.md) ; le versant
+  harnais dans [tests.md](../docs/modules/webrtc2/tests.md).
+
+  **Ce que la passe a réfuté ou appris, et qui ne se déduit ni du diff ni de l'énoncé :**
+
+  1. **« permettre aux appelants de s'y raccrocher » est RÉFUTÉ, et les trois appels de production
+     restent nus.** `acceptCallFromPeer` pose `addRemotePeerId` huit lignes sous son
+     `setLocalPeer()`, et ce mapping doit précéder l'arrivée du `peer.call` de l'initiateur : un
+     `await` intercalé fait refuser l'appel entrant par `_isAuthorizedIncomingPeer`, et **un refus
+     ne revient jamais à l'émetteur**. `startCallWithPeer` est synchrone — l'awaiter déplacerait
+     `callMachine.transition(CALLING)` après un point de suspension, donc deux clics rapides
+     passeraient tous deux le garde. Le gain n'était pas là.
+  2. **Le gain réel est ailleurs, et l'énoncé ne le nommait pas : le délai.** Un `Peer` dont la
+     socket s'ouvre sans que le serveur envoie son `OPEN`, et sans erreur, restait vivant en phase
+     `connecting` **pour la vie de l'onglet** — la garde d'instance respecte tout `Peer` vivant,
+     donc plus aucune ré-init n'était possible, sans un log. Rien ne le bornait : le backoff ne
+     part que d'un `'disconnected'`.
+  3. **Le délai doit DÉTRUIRE, pas oublier.** Le `.catch` se contente de nuller `localPeer` ; sur
+     une instance vivante, cela aurait fabriqué un peerId fantôme de plus — socket ouverte, pair
+     enregistré côté serveur, hors d'atteinte de `_destroyPeerSingleton`. La famille de bugs la
+     plus coûteuse du module, par un chemin neuf.
+  4. **La preuve du 29/08 sur le `.catch` tombe, et elle est remplacée par un test.** « Aucun garde
+     d'identité nécessaire, le seul `await` est celui de l'ICE » ne tient plus : un second point de
+     suspension existe, avec deux sorties en échec. Le garde ajouté ne fait que LIRE
+     `peerInitPromise` — ce n'est pas le piège du `resetPeerState()`, qui écrivait.
+  5. **La couverture n'était qu'à MOITIÉ faite sans réordonner les gardes**, et c'est un test qui
+     l'a montré : la garde d'instance précédait celle de la promesse, donc un second consommateur
+     monté pendant l'init sortait sur un `undefined` immédiat alors que le pair n'était pas
+     joignable — le mensonge exact que l'item supprime, à un endroit qu'il ne visait pas.
+  6. **`expect(initB).toBe(initA)` n'est pas observable** : `setLocalPeer` est `async`, donc son
+     `return peerStore.peerInitPromise` enveloppe la promesse du store dans une neuve qui l'adopte.
+     L'observable est la DATE de règlement.
+  7. **`_scheduleIceRefresh` reste AVANT l'`await`**, et c'est ce qui garde la passe petite : le
+     corps post-`await` est vide, donc aucune seconde garde d'annulation à écrire. Le déplacer
+     après aurait rendu **vacuement verts** les deux cas « n'arme aucun minuteur » d'`iceRefresh`.
+  8. **Aucune liste d'`err.type` fatals à maintenir** : `_abort()` de PeerJS détruit l'instance
+     lui-même avant l'`'open'` (`bundler.mjs:1761-1764`). Le seul type à exclure est
+     `peer-unavailable`, qui nomme un pair distant.
+  9. **Le préalable de harnais annoncé « fait » était incomplet.** `vi.waitFor` avance l'horloge
+     **factice** de 50 ms par tour de sondage (`vi.DgezovHB.js:3591`), ce qu'`iceRefresh.test.js`
+     ne supporte pas ; et attendre « une instance non nulle » rend l'ANCIENNE au second démarrage.
+     D'où `waitForPeerInstance` et son paramètre `previous`.
+  10. **~22 sites de test migrés, mais la facture est dans les 2 cas qui changent de SENS** —
+      l'énoncé annonçait « une vingtaine de tests bloqués » et comptait les sites. Un remplacement
+      mécanique les aurait laissés verts en ne prouvant plus rien. Les deux autres cas que le plan
+      croyait devoir retourner se sont migrés mécaniquement.
+  11. **Sept neutralisations mesurées**, chacune rougissant exactement ce qu'elle annonce — dont la
+      septième, « la résolution déplacée au-dessus de la garde d'identité de `'open'` », qui ne
+      rougit **rien** : le chemin est inatteignable, toute supplantation détachant les listeners
+      avant. C'est consigné dans le fichier de test plutôt que gardé par du code qu'aucun test ne
+      peut faire rougir.
 - [x] **La machine à états du cycle de vie du Peer** `[L]` — **close le 29/08/2026.** Un seul fait
   déclaré (`peerPhase`, écrit par cinq transitions) remplace `localPeerReady` et l'usage de
   `peerInitPromise` COMME état ; `peerIdentity()` est le seul chemin de lecture de la production,
@@ -67,8 +111,9 @@ avant le déménagement revient à les jeter.
     l'autre. Ce sont désormais deux accesseurs sur un seul objet, avec le garde structurel de
     `connection.remotePeers`.
   - **La surface de `setLocalPeer` n'a pas bougé**, comme prévu : `useCallManager.js` et
-    `useCallManager.test.js` sont intacts. L'item voisin `peerInitPromise` reste ouvert et
-    séparé.
+    `useCallManager.test.js` sont intacts. L'item voisin `peerInitPromise` a été traité à part et
+    fermé le même jour — sa surface non plus n'a pas bougé, c'est la DATE de règlement de la
+    promesse qui a changé.
 - [x] **L'id historique survit à un échec d'init — contradiction désormais SUPPRIMABLE** `[S]` —
   **fermé le 29/08/2026**, une ligne dans le `.catch` de `_doInit` (`lastLocalPeerId = null`, sous
   le `localPeer = null` qui existait) et le code de violation conservé, comme prévu. Ce que la

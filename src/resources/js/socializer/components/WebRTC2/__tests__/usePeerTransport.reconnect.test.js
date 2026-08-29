@@ -18,6 +18,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createMockContext } from './helpers/createMockContext.js'
 import { withSetup } from './helpers/withSetup.js'
+import { bootLocalPeer } from './helpers/bootLocalPeer.js'
 import { PEER_PHASES } from '~socializer/stores/peers2/phases.js'
 import {
     MAX_RECONNECT_ATTEMPTS,
@@ -61,11 +62,15 @@ describe('usePeerTransport — reconnexion PeerJS (backoff, plafond, abandon)', 
 
         const [api, mounted] = withSetup(() => usePeerTransport(ctx))
         app = mounted
-        await api.setLocalPeer()
+        peer = await bootLocalPeer(
+            () => api.setLocalPeer(),
+            { peerId: PEER_ID, getPeer: peerMock.getLastPeerInstance },
+        )
 
-        peer = peerMock.getLastPeerInstance()
-        peer._triggerEvent('open', PEER_ID)
-
+        // ⚠️ APRÈS le démarrage, et l'ordre est load-bearing : l'init doit se dérouler sous
+        // les VRAIS minuteurs, sinon les siens ne s'écouleraient que sur une avance
+        // explicite. C'est aussi ce qui fait que `vi.getTimerCount()` ne compte, plus bas,
+        // que les minuteurs du backoff.
         vi.useFakeTimers()
     })
 

@@ -18,7 +18,7 @@ CallRemotePeerBtn.vue
 System/Notifications.vue           ($on('call-user') → onStartCall)
   └─ peers.startCallWithPeer({ toUserSlug, type })
 useCallManager.startCallWithPeer
-  ├─ transport.setLocalPeer()               ← ni await ni garde sur le retour (voir plus bas)
+  ├─ transport.setLocalPeer()               ← nu, et il DOIT le rester (voir plus bas)
   ├─ callMachine.transition(CALLING)
   ├─ ensureCurrentCallRoomId()              ← crypto.randomUUID()
   ├─ ctx.addCurrentCallUser(...)
@@ -41,11 +41,20 @@ useCallManager.openCallBetweenPeer
        └─ usePeerConnections.connectToPeer → peer.call(peerId, stream, config)
 ```
 
-⚠️ **`setLocalPeer()` n'est ni attendu ni testé.** C'est volontaire : la fonction est `async`
-(donc toujours truthy) et sort par `undefined` sur ses chemins « rien à faire », **y compris
-quand le peer est déjà prêt**. L'attente de l'identité locale se fait en aval par
-`waitForMeReady`. Un `const ready = setLocalPeer(); if (!ready) return` est un garde mort — et
-inversé dans le cas nominal.
+⚠️ **`setLocalPeer()` est appelée nue ici, et elle DOIT le rester.** La valeur ne dit rien (la
+fonction est `async`, donc toujours truthy, et sort par `undefined` sur ses chemins « rien à
+faire », **y compris quand le peer est déjà prêt** : un `if (!ready) return` est un garde mort,
+inversé dans le cas nominal). Mais depuis que sa promesse ne se règle qu'à l'`'open'`,
+**l'attendre** aurait un sens — et ce serait une régression sur ces deux sites précis :
+
+- `acceptCallFromPeer` pose `addRemotePeerId` huit lignes plus bas, qui doit précéder l'arrivée
+  du `peer.call` de l'initiateur. Un `await` de plusieurs secondes intercalé fait refuser cet
+  appel entrant par `_isAuthorizedIncomingPeer`, et **un refus ne revient jamais à l'émetteur** ;
+- `startCallWithPeer` est synchrone : l'awaiter déplacerait `callMachine.transition(CALLING)`
+  après un point de suspension, donc deux clics rapides passeraient tous deux le garde.
+
+L'invitation part sans attendre l'ouverture : c'est `waitForMeReady` qui porte cette attente, en
+aval, et qui meurt avec son contexte.
 
 ### Refus du distant : le même chemin, jamais un raccourci
 
@@ -295,6 +304,21 @@ Deux règles, et elles sont ce qui empêche la phase de devenir un septième pr�
 > `computed` servirait un état partiellement périmé — pire qu'un état absent pour un outil
 > d'observation. Ce qui est réactif, c'est la phase ; ce qui est juste, c'est le getter.
 
+#### Lire, et attendre : ce ne sont pas les mêmes verbes
+
+| Ce qu'on veut | Le verbe | Sa portée |
+|---|---|---|
+| l'état, maintenant | `peerStore.peerIdentity()` | l'onglet, sans attente |
+| que le pair soit joignable, **dans ce contexte** | `ctx.waitForMeReady()` | le contexte : meurt avec lui (`destroy()` résout à `false`), `ME_READY_TIMEOUT_MS` |
+| que l'init en cours ait abouti ou échoué | `await transport.setLocalPeer()` | l'onglet : la promesse ne se règle qu'à l'`'open'`, à une erreur ou au délai |
+
+Ce ne sont pas trois réponses à la même question : la promesse d'init porte le **moment**,
+`peerIdentity()` le **verdict**, `waitForMeReady` l'attente **contextuelle**. Un consommateur qui
+veut savoir « puis-je publier mon peerId ? » lit `peerIdentity()` ; un consommateur qui veut
+attendre lit `waitForMeReady` — pas la promesse d'init, qui ne sait rien du démontage de son
+contexte. Et **le routage des signaux n'attend rien du tout**, cf.
+[architecture.md § Le routage ne pose aucune précondition](architecture.md#le-routage-ne-pose-aucune-précondition).
+
 Côté journal, toute destruction du Peer nomme sa **cause** (`_schedulePeerDestroy` /
 `_destroyPeerSingleton`) et son peerId, relevé **avant** le `destroy()` — après, `disconnect()` l'a
 déjà mis à `null`. Sans ça, une destruction volontaire, un rechargement de page et une coupure
@@ -310,7 +334,8 @@ PeerJS avec les `GET /app` de nginx pour les distinguer.
 | Écran non reçu, ~1 fois sur 2 | `requestRemotePeerConnection` n'envoyait jamais `type: 'screen'` — l'écran ne reposait que sur le moteur de retry, ~1,5 s plus tard | champ `connectionType` distinct ([signalisation](../../architecture/signalisation.md)) |
 | Écran non reçu quand A ne diffuse **que** son écran | `return` prématuré en fin de branche « type principal » de `_handleConnectionAttempt`, avant la tentative `screen` | tentatives indépendantes, décision accumulée dans `settled` |
 | Connexion jamais rouverte après un flux pas encore prêt | `_handleConnectionAttempt` faisait `return true` (= annuler le retry) dès que `connectToPeer` renvoyait `true`, qui signifie « pas d'erreur », pas « connexion ouverte » | prédicat `_canEmitStreamFor(type)` |
-| B reste sur le spinner, `Could not connect to peer <uuid>` | deux `Peer` créés dans la fenêtre entre `peerInitPromise` retombée et `'open'` reçu ; le premier, débranché, restait enregistré côté serveur PeerJS | garde d'instance ([architecture.md](architecture.md#le-peer-peerjs--un-seul-par-onglet)) |
+| B reste sur le spinner, `Could not connect to peer <uuid>` | deux `Peer` créés dans la fenêtre entre `peerInitPromise` retombée et `'open'` reçu ; le premier, débranché, restait enregistré côté serveur PeerJS | la fenêtre n'existe plus : `peerInitPromise` couvre jusqu'à l'`'open'`, la garde d'instance n'est plus que la ceinture ([architecture.md](architecture.md#le-peer-peerjs--un-seul-par-onglet)) |
+| Le pair n'est jamais joignable, aucune erreur, un F5 répare | `'open'` jamais reçu : le `Peer` restait vivant en phase `connecting`, et la garde d'instance interdisait toute ré-init pour la vie de l'onglet | `PEER_OPEN_TIMEOUT_MS` — l'init abandonne **et détruit** ([architecture.md](architecture.md#linit-se-termine-à-lopen-jamais-à-la-construction)) |
 | Page à plusieurs providers : le contexte `stream` ne demande **jamais** le peerId de l'arrivant (les autres rooms, si) | `waitingRemotePeerId` indexé sur le slug seul : le premier contexte à demander posait un drapeau que les suivants lisaient comme « demande déjà en vol » | clé `slug\|room\|type` ([architecture.md](architecture.md#un-onglet-plusieurs-contextes--la-granularité-des-clés-du-store)) |
 | B revient après un rechargement, A rappelle son ancien peerId sans jamais redemander le nouveau | `removeRemotePeerId` conditionné à `connections`, no-op permanent dès la 2ᵉ room ; et le peerId frais jeté quand `connectToPeer` sortait par « déjà connecté » | prédicat de présence `roomMembers` + enregistrement du peerId **avant** les gardes |
 | Appel `vocal` : aucun flux ne part | pas de branche `vocal` dans `connectToPeer`, et le `return true` final annulait le retry | fusionnée avec la branche `visio` (mêmes préconditions de flux) |

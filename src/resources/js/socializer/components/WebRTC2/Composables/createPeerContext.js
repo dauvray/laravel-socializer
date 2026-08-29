@@ -379,8 +379,8 @@ export function createPeerContext({ type, room, options = {} }) {
                     //
                     // `peerIdentity()` est le VERDICT, et il porte l'identité COURANTE.
                     // L'ancienne version consultait `lastLocalPeerId` — un fait HISTORIQUE
-                    // que seul `_destroyPeerSingleton` retire, et que le `.catch` d'init
-                    // laisse sciemment posé : elle répondait donc « prêt » sur un peer
+                    // que seul `_destroyPeerSingleton` retire (le `.catch` d'init le nulle
+                    // aussi, depuis) : elle répondait donc « prêt » sur un peer
                     // détruit ou déconnecté sans recours, et tout ce qui reprenait derrière
                     // publiait un peerId que le serveur PeerJS ne connaît plus. C'est la
                     // panne la plus silencieuse du module ; `peerStateViolations` la nomme
