@@ -693,37 +693,53 @@ extractions : c'est 18 lignes, sous un filet cinq fois plus dense.
 
 ## Sécurité — fermer le chemin (a), et ça se joue au backend
 
-- [ ] **L'identité déclarée du chemin (a) n'est corroborée par rien** `[L]` — la faille résiduelle
-  de [securite.md](../docs/modules/webrtc2/securite.md), ouverte et assumée depuis août, remontée
-  ici le 29/08/2026 parce que c'est elle qui **domine** le préjudice de tout ce qui touche à la
-  longévité des mappings peerId (c'est l'argument qui a permis d'assumer la fenêtre
-  `subscription_error` en fermant le contrat de propriété de `roomMembers`).
+- [x] **L'identité déclarée du chemin (a) n'est corroborée par rien** `[L]` — **fermé le
+  29/08/2026, sortie A**, par une **attestation signée portée par la `metadata`**. Le serveur signe
+  `{peerId, slug, exp}` en HMAC-SHA256, le slug venant d'`Auth::user()` ; le porteur la transporte,
+  le récepteur la fait vérifier. Décisions, schéma et bornes :
+  [securite.md](../docs/modules/webrtc2/securite.md#lattestation-didentité--ce-qui-ferme-le-chemin-a).
 
-  Un membre de la room qui ouvre un **second** `new Peer()` obtient un UUID non mappé, donc
-  `resolvedSlug = null`, donc aucune contradiction à opposer : il est admis sur la seule foi d'un
-  `metadata.from` déclaratif nommant n'importe quel autre membre, et parle ensuite sous son
-  identité (chat, `BROADCAST_STATE`, `AUDIO_MUTE_TOGGLE` lisent tous `resolveRemoteSlug`).
+  **L'énoncé proposait deux voies, et la passe a écarté les deux.**
 
-  **Non fermable côté client — le cas nominal de la présence et l'usurpation ont la même signature
-  locale.** Deux voies, toutes deux backend, à trancher dans leur propre chantier :
+  - **La voie 1 (annuaire) portait une course que l'énoncé ne voyait pas.** Sur le chemin présence,
+    celui qui **ouvre** est celui qui a demandé — et `/ask-to-peer-id` **ne porte aucun peerId**.
+    Son peerId peut n'avoir jamais atteint le backend quand sa connexion arrive : l'autorité
+    répondrait « inconnu », qui n'est pas « non » mais « pas encore ». L'annuaire exigeait donc *en
+    plus* une route de déclaration et un rafraîchissement de TTL — tout le coût, plus la course.
+  - **Le raccourci tentant était un piège.** Relayer le peerId sur `.AskToPeerID` pour écrire
+    `addRemotePeerId` remettait en service l'auto-inscription fermée par `authorizedCallPeers` ; et
+    un peerId **auto-déclaré** est revendicable par deux personnes, donc empoisonnable en
+    fail-closed (mallory revendique l'id d'alice, alice est refusée).
+  - **La voie 2 était la bonne, à la couche près.** « Le backend l'émet et le signe » se fait
+    **dans le paquet** : le client tirait déjà son UUID lui-même (`crypto.randomUUID()` dans
+    `_doInit`, posé pour supprimer le peerId fantôme), donc il peut le faire attester **avant**
+    `new Peer` — en parallèle de l'ICE, sans aucune fenêtre. Ce que l'énoncé plaçait hors du paquet
+    est la seule moitié restante : que le serveur PeerJS **valide** l'inscription d'un id.
 
-  1. **Annuaire d'attestation.** `UserController::responseToPeerId` voit déjà le couple
-     `Auth::user()` + `peerId` et le **relaie sans le retenir**. Qu'il le conserve (TTL calé sur
-     l'`alive_timeout` de 60 s) et expose la route inverse « à qui appartient ce peerId ? » :
-     l'admission du chemin (a) sur peerId inconnu interroge alors l'autorité au lieu de croire
-     `metadata.from`. Coût : un aller-retour à la première connexion de chaque pair, mis en cache
-     par `remotePeersId` ; et la règle « peerId non résolu ne vaut pas refus » devient « ne vaut pas
-     refus **avant** la réponse de l'autorité » — à re-négocier avec « Une liste vide n'est pas une
-     réponse », dont c'est exactement le sujet.
-  2. **Identité intrinsèque au peerId.** Ne plus laisser le client tirer son UUID : le backend
-     l'émet et le signe, validé à l'inscription sur le serveur PeerJS. `conn.peer` **porte** alors
-     l'identité, `metadata.from` devient décoratif, et la classe entière disparaît — plus d'annuaire,
-     plus d'aller-retour, plus d'« admission non corroborée ». C'est la durable, et la plus chère
-     (elle touche l'infra PeerJS, hors paquet).
+  **Trois choses que la passe a apprises, et qu'aucune ne figurait dans l'énoncé :**
 
-  ⚠️ Ne pas confondre avec l'usurpation intra-room déjà assumée : c'est la **même** faille, et cet
-  item est la seule chose qui puisse la fermer. Tant qu'il est ouvert, tout durcissement côté client
-  sur la longévité des mappings est décoratif — l'argument est écrit dans `securite.md`.
+  1. **Dans un échange mesh ordinaire, l'attestation ne sert à rien** — le mapping `slug → peerId`
+     corrobore déjà. Mesuré : retirer son transport dans la `metadata` ne fait rougir qu'**un** cas,
+     l'arrivant tardif. C'est structurellement le seul, et c'est celui pour lequel tout ceci existe
+     (`incomingMappingInvariant.test.js` l'avait caractérisé un mois plus tôt).
+  2. **Le verdict devait aller dans un registre DISTINCT du mapping.** Le verser dans
+     `remotePeersId` aurait fait d'un pair attesté un interlocuteur d'appel vérifié sans qu'aucun
+     appel n'ait été autorisé — la faille de mai, par une autre porte. Épinglé au grep.
+  3. **Un vérificateur muet doit valoir ADMISSION, même sous `enforce`.** Sans la distinction
+     refus / ignorance, rendre la route injoignable suffirait à fermer toutes les rooms.
+
+  **Le harnais a menti deux fois, et les deux corrections comptent** : `createVirtualPeer` imposait
+  un peerId à l'`'open'` **après** l'attestation, ce que la production ne fait jamais (elle reçoit
+  l'id qu'elle a fourni) — tout pair de scénario portait donc une attestation périmée ; et les
+  assertions du scénario portaient d'abord sur `getConnections`, qui ne contient **que les
+  connexions sortantes** — trois cas de refus passaient sans rien prouver.
+
+  ⚠️ **Reste ouvert, et c'est une borne assumée, pas un oubli** : le **rejeu** d'une attestation
+  dont l'UUID a été repris après `alive_timeout`, borné par le seul `attestation.ttl` (5 min) — sa
+  fermeture appartient au serveur PeerJS, hors paquet. Et `enforce` est **faux par défaut** : tant
+  qu'un déploiement ne l'a pas activé, le garde compte au lieu de refuser. C'est l'ordre des
+  opérations, pas une timidité — un refus entrant n'est jamais rattrapable, donc la mesure
+  (`peerStore.uncorroboratedAdmissions`) précède la coupure.
 
 ---
 

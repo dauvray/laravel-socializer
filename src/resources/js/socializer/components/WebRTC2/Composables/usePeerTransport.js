@@ -22,6 +22,11 @@ import { Peer } from "peerjs"
 import { markRaw, onUnmounted, watch } from 'vue'
 import {
     MAX_RECONNECT_ATTEMPTS,
+    ATTESTATION_MAX_RETRIES,
+    ATTESTATION_REFRESH_MARGIN_MS,
+    ATTESTATION_REFRESH_MAX_DELAY_MS,
+    ATTESTATION_REFRESH_MIN_DELAY_MS,
+    ATTESTATION_RETRY_MS,
     HUB_RATE_WINDOW_MS,
     HUB_MAX_MESSAGES_PER_WINDOW,
     HUB_MAX_BYTES_PER_WINDOW,
@@ -43,6 +48,10 @@ import { sanitizeMetadataType } from './utils/sanitizeMetadata.js'
 import { createRateLimiter } from './utils/createRateLimiter.js'
 import { isAuthorizedPeer } from './utils/isAuthorizedPeer.js'
 import { fetchIceServers } from './utils/fetchIceServers.js'
+import {
+    fetchPeerAttestation,
+    verifyPeerAttestation as requestAttestationVerdict,
+} from './utils/fetchPeerAttestation.js'
 
 // -----------------------------------------------------------------------------
 // ⚠️ L'état du Peer singleton (compteur de consommateurs, promesse d'init,
@@ -288,6 +297,171 @@ async function _refreshIceConfig(peerStore, ctx, peer) {
     _scheduleIceRefresh(peerStore, ctx, peer, credentialTtlMs)
 }
 
+// ─── Attestation du peerId local ─────────────────────────────────────────────────────────────
+//
+// Le serveur signe `{peerId, slug, exp}` — le slug étant celui d'`Auth::user()`, jamais un champ du
+// corps —, et le porteur transporte l'attestation dans la `metadata` de chaque connexion sortante.
+// C'est ce qui corrobore l'identité sur le chemin (a) de `_isAuthorizedIncomingPeer`, où
+// `metadata.from` était jusqu'ici la seule identité disponible.
+//
+// ⚠️ **L'OBTENTION EST DANS `_doInit`, AVANT `new Peer`, et ce n'est pas une commodité.** Le peerId
+// est choisi par NOUS (`crypto.randomUUID()`, cf. le commentaire du constructeur) : l'attestation
+// peut donc être demandée en parallèle de la configuration ICE et être POSÉE avant que le `Peer`
+// n'existe. Sans cela il resterait une fenêtre — le chemin « bail encore valide » de
+// `useConnectionPool` (navigation SPA, cas majoritaire) se connecte dès que `waitForMeReady` rend la
+// main, sans aucun POST intermédiaire, donc avant qu'une attestation demandée à l'`'open'` ne soit
+// revenue. Ces connexions-là partiraient sans attestation, et seraient refusées sous `enforce` par
+// un refus que rien ne rattrape.
+//
+// Ne reste ici que le RAFRAÎCHISSEMENT, dont la forme est celle du credential TURN — mais dont
+// l'enjeu n'est pas le même : une configuration ICE périmée dégrade en STUN, une attestation
+// périmée vaut `null` chez le vérificateur, donc un refus.
+
+/**
+ * Arme une échéance de rafraîchissement d'attestation, en millisecondes réelles.
+ *
+ * Séparée de `_scheduleAttestationRefresh` pour la même raison que son homologue ICE : la reprise
+ * sur échec connaît le délai qu'elle veut, pas un TTL dont il faudrait déduire une marge à rebours.
+ *
+ * @param {Object} peerStore
+ * @param {Object} ctx
+ * @param {Object} peer     L'instance visée — capturée, jamais relue depuis le store
+ * @param {string} peerId   L'identité à faire réattester — capturée pour la même raison
+ * @param {number} delayMs
+ */
+function _armAttestationRefresh(peerStore, ctx, peer, peerId, delayMs) {
+    peerStore.clearAttestationRefreshTimer()
+
+    peerStore.peerAttestationRefreshTimer = setTimeout(() => {
+        // Nullé EN ENTRANT, comme les deux autres minuteurs : le handle d'un minuteur déjà consommé
+        // ferait croire à `clearAttestationRefreshTimer` qu'une échéance est encore en vol.
+        peerStore.peerAttestationRefreshTimer = null
+        void _refreshAttestation(peerStore, ctx, peer, peerId)
+    }, delayMs)
+}
+
+/**
+ * Arme le prochain rafraîchissement à partir de la durée de vie annoncée par le serveur.
+ *
+ * @param {number|null} ttlMs  `null` ⇒ rien à rafraîchir : aucun minuteur n'est armé
+ */
+function _scheduleAttestationRefresh(peerStore, ctx, peer, peerId, ttlMs) {
+    // Mécanisme inactif côté serveur (aucun secret, aucune `APP_KEY`) : il n'y a rien à faire
+    // expirer, donc aucun minuteur. Le `clear` doit quand même passer — c'est le chemin par lequel
+    // un onglet dont le déploiement vient de désactiver le mécanisme cesse d'interroger la route.
+    if (ttlMs === null) {
+        peerStore.clearAttestationRefreshTimer()
+        return
+    }
+
+    _armAttestationRefresh(peerStore, ctx, peer, peerId, Math.min(
+        Math.max(ttlMs - ATTESTATION_REFRESH_MARGIN_MS, ATTESTATION_REFRESH_MIN_DELAY_MS),
+        ATTESTATION_REFRESH_MAX_DELAY_MS,
+    ))
+}
+
+/**
+ * Redemande une attestation fraîche pour le peerId courant, puis réarme.
+ *
+ * ⚠️ Appelée depuis un `setTimeout`, donc **rien ici ne doit pouvoir rejeter** — même contrat, et
+ * même appui vérifiable, que `_refreshIceConfig` : `fetchPeerAttestation` ne jette jamais (contrat
+ * épinglé par son propre fichier de test). Si cet appui tombe, c'est ce test-là qui doit rougir,
+ * pas ce chemin qui doit avaler l'erreur.
+ */
+async function _refreshAttestation(peerStore, ctx, peer, peerId) {
+    const { attestation, ttlMs, enforce } = await fetchPeerAttestation(ctx.AjaxService, peerId)
+
+    // APRÈS l'aller-retour, comme pour ICE, et c'est la garde qui compte : un cycle destruction →
+    // nouvelle init a pu se produire pendant ce temps, et le `Peer` neuf a demandé SA propre
+    // attestation. Écrire ici poserait, pour l'identité courante, une attestation signée pour une
+    // identité disparue — donc un refus systématique chez tous les récepteurs, indistinguable
+    // d'une usurpation. Sortie sèche, sans réarmement.
+    if (peerStore.localPeer !== peer || peer.destroyed) {
+        console.info('[WebRTC2] Rafraîchissement de l\'attestation abandonné : le Peer visé n\'est plus le singleton courant.')
+        return
+    }
+
+    // ⚠️ NE RIEN ÉCRIRE quand le serveur n'a rien servi. Même raison qu'au credential TURN, et elle
+    // mord plus fort ici : remplacer une attestation VALIDE par `null` sur une route qui répond mal
+    // ferait refuser, sous `enforce`, un pair qui était admis la seconde d'avant. L'attestation en
+    // place reste donc, et on retente.
+    if (attestation === null) {
+        const attempt = peerStore.incrementAttestationAttempts()
+
+        if (attempt >= ATTESTATION_MAX_RETRIES) {
+            console.warn(
+                `[WebRTC2] Rafraîchissement de l'attestation abandonné après ${attempt} tentatives —` +
+                ' l\'attestation en place est conservée jusqu\'à son échéance. Un rechargement de la page la renouvellera.'
+            )
+            return
+        }
+
+        console.warn(
+            `[WebRTC2] Attestation non renouvelée (tentative ${attempt}/${ATTESTATION_MAX_RETRIES}) —` +
+            ` nouvelle tentative dans ${ATTESTATION_RETRY_MS}ms.`
+        )
+        _armAttestationRefresh(peerStore, ctx, peer, peerId, ATTESTATION_RETRY_MS)
+        return
+    }
+
+    peerStore.setLocalPeerAttestation(attestation, enforce)
+    peerStore.resetAttestationAttempts()
+
+    _scheduleAttestationRefresh(peerStore, ctx, peer, peerId, ttlMs)
+}
+
+/**
+ * Le slug que le SERVEUR reconnaît à ce peerId, ou `undefined` quand il ne l'a pas dit.
+ *
+ * ⚠️ Les trois retours sont distincts et aucun n'est superflu :
+ *   - une **chaîne** — le serveur a nommé le porteur ;
+ *   - **`null`** — le serveur a tranché : cette attestation ne vaut rien (forgée, expirée, ou pour
+ *     un autre peerId). C'est un refus, et il est mémoïsé ;
+ *   - **`undefined`** — le serveur n'a pas répondu (route morte, délai dépassé). C'est une
+ *     IGNORANCE, jamais un refus : le garde doit alors fail-open. Fermer sur une indisponibilité
+ *     serveur transformerait un incident d'infra en coupure de visio non rattrapable — une
+ *     MediaConnection refusée n'est notifiée à personne.
+ *
+ * Mémoïsé par peerId dans le store, refus compris : sans cela, un pair refusé qui insiste ferait
+ * payer un aller-retour à chacune de ses tentatives, à la cadence qu'il choisit. Une ignorance,
+ * elle, n'est jamais mémoïsée — c'est l'infra qu'on attend, pas un verdict.
+ *
+ * @returns {Promise<string|null|undefined>}
+ */
+async function _attestedSlugFor(conn, ctx) {
+    const senderPeerId = conn?.peer ? String(conn.peer) : null
+
+    if (!senderPeerId) { return undefined }
+
+    const known = ctx?.peerStore?.getAttestedPeer?.(senderPeerId)
+    if (known) { return known.slug }
+
+    const attestation = conn?.metadata?.attestation
+
+    // Rien de présenté : c'est un REFUS (le serveur n'aurait rien à vérifier), et il ne coûte
+    // aucun aller-retour.
+    //
+    // ⚠️ Et il n'est PAS mémoïsé, à la différence d'un refus rendu par le serveur. Le même peerId
+    // peut très bien présenter une attestation à la connexion suivante : l'obtention a lieu avant
+    // `new Peer`, mais elle a pu échouer et être rattrapée par une reprise
+    // (`ATTESTATION_RETRY_MS`) sur la MÊME identité. Mémoïser ici condamnerait ce pair pour toute
+    // la durée du cache, alors qu'il vient précisément de se mettre en règle.
+    if (typeof attestation !== 'string' || attestation === '') { return null }
+
+    const { slug, answered } = await requestAttestationVerdict(ctx?.AjaxService, attestation, senderPeerId)
+
+    if (!answered) { return undefined }
+
+    // L'échéance du verdict est celle de l'attestation qui l'a produit — que le client ne lit pas
+    // (la charge est signée, pas chiffrée, mais la décoder ici dupliquerait le format à un endroit
+    // où personne ne le vérifie). On retient donc le verdict pour la durée d'un rafraîchissement :
+    // au pire une identité reste connue un peu au-delà de son attestation, ce qui ne peut que
+    // RETARDER un refus, jamais en produire un.
+    ctx.peerStore.noteAttestedPeer(senderPeerId, slug, Date.now() + ATTESTATION_REFRESH_MARGIN_MS)
+
+    return slug
+}
+
 // ⚠️ PAS de hook `import.meta.hot` ici, et c'est un choix documenté.
 //
 // Une version précédente détruisait le Peer singleton dans un `hot.dispose()`, pour
@@ -326,6 +500,22 @@ function _isValidSlug(value) {
     return typeof value === 'string' && SLUG_PATTERN.test(value)
 }
 
+/**
+ * À quel slug l'identité PeerJS de cette connexion se résout-elle, si elle se résout ?
+ *
+ * TROIS sources, dans cet ordre, et la troisième est la seule autoritative :
+ *   1. les membres connus de la room courante, par le mapping `slug → peerId` ;
+ *   2. le mapping complet, si `remotePeers` est temporairement vide ;
+ *   3. **l'attestation vérifiée par le serveur**, quand un verdict est déjà connu.
+ *
+ * ⚠️ La troisième est mise en DERNIER, et c'est délibéré : les deux premières sont synchrones et
+ * gratuites, la troisième ne l'est que si le verdict est déjà en cache. Elle ne peut pas contredire
+ * les deux autres sans que ce soit une usurpation — c'est justement ce que l'appelant en fait.
+ *
+ * ⚠️ `getAttestedPeer` n'est PAS une allowlist : il dit qui est en face, jamais s'il a le droit
+ * d'entrer. Le brancher sur une décision d'admission ferait d'un pair attesté un interlocuteur
+ * autorisé — l'auto-inscription que `authorizedCallPeers` a fermée, par une autre porte.
+ */
 function _resolveSenderSlugFromIncomingConn(conn, ctx) {
     const senderPeerId = conn?.peer ? String(conn.peer) : null
     if (!senderPeerId) return null
@@ -347,7 +537,14 @@ function _resolveSenderSlugFromIncomingConn(conn, ctx) {
     // et une comparaison écrite ici sur la valeur brute rendrait `'[object Object]'` —
     // donc jamais d'égalité, et aucune erreur levée. Le getter est aveugle au bail à
     // dessein : cette résolution alimente l'anti-usurpation.
-    return ctx?.peerStore?.getSlugByRemotePeerId?.(senderPeerId) ?? null
+    const mapped = ctx?.peerStore?.getSlugByRemotePeerId?.(senderPeerId) ?? null
+    if (mapped) return mapped
+
+    // Le verdict du serveur, s'il est déjà connu. `getAttestedPeer` rend `undefined` quand il faut
+    // (re)demander et `{ slug: null }` quand le serveur a refusé — les deux valent « rien à
+    // opposer » ICI, la distinction appartenant à `_isAuthorizedIncomingPeer`, qui seul peut
+    // attendre un aller-retour.
+    return ctx?.peerStore?.getAttestedPeer?.(senderPeerId)?.slug ?? null
 }
 
 // ─── Authentification des connexions/appels entrants ─────────────────────────
@@ -368,16 +565,23 @@ function _resolveSenderSlugFromIncomingConn(conn, ctx) {
 //          openCallBetweenPeer côté initiateur), donc sa présence ET sa correspondance
 //          tiennent lieu d'autorisation ET d'anti-usurpation en une seule condition.
 //   3. Anti-usurpation, sur LES DEUX chemins — si l'identité PeerJS réelle de la
-//      connexion est déjà résolue à un slug connu (via le mapping global), ce slug
-//      doit être `metadata.from`, sinon rejet. Si elle n'est résolue à AUCUN slug,
-//      l'admission est accordée mais dite NON CORROBORÉE, et tracée : sur le chemin
-//      présence, le mapping du récepteur n'est écrit que lorsque c'est LUI qui ouvre
-//      (connectToPeer), donc il est structurellement absent quand l'appel entrant
-//      arrive le premier — refuser sur « non résolu » fermerait toute diffusion en
-//      room (mesuré par scenarios/incomingMappingInvariant.test.js).
+//      connexion est déjà résolue à un slug connu, ce slug doit être `metadata.from`,
+//      sinon rejet. La résolution a TROIS sources (cf.
+//      `_resolveSenderSlugFromIncomingConn`), dont la dernière est autoritative :
+//      l'attestation signée par le serveur, que le pair transporte dans sa `metadata`.
+//      C'est elle qui ferme le chemin (a) — un attaquant n'obtient jamais qu'une
+//      attestation à SON nom, donc elle contredit dès qu'il en déclare un autre.
 //      Cette règle n'est PAS une défense-en-profondeur : c'est le seul anti-usurpation
 //      du chemin (a), qui n'exige rien d'autre qu'un slug déclaré présent dans
-//      `remotePeers`. La corroboration autoritative appartient au backend (lot C).
+//      `remotePeers`.
+//      Si l'identité n'est résolue par AUCUNE des trois, l'admission est dite NON
+//      CORROBORÉE. Ce cas n'est PAS tranché ici — il demande un aller-retour, donc une
+//      décision asynchrone : `_concludeIncoming` le porte, et `_settleAdmission` arbitre
+//      entre trace et refus selon `attestationEnforce`. Ne jamais refuser ici sur
+//      « non résolu » : sur le chemin présence le mapping du récepteur est
+//      structurellement absent quand l'appel entrant arrive le premier (mesuré par
+//      scenarios/incomingMappingInvariant.test.js), et ce refus fermerait toute
+//      diffusion en room.
 //
 // Important : `ctx.session.currentCallUsers` n'est PAS consulté ici. C'est un état UI
 // (qui voir/raccrocher) alimenté à partir de la même signalisation, mais réutiliser un
@@ -436,9 +640,13 @@ function _isAuthorizedIncomingPeer(metadata, conn, ctx, { quiet = false } = {}) 
     }
 
     // Admission non corroborée : rien ne rattache ce peerId à `declaredFrom` — le slug
-    // déclaré est la seule identité disponible. C'est le cas NOMINAL du chemin présence
-    // (cf. règle 3), pas une anomalie : trace de niveau debug, jamais un refus. Elle
-    // mesure la surface qu'un contrôle backend (lot C) devra couvrir.
+    // déclaré est la seule identité disponible.
+    //
+    // ⚠️ CE GARDE NE TRANCHE PAS CE CAS, et c'est délibéré : la corroboration passe par un
+    // aller-retour d'attestation, donc par une décision asynchrone, et ce garde est
+    // synchrone. `_concludeIncoming` la porte — c'est lui qui demande le verdict au serveur,
+    // et lui qui refuse ou non selon `attestationEnforce`. Ici on ne fait que TRACER, et
+    // cette trace reste ce qui mesure la surface du contrôle.
     if (!resolvedSlug) {
         debug(
             '[WebRTC2] Admission entrante non corroborée: peerId entrant résolu à aucun slug',
@@ -465,27 +673,146 @@ function _isAuthorizedIncomingPeer(metadata, conn, ctx, { quiet = false } = {}) 
  * présence et n'est pas ralenti d'une microtâche — ce qui laisse la visio intacte, et
  * `data-app` (aucun canal de présence, que des appels directs) avec elle.
  *
- * ⚠️ Renvoie un **booléen** quand la décision est immédiate, une **promesse** seulement
- * dans le cas différé. C'est délibéré : un `async` inconditionnel repousserait
- * `setUpConnectionListeners` d'une microtâche sur TOUS les chemins, alors que le
- * dispatcher entrant est le point où l'ordre d'exécution est le plus observable.
- * L'appelant écrit donc `if (typeof v !== 'boolean') v = await v`.
+ * **La même règle vaut désormais un cran plus loin, pour l'identité.** Un peerId qui ne se résout à
+ * aucun slug ne dit pas « c'est un imposteur », il dit « je ne l'ai jamais vu » — et il y a
+ * désormais quelqu'un à qui demander : le serveur, par l'attestation que le pair transporte dans sa
+ * `metadata`. C'est ce qui ferme le chemin (a), et c'est `_concludeIncoming` qui le porte.
+ *
+ * ⚠️ Renvoie un **booléen** quand la décision est immédiate, une **promesse** dans tous les autres
+ * cas. C'est délibéré : un `async` inconditionnel repousserait `setUpConnectionListeners` d'une
+ * microtâche sur TOUS les chemins, alors que le dispatcher entrant est le point où l'ordre
+ * d'exécution est le plus observable. L'appelant écrit donc
+ * `if (typeof v !== 'boolean') v = await v`.
+ *
+ * ℹ️ Le chemin immédiat s'est RESSERRÉ avec la corroboration : il exige maintenant, en plus d'une
+ * admission, une identité déjà résolue. Le chemin (b) le satisfait par construction — son mapping
+ * concordant EST la résolution — donc la visio 1-à-1 et `data-app` n'ont rien perdu ; ce qui bascule
+ * en asynchrone est le chemin (a), qui doit de toute façon interroger le serveur.
  *
  * @returns {boolean|Promise<boolean>}
  */
 function _admitIncoming(metadata, conn, ctx) {
-    // Présence connue : le garde a toute l'information, il tranche — et il journalise.
-    if (ctx?.connection?.presenceSynced) {
+    // Y a-t-il quelque chose à DEMANDER au serveur ? Non dans deux cas : l'identité est déjà
+    // résolue (chemin (b), ou verdict encore en cache), ou le pair ne présente aucune attestation
+    // — il n'y aurait alors rien à vérifier.
+    //
+    // ⚠️ Ce second cas n'est pas un détail : c'est celui d'un déploiement dont le mécanisme est
+    // INACTIF (aucun secret configuré), et le comportement doit y rester exactement celui d'avant
+    // l'attestation, ordre d'exécution compris. Sans lui, tout le chemin (a) basculerait en
+    // asynchrone pour aller ne rien demander à personne.
+    const nothingToAsk = _resolveSenderSlugFromIncomingConn(conn, ctx) !== null
+        || !_carriesAttestation(conn)
+
+    // Et y a-t-il quelque chose à ATTENDRE ? Non si la présence est connue, ou si un chemin admet
+    // sans elle. Silencieux : si le prédicat ne passe pas, la décision n'est pas encore prise et
+    // la journaliser ici doublerait celle de `_concludeIncoming`.
+    const nothingToAwait = ctx?.connection?.presenceSynced === true
+        || _isAuthorizedIncomingPeer(metadata, conn, ctx, { quiet: true })
+
+    if (nothingToAsk && nothingToAwait) {
         return _isAuthorizedIncomingPeer(metadata, conn, ctx)
+            && _settleAdmission(metadata, conn, ctx, true)
     }
 
-    // Présence inconnue. Une admission reste possible sans elle (chemin (b)) ; un refus,
-    // non — il ne serait qu'une ignorance déguisée. Silencieux : la décision n'est pas
-    // encore prise, la journaliser ici doublerait celle d'après l'attente.
-    if (_isAuthorizedIncomingPeer(metadata, conn, ctx, { quiet: true })) return true
+    return _concludeIncoming(metadata, conn, ctx)
+}
 
-    return (ctx?.waitForPresenceSync?.() ?? Promise.resolve(false))
-        .then(() => _isAuthorizedIncomingPeer(metadata, conn, ctx))
+/** Cette connexion porte-t-elle une attestation à faire vérifier ? */
+function _carriesAttestation(conn) {
+    return typeof conn?.metadata?.attestation === 'string' && conn.metadata.attestation !== ''
+}
+
+/**
+ * La décision finale, une fois que le garde a ADMIS : l'identité est-elle corroborée, et sinon ?
+ *
+ * Partagée par le chemin synchrone et le chemin différé — une seule écriture de la politique, sinon
+ * les deux divergeraient au premier ajustement.
+ *
+ * @param {boolean} verdictKnown  Le serveur a-t-il tranché ? `false` ⇒ il n'a pas répondu.
+ * @returns {boolean}
+ */
+function _settleAdmission(metadata, conn, ctx, verdictKnown) {
+    if (_resolveSenderSlugFromIncomingConn(conn, ctx) !== null) {
+        return true
+    }
+
+    const declaredFrom = metadata?.from
+    const senderPeerId = conn?.peer ? String(conn.peer) : null
+
+    // ⚠️ FAIL-OPEN, même sous `enforce`, et ce n'est pas une timidité : refuser sur une
+    // indisponibilité d'infra transformerait un incident serveur en coupure de visio non
+    // rattrapable — et ce serait un levier offert, puisque rendre la route injoignable suffirait
+    // alors à couper toutes les rooms. Un avertissement distinct, pour que la cause soit lisible.
+    if (!verdictKnown) {
+        console.warn(
+            '[WebRTC2] Admission entrante NON CORROBORÉE et non vérifiable : le serveur d\'attestation'
+            + ' n\'a pas répondu. Admise malgré tout — un refus ici ferait d\'une panne de route une'
+            + ' coupure de visio non rattrapable.',
+            { declaredFrom, senderPeerId }
+        )
+        return true
+    }
+
+    ctx?.peerStore?.noteUncorroboratedAdmission?.()
+
+    if (ctx?.peerStore?.attestationEnforce === true) {
+        console.warn(
+            '[WebRTC2] Connexion entrante refusée: identité non corroborée (aucune attestation valable'
+            + ' pour ce peerId, et `enforce` est actif)',
+            { declaredFrom, senderPeerId }
+        )
+        return false
+    }
+
+    return true
+}
+
+/**
+ * La décision d'admission quand elle demande d'attendre quelque chose — et elle seule journalise.
+ *
+ * Deux attentes, dans cet ordre, chacune sous sa propre condition :
+ *
+ *  1. **la présence**, quand elle est inconnue et qu'aucun autre chemin n'admet. C'est la règle
+ *     « une liste vide n'est pas une réponse » : `remotePeers` vide ne dit pas « ce pair n'est pas
+ *     membre », il dit « je ne sais pas encore qui est membre » ;
+ *  2. **le verdict du serveur sur l'attestation**, quand l'identité PeerJS ne se résout à aucun
+ *     slug. C'est la même règle d'un cran plus loin, et c'est ce qui ferme le chemin (a) : un
+ *     peerId inconnu ne dit pas « c'est un imposteur », il dit « je ne l'ai jamais vu » — et
+ *     désormais il y a quelqu'un à qui demander.
+ *
+ * ⚠️ TROIS issues à une non-corroboration, et les distinguer est tout l'intérêt :
+ *   - le serveur a nommé QUELQU'UN D'AUTRE ⇒ refus, par l'anti-usurpation du garde lui-même ;
+ *   - le serveur a tranché « rien à valoir » (attestation absente, forgée, expirée) ⇒ refus sous
+ *     `enforce`, admission tracée sinon ;
+ *   - le serveur n'a PAS répondu (route morte, délai dépassé) ⇒ **admission**, même sous
+ *     `enforce`, avec un avertissement distinct. Fermer sur une indisponibilité d'infra
+ *     transformerait un incident serveur en coupure de visio non rattrapable — et ce serait un
+ *     levier offert : rendre la route injoignable suffirait à couper toutes les rooms.
+ */
+async function _concludeIncoming(metadata, conn, ctx) {
+    // Présence inconnue ET rien qui admette sans elle : on attend. Jamais avant d'admettre — le
+    // chemin (b) reste immédiat, et `data-app`, qui n'a aucun canal de présence, n'attend rien.
+    if (!ctx?.connection?.presenceSynced
+        && !_isAuthorizedIncomingPeer(metadata, conn, ctx, { quiet: true })) {
+        await (ctx?.waitForPresenceSync?.() ?? Promise.resolve(false))
+    }
+
+    // Le verdict n'est demandé que si l'identité n'est pas DÉJÀ résolue : un pair connu du mapping
+    // ne paie jamais d'aller-retour, et un verdict encore en cache non plus (`getAttestedPeer`).
+    // `undefined` ⇒ le serveur n'a pas parlé ; `null` ⇒ il a refusé ; une chaîne ⇒ il a nommé.
+    let verdictKnown = true
+
+    if (_resolveSenderSlugFromIncomingConn(conn, ctx) === null) {
+        verdictKnown = (await _attestedSlugFor(conn, ctx)) !== undefined
+    }
+
+    // Le garde relit la résolution, verdict compris : c'est LUI qui refuse une contradiction
+    // (`resolvedSlug !== declaredFrom`), et il journalise sa décision.
+    if (!_isAuthorizedIncomingPeer(metadata, conn, ctx)) {
+        return false
+    }
+
+    return _settleAdmission(metadata, conn, ctx, verdictKnown)
 }
 
 // Le registre et ses deux gardes (last-write-wins à l'inscription, identité au retrait)
@@ -598,9 +925,35 @@ export function usePeerTransport(ctx) {
             // une contradiction par l'audit, et comme « rien en vol » par tout lecteur.
             peerStore.markPeerCreating()
 
-            // `fetchIceServers` ne jette JAMAIS et rend toujours un tableau non vide (repli STUN
-            // seul, avec timeout) : le Peer est donc créé même si `/get-ice-servers` est mort.
-            const { iceServers, credentialTtlMs } = await fetchIceServers(ctx.AjaxService)
+            // ⚠️ L'id est choisi ICI, AVANT tout aller-retour, et c'est ce qui rend l'attestation
+            // possible sans fenêtre : elle porte sur un peerId qu'on connaît déjà. Le raisonnement
+            // qui impose de le fournir au constructeur — plutôt que de laisser peerjs le résoudre —
+            // est écrit en détail au `new Peer` ci-dessous ; il n'a pas changé.
+            const peerId = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
+                ? crypto.randomUUID()
+                : `p-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+
+            // Les deux aller-retours EN PARALLÈLE : ils ne dépendent pas l'un de l'autre, et les
+            // enchaîner ajouterait leurs délais au chemin critique de la création du `Peer`. Aucun
+            // des deux ne jette (contrat épinglé par leurs fichiers de test respectifs), donc pas
+            // de `Promise.allSettled` : `Promise.all` ne peut pas rejeter ici, et l'écrire ainsi
+            // rend le contrat visible plutôt que présumé.
+            //
+            // ⚠️ L'attestation est demandée ICI et non à l'`'open'`, sans quoi il resterait une
+            // fenêtre : le chemin « bail encore valide » de `useConnectionPool` (navigation SPA,
+            // cas MAJORITAIRE) ouvre une connexion dès que `waitForMeReady` rend la main, donc
+            // avant qu'une demande partie de l'`'open'` ne soit revenue. Ces connexions-là
+            // partiraient sans attestation et seraient refusées sous `enforce`, par un refus que
+            // rien ne rattrape.
+            const [{ iceServers, credentialTtlMs }, attestation] = await Promise.all([
+                // `fetchIceServers` rend toujours un tableau non vide (repli STUN seul, avec
+                // timeout) : le Peer est créé même si `/get-ice-servers` est mort.
+                fetchIceServers(ctx.AjaxService),
+                // `fetchPeerAttestation` rend `attestation: null` sur tous ses replis ET quand le
+                // mécanisme est inactif côté serveur : le Peer est créé de même, et l'admission
+                // d'en face retombe sur ce qu'elle faisait avant ce mécanisme.
+                fetchPeerAttestation(ctx.AjaxService, peerId),
+            ])
 
             // ── Garde d'annulation ────────────────────────────────────────────────────────
             //
@@ -659,10 +1012,10 @@ export function usePeerTransport(ctx) {
             // réutilisé se heurterait au `ID-TAKEN` du serveur tant que la socket
             // précédente n'est pas fauchée (jusqu'à `alive_timeout`, 60 s), ce qui
             // remplacerait un peer sourd par un peer mort-né.
-            const peerId = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
-                ? crypto.randomUUID()
-                : `p-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
-
+            //
+            // ℹ️ Il est désormais tiré PLUS HAUT, avant les deux allers-retours : c'est ce qui
+            // permet de faire attester l'identité en parallèle de la configuration ICE, donc de
+            // n'avoir jamais de `Peer` vivant sans attestation. Rien d'autre n'a changé.
             const peer = markRaw(new Peer(peerId, {
                 host: import.meta.env.VITE_PEERS_SERVER_HOST,
                 port: import.meta.env.VITE_PEERS_SERVER_PORT,
@@ -676,6 +1029,16 @@ export function usePeerTransport(ctx) {
             // synchrone que l'affectation ci-dessus : les deux disent le même fait, et un
             // lecteur ne doit jamais pouvoir voir l'un sans l'autre.
             peerStore.markPeerConnecting()
+
+            // ⚠️ DANS LE MÊME SEGMENT SYNCHRONE, et APRÈS la garde d'annulation : l'attestation
+            // décrit l'identité de CE `Peer`. Posée avant la garde, elle écraserait celle d'une
+            // init plus récente par une attestation signée pour un peerId abandonné — donc un
+            // refus systématique chez tous les récepteurs. Posée plus tard, il existerait un
+            // instant où un `Peer` est publié sans elle, et c'est exactement la fenêtre qu'on
+            // ferme. `attestation.attestation` peut valoir `null` (repli, ou mécanisme inactif) :
+            // le verbe du store le normalise, et l'admission d'en face retombe alors sur ce
+            // qu'elle faisait avant ce mécanisme.
+            peerStore.setLocalPeerAttestation(attestation.attestation, attestation.enforce)
 
             // ── L'init ne se termine plus ici : elle attend l'`'open'` ────────────
             //
@@ -1138,6 +1501,18 @@ export function usePeerTransport(ctx) {
             // masquerait une seule chose — un Peer né SANS passer par un reset — qui est
             // précisément ce que `peerStateViolations` est là pour faire remonter.
             _scheduleIceRefresh(peerStore, ctx, peer, credentialTtlMs)
+
+            // ── Rafraîchissement de l'attestation ─────────────────────────────────
+            // Même place et mêmes raisons que le minuteur ci-dessus, avec le TTL du MÊME
+            // aller-retour que l'attestation qu'on vient de poser. `null` (mécanisme inactif,
+            // repli) n'arme rien.
+            //
+            // Le `peerId` est CAPTURÉ ici, jamais relu depuis le store à l'échéance : `_id` est mis
+            // à `null` par `Peer.disconnect()` et restauré depuis `lastLocalPeerId` à la
+            // reconnexion, donc un minuteur qui se réveillerait pendant une coupure ferait attester
+            // `null`. L'identité à réattester est celle de l'instance visée, et elle ne change pas
+            // de sa naissance à sa destruction.
+            _scheduleAttestationRefresh(peerStore, ctx, peer, peerId, attestation.ttlMs)
 
             // ── Dernière étape : attendre que le pair soit réellement joignable ────
             //

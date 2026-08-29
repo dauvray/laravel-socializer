@@ -377,6 +377,28 @@ Route::middleware('throttle:socializer-signaling')->group(function () {
     Route::post('/close-connection-to-peer-id',
         config('socializer.controllers_front.user').'@closeConnectionToPeerId')
         ->name('users.peer.close');
+
+    /*
+    | Les deux routes d'attestation. Elles NE RELAIENT RIEN vers un tiers — aucun
+    | `Broadcast::...->sendNow()`, donc aucune victime à protéger d'une cadence : le plafond
+    | qu'elles portent est celui du groupe, pas une borne dimensionnée pour elles. Il est
+    | néanmoins juste ici, contrairement à `/get-ice-servers` qui reste volontairement sans
+    | `throttle` : celle-là est publique, donc sans émetteur à mettre en clé — ces deux-ci sont
+    | privées, et `socializer-signaling` compose sa clé sur l'utilisateur authentifié.
+    |
+    | Cadence attendue : une requête d'attestation par cycle de vie de `Peer` puis une par
+    | échéance de TTL (5 min), et une vérification par peerId inconnu — mise en cache côté
+    | client jusqu'à l'échéance de l'attestation. Loin sous le bucket mesh, qui est dimensionné
+    | pour une rafale de join de 14 requêtes dans le même tick.
+    */
+
+    Route::post('/attest-peer-id',
+        config('socializer.controllers_front.webrtc').'@attestPeerId')
+        ->name('webrtc.attestation.issue');
+
+    Route::post('/verify-peer-attestation',
+        config('socializer.controllers_front.webrtc').'@verifyPeerAttestation')
+        ->name('webrtc.attestation.verify');
 });
 
 Route::middleware('throttle:socializer-call-invite')->group(function () {

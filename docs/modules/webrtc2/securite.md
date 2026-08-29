@@ -10,6 +10,7 @@
 [Sens entrant](#décisions-en-vigueur-sens-entrant-mai-2026) ·
 [Sens sortant](#décisions-en-vigueur-sens-sortant-août-2026) ·
 [Backend](#décisions-en-vigueur-backend-août-2026) ·
+[Attestation d'identité](#lattestation-didentité--ce-qui-ferme-le-chemin-a) ·
 [Rafraîchissement TURN](#le-rafraîchissement-du-credential-turn) ·
 [Bornes non fermées](#bornes-non-fermées-connues)
 
@@ -19,9 +20,10 @@
 
 | Direction | État | Détail |
 |---|---|---|
-| **Entrant** (`peer.on('connection')`, `peer.on('call')`) | durci **côté client**, borné côté serveur — audits du 20/05 et du 14/08/2026 | garde `_isAuthorizedIncomingPeer`, anti-usurpation inconditionnelle, gardes de taille, sanitisation. Reste aveugle au membre de room qui se présente avec un peerId neuf sous le slug d'un autre ; le garde de relation serveur borne désormais qui peut tenter |
+| **Entrant** (`peer.on('connection')`, `peer.on('call')`) | durci côté client, **et corroboré par le serveur depuis le 29/08/2026** | garde `_isAuthorizedIncomingPeer`, anti-usurpation inconditionnelle, gardes de taille, sanitisation — plus une **attestation d'identité signée** portée par la `metadata` de chaque connexion sortante, qui donne enfin au récepteur de quoi contredire un `metadata.from` déclaratif ([décisions](#lattestation-didentité--ce-qui-ferme-le-chemin-a)). ⚠️ **Le REFUS d'une admission non corroborée est un réglage** (`signaling.attestation.enforce`), faux par défaut : tant qu'il l'est, le chemin (a) reste admissif et ne fait que compter |
 | **Sortant** (`connectToPeer`, `responseRemotePeerConnection`) | durci **côté client**, garde autoritatif posé côté serveur | prédicat unique `utils/isAuthorizedPeer.js` : membre de la room **ou** interlocuteur d'appel marqué — [décisions](#décisions-en-vigueur-sens-sortant-août-2026). Son jumeau serveur `Socializable::mayReach` tranche ce que le navigateur ne peut pas voir |
 | **Backend** (`UserController`, routes) | durci | `fromUserSlug` authentifié, liste blanche de champs, `throttle` par utilisateur (deux buckets), `validate()` sur les 5 payloads, **contrôle de relation** émetteur ↔ destinataire en 403 uniforme, et **liste de contacts restreinte aux joignables** sauf permission `list_users` |
+| **Attestation de peerId** | signée par le serveur, **éphémère**, **rafraîchie côté client**, vérifiée par le récepteur | `POST /attest-peer-id` rend `{peerId, slug, exp}` signé en HMAC-SHA256 — **le slug venant d'`Auth::user()`, jamais du corps** : c'est tout le mécanisme. `POST /verify-peer-attestation` rend le slug attesté, ou `null`. TTL 5 min (`signaling.attestation.ttl`), renouvelé avant échéance par le transport. Le secret dérive d'`APP_KEY` si aucune clé dédiée n'est posée — donc aucune variable de déploiement neuve n'est requise |
 | **Credentials TURN** | servis par le serveur, **éphémères et signés par utilisateur**, **rafraîchis côté client** | `GET /get-ice-servers` : STUN seul pour un invité, STUN + TURN pour une session authentifiée. TURN REST API — `username = "<expiry>:<userId>"`, `credential = base64(HMAC-SHA1(secret, username))`, TTL 24 h annoncé par `credential_ttl` et renouvelé avant échéance par le transport ([détail](#le-rafraîchissement-du-credential-turn)). Un abus est donc attribuable, plafonnable par personne et révocable en bloc. Le mode statique partagé reste servi si aucun secret n'est configuré, pour ne pas casser un coturn encore en `--user` |
 
 **La leçon réutilisable, et la seule qui compte : un garde d'admission ne sécurise qu'une
@@ -222,9 +224,17 @@ expirée), le handler `error()` de `useReverbChannel` journalise sans vider `use
 enregistré, flux mort, composition périmée **non vide**. C'est le seul cas que les deux règles ne
 ferment pas. Il est assumé, parce que son préjudice — la longévité d'un mapping, exploitable
 seulement par qui possède l'UUID exact d'un pair parti et attend son `alive_timeout` — est
-**strictement dominé** par la faille résiduelle du chemin (a) documentée plus bas. Toute autre
-sourdine passe d'abord par un vidage : `leave()` fait `users.value = []` **avant** de révoquer son
-jeton, et le tour vide qui s'ensuit purge la composition.
+**strictement dominé** par la borne de rejeu qui reste ouverte sur l'attestation, dont la forme est
+exactement la même et le préjudice supérieur (elle donne l'identité, celle-ci n'ouvre qu'une porte).
+Toute autre sourdine passe d'abord par un vidage : `leave()` fait `users.value = []` **avant** de
+révoquer son jeton, et le tour vide qui s'ensuit purge la composition.
+
+> ℹ️ **Cet argument a changé de cible le 29/08/2026, et il tient toujours.** Il s'appuyait sur la
+> faille résiduelle du chemin (a) — désormais fermée. Ce qui le porte maintenant est la seule borne
+> qui lui survit, le rejeu d'une attestation dont l'UUID a été repris
+> ([bornes](#bornes-non-fermées-connues)). Le jour où cette borne tombe aussi, cette fenêtre-ci
+> cesse d'être dominée et doit être re-jugée pour elle-même : c'est un argument de **domination**,
+> pas d'innocuité.
 
 ⚠️ **Corollaire à ne pas re-dériver** : le contexte `data-app` de `System/Notifications.vue` partage
 le store mais n'appelle **jamais** `watchUsers` — le seul appelant de production est
@@ -304,18 +314,80 @@ aller-retour HTTP + Reverb.
 L'attente est **mémoïsée par contexte** : une promesse et un timer, pour la vie du contexte, quel
 que soit le flot de connexions refusées.
 
-**Faille résiduelle connue, chemin (a) — non fermable côté client.** Un membre de la room qui ouvre
-un **second** `new Peer()` (UUID neuf, donc non mappé) obtient `resolvedSlug = null` et est admis
-sur la seule foi d'un `metadata.from` déclaratif qui n'a qu'à nommer un autre membre. Il parle alors
-sous l'identité de l'usurpé : chat, `BROADCAST_STATE` et `AUDIO_MUTE_TOGGLE` lisent tous
-`resolveRemoteSlug`. Le durcissement côté client a fait ce qu'un client peut faire — rejeter la
-résolution **contradictoire** sur les deux chemins, tracer l'admission non corroborée — mais le cas
-nominal de la présence et l'usurpation ont ici la **même signature locale** : slug déclaré membre,
-peerId inconnu. Les distinguer demande une source de vérité que le récepteur n'a pas.
+**Une ignorance n'est pas une réponse non plus, et c'est la même règle un cran plus loin.** Un peerId
+qui ne se résout à aucun slug ne dit pas « c'est un imposteur », il dit « je ne l'ai jamais vu ».
+Depuis le 29/08/2026, il y a quelqu'un à qui demander — voir ci-dessous.
 
-La fermeture appartient donc au backend, seul détenteur du lien `Auth::user()` ↔ peerId relayé
-Ne pas lire cette règle comme une défense-en-profondeur : sur le chemin (a) elle est le
-**seul** anti-usurpation, et elle est incomplète.
+### L'attestation d'identité — ce qui ferme le chemin (a)
+
+**La faille, telle qu'elle a vécu d'août au 29/08/2026.** Un membre de la room qui ouvrait un
+**second** `new Peer()` (UUID neuf, donc non mappé) obtenait `resolvedSlug = null` et était admis
+sur la seule foi d'un `metadata.from` déclaratif qui n'avait qu'à nommer un autre membre. Il parlait
+alors sous l'identité de l'usurpé : chat, `BROADCAST_STATE` et `AUDIO_MUTE_TOGGLE` lisent tous
+`resolveRemoteSlug`. Le durcissement côté client avait fait ce qu'un client peut faire — rejeter la
+résolution **contradictoire**, tracer l'admission non corroborée — mais le cas nominal de la
+présence et l'usurpation ont la **même signature locale** (slug déclaré membre, peerId inconnu) :
+les distinguer demandait une source de vérité que le récepteur n'avait pas.
+
+**Le mécanisme tient en une phrase, et tout le reste en découle : le serveur signe le couple
+(peerId, identité authentifiée), et le slug qu'il signe vient d'`Auth::user()`, jamais du corps de la
+requête.** Un attaquant n'obtient donc jamais qu'une attestation à SON nom ; présentée sous le `from`
+d'un autre, elle **contredit**, et l'anti-usurpation — qui existait déjà — refuse.
+
+```
+_doInit  ── peerId = crypto.randomUUID()
+         ├─ POST /attest-peer-id { peerId }   ─►  { attestation, attestation_ttl, enforce }
+         └─ new Peer(peerId, …)                    ▲ signé {peerId, slug: Auth::user()->slug, exp}
+
+connectToPeer ── metadata.attestation ──►  récepteur
+                                            └─ POST /verify-peer-attestation { attestation, peerId }
+                                                 ─►  { slug } | { slug: null }
+```
+
+**Trois décisions, chacune contre-intuitive, et aucune n'est un détail :**
+
+1. **L'attestation est obtenue AVANT `new Peer`, jamais à l'`'open'`.** Le peerId est choisi par le
+   client (`crypto.randomUUID()` — c'était déjà le cas, pour une autre raison : supprimer le peerId
+   fantôme), donc il peut être attesté en parallèle de la configuration ICE. Demandée à l'`'open'`,
+   elle laisserait une fenêtre : le chemin « bail encore valide » de `useConnectionPool` — navigation
+   SPA, **cas majoritaire** — ouvre une connexion dès que `waitForMeReady` rend la main, donc avant
+   qu'une demande partie de l'`'open'` ne soit revenue. Ces connexions-là seraient refusées sous
+   `enforce`, par un refus que rien ne rattrape.
+2. **Le verdict vit dans un registre DISTINCT du mapping** (`peerStore.attestedPeers`, indexé par
+   peerId). Le verser dans `remotePeersId` ferait d'un pair attesté un « interlocuteur d'appel direct
+   vérifié » sans qu'aucun appel n'ait été autorisé — l'auto-inscription que le registre
+   `authorizedCallPeers` a fermée, remise en service par une autre porte, et atteignable en continu
+   via le contexte `data-app`. Il est lu par la **résolution d'identité** uniquement, jamais par une
+   allowlist. Épinglé mécaniquement par `peers2Store.attestedPeers.test.js`.
+3. **Une route de vérification muette vaut ADMISSION, même sous `enforce`.** Le client distingue le
+   refus (« le serveur a tranché ») de l'ignorance (« le serveur n'a pas répondu ») —
+   `verifyPeerAttestation` rend `answered`. Fermer sur une indisponibilité d'infra transformerait un
+   incident serveur en coupure de visio non rattrapable, et offrirait le levier correspondant :
+   rendre la route injoignable suffirait à fermer toutes les rooms.
+
+**Ce que l'attestation ne change PAS, et qui surprend :** dans un échange mesh ordinaire, elle ne
+sert à rien — le mapping `slug → peerId` corrobore déjà, et le récepteur ne paie aucun aller-retour.
+Elle n'est nécessaire que là où le mapping est **structurellement** absent à l'admission, c'est-à-dire
+l'arrivant tardif et le partage d'écran (cf.
+[« Le mapping peerId n'existe pas à l'admission »](#le-mapping-peerid-nexiste-pas-à-ladmission-sur-le-chemin-présence)).
+Mesuré : retirer le transport dans la `metadata` ne fait rougir qu'**un** cas de
+`scenarios/incomingSpoof.test.js` — et c'est celui pour lequel tout ceci existe.
+
+**Le déploiement se fait en deux temps, et le premier n'est pas optionnel.**
+`signaling.attestation.enforce` est **faux par défaut** : l'attestation circule, le garde compte
+(`peerStore.uncorroboratedAdmissions`, lisible dans `Widgets/UI/Report/Debug.vue`) et n'refuse rien.
+Un onglet resté sur un bundle antérieur n'attesterait rien, et un refus entrant n'est **jamais**
+rattrapable — basculer d'emblée couperait la visio en room pendant toute la fenêtre d'un déploiement
+mixte. On bascule quand le compteur cesse de bouger en usage nominal.
+
+**Épinglé par** `usePeerTransport.attestation.test.js` (obtention et rafraîchissement),
+`usePeerTransport.incomingAuth.test.js` § corroboration (les quatre issues), `PeerAttestationTest`
+côté PHP (la signature, et le fait que le slug ne vienne jamais du corps), et
+`scenarios/incomingSpoof.test.js` — **le seul étage où la faille soit visible**, parce qu'elle ne
+l'est que du pair d'en face.
+
+⚠️ Ne pas lire l'anti-usurpation comme une défense-en-profondeur : sur le chemin (a) elle reste le
+**seul** discriminant, et c'est l'attestation qui lui donne enfin de quoi mordre.
 
 ### Gardes de taille — trois points, une mécanique
 
@@ -807,12 +879,21 @@ un candidat `relay`.
 Ce qui a été **fermé** n'est pas ici : c'est la table du
 [périmètre réel](#périmètre-réel--à-lire-en-premier), en tête de fichier.
 
-- **L'usurpation intra-room, bornée mais pas fermée.** Le mécanisme est décrit dans
-  [« Une liste vide n'est pas une réponse »](#une-liste-vide-nest-pas-une-réponse) — chemin (a).
-  Le garde de relation serveur **borne qui peut tenter** (il faut déjà être en relation avec la
-  victime) sans supprimer le cas, puisqu'un membre de la même room l'est le plus souvent. La fermer
-  demande de lier `Auth::user()` au peerId relayé côté serveur, c'est-à-dire de faire du backend le
-  témoin de l'identité PeerJS — un chantier, pas un garde. Borne assumée.
+- **L'usurpation intra-room est FERMÉE depuis le 29/08/2026** — c'est
+  [l'attestation d'identité](#lattestation-didentité--ce-qui-ferme-le-chemin-a), et elle a bien
+  demandé ce que cette ligne annonçait : faire du backend le témoin de l'identité PeerJS. Restent
+  **deux bornes**, l'une temporelle et l'autre d'exploitation :
+  - **le REJEU d'une attestation dont l'UUID a été repris.** Qui détient l'attestation d'un pair
+    parti *et* reprend son peerId sur le serveur PeerJS — possible passé `alive_timeout`, 60 s — la
+    rejoue avec succès jusqu'à son échéance. `signaling.attestation.ttl` (5 min) est la **seule**
+    borne de cette fenêtre. La fermer demande que le serveur PeerJS valide lui-même l'inscription
+    d'un id, ce qui est **hors de ce paquet** : c'est la voie « identité intrinsèque au peerId »,
+    dont l'attestation est la moitié réalisable en place. Borne assumée, et son coût est un
+    arbitrage de TTL, pas un chantier ;
+  - **`enforce` faux par défaut.** Tant qu'un déploiement ne l'a pas activé, l'usurpation reste
+    possible : le garde compte au lieu de refuser. Ce n'est pas un oubli mais l'ordre des opérations
+    — un refus entrant n'est jamais rattrapable, donc la mesure précède la coupure. Ce qui rend
+    cette borne *temporaire* et non permanente est le compteur, qui dit quand basculer.
 - **Amplification du hub star, par la somme des émetteurs.** Le produit `octets × fan-out` est
   désormais plafonné (`HUB_MAX_BYTES_PER_WINDOW`), mais **par émetteur** : N émetteurs honnêtes
   peuvent encore additionner leurs budgets. Un budget global du hub fermerait ce cas et en ouvrirait

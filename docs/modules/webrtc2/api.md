@@ -209,10 +209,13 @@ elles bougent, le fichier fait foi.
 | `STREAM_WAIT_TIMEOUT_MS` · `ME_READY_TIMEOUT_MS` | attentes réactives (flux local, identité locale) |
 | `AWAITED_STREAM_TIMEOUT_MS` | filet « annonce reçue, flux jamais arrivé » |
 | `MAX_INVITE_RETRIES` | taille max de la Map d'invitations en attente |
+| `ATTESTATION_REFRESH_*` · `ATTESTATION_RETRY_MS` · `ATTESTATION_MAX_RETRIES` | renouvellement de l'attestation d'identité — même forme que le rafraîchissement ICE, enjeu différent : une configuration ICE périmée dégrade en STUN, une attestation périmée fait REFUSER sous `enforce` |
+| `ATTESTATION_FETCH_TIMEOUT_MS` · `MAX_ATTESTATION_LENGTH` | délai d'un aller-retour d'attestation (⚠️ la vérification est sur le chemin d'admission d'une connexion entrante) et borne de longueur, jumelle de `WebRTCController::MAX_ATTESTATION_LENGTH` |
 
 Y vivent aussi `VALID_CONNECTION_TYPES` (`data` · `stream` · `screen` · `visio` · `vocal` — dont
 `VALID_CALL_TYPES` est **dérivé**, une seule source de vérité), `SLUG_PATTERN`, la table `ENDPOINTS`
-(5 routes) et le symbole `WEBRTC_API_KEY`.
+(5 routes de signalisation + 3 routes WebRTC qui ne relaient rien : ICE, attestation, vérification)
+et le symbole `WEBRTC_API_KEY`.
 
 ⚠️ **Le plafond `/ask-to-peer-id` est par cible et non global** : un join mesh émet légitimement
 jusqu'à 14 demandes dans le même tick (7 pairs × type principal + écran). Un cap global mal

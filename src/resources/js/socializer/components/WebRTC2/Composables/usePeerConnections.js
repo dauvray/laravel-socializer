@@ -593,6 +593,17 @@ export function usePeerConnections(ctx) {
                     callbackKey: ctx.contextId,
                     isAudioMuted: ctx.ui.streamStates.isMuted,
                     isVideoEnabled: ctx.ui.streamStates.isVideoEnabled,
+                    // Ce que le serveur a signé pour nous — `{peerId, slug, exp}`, le slug étant
+                    // celui d'`Auth::user()`. C'est ce qui corrobore `from` ci-dessus chez le
+                    // récepteur : sans elle, son chemin (a) n'a que ce champ déclaratif pour toute
+                    // identité. SITE UNIQUE de construction de la metadata, donc site unique du
+                    // transport.
+                    //
+                    // ⚠️ `null` est une valeur normale, pas une anomalie : mécanisme inactif côté
+                    // serveur, ou repli d'un aller-retour raté. Le garde d'en face sait quoi en
+                    // faire (admission non corroborée, tracée ; refusée seulement sous `enforce`),
+                    // et c'est lui qui décide — pas ce site, qui ne saurait rien du récepteur.
+                    attestation: ctx.peerStore.localPeerAttestation ?? null,
                 }
             }
         }

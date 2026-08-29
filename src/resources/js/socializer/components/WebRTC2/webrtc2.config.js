@@ -298,9 +298,10 @@ export const SLUG_PATTERN = /^[a-zA-Z0-9_\-.]{1,100}$/
  * metadata ENTIER, et c'est le pair distant qui décide de les déclencher — il
  * contrôle `callbackKey`, donc le fait qu'aucun contexte ne se résolve.
  *
- * Dimensionnement : la metadata nominale (`_buildPeerConnectionConfig`) porte 8
- * champs dont deux slugs bornés à 100 caractères, soit moins de 500 octets. 4 Ko
- * laissent huit fois la marge et restent 16 fois sous `MAX_PAYLOAD_BYTES`.
+ * Dimensionnement : la metadata nominale (`_buildPeerConnectionConfig`) porte 9
+ * champs dont deux slugs bornés à 100 caractères et l'attestation d'identité
+ * (`MAX_ATTESTATION_LENGTH`, 512), soit moins de 1 Ko. 4 Ko laissent quatre fois
+ * la marge et restent 16 fois sous `MAX_PAYLOAD_BYTES`.
  */
 export const MAX_METADATA_BYTES = 4 * 1024
 
@@ -340,6 +341,23 @@ export const ENDPOINTS = {
      * STUN + TURN pour une session authentifiée (`WebRTCController::getIceServers`).
      */
     ICE_SERVERS: '/get-ice-servers',
+
+    /**
+     * Faire signer par le serveur le couple (mon peerId, mon identité authentifiée).
+     *
+     * Appelée à chaque ouverture du `Peer` puis à chaque échéance de TTL. PRIVÉE, contrairement à
+     * la route ICE : un invité n'a pas d'identité à faire attester.
+     */
+    ATTEST_PEER_ID: '/attest-peer-id',
+
+    /**
+     * « À qui appartient le peerId que cette attestation couvre ? »
+     *
+     * Appelée par le RÉCEPTEUR d'une connexion entrante, une fois par peerId inconnu — le verdict
+     * est mis en cache jusqu'à l'échéance de l'attestation. Rend toujours 200 : `slug` non nul, ou
+     * `null`.
+     */
+    VERIFY_PEER_ATTESTATION: '/verify-peer-attestation',
 }
 
 /**
@@ -423,6 +441,86 @@ export const ICE_REFRESH_RETRY_MS = 60_000
  * une dégradation, pas une régression.
  */
 export const ICE_REFRESH_MAX_RETRIES = 3
+
+// ─── Attestation de peerId ──────────────────────────────────────────────────────
+// Ce qui corrobore l'identité d'un pair entrant sur le chemin (a) de
+// `_isAuthorizedIncomingPeer`. Le serveur signe `{peerId, slug, exp}` — le slug étant
+// celui d'`Auth::user()`, jamais un champ du corps —, le client la transporte dans la
+// `metadata` de chaque connexion sortante, et le récepteur la fait vérifier.
+//
+// ⚠️ NE PAS lire ces constantes comme des jumelles de celles du credential TURN. Les deux
+// mécanismes ne partagent qu'une parenté de forme (le serveur signe, le client rafraîchit) :
+// un credential TURN authentifie un RELAIS pour 24 h, une attestation authentifie une
+// PERSONNE, et son échéance est la SEULE borne du rejeu par qui reprendrait un UUID
+// abandonné. Le détail est dans `docs/modules/webrtc2/securite.md`.
+
+/**
+ * De combien on rafraîchit AVANT l'échéance annoncée par le serveur.
+ *
+ * Le TTL par défaut est de 300 s (`signaling.attestation.ttl`) : 60 s de marge laissent cinq
+ * fois le budget d'un aller-retour dégradé, sans réduire la durée utile d'un cinquième de plus.
+ *
+ * ⚠️ Une attestation périmée n'est pas une panne partielle : elle vaut `null` chez le
+ * vérificateur, donc — sous `enforce` — un refus d'admission que rien ne rattrape. La marge n'est
+ * pas du confort.
+ */
+export const ATTESTATION_REFRESH_MARGIN_MS = 60_000
+
+/**
+ * Plancher du délai, marge déduite — même piège que `ICE_REFRESH_MIN_DELAY_MS`.
+ *
+ * `attestation.ttl` est un réglage d'hôte : rien n'empêche un déployeur d'y mettre 30 s. Sans
+ * plancher, `ttl - MARGE` deviendrait négatif et `setTimeout` déclencherait immédiatement — une
+ * boucle chaude sur une route privée et plafonnée, donc une avalanche de 429 qui priverait
+ * l'onglet de toute attestation. Le plancher préfère un rafraîchissement tardif à un martèlement.
+ */
+export const ATTESTATION_REFRESH_MIN_DELAY_MS = 30_000
+
+/**
+ * Plafond du délai — la borne 32 bits signés de `setTimeout`, comme pour ICE.
+ *
+ * Au-delà, `setTimeout` ne repousse pas : il déclenche immédiatement, et produit par l'autre
+ * extrémité le martèlement que le plancher évite.
+ */
+export const ATTESTATION_REFRESH_MAX_DELAY_MS = 2_147_483_647
+
+/**
+ * Délai avant nouvelle tentative quand une demande d'attestation n'a rien rapporté.
+ *
+ * Plus court que son équivalent ICE (60 s), et pour une raison de nature : sans configuration ICE
+ * on tombe sur STUN — dégradé mais fonctionnel —, tandis que sans attestation on est refusé sous
+ * `enforce`. La reprise reste bornée par `ATTESTATION_MAX_RETRIES`.
+ */
+export const ATTESTATION_RETRY_MS = 15_000
+
+/**
+ * Nombre de tentatives infructueuses consécutives au-delà duquel on abandonne.
+ *
+ * Borné pour la même raison que la reprise ICE : une reprise infinie sur une route morte est
+ * exactement l'abus que le plafond serveur existe pour couper. L'abandon rend le comportement
+ * d'avant ce mécanisme (admission non corroborée), pas une panne — et le `console.warn` de
+ * l'abandon est ce qui le dit.
+ */
+export const ATTESTATION_MAX_RETRIES = 3
+
+/**
+ * Délai maximal d'un aller-retour d'attestation ou de vérification.
+ *
+ * ⚠️ La VÉRIFICATION est sur le chemin d'admission d'une connexion entrante : ce délai est donc
+ * du temps pendant lequel un `peer.call` légitime reste sans réponse. Court à dessein, et le
+ * dépassement vaut *fail-open* — cf. `_verifyPeerAttestation` dans `usePeerTransport`.
+ */
+export const ATTESTATION_FETCH_TIMEOUT_MS = 3_000
+
+/**
+ * Borne de longueur d'une attestation acceptée.
+ *
+ * ⚠️ Jumelle de `WebRTCController::MAX_ATTESTATION_LENGTH`, et rien dans le build ne les
+ * rapproche : la duplication est épinglée par un test, comme celle des listes de types de
+ * connexion. Elle sert ici à ne pas payer un aller-retour pour une chaîne que le serveur
+ * refusera en 422.
+ */
+export const MAX_ATTESTATION_LENGTH = 512
 
 // ─── Provide/inject (MediaBroadcastProvider) ────────────────────────────────────
 export const WEBRTC_API_KEY = Symbol('webrtcApi')

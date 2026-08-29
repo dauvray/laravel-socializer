@@ -771,8 +771,30 @@ describe('usePeerConnections', () => {
                         callbackKey: ctx.contextId,
                         isAudioMuted: true,
                         isVideoEnabled: true,
+                        // `null` est la valeur NOMINALE quand le mécanisme d'attestation est
+                        // inactif côté serveur, ou quand l'aller-retour a échoué. La clé est
+                        // présente quand même : c'est le récepteur qui décide quoi en faire, et il
+                        // ne doit pas avoir à distinguer « absente » de « nulle ».
+                        attestation: null,
                     },
                 })
+            })
+
+            it('transporte l\'attestation d\'identité posée sur le Peer local', () => {
+                // Ce qui corrobore le `from` déclaré ci-dessus chez le récepteur. SITE UNIQUE de
+                // construction de la metadata, donc site unique du transport : si ce cas rougit,
+                // c'est que plus AUCUNE connexion sortante ne porte d'identité vérifiable, et le
+                // chemin (a) d'en face retombe sur le champ déclaratif.
+                ctx.peerStore.localPeerAttestation = 'charge.signature'
+
+                connections.connectToPeer({ userSlug: 'alice', peerId: 'p-alice' })
+
+                expect(ctx.peerStore.getLocalPeer.connect).toHaveBeenCalledWith(
+                    'p-alice',
+                    expect.objectContaining({
+                        metadata: expect.objectContaining({ attestation: 'charge.signature' }),
+                    }),
+                )
             })
         })
 

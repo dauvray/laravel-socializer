@@ -243,6 +243,26 @@ Contrôleur unique : `src/app/Http/Controllers/Front/UserController.php`, sectio
 Seuls les **deux premiers** passent par la file de signaux. Les trois autres sont consommés
 directement par `Notifications.vue`.
 
+### Les trois routes WebRTC qui ne sont PAS de la signalisation
+
+Elles ne relaient rien vers un tiers — aucun `Broadcast::…->sendNow()`, donc aucune victime à
+protéger d'une cadence. Contrôleur : `Front/WebRTCController.php`.
+
+| Route | Rôle | Pile |
+|---|---|---|
+| `GET /get-ice-servers` | configuration STUN/TURN calculée par le serveur | **publique**, et volontairement **sans `throttle`** — une route ouverte aux invités n'a pas d'émetteur à mettre en clé |
+| `POST /attest-peer-id` | signe `{peerId, slug, exp}` pour le porteur | privée, bucket `socializer-signaling` |
+| `POST /verify-peer-attestation` | rend le slug attesté d'un peerId, ou `null` | privée, bucket `socializer-signaling` |
+
+⚠️ **Les deux dernières portent l'invariant 1 à son point extrême** : le slug signé est celui
+d'`Auth::user()`, et c'est le mécanisme ENTIER — un attaquant n'obtient jamais qu'une attestation à
+son nom. Le reste (format, TTL, ce que ça ferme et ce que ça ne ferme pas) est dans
+[modules/webrtc2/securite.md](../modules/webrtc2/securite.md#lattestation-didentité--ce-qui-ferme-le-chemin-a).
+
+⚠️ **La vérification rend TOUJOURS 200**, verdict dans le corps. Un 4xx serait faux deux fois : une
+attestation refusée n'est pas une erreur de transport, et `AjaxService.load` d'estarter recharge la
+page sur 401/419 — un refus deviendrait une boucle de rechargement.
+
 Les **deux premiers** portent en plus un `isBroadcasting` — l'état de diffusion de l'émetteur au
 moment où il parle. Trois propriétés à ne pas défaire :
 

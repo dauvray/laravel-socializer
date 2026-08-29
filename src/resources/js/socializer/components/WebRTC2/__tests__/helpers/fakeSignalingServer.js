@@ -71,6 +71,15 @@ export function createFakeSignalingServer() {
     let lastClient = null
 
     /**
+     * La politique servie avec chaque attestation — `config('socializer.signaling.attestation.enforce')`.
+     *
+     * ⚠️ FAUX par défaut, comme la config livrée et comme un déploiement qui n'a pas encore
+     * basculé : les scénarios existants n'ont pas à connaître ce mécanisme. Un test qui veut
+     * exercer le refus le DEMANDE (`server.setAttestationEnforce(true)`).
+     */
+    let attestationEnforce = false
+
+    /**
      * Achemine un signal serveur vers un pair, dans l'enveloppe exacte de
      * Notifications.vue. `roomId` est le contextId du DESTINATAIRE.
      */
@@ -189,6 +198,38 @@ export function createFakeSignalingServer() {
                 })
                 break
 
+            // ── Attestation d'identité ────────────────────────────────────────────────
+            //
+            // Ces deux routes ne RELAIENT rien : elles répondent. `_handlePost` rend donc ici
+            // une charge utile, là où tout le reste rend le `{ data: {} }` par défaut.
+            //
+            // ⚠️ **LA PROPRIÉTÉ REPRODUITE EST LA SEULE QUI COMPTE : le slug attesté vient du
+            // CLIENT AUTHENTIFIÉ, jamais du corps.** C'est `clientOwners.get(client)`, exactement
+            // comme `Auth::user()->slug` côté PHP. Un pair virtuel ne peut donc pas se faire
+            // délivrer une attestation au nom d'un autre — et c'est ce qui rend le scénario
+            // d'usurpation honnête plutôt que scripté.
+            //
+            // La « signature » est un simple `peerId::slug` : le harnais n'a pas à reproduire
+            // HMAC-SHA256, il a à reproduire l'INFALSIFIABILITÉ, qui vient d'ici et non de
+            // l'algorithme. Ce que le harnais ne prouvera donc jamais — que la charge signée
+            // résiste à la forge — est prouvé côté PHP par `PeerAttestationTest`.
+            case ENDPOINTS.ATTEST_PEER_ID:
+                if (!fromUserSlug || !peerId) return { attestation: null, enforce: attestationEnforce }
+
+                return {
+                    attestation: `${peerId}::${fromUserSlug}`,
+                    attestation_ttl: 300,
+                    enforce: attestationEnforce,
+                }
+
+            case ENDPOINTS.VERIFY_PEER_ATTESTATION: {
+                const [signedPeerId, signedSlug] = String(data.attestation ?? '').split('::')
+
+                // La confrontation avec le peerId RÉEL de la connexion : sans elle, l'attestation
+                // d'un pair suffirait à en admettre un autre.
+                return { slug: (signedPeerId && signedPeerId === data.peerId) ? (signedSlug ?? null) : null }
+            }
+
             // `/close-connection-to-peer-id` reste journalisé mais non routé : aucun
             // scénario ne vise encore `.CloseConnectionToPeerID`.
             default:
@@ -204,12 +245,25 @@ export function createFakeSignalingServer() {
         createClient() {
             const client = {
                 load: vi.fn(async (url, method = 'get', data = {}) => {
-                    _handlePost(client, url, method, data)
-                    return { data: {} }
+                    // ⚠️ La charge utile rendue par `_handlePost` l'emporte, quand il en rend une.
+                    // Les cinq routes de signalisation RELAIENT (elles ne répondent rien d'utile)
+                    // et gardent donc le `{ data: {} }` historique ; les deux routes d'attestation
+                    // RÉPONDENT, et leur réponse EST le mécanisme.
+                    return _handlePost(client, url, method, data) ?? { data: {} }
                 }),
             }
             lastClient = client
             return client
+        },
+
+        /**
+         * Bascule la politique `enforce` servie avec les attestations.
+         *
+         * C'est le geste que le déployeur fait dans son `.env` une fois que la trace
+         * « Admission entrante non corroborée » a disparu du cas nominal.
+         */
+        setAttestationEnforce(value) {
+            attestationEnforce = value === true
         },
 
         /**

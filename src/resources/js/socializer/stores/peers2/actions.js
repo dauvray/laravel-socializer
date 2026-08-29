@@ -268,6 +268,80 @@ export default {
         return this.peerIceRefreshAttempts
     },
 
+    /** @returns {boolean} true si un rafraîchissement d'attestation était bien armé */
+    clearAttestationRefreshTimer() {
+        if (!this.peerAttestationRefreshTimer) {
+            return false
+        }
+        clearTimeout(toRaw(this.peerAttestationRefreshTimer))
+        this.peerAttestationRefreshTimer = null
+        return true
+    },
+
+    resetAttestationAttempts() {
+        this.peerAttestationAttempts = 0
+    },
+    /** @returns {number} numéro de la tentative infructueuse qui vient d'être comptée */
+    incrementAttestationAttempts() {
+        this.peerAttestationAttempts += 1
+        return this.peerAttestationAttempts
+    },
+
+    /**
+     * Pose l'attestation servie par le serveur pour le peerId local, et sa politique.
+     *
+     * Les deux ensemble, jamais l'une sans l'autre : `enforce` n'a de sens qu'accompagné de ce
+     * qu'il faut présenter pour ne pas être refusé. Le seul écrivain de production est
+     * `usePeerTransport`, comme pour toutes les transitions du `Peer`.
+     */
+    setLocalPeerAttestation(attestation = null, enforce = false) {
+        this.localPeerAttestation = typeof attestation === 'string' && attestation !== ''
+            ? attestation
+            : null
+        this.attestationEnforce = enforce === true
+    },
+
+    /**
+     * Mémorise le verdict rendu par le serveur pour un peerId distant.
+     *
+     * ⚠️ N'écrit RIEN dans `remotePeersId` — cf. l'avertissement porté par `attestedPeers` dans
+     * `state.js`. Ce registre établit QUI est en face, jamais s'il a le droit d'entrer.
+     *
+     * ⚠️ Mémoïse aussi les refus (`slug: null`), et c'est nécessaire : sans cela, un pair refusé
+     * qui insiste ferait payer un aller-retour à chacune de ses tentatives, à la cadence qu'il
+     * choisit. Le verdict est daté par l'appelant, qui seul sait jusqu'à quand s'y fier.
+     *
+     * @param {string} peerId
+     * @param {string|null} slug
+     * @param {number} expiresAt  Horodatage (ms) au-delà duquel le verdict est redemandé
+     */
+    noteAttestedPeer(peerId, slug, expiresAt) {
+        if (typeof peerId !== 'string' || peerId === '') {
+            return
+        }
+
+        this.attestedPeers.set(String(peerId), {
+            slug: typeof slug === 'string' && slug !== '' ? slug : null,
+            expiresAt: typeof expiresAt === 'number' && Number.isFinite(expiresAt) ? expiresAt : 0,
+        })
+    },
+
+    /**
+     * Compte une admission accordée sans que rien ne rattache le peerId au slug déclaré.
+     *
+     * ⚠️ **Un compteur, pas un journal, et c'est ce qui le rend utile.** La trace console existe
+     * déjà (`Admission entrante non corroborée`) mais elle se perd dans un onglet ouvert depuis
+     * des heures ; ce chiffre est ce qu'on relit pour décider d'activer `enforce`. Tant qu'il bouge
+     * en usage nominal, le refus couperait des pairs légitimes.
+     *
+     * Jamais remis à zéro — ni par `resetPeerState`, ni au démontage d'un contexte : c'est une
+     * mesure cumulée pour la vie de l'onglet, et une remise à zéro la rendrait dépendante du
+     * nombre de navigations SPA.
+     */
+    noteUncorroboratedAdmission() {
+        this.uncorroboratedAdmissions += 1
+    },
+
     /**
      * Enregistre la closure qui débranche les listeners du Peer courant.
      *
@@ -349,6 +423,19 @@ export default {
         // rien à chaque échéance, sur un onglet qui n'a peut-être plus aucun contexte WebRTC.
         this.clearIceRefreshTimer()
         this.peerIceRefreshAttempts = 0
+        // Même raison, plus une qui lui est propre : l'attestation décrit un peerId PRÉCIS. La
+        // laisser derrière un `Peer` remplacé, c'est la présenter pour une identité qui n'est plus
+        // la nôtre — le vérificateur d'en face la refuserait, et ce refus-là serait indistinguable
+        // d'une usurpation.
+        this.clearAttestationRefreshTimer()
+        this.peerAttestationAttempts = 0
+        this.localPeerAttestation = null
+        // ⚠️ `attestationEnforce` N'EST PAS remise à `false` : c'est la politique du SERVEUR, pas un
+        // fait de mon `Peer`. La rabaisser à chaque destruction rouvrirait la fenêtre à chaque
+        // remontage de contexte, alors que la valeur connue reste vraie jusqu'à la prochaine
+        // réponse. ⚠️ `attestedPeers` n'est pas vidé non plus — les identités des pairs distants ne
+        // dépendent pas de la vie du nôtre (même arbitrage que `contextRegistry`), et ce qui les
+        // périme est leur propre `expiresAt`.
     },
 
     prepareRoomConnection(payload) {

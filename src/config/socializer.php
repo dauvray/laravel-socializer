@@ -768,5 +768,77 @@ return [
                 'password' => env('COTURN_PASS'),
             ],
         ],
+
+        /*
+        |--------------------------------------------------------------------------
+        | Attestation de peerId
+        |--------------------------------------------------------------------------
+        |
+        | Ce qui corrobore l'identité d'un pair entrant sur le chemin (a) de
+        | `_isAuthorizedIncomingPeer` — l'appartenance à la room. Ce chemin admettait sur le
+        | seul `metadata.from`, un champ que l'émetteur choisit : un membre qui ouvrait un
+        | SECOND `new Peer()` obtenait un UUID non mappé et parlait sous l'identité d'un
+        | autre membre. Le récepteur ne pouvait pas trancher — le cas nominal de la présence
+        | et l'usurpation ont la même signature locale.
+        |
+        | Le serveur signe donc `{peerId, slug, exp}` à l'ouverture du `Peer`, le client
+        | transporte l'attestation dans la `metadata` de chaque connexion sortante, et le
+        | récepteur la fait vérifier. Le slug signé vient d'`Auth::user()`, jamais du corps
+        | de la requête : c'est ce qui la rend infalsifiable.
+        |
+        | ⚠️ AUCUNE de ces clés n'est une variable `VITE_*`, et ce n'est pas un oubli. Vite
+        | substitue `import.meta.env.VITE_*` AU BUILD, qui a lieu à la construction de
+        | l'image : un secret y serait servi en clair à tout visiteur, et un réglage y serait
+        | promis comme une édition de `.env` puis livré comme une reconstruction d'image.
+        |
+        */
+
+        'attestation' => [
+
+            /*
+             * Secret de signature HMAC-SHA256. VIDE PAR DÉFAUT, et le contrôleur retombe
+             * alors sur une clé DÉRIVÉE d'`APP_KEY` — pas sur `APP_KEY` elle-même, dont la
+             * dérivation par domaine évite qu'une signature d'attestation puisse servir
+             * ailleurs. Le mécanisme fonctionne donc sans variable de déploiement neuve, et
+             * une rotation d'`APP_KEY` le rote.
+             *
+             * ⚠️ Ce secret ne doit JAMAIS atteindre une réponse HTTP : c'est de quoi forger
+             * l'identité de n'importe quel utilisateur. Même doctrine que
+             * `ice.turn.static_auth_secret` — liste blanche à la sortie, jamais liste noire.
+             */
+            'secret' => env('SOCIALIZER_PEER_ATTESTATION_SECRET'),
+
+            /*
+             * Durée de vie d'une attestation, en secondes. Elle borne le REJEU : un pair
+             * parti laisse son UUID reprenable sur le serveur PeerJS passé `alive_timeout`
+             * (60 s), et c'est cette durée-là qui décide combien de temps son attestation
+             * resterait exploitable par qui reprendrait son id.
+             *
+             * 300 s tient entre deux contraintes opposées : au-dessous, le rafraîchissement
+             * client devient bavard sur un onglet ouvert toute la journée ; au-dessus, la
+             * fenêtre de rejeu s'ouvre pour rien. Sans commune mesure avec le TTL du
+             * credential TURN (24 h) : celui-ci authentifie un RELAIS, celui-là une PERSONNE.
+             */
+            'ttl' => (int) env('SOCIALIZER_PEER_ATTESTATION_TTL', 300),
+
+            /*
+             * Le garde d'admission REFUSE-T-IL une admission non corroborée sur le chemin
+             * (a) ? Faux par défaut, et c'est une décision de déploiement, pas une frilosité.
+             *
+             * Un onglet resté sur un bundle antérieur au déploiement n'attesterait rien, et
+             * un refus entrant n'est JAMAIS rattrapable (une MediaConnection refusée n'est
+             * notifiée à personne, et l'émetteur voit son `peerConnection` en `connecting`,
+             * donc son moteur de retry s'arrête). Refuser d'emblée couperait donc la visio
+             * en room pendant toute la fenêtre d'un déploiement mixte.
+             *
+             * La marche à suivre : laisser `false` le temps que la trace
+             * « Admission entrante non corroborée » disparaisse du cas nominal — elle est là
+             * pour mesurer exactement cette surface —, puis passer à `true`.
+             *
+             * La valeur est servie au client dans la réponse d'attestation : la politique
+             * est celle du SERVEUR, elle ne se compile pas dans le bundle.
+             */
+            'enforce' => (bool) env('SOCIALIZER_PEER_ATTESTATION_ENFORCE', false),
+        ],
     ],
 ];

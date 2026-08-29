@@ -152,6 +152,18 @@ describe('usePeerTransport — rafraîchissement du credential TURN', () => {
         return { ctx, api, app, peer }
     }
 
+    /**
+     * Combien de fois `/get-ice-servers` a été interrogée — et rien d'autre.
+     *
+     * ⚠️ Compter les appels de `AjaxService.load` TOUS ENDPOINTS CONFONDUS coupait ce fichier de son
+     * sujet. `_doInit` interroge désormais aussi la route d'attestation, en parallèle de celle-ci :
+     * onze assertions de cadence sont devenues fausses d'un cran, pour une raison qui n'est celle
+     * d'aucun de ces cas — et la prochaine route ajoutée les aurait cassées de nouveau. Ce que ces
+     * tests mesurent est la cadence d'interrogation de la route ICE, elle seule.
+     */
+    const appelsIce = (ctx) => ctx.AjaxService.load.mock.calls
+        .filter(([endpoint]) => endpoint === ENDPOINTS.ICE_SERVERS).length
+
     // ── Le mécanisme ─────────────────────────────────────────────────────────────
 
     it('arme un minuteur quand la route annonce un credential périssable', async () => {
@@ -175,7 +187,7 @@ describe('usePeerTransport — rafraîchissement du credential TURN', () => {
         // LE fait de ce fichier : c'est cet objet-ci que PeerJS relit dans
         // `new RTCPeerConnection(this.connection.provider.options.config)`, à chaque connexion.
         expect(peer.options.config.iceServers).toEqual(ICE_FRAIS)
-        expect(ctx.AjaxService.load).toHaveBeenCalledTimes(2)
+        expect(appelsIce(ctx)).toBe(2)
         expect(ctx.AjaxService.load).toHaveBeenLastCalledWith(ENDPOINTS.ICE_SERVERS, 'get')
     })
 
@@ -207,7 +219,7 @@ describe('usePeerTransport — rafraîchissement du credential TURN', () => {
 
         for (let cycle = 1; cycle <= 3; cycle += 1) {
             await vi.advanceTimersByTimeAsync(ECHEANCE_MS)
-            expect(ctx.AjaxService.load).toHaveBeenCalledTimes(cycle + 1)
+            expect(appelsIce(ctx)).toBe(cycle + 1)
         }
     })
 
@@ -222,7 +234,7 @@ describe('usePeerTransport — rafraîchissement du credential TURN', () => {
         expect(ctx.peerStore.peerIceRefreshTimer).toBeNull()
 
         await vi.advanceTimersByTimeAsync(ICE_REFRESH_MAX_DELAY_MS)
-        expect(ctx.AjaxService.load).toHaveBeenCalledTimes(1)
+        expect(appelsIce(ctx)).toBe(1)
     })
 
     it('n\'arme aucun minuteur quand la configuration ICE est le repli STUN', async () => {
@@ -283,11 +295,11 @@ describe('usePeerTransport — rafraîchissement du credential TURN', () => {
         // dégradation assumée est le retour au comportement d'avant — un F5 renouvelle.
         expect(ctx.peerStore.peerIceRefreshTimer).toBeNull()
         expect(peer.options.config.iceServers).toEqual(ICE)
-        expect(ctx.AjaxService.load).toHaveBeenCalledTimes(1 + ICE_REFRESH_MAX_RETRIES)
+        expect(appelsIce(ctx)).toBe(1 + ICE_REFRESH_MAX_RETRIES)
 
         // Et rien ne repart tout seul ensuite.
         await vi.advanceTimersByTimeAsync(ICE_REFRESH_MAX_DELAY_MS)
-        expect(ctx.AjaxService.load).toHaveBeenCalledTimes(1 + ICE_REFRESH_MAX_RETRIES)
+        expect(appelsIce(ctx)).toBe(1 + ICE_REFRESH_MAX_RETRIES)
     })
 
     it('repart d\'un compte neuf après un rafraîchissement réussi', async () => {
@@ -316,10 +328,10 @@ describe('usePeerTransport — rafraîchissement du credential TURN', () => {
         ctx.AjaxService.load.mockResolvedValue({ iceServers: ICE_FRAIS, credential_ttl: 30 })
 
         await vi.advanceTimersByTimeAsync(ICE_REFRESH_MIN_DELAY_MS - 1)
-        expect(ctx.AjaxService.load).toHaveBeenCalledTimes(1)
+        expect(appelsIce(ctx)).toBe(1)
 
         await vi.advanceTimersByTimeAsync(1)
-        expect(ctx.AjaxService.load).toHaveBeenCalledTimes(2)
+        expect(appelsIce(ctx)).toBe(2)
     })
 
     it('plafond : un TTL démesuré est ramené sous la borne de `setTimeout`', async () => {
@@ -333,10 +345,10 @@ describe('usePeerTransport — rafraîchissement du credential TURN', () => {
         ctx.AjaxService.load.mockResolvedValue({ iceServers: ICE_FRAIS, credential_ttl: TTL_UN_MOIS })
 
         // Le point qui compte : il n'a PAS déjà tiré.
-        expect(ctx.AjaxService.load).toHaveBeenCalledTimes(1)
+        expect(appelsIce(ctx)).toBe(1)
 
         await vi.advanceTimersByTimeAsync(ICE_REFRESH_MAX_DELAY_MS)
-        expect(ctx.AjaxService.load).toHaveBeenCalledTimes(2)
+        expect(appelsIce(ctx)).toBe(2)
     })
 
     // ── Le minuteur meurt avec son Peer ──────────────────────────────────────────
@@ -369,7 +381,7 @@ describe('usePeerTransport — rafraîchissement du credential TURN', () => {
             new Promise((resolve) => { releaseIce = () => resolve({ iceServers: ICE_FRAIS, credential_ttl: TTL_SECONDES }) }),
         )
         await vi.advanceTimersByTimeAsync(ECHEANCE_MS)
-        expect(ctx.AjaxService.load).toHaveBeenCalledTimes(2)
+        expect(appelsIce(ctx)).toBe(2)
 
         // Un autre Peer prend la place dans le store, requête toujours en vol.
         ctx.peerStore.localPeer = { est: 'un autre Peer' }
@@ -401,6 +413,6 @@ describe('usePeerTransport — rafraîchissement du credential TURN', () => {
         expect(ctx.peerStore.peerIceRefreshTimer).toBeNull()
 
         await vi.advanceTimersByTimeAsync(ICE_REFRESH_MAX_DELAY_MS)
-        expect(ctx.AjaxService.load).toHaveBeenCalledTimes(1)
+        expect(appelsIce(ctx)).toBe(1)
     })
 })

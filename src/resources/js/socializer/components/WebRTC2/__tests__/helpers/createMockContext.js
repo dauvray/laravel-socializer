@@ -189,6 +189,11 @@ export function createMockContext(overrides = {}) {
     // raison. `Debug.vue` itère aussi directement ces entrées.
     const _remotePeerIds = new Map()
     const _waitingRemotePeerIds = new Map()
+    // Verdicts d'attestation, indexés par peerId — `{ slug, expiresAt }`. ⚠️ DISTINCTE de
+    // `_remotePeerIds`, exactement comme dans le store réel : les fusionner ferait d'un pair
+    // attesté un interlocuteur autorisé du chemin (b), et le test qui garde cette séparation
+    // (`peers2Store.attestedPeers.test.js`) passerait sur un double qui ment.
+    const _attestedPeers = new Map()
     const _signalQueueRooms = {}
     // Registre des contextes montés. Une vraie Map, comme dans peers2/state.js — mais
     // NON réactive des deux côtés : le store réel la pose en `markRaw` précisément pour
@@ -232,6 +237,7 @@ export function createMockContext(overrides = {}) {
         // Exposées telles quelles : la recovery du transport les parcourt directement.
         remotePeersId: _remotePeerIds,
         waitingRemotePeerId: _waitingRemotePeerIds,
+        attestedPeers: _attestedPeers,
 
         // ── Registre des contextes montés ─────────────────────────────────────
         // Mêmes deux gardes que le store réel, et ils ne sont PAS décoratifs :
@@ -419,7 +425,18 @@ export function createMockContext(overrides = {}) {
         peerReconnectTimer: peerStoreOverrides.peerReconnectTimer ?? null,
         peerIceRefreshTimer: peerStoreOverrides.peerIceRefreshTimer ?? null,
         peerIceRefreshAttempts: peerStoreOverrides.peerIceRefreshAttempts ?? 0,
+        peerAttestationRefreshTimer: peerStoreOverrides.peerAttestationRefreshTimer ?? null,
+        peerAttestationAttempts: peerStoreOverrides.peerAttestationAttempts ?? 0,
         peerListenersDetach: peerStoreOverrides.peerListenersDetach ?? null,
+
+        // ── Attestation d'identité ────────────────────────────────────────────
+        // ⚠️ `attestationEnforce` par défaut à `false`, comme le store réel et comme un
+        // déploiement qui n'a pas encore basculé : un test qui veut exercer le refus doit le
+        // DEMANDER (`peerStore: { attestationEnforce: true }`). L'inverse rendrait rouges tous
+        // les tests d'admission existants pour une raison qui n'est pas la leur.
+        localPeerAttestation: peerStoreOverrides.localPeerAttestation ?? null,
+        attestationEnforce: peerStoreOverrides.attestationEnforce ?? false,
+        uncorroboratedAdmissions: peerStoreOverrides.uncorroboratedAdmissions ?? 0,
 
         // ⚠️ Des JETONS, comme le store réel, et le `null` de retour est le point de
         // fidélité qui compte : un retrait de jeton inconnu rend `null` (« rien à
@@ -547,6 +564,45 @@ export function createMockContext(overrides = {}) {
             peerStore.peerIceRefreshAttempts += 1
             return peerStore.peerIceRefreshAttempts
         }),
+        clearAttestationRefreshTimer: vi.fn(() => {
+            if (!peerStore.peerAttestationRefreshTimer) return false
+            clearTimeout(peerStore.peerAttestationRefreshTimer)
+            peerStore.peerAttestationRefreshTimer = null
+            return true
+        }),
+        resetAttestationAttempts: vi.fn(() => { peerStore.peerAttestationAttempts = 0 }),
+        incrementAttestationAttempts: vi.fn(() => {
+            peerStore.peerAttestationAttempts += 1
+            return peerStore.peerAttestationAttempts
+        }),
+        // Normalisation reproduite du store réel : une chaîne vide vaut `null`, et `enforce` est
+        // un booléen STRICT. Un double laxiste ici rendrait vert un contrôleur qui servirait
+        // `enforce: "true"` — que la règle `boolean` de Laravel refuse justement.
+        setLocalPeerAttestation: vi.fn((attestation = null, enforce = false) => {
+            peerStore.localPeerAttestation = typeof attestation === 'string' && attestation !== ''
+                ? attestation
+                : null
+            peerStore.attestationEnforce = enforce === true
+        }),
+        noteAttestedPeer: vi.fn((peerId, slug, expiresAt) => {
+            if (typeof peerId !== 'string' || peerId === '') return
+            _attestedPeers.set(String(peerId), {
+                slug: typeof slug === 'string' && slug !== '' ? slug : null,
+                expiresAt: typeof expiresAt === 'number' && Number.isFinite(expiresAt) ? expiresAt : 0,
+            })
+        }),
+        // ⚠️ Rend `undefined` sur entrée absente OU périmée, et `{ slug: null }` sur un refus
+        // mémoïsé — comme le vrai getter. Les confondre ferait payer un aller-retour à chaque
+        // tentative d'un pair refusé, et rendrait ce coût invisible en test.
+        getAttestedPeer: vi.fn((peerId) => {
+            if (!peerId) return undefined
+            const entry = _attestedPeers.get(String(peerId))
+            if (!entry || typeof entry.expiresAt !== 'number' || Date.now() >= entry.expiresAt) {
+                return undefined
+            }
+            return entry
+        }),
+        noteUncorroboratedAdmission: vi.fn(() => { peerStore.uncorroboratedAdmissions += 1 }),
         // Contrat du store réel reproduit à l'identique — sinon `mockFidelity` garantirait
         // la surface et laisserait passer le mensonge : remplacer une closure **exécute** la
         // précédente, et le détachement vide le champ AVANT d'appeler (jamais rejouer une
@@ -579,6 +635,12 @@ export function createMockContext(overrides = {}) {
             peerStore.clearReconnectTimer()
             peerStore.clearIceRefreshTimer()
             peerStore.peerIceRefreshAttempts = 0
+            // ⚠️ Comme le store réel : l'attestation part avec son `Peer` (elle décrit un peerId
+            // précis), mais NI `attestationEnforce` — politique du serveur, pas un fait du Peer —
+            // NI `attestedPeers` — identités des pairs DISTANTS, indépendantes de la vie du nôtre.
+            peerStore.clearAttestationRefreshTimer()
+            peerStore.peerAttestationAttempts = 0
+            peerStore.localPeerAttestation = null
         }),
 
         // File de signaux brute : lue par `useSignalingQueue` (détecteur de coalescence).

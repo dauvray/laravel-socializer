@@ -56,6 +56,7 @@ import { withSetup } from './withSetup.js'
 import { mockEventBus } from './mockEventBus.js'
 import { bootLocalPeer } from './bootLocalPeer.js'
 import { flushBus } from '../__mocks__/peerjs.js'
+import { ENDPOINTS } from '~socializer/components/WebRTC2/webrtc2.config.js'
 
 /**
  * Laisse le système se stabiliser : signalisation, établissement, réception des flux.
@@ -159,6 +160,34 @@ export async function createVirtualPeer({
         { peerId, getPeer: getLastPeerInstance }
     )
     await settle(1)
+
+    // ── Ré-attestation : une compensation de HARNAIS, et rien d'autre ────────────────────
+    //
+    // ⚠️ La production n'a PAS cette étape, et n'en a pas besoin : elle choisit son peerId
+    // (`crypto.randomUUID()` dans `_doInit`), le fait attester, puis le fournit à `new Peer(id)` —
+    // le serveur PeerJS le lui renvoie tel quel à l'`'open'`. L'identité attestée et l'identité
+    // portée sont donc la même par construction.
+    //
+    // Le harnais, lui, IMPOSE un peerId lisible (`peer-alice`) en le passant à l'`'open'`, ce qui
+    // remplace après coup l'identité pour laquelle l'attestation a été délivrée. Sans cette
+    // ré-attestation, tout pair de scénario porterait une attestation périmée d'un id qu'il n'a
+    // plus : le vérificateur d'en face répondrait `slug: null`, et TOUTE admission de scénario
+    // deviendrait non corroborée — donc refusée sous `enforce`, pour une raison qui n'existe que
+    // dans le harnais. Mesuré : c'est ce qui faisait échouer l'arrivant tardif de
+    // `scenarios/incomingSpoof.test.js`.
+    //
+    // Elle passe par la VRAIE route et le VRAI verbe du store : ce qui est compensé est le
+    // renommage, pas le mécanisme.
+    if (typeof server.createClient === 'function') {
+        const attestClient = server.createClient()
+        server.bindLastClientTo(slug)
+
+        const servie = await attestClient.load(ENDPOINTS.ATTEST_PEER_ID, 'post', { peerId })
+
+        if (servie?.attestation) {
+            peerStore.setLocalPeerAttestation(servie.attestation, servie.enforce)
+        }
+    }
 
     // Contextes secondaires montés dans cet onglet (cf. mountContext) : démontés avec
     // lui, dans l'ordre inverse du montage.

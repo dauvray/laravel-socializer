@@ -12,6 +12,11 @@ puis suivre sa table de routage vers `docs/INDEX.md`. Ne pas explorer le code au
   symbole trouvé au grep peut venir de la v1.
 - **Imports front toujours via l'alias `~socializer`**, jamais en relatif profond. L'alias est défini
   côté hôte dans `vite.config.js` **et** `vitest.config.js` ; un relatif casserait l'un des deux.
+- **L'identité d'un pair entrant WebRTC2 est corroborée par une attestation signée par le serveur,
+  et son REFUS est un réglage — `SOCIALIZER_PEER_ATTESTATION_ENFORCE`, faux par défaut.** Le secret
+  dérive d'`APP_KEY` sans variable neuve. Ne l'activer qu'une fois `uncorroboratedAdmissions` (store
+  `peers2`) stable à zéro : un refus entrant n'est jamais rattrapable, et un onglet resté sur un
+  bundle antérieur n'atteste rien — `docs/modules/webrtc2/securite.md`.
 - **Les whispers Reverb ne sont attribuables que sous `accept_client_events_from: 'members'`, et une
   clé ABSENTE de `config/reverb.php` vaut `'all'`** (`ConfigApplicationProvider` lit `?? 'all'`, à
   l'inverse du défaut du paquet Reverb). Sous `'all'`, aucun contrôle d'appartenance au canal et

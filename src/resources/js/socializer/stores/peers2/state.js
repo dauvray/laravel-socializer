@@ -82,6 +82,65 @@ export default () => {
     // développement, ce sont deux rafraîchissements concurrents sur le même `Peer`.
     peerIceRefreshTimer: null, // handle du rafraîchissement de la configuration ICE
     peerIceRefreshAttempts: 0, // tentatives infructueuses consécutives (ICE_REFRESH_MAX_RETRIES)
+
+    // ─── Attestation du peerId LOCAL ─────────────────────────────────────────
+    // Ce que le serveur a signé pour moi — `{peerId, slug, exp}` — et que je transporte
+    // dans la `metadata` de chaque connexion sortante. Un fait du `Peer` singleton, donc
+    // ici et pour toutes les raisons de cette section : elle décrit une identité PeerJS
+    // précise, et devient fausse à la seconde où le `Peer` est remplacé.
+    //
+    // ⚠️ `resetPeerState` la vide, contrairement au registre des contextes : une
+    // attestation qui survivrait à son `Peer` serait présentée pour un peerId qui n'est
+    // plus le nôtre, donc refusée par le vérificateur — un fail-closed silencieux.
+    localPeerAttestation: null,
+    // La politique du SERVEUR, servie avec l'attestation : le garde d'admission
+    // refuse-t-il une admission non corroborée sur le chemin (a) ? Elle ne se compile pas
+    // dans le bundle (un `VITE_*` la figerait au build de l'image), et elle vaut `false`
+    // tant que le serveur n'a pas parlé — le seul défaut sûr des deux.
+    attestationEnforce: false,
+    peerAttestationRefreshTimer: null, // handle du rafraîchissement de l'attestation
+    peerAttestationAttempts: 0, // tentatives infructueuses consécutives (ATTESTATION_MAX_RETRIES)
+
+    // ─── Attestations VÉRIFIÉES des pairs distants (clé: peerId) ─────────────
+    // Valeur : `{ slug, expiresAt }` — le verdict rendu par `/verify-peer-attestation`,
+    // mémoïsé jusqu'à ce qu'on ne puisse plus s'y fier.
+    //
+    // ⚠️⚠️ CE REGISTRE EST DISTINCT DE `remotePeersId`, ET C'EST TOUT LE POINT DE SÉCURITÉ.
+    // `remotePeersId` est l'allowlist du chemin (b) de `_isAuthorizedIncomingPeer` : y
+    // verser une attestation ferait d'un pair attesté un « interlocuteur d'appel direct
+    // vérifié » sans qu'aucun appel n'ait jamais été autorisé — exactement
+    // l'auto-inscription que le registre `authorizedCallPeers` a fermée, remise en service
+    // par une autre porte. Le précédent est le modèle : un registre distinct du mapping.
+    //
+    // Lecteurs autorisés, et EUX SEULS : `_resolveSenderSlugFromIncomingConn` (résolution
+    // inverse anti-usurpation) et la règle de corroboration de `_isAuthorizedIncomingPeer`.
+    // Aucun chemin d'AUTORISATION ne le lit — il ne fait qu'établir QUI est en face, jamais
+    // s'il a le droit d'entrer. Épinglé par `peers2Store.attestedPeers.test.js`.
+    //
+    // ⚠️ Indexé par peerId et non par slug, à l'inverse de `remotePeersId` : le fait décrit
+    // est « CETTE identité PeerJS appartient à untel », et c'est le peerId qui est la clé
+    // que le récepteur tient en main (`conn.peer`). Une entrée n'est jamais écrasée par un
+    // autre slug — un peerId n'a qu'un propriétaire, et le serveur ne signe que pour son
+    // porteur authentifié.
+    //
+    // ⚠️ `markRaw` : Vue proxifie les Map, et ce registre est lu depuis les dispatchers du
+    // Peer — mêmes contraintes d'identité que `contextRegistry`.
+    //
+    // ⚠️ `resetPeerState` NE le vide PAS : les identités des pairs distants ne dépendent
+    // pas de la vie de MON `Peer`, exactement comme le registre des contextes. Ce qui les
+    // périme est leur propre `expiresAt`.
+    attestedPeers: markRaw(new Map()),
+
+    // Combien d'admissions entrantes ont été accordées sans que rien ne rattache le peerId au slug
+    // déclaré. C'est la MESURE de la surface qu'il reste à couvrir, et elle décide du passage de
+    // `enforce` à `true` : tant qu'elle bouge en usage nominal, activer le refus couperait des
+    // pairs légitimes. Lisible dans `Widgets/UI/Report/Debug.vue`.
+    //
+    // ⚠️ Ne compte QUE les non-corroborations sur lesquelles le serveur a tranché. Une route
+    // d'attestation muette produit une admission elle aussi non corroborée, mais elle mesurerait
+    // une panne d'infra, pas la surface — et gonflerait le compteur au point de le rendre illisible
+    // le jour où il compte vraiment.
+    uncorroboratedAdmissions: 0,
     // Closure qui débranche les listeners du Peer courant, produite par `_doInit` (seul
     // endroit qui sait ce qui a été branché, et sur quelle instance). Ici pour la même
     // raison que le reste de cette section : le Peer est un singleton que N'IMPORTE QUEL

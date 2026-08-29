@@ -17,7 +17,7 @@ import { withSetup } from './helpers/withSetup.js'
 import { bootLocalPeer } from './helpers/bootLocalPeer.js'
 import { resetPeerMock } from './__mocks__/peerjs.js'
 import { usePeerTransport } from '~socializer/components/WebRTC2/Composables/usePeerTransport.js'
-import { MAX_METADATA_BYTES, REMOTE_PEER_ID_LEASE_MS } from '~socializer/components/WebRTC2/webrtc2.config.js'
+import { ENDPOINTS, MAX_METADATA_BYTES, REMOTE_PEER_ID_LEASE_MS } from '~socializer/components/WebRTC2/webrtc2.config.js'
 
 describe('usePeerTransport — authentification des connexions entrantes', () => {
     let ctx
@@ -429,6 +429,184 @@ describe('usePeerTransport — authentification des connexions entrantes', () =>
             expect(logged).not.toContain(bloat)
             expect(logged).not.toContain('Aucun contexte trouvé')
             expect(conn.close).toHaveBeenCalled()
+        })
+    })
+
+    /*
+    |--------------------------------------------------------------------------
+    | Corroboration d'identité — la fermeture du chemin (a)
+    |--------------------------------------------------------------------------
+    |
+    | LA FAILLE. Le chemin (a) admettait sur le seul `metadata.from`, un champ que
+    | l'émetteur choisit : un membre de la room qui ouvrait un SECOND `new Peer()`
+    | obtenait un UUID que rien ne mappait — donc `resolvedSlug = null`, donc aucune
+    | contradiction à opposer — et parlait sous l'identité d'un autre membre.
+    |
+    | Le serveur signe désormais `{peerId, slug, exp}` (le slug venant d'`Auth::user()`),
+    | le pair la transporte dans sa `metadata`, et le récepteur la fait vérifier. Les
+    | cas ci-dessous couvrent les QUATRE issues, et la quatrième est celle qu'on oublie.
+    |
+    | ⚠️ Ces admissions-ci sont ASYNCHRONES : `_admitIncoming` rend une promesse dès qu'il
+    | y a un verdict à demander, et le dispatcher l'attend (`if (typeof v !== 'boolean')`).
+    | D'où le `await Promise.resolve()` — sans lui, l'assertion précède la décision et le
+    | cas verdirait pour la mauvaise raison. Les cas plus haut, eux, restent synchrones :
+    | rien n'y est présenté, donc il n'y a rien à demander.
+    */
+
+    describe('corroboration d\'identité par attestation', () => {
+        const ATTESTATION = 'charge.signature'
+
+        beforeEach(() => {
+            vi.spyOn(console, 'warn').mockImplementation(() => {})
+            vi.spyOn(console, 'debug').mockImplementation(() => {})
+        })
+
+        /**
+         * Laisse la chaîne de vérification se dérouler entièrement.
+         *
+         * ⚠️ Un `setTimeout` et non N `await Promise.resolve()`, et ce n'est pas de la superstition :
+         * la chaîne traverse `_concludeIncoming` → `_attestedSlugFor` → `verifyPeerAttestation` →
+         * `Promise.race` → `.finally`, soit un nombre de microtâches que personne ne doit avoir à
+         * recompter. Un compte trop court rendait ce fichier vert POUR LA MAUVAISE RAISON sur les
+         * cas d'admission (la décision n'était pas encore prise) et faux sur celui de la
+         * mémoïsation. Une macrotâche les vide toutes, quel que soit leur nombre.
+         */
+        const laisserConclure = () => new Promise((resolve) => { setTimeout(resolve, 0) })
+
+        /** Les appels réellement partis vers la route de vérification, et eux seuls. */
+        const verifications = () => ctx.AjaxService.load.mock.calls
+            .filter(([endpoint]) => endpoint === ENDPOINTS.VERIFY_PEER_ATTESTATION)
+
+        /** Le serveur nomme `slug` pour tout peerId présenté. */
+        const serveurRepond = (slug) => {
+            ctx.AjaxService.load.mockResolvedValue({ slug })
+        }
+
+        it('admet un membre dont l\'attestation le nomme comme il se déclare', async () => {
+            serveurRepond('bob')
+            const conn = incomingConn({ from: 'bob', attestation: ATTESTATION }, 'peer-bob-neuf')
+
+            peerInstance._triggerEvent('connection', conn)
+            await laisserConclure()
+
+            expect(ctx.setUpConnectionListeners).toHaveBeenCalledWith(conn)
+            // Corroborée : le compteur d'observation ne bouge pas. C'est lui qu'on relira pour
+            // décider d'activer `enforce`.
+            expect(ctx.peerStore.uncorroboratedAdmissions).toBe(0)
+        })
+
+        it('REFUSE un membre dont l\'attestation nomme quelqu\'un d\'autre', async () => {
+            // ⚠️ LE CAS DE LA FAILLE. Mallory est membre de la room, ouvre un second `Peer`, et se
+            // déclare « alice ». Le serveur ne lui a jamais délivré qu'une attestation à SON nom :
+            // la contradiction est ce qui la refuse. Avant ce mécanisme, `resolvedSlug` valait
+            // `null` et elle était admise.
+            ctx.connection.remotePeers = ['alice', 'bob', 'mallory']
+            serveurRepond('mallory')
+            const conn = incomingConn({ from: 'alice', attestation: ATTESTATION }, 'peer-mallory-2')
+
+            peerInstance._triggerEvent('connection', conn)
+            await laisserConclure()
+
+            expect(ctx.setUpConnectionListeners).not.toHaveBeenCalled()
+        })
+
+        it('admet en la TRAÇANT une identité non corroborée, tant qu\'`enforce` est inactif', async () => {
+            // Le mode d'observation : on mesure la surface sans rien casser. C'est ce compteur qui
+            // décide du passage à `enforce` — tant qu'il bouge en usage nominal, refuser couperait
+            // des pairs légitimes.
+            serveurRepond(null)
+            const conn = incomingConn({ from: 'bob', attestation: 'forgee.xxx' }, 'peer-bob-neuf')
+
+            peerInstance._triggerEvent('connection', conn)
+            await laisserConclure()
+
+            expect(ctx.setUpConnectionListeners).toHaveBeenCalledWith(conn)
+            expect(ctx.peerStore.uncorroboratedAdmissions).toBe(1)
+        })
+
+        it('REFUSE la même identité non corroborée sous `enforce`', async () => {
+            ctx.peerStore.attestationEnforce = true
+            serveurRepond(null)
+            const conn = incomingConn({ from: 'bob', attestation: 'forgee.xxx' }, 'peer-bob-neuf')
+
+            peerInstance._triggerEvent('connection', conn)
+            await laisserConclure()
+
+            expect(ctx.setUpConnectionListeners).not.toHaveBeenCalled()
+        })
+
+        it('REFUSE sous `enforce` un pair qui ne présente aucune attestation', async () => {
+            // Aucun aller-retour ici — il n'y a rien à vérifier —, donc la décision reste
+            // SYNCHRONE : c'est le chemin d'un pair resté sur un bundle antérieur, et c'est
+            // exactement ce que la phase d'observation sert à faire disparaître avant de basculer.
+            ctx.peerStore.attestationEnforce = true
+            const conn = incomingConn({ from: 'bob' }, 'peer-bob-neuf')
+
+            peerInstance._triggerEvent('connection', conn)
+
+            expect(ctx.setUpConnectionListeners).not.toHaveBeenCalled()
+            expect(verifications()).toHaveLength(0)
+        })
+
+        it('ADMET — même sous `enforce` — quand le serveur de vérification ne répond pas', async () => {
+            // ⚠️ LE FAIL-OPEN, et c'est le cas qu'on oublie. Refuser sur une indisponibilité d'infra
+            // transformerait un incident serveur en coupure de visio non rattrapable, et offrirait
+            // le levier correspondant : rendre la route injoignable suffirait à fermer les rooms.
+            //
+            // Non compté, non plus : ce compteur mesure la surface du contrôle, pas les pannes.
+            ctx.peerStore.attestationEnforce = true
+            ctx.AjaxService.load.mockRejectedValue(new Error('503'))
+            const conn = incomingConn({ from: 'bob', attestation: ATTESTATION }, 'peer-bob-neuf')
+
+            peerInstance._triggerEvent('connection', conn)
+            await laisserConclure()
+
+            expect(ctx.setUpConnectionListeners).toHaveBeenCalledWith(conn)
+            expect(ctx.peerStore.uncorroboratedAdmissions).toBe(0)
+        })
+
+        it('ne paie qu\'UN aller-retour par peerId, refus compris', async () => {
+            // Sans mémoïsation des refus, un pair refusé qui insiste ferait payer une requête à
+            // chacune de ses tentatives — à la cadence qu'il choisit.
+            serveurRepond(null)
+
+            for (let i = 0; i < 3; i += 1) {
+                peerInstance._triggerEvent('connection', incomingConn(
+                    { from: 'bob', attestation: 'forgee.xxx' }, 'peer-bob-neuf',
+                ))
+                await laisserConclure()
+            }
+
+            expect(verifications()).toHaveLength(1)
+        })
+
+        it('n\'interroge pas le serveur quand le mapping résout déjà l\'identité (chemin (b))', async () => {
+            // La visio 1-à-1 et `data-app` ne doivent RIEN payer : leur mapping concordant EST la
+            // corroboration. C'est aussi ce qui garde leur admission synchrone.
+            ctx.peerStore.addRemotePeerId('bob', 'peer-bob')
+            const conn = incomingConn({ from: 'bob', attestation: ATTESTATION }, 'peer-bob')
+
+            peerInstance._triggerEvent('connection', conn)
+
+            expect(ctx.setUpConnectionListeners).toHaveBeenCalledWith(conn)
+            expect(verifications()).toHaveLength(0)
+        })
+
+        it('n\'écrit JAMAIS l\'attestation dans l\'allowlist du chemin (b)', async () => {
+            // ⚠️ Le point de sécurité de tout le mécanisme. Verser un verdict dans `remotePeersId`
+            // ferait d'un pair attesté un « interlocuteur d'appel direct vérifié » sans qu'aucun
+            // appel n'ait été autorisé — l'auto-inscription que le registre `authorizedCallPeers` a
+            // fermée, remise en service par une autre porte.
+            serveurRepond('bob')
+            const conn = incomingConn({ from: 'bob', attestation: ATTESTATION }, 'peer-bob-neuf')
+
+            peerInstance._triggerEvent('connection', conn)
+            await laisserConclure()
+
+            expect(ctx.peerStore.getRemotePeerId('bob')).toBeUndefined()
+            expect(ctx.peerStore.hasRemotePeerId('bob')).toBe(false)
+            // Le verdict, lui, vit bien — dans SON registre.
+            expect(ctx.peerStore.getAttestedPeer('peer-bob-neuf')?.slug).toBe('bob')
         })
     })
 })

@@ -325,6 +325,41 @@ export default {
     },
 
     /*--------------------------
+    | Attestations distantes
+    --------------------------*/
+    /**
+     * Le verdict encore valable pour ce peerId, ou `undefined` s'il faut le (re)demander.
+     *
+     * `{ slug: string|null }` — `slug` nul est un REFUS mémoïsé, pas une absence de verdict. Les
+     * deux se distinguent par `undefined` vs objet, et les confondre ferait payer un aller-retour
+     * à chaque tentative d'un pair refusé qui insiste.
+     *
+     * ⚠️ **Ce getter n'autorise rien.** Il dit qui est en face, jamais s'il a le droit d'entrer :
+     * l'allowlist du chemin (b) reste `getRemotePeerId`, et celle du chemin (a) reste
+     * `roomMembers`. Le brancher sur une décision d'admission ferait d'un pair attesté un
+     * interlocuteur autorisé — l'auto-inscription que `authorizedCallPeers` a fermée, par une
+     * autre porte.
+     *
+     * ⚠️ **Fonction, pas `computed`** — même raison que `getDialableRemotePeerId` : un `computed`
+     * mettrait en cache un verdict de fraîcheur qui dépend de l'horloge et d'aucune dépendance
+     * réactive, donc ne se réévaluerait jamais.
+     *
+     * ⚠️ **Ne supprime rien à l'expiration.** Il filtre une LECTURE. Une purge ici serait une
+     * écriture déclenchée par un lecteur, et le prochain verdict réécrit l'entrée de toute façon.
+     */
+    getAttestedPeer: (state) => (peerId) => {
+        if (!peerId) { return undefined }
+
+        const entry = state.attestedPeers.get(String(peerId))
+
+        if (!entry || typeof entry.expiresAt !== 'number' || Date.now() >= entry.expiresAt) {
+            return undefined
+        }
+
+        return entry
+    },
+
+    /*--------------------------
     | Players
     --------------------------*/
     getPlayers() {
