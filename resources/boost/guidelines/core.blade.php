@@ -60,6 +60,11 @@ puis suivre sa table de routage vers `docs/INDEX.md`. Ne pas explorer le code au
 - **`Socializable::mayReach()` a un jumeau EN LOT, `reachableVertexIds()`** — même règle et mêmes
   sources, l'un pour un candidat, l'autre pour une liste (`Users::visibleUsers`). Les faire diverger
   rouvre l'énumération ou masque des contacts légitimes : `UserListScopeTest` compare les deux.
+- **La suite JS ne calcule AUCUNE mise en page** (`happy-dom`) : `getBoundingClientRect()` y rend des
+  zéros. Une assertion de géométrie y est soit rouge sur du code correct, soit verte sur les deux
+  états — jamais discriminante. Ce qui la remplace est `tests/visual/`, lancé à la main et invisible
+  aux deux runners. Le **contrat DOM** dont dépend une règle CSS, lui, reste épinglable dans la
+  suite — `docs/architecture/tests.md`.
 - Contribution documentaire : **`docs/` = définitif, `work/` = chantier**. Une case à cocher ou un
   décompte de tests ⇒ le fichier appartient à `work/`. Détail dans `docs/ecrire-la-doc.md`.
 - Installation / mise à jour dans une app hôte : `{{ $assist->artisanCommand('socializer:build') }}`.

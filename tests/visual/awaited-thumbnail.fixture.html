@@ -1,0 +1,83 @@
+<!doctype html>
+<!--
+    Fixture de `check-awaited-thumbnail.mjs` — NE PAS ouvrir seul : sans la CSS compilée
+    injectée par le script, il ne montre rien d'utile.
+
+    @mirror Exemples/Home.vue:62-70  +  Exemples/StreamSimple/StreamSimpleUI.vue:2-47
+
+    ⚠️ C'est une COPIE À LA MAIN de la chaîne d'ancêtres de production. Elle peut donc
+    rester verte sur un DOM que la production n'a plus. Le garde-fou contre cette dérive
+    n'est pas ici, il est dans la suite : `StreamSimpleUI.awaited.test.js` asserte que le
+    jeu de classes rendu par le composant réel est EXACTEMENT `draggable-video
+    video-awaited`. Ce fichier-là tourne à chaque `npm run test:run` ; celui-ci non.
+
+    Deux blocs, pas un :
+      - SUJET   : la vignette telle qu'elle est aujourd'hui (avec `.video-awaited`) ;
+      - CONTRÔLE: la MÊME vignette sans la classe, c'est-à-dire l'état d'avant le correctif
+                  du 28/08.
+    Les deux vivent dans la même page, sous des chaînes d'ancêtres identiques et séparées.
+    C'est ce qui remplace le second run du harnais manuel d'origine : le contrôle ne peut
+    plus être oublié, et une page sans CSS rend les deux identiques — donc détectable.
+-->
+<html lang="fr" data-bs-theme="light">
+<head><meta charset="utf-8"><title>vignette d'attente — sujet vs contrôle</title></head>
+<body>
+<!--
+    La classe de ce conteneur est RÉÉCRITE par le script, qui rejoue la mesure pour chacune
+    des deux valeurs possibles. Ce n'est pas une constante du produit : c'est un réglage,
+    `layout_class_container` par route, à défaut `config('estarter.bootstrap_container_type')`
+    — `container-fluid` chez cet hôte, `container` par défaut dans le paquet.
+-->
+<div class="container-fluid" data-role="page-container">
+
+    <!-- ══ SUJET ══════════════════════════════════════════════════════════ -->
+    <div class="row g-3 mb-3">
+        <div class="col-md-8">
+            <div class="card h-100">
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col overflow-hidden" data-role="subject-clipper">
+                            <h5>Remote Streams</h5>
+                            <div class="draggable-video video-awaited" data-role="subject">
+                                <div class="video-loading">
+                                    <span class="spinner-border"></span>
+                                    <span class="video-loading-label" data-role="subject-label">alice — en attente du flux…</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ══ CONTRÔLE — identique, SANS `.video-awaited` ════════════════════ -->
+    <div class="row g-3 mb-3">
+        <div class="col-md-8">
+            <div class="card h-100">
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col overflow-hidden" data-role="control-clipper">
+                            <h5>Remote Streams</h5>
+                            <div class="draggable-video" data-role="control">
+                                <div class="video-loading">
+                                    <span class="spinner-border"></span>
+                                    <span class="video-loading-label" data-role="control-label">alice — en attente du flux…</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!--
+        CANARIS DE CASCADE. Deux couches distinctes, deux propriétés binaires, évalués
+        AVANT toute mesure de géométrie. Sans eux, une page sans CSS donne des chiffres
+        plausibles et la mesure se lit à l'envers — c'est le piège déjà payé le 28/08.
+    -->
+    <div class="d-none" data-role="canary-bootstrap"></div>
+</div>
+</body>
+</html>

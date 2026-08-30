@@ -39,7 +39,7 @@ et le seul étage où les incendies du paquet étaient détectables). Le harnais
 | Couches extraites de l'orchestrateur — `useConnectionPool`, `useCallManager`, `useStreamManager`, `useSignalingQueue` | ✅ | — |
 | Store — `peers2Store` : runtime, observabilité, `remotePeerId`, **phase du Peer**, **registre des contextes** | ✅ | — |
 | Composables d'UI — `useAwaitedStreams`, `useBroadcastPresence` | ✅ | — |
-| Tâche 8 · **Composants** `Widgets/**` — 15 fichiers, **3** couverts (`MediaBroadcastPlayer`, `useAwaitedStreams`, `Debug`) | **ouverte** | 12 sans aucun test, dont 10 des 12 composants `.vue` ; c'est l'étage d'où venait le dernier 🔴. `Debug` n'est couvert que sur son bloc de corroboration d'identité (29/08) |
+| Tâche 8 · **Composants** `Widgets/**` — 15 fichiers, **8** couverts | 🟠 **lots A, B et V faits le 30/08** | restent 7 fichiers : `MediaBroadcastProvider`, `LocalMediaPlayer`, `RemoteMediaPlayer`, `useMediaControls`, `useRemotePeerState`, `CallManagerBtn`, `CallRemotePeerBtn` (+ `SpectrumAnalyzer`, exclu et classé). Le décompte « 3 couverts » de l'énoncé était **faux : c'était 4** — voir ci-dessous |
 | Scénarios — smoke, `lateJoiner`, `broadcastLifecycle`, `peerDeparture`, `multiContext`, `incomingMappingInvariant`, `outgoingAuth`, `incomingSpoof` | 🟠 | **aucun scénario n'utilise la topologie star** (`grep topology scenarios/` : zéro) — `lateJoiner` est intégralement mesh. La transition **« hub absent → hub présent »** n'est donc épinglée à aucun étage : ni en unitaire, ni bout en bout. Relevé le 30/08/2026 |
 | Perte de connexion → re-composition — `scenarios/peerDeparture` (« A recharge en chevauchement »), `useConnectionPool`, `createPeerContext` | ✅ | — |
 | Hors WebRTC2 — `Chat/dateSeparatorRender`, `System/useReverbChannel` (dont le désabonnement de whisper par callback), `User/coverCallButton` | amorces | plan Chat : [chat-tests-plan.md](chat-tests-plan.md) |
@@ -377,15 +377,39 @@ second.
 — celles-ci visent `usePeerOrchestrator` et `useMediaBroadcast`, des composables. C'est un étage de
 plus, et il n'était au plan d'aucune tâche.
 
-**Le constat, mesuré** : 15 fichiers sous `Widgets/`, **3 couverts** (`MediaBroadcastPlayer` par
-`identity` + `spinner`, `useAwaitedStreams`, et `Debug` depuis le 29/08 par
-`Debug.attestation.test.js`). Restent 12, dont **10 des 12 composants `.vue`** :
-`MediaBroadcastProvider`, `PlayerHost`, `LocalMediaPlayer`, `RemoteMediaPlayer`, les cinq boutons de
-`UI/Buttons/`, `SpectrumAnalyzer` — plus `useMediaControls` et `useRemotePeerState`.
+**Le constat de l'énoncé disait « 3 couverts ». C'était 4** — `PlayerHost.vue` s'exécute
+réellement dans `usePeerMedia.players.test.js` (17 cas ; seul `MediaBroadcastPlayer` y est mocké).
+Il avait été manqué parce que le fichier porte le nom du **composable**, pas du composant. Une
+tâche 8 écrite sur l'énoncé aurait donc re-testé un composant déjà couvert.
+
+**État au 30/08/2026 — 8 fichiers couverts sur 15**, les lots A, B et V étant faits :
+
+| Lot | Fichiers | Fichiers de test |
+|---|---|---|
+| **A** | `LocalStreamBtn`, `LocalCaptureBtn`, `GroupLocalStreamBtn` | `LocalStreamBtn.test.js`, `LocalCaptureBtn.test.js`, `GroupLocalStreamBtn.test.js` |
+| **B** | le refus de permission média (code + test) | `GroupLocalStreamBtn.permission.test.js` |
+| **V** | le contrat DOM du 🔴 de la vignette | `StreamSimpleUI.awaited.test.js` + `tests/visual/` |
+| déjà là | `MediaBroadcastPlayer`, `PlayerHost`, `useAwaitedStreams`, `Debug` | — |
+
+**Restent, non couverts** : `MediaBroadcastProvider`, `LocalMediaPlayer`, `RemoteMediaPlayer`,
+`useMediaControls`, `useRemotePeerState`, `CallManagerBtn`, `CallRemotePeerBtn`. Les deux
+composables et `RemoteMediaPlayer` forment un ensemble — c'est la boucle `AUDIO_MUTE_TOGGLE` /
+`VIDEO_ACTIVE_TOGGLE`, le seul protocole applicatif que possèdent les Widgets, aujourd'hui écrit
+aux deux bouts et asserté nulle part.
 
 > ℹ️ **`Debug` a été couvert par la bande, en fermant la mesure de bascule d'`enforce`** — et
 > seulement sur son bloc de corroboration d'identité, pas sur le reste du panneau. C'est le bon
 > précédent de montage (`mount` + store Pinia semé, `data-role` pour cibler), pas la fin de la tâche.
+
+> ⚠️ **`SpectrumAnalyzer` est EXCLU du périmètre, et ce n'est pas un oubli.** Trois raisons qui se
+> cumulent : `happy-dom` n'a pas d'`AudioContext`, donc tout collaborateur serait fabriqué à la
+> main et le test prouverait sa propre doublure ; ses deux consommateurs **WebRTC2** sont commentés
+> — et l'un des deux usages commentés est **faux** (`v-bind="audioProps"` passe `{streamData}` à un
+> composant dont l'unique prop est `streams: Array required` : le décommenter lèverait au montage) ;
+> et son **seul consommateur vivant est la v1**, `components/WebRTC/widgets/ui/AudioDefaultUserButtonUI.vue:13`,
+> sous la route `audio/:vertexId`. C'est un fichier **WebRTC2 maintenu en vie par le module déclaré
+> mort** — direction que `doc-rustines.md` lot 1 n'enregistrait pas. Les deux défauts sont classés
+> dans [webrtc2-todo.md](webrtc2-todo.md) ; il meurt avec `components/WebRTC/`.
 
 **Pourquoi ça compte, et ce n'est pas une question de pourcentage** : le dernier 🔴 du module — la
 vignette d'attente effondrée à 0 px, `.draggable-video` sans `<video>` — vivait exactement là. Il a
@@ -401,7 +425,93 @@ correctif, sans quoi une page sans aucune CSS donne la même valeur aux deux run
 « le correctif ne sert à rien » (mesuré le 28/08 : `setContent()` part d'`about:blank` et n'y charge
 aucun `<link href="file://">`).
 
-**À trancher avant d'écrire** : `@vue/test-utils` (déjà employé par les deux tests de
-`MediaBroadcastPlayer`) suffit pour le câblage props/emits/rendu conditionnel, mais **ne dit rien de
-la mise en page** — c'est-à-dire de la classe de défaut qui a produit le 🔴. Les deux étages sont
-donc complémentaires, et l'item ne sera pas fini par le premier seul.
+**Tranché le 30/08/2026 — deux sorties, une par moitié, et non une case cochée.**
+
+Le 🔴 est une chaîne de **sept maillons**. Six sont des faits sur des fichiers versionnés ; un
+seul est une propriété du moteur de rendu. Il n'était donc pas « invérifiable » : il était non
+vérifié sur six maillons vérifiables.
+
+**Les six → sortie C, dans la suite.** `StreamSimpleUI.awaited.test.js`, 8 cas : la vignette porte
+exactement `draggable-video video-awaited` (**classe d'intention** — aucun binding, rien dans le
+template ne trahirait sa disparition), elle ne contient **aucun `<video>`** — l'asymétrie exacte
+avec `MediaBroadcastPlayer.vue:2` qui a produit l'effondrement, épinglée **des deux côtés dans le
+même fichier** —, elle porte son label, et `_socializer.scss` porte encore la règle.
+
+> ⚠️ **Le périmètre annoncé de cette tâche était faux.** Elle disait `Widgets/**` ; le site du
+> correctif est `Exemples/StreamSimple/StreamSimpleUI.vue:42`. Et `Exemples/` est de la
+> **production** : l'hôte l'importe (`resources/js/estarter_custom_elements/views/Home.vue:6`).
+> Le nom du dossier ment.
+
+**Le septième → sortie D, avec sa procédure.** `happy-dom` ne calcule aucune mise en page :
+`getBoundingClientRect()` y rend des zéros. `height > 0` serait **rouge sur du code correct**,
+`height === 0` serait **verte sur les deux états** — aucune formulation ne discrimine. Ce n'est
+pas difficile, c'est **impossible dans ce runner**, et jsdom n'y changerait rien. Ce qui remplace
+la case est nommé et versionné : **`tests/visual/check-awaited-thumbnail.mjs`**, lancé à la main,
+Playwright venant d'un runtime **hors dépôt** (`package.json` de l'hôte intact). Il porte le
+sujet et le contrôle **dans la même page** — le run de contrôle ne peut plus être oublié — et deux
+**canaris de cascade évalués avant toute mesure**, pour que le message dise « CSS absente » et non
+« cadre effondré ». Détail et bornes : [`tests/visual/README.md`](../tests/visual/README.md).
+
+**Pourquoi pas `@playwright/test` dans les dépendances de l'hôte** : il n'y a aucune CI. Sans CI,
+la couverture réelle d'une suite Playwright et d'un script `node` est identique — ce qui tourne est
+ce qu'on lance —, pour une dépendance à faire approuver et un test qui appartient au **paquet**,
+lequel n'a ni `package.json` ni `node_modules`. Le fixture et les assertions se transposent sans
+changement le jour où une CI existe.
+
+> ⚠️ **Il n'y a PAS de hauteur de référence à retrouver, et c'est un résultat.** Le todo cite
+> ~391 px mesurés à la main le 28/08 ; ce chiffre ne peut pas servir de seuil. La largeur du
+> conteneur de page est un **réglage** — `layout_class_container` par route, à défaut
+> `config('estarter.bootstrap_container_type')`, qui vaut `container-fluid` chez cet hôte et
+> `container` par défaut dans le paquet. Toute cote absolue serait vraie d'une configuration et
+> fausse de l'autre. Le harnais rejoue donc la mesure **aux deux largeurs** et n'asserte que ce qui
+> n'en dépend pas. Mesuré le 30/08 : contrôle à **0 px exactement** dans les deux cas, sujet à
+> 464 px (`container`) et 509 px (`container-fluid`).
+
+**Ce qui reste assumé** : le fixture est une copie à la main de la chaîne d'ancêtres et peut rester
+vert sur un DOM que la production n'a plus ; le garde-fou est l'assertion de jeu de classes de
+`StreamSimpleUI.awaited.test.js`, qui, elle, tourne à chaque suite. Et le harnais dépend d'un
+runtime hors dépôt : ailleurs, il ne tourne pas — il s'arrête en le disant.
+
+#### Ce que les lots A et B ont trouvé, et qui n'était pas dans l'énoncé
+
+**Trois contre-épreuves ont rougi ZÉRO cas. Les trois fois, la faute était dans le test** — jamais
+dans le code. C'est la troisième passe consécutive où ce motif se reproduit ; il commence à être la
+règle et non l'exception.
+
+1. **« les deux messages d'erreur diffèrent »** — le cas n'assertait que la différence des chaînes,
+   ce que le préfixe `err.name` garantit à lui seul. Fusionner les deux explications restait vert.
+   Il asserte désormais le **geste indiqué**, qui est opposé dans les deux cas.
+2. **`inject('AWN', null)` vs un `inject` nu** — il n'y avait rien à garder : un inject nu ne plante
+   pas, il rend `undefined`, et le repli `?? window.AWN` fonctionne à l'identique. Le commentaire du
+   composant affirmait un plantage : **c'était faux, corrigé**. Le défaut `null` n'évite qu'un
+   avertissement Vue — c'est tout ce qu'il vaut, et c'est ce qui est épinglé maintenant.
+3. **« le rejet ne part pas en unhandled rejection »** — cas **supprimé, pas commenté** (précédent
+   `isValidSlug`). Voir ci-dessous : la question est intestable ici.
+
+**Deux corrections d'énoncé sur le refus de permission**, trouvées en écrivant le test :
+
+- **Ce n'était pas un « rejet non traité » au sens de Node.** Le handler appelait le verbe **sans
+  rendre** sa promesse, et les émetteurs de `LocalStreamBtn` ne rendent rien non plus : Vue ne
+  voyait donc jamais de promesse, et `callWithAsyncErrorHandling` n'avait rien à rattraper. Mesuré :
+  ni `app.config.errorHandler`, ni `console.error`, ni `process.on('unhandledRejection')` ne
+  voyaient quoi que ce soit. Le symptôme décrit restait exact, mais l'erreur disparaissait **sans la
+  moindre trace** — pire que ce qui était écrit.
+- **La question « le rejet s'échappe-t-il ? » est INTESTABLE à travers un espion.** Mesuré côte à
+  côte : un `Promise.reject()` nu déclenche bien `unhandledRejection`, celui d'un
+  `vi.fn().mockRejectedValue()` **jamais** — l'espion attache son propre handler pour tracer ses
+  résultats et absorbe le signal. Tout cas assertant cette propriété serait vert par construction,
+  avant comme après un correctif.
+
+**Deux défauts de production fermés en passant** : `GroupLocalStreamBtn` déclarait `api` en
+`required: false, default: null` alors que son template le déréférence au rendu — le défaut ne
+protégeait rien, il remplaçait « Missing required prop » par un `Cannot read properties of null`
+opaque à trois composants du câblage fautif (**sortie A**) ; et le câblage `@stop_audio` était
+**mort des deux côtés** — aucun élément du template de `LocalStreamBtn` n'émettait cet événement
+(**sortie B**, supprimé après avoir vu rouge la négative qui le gardait). Rien n'est perdu : « Stop
+stream » s'affiche dès que `isStreaming` est vrai, flux audio seul compris, et
+`usePeerOrchestrator.stopAudioStream` n'est qu'un **alias de `stopWebcamStream`**. `stopAudio`
+reste dans la surface publique mais n'a plus aucun site d'appel dans le paquet.
+
+**Un piège de harnais neuf, à ne pas re-payer** : `wrapper.emitted()` capte **aussi les événements
+DOM natifs** qui remontent à la racine du composant — un `trigger('click')` fait apparaître `click`
+dans la liste. Toute assertion sur le vocabulaire complet d'un composant doit les écarter.

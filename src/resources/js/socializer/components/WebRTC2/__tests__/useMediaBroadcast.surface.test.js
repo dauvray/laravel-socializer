@@ -59,20 +59,29 @@ import { useMeStore } from '~estarter/stores/me.js'
  * Les verbes annoncés par `docs/modules/webrtc2/api.md` § « Niveau 2 ».
  * Ceux marqués d'un site d'appel sont en plus exercés en production : les perdre casserait
  * ce fichier-là, et rien d'autre ne le dirait avant l'exécution.
+ *
+ * ⚠️ **`stopAudio` n'a plus aucun site d'appel dans le paquet** depuis le 2026-08-30. Son seul
+ * câblage (`@stop_audio` de `GroupLocalStreamBtn` vers `onStopAudioCall` de `LocalStreamBtn`)
+ * était mort — aucun élément du template de l'enfant ne l'émettait —, et il a été supprimé
+ * (sortie B). Le verbe reste ici parce qu'il fait partie de la surface publique qu'une app
+ * hôte peut appeler ; rien n'est perdu côté interface, « Stop stream » couvrant aussi le flux
+ * audio seul, et `usePeerOrchestrator.stopAudioStream` n'étant qu'un alias de
+ * `stopWebcamStream`. Épinglé par `GroupLocalStreamBtn.test.js` § « aucun chemin de
+ * l'interface n'atteint `stopAudio` ».
  */
 const EXPECTED_VERBS = [
     'initialize',                 // Notifications.vue:226, MediaBroadcastProvider.vue:50
     'cleanup',                    // MediaBroadcastProvider.vue:56
     'watchUsers',                 // MediaBroadcastProvider.vue:63
-    'sendData',                   // GroupLocalStreamBtn.vue:63, useChatSimple.js:113
-    'getWebcamStream',            // GroupLocalStreamBtn.vue:38
-    'stopStream',                 // GroupLocalStreamBtn.vue:42
-    'getAudioStream',             // GroupLocalStreamBtn.vue:46
-    'stopAudio',                  // GroupLocalStreamBtn.vue:50
-    'startCapture',               // GroupLocalStreamBtn.vue:54
-    'stopCapture',                // GroupLocalStreamBtn.vue:58
-    'toggleAudioMute',            // GroupLocalStreamBtn.vue:62
-    'toggleVideoVisibility',      // GroupLocalStreamBtn.vue:71
+    'sendData',                   // GroupLocalStreamBtn.vue:116, :125, useChatSimple.js:113
+    'getWebcamStream',            // GroupLocalStreamBtn.vue:89
+    'stopStream',                 // GroupLocalStreamBtn.vue:93
+    'getAudioStream',             // GroupLocalStreamBtn.vue:97
+    'stopAudio',                  // AUCUN site d'appel dans le paquet (voir ci-dessous)
+    'startCapture',               // GroupLocalStreamBtn.vue:107
+    'stopCapture',                // GroupLocalStreamBtn.vue:111
+    'toggleAudioMute',            // GroupLocalStreamBtn.vue:115
+    'toggleVideoVisibility',      // GroupLocalStreamBtn.vue:124
     'startCallWithPeer',          // Notifications.vue:221
     'acceptCallFromPeer',         // Notifications.vue:194
     'openCallBetweenPeer',        // Notifications.vue:125, :182

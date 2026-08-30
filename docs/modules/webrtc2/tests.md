@@ -408,3 +408,72 @@ Sans décompte, parce qu'il pourrit : l'état exact se lit dans
   `stopCallInviteRetry*` et `onUnmounted`. Ce dernier porte un contrôle négatif **mesuré** :
   neutraliser le seul hook de `usePeerCore` le laisse vert, parce que `usePeerRetry` enregistre le
   sien avant — il faut neutraliser les deux.
+- `Widgets/**` — l'**étage de présentation**, couvert en partie depuis le 30/08/2026 : les trois
+  boutons de flux local, le traitement du refus de permission média, et le contrat DOM de la
+  vignette d'attente. Restent le provider, les deux players et les deux boutons d'appel.
+
+---
+
+## Tester un composant : trois faits mesurés
+
+### Monter les enfants réels, ne pas les stuber
+
+Sur un composant qui n'existe que pour **convertir des événements en appels** — le cas de
+`GroupLocalStreamBtn` —, stuber les enfants revient à asserter les noms d'événements de son propre
+stub. Le contrat n'est alors vérifié nulle part, des deux côtés à la fois.
+
+C'est concret ici : `LocalStreamBtn` parle **snake_case** (`start_video`) et `LocalCaptureBtn`
+**kebab-case** (`start-stream`), et leur parent est le seul endroit du dépôt où les deux
+vocabulaires se croisent. Renommer d'un seul côté n'émet aucune erreur — **Vue ne se plaint jamais
+d'un événement que personne n'écoute**. Seul un montage réel le voit.
+
+Corollaire utile : `IconWidget` (`~estarter`) rend `<i class="las la-{icon}">` et n'a aucune
+dépendance. Les icônes s'assertent donc sur la valeur rendue (`.la-microphone-slash`), pas sur un
+`data-icon` qu'un stub aurait posé lui-même.
+
+### ⚠️ `emitted()` capte aussi les événements DOM natifs
+
+Un `trigger('click')` fait apparaître `click` dans `wrapper.emitted()`, à côté des événements
+déclarés. Toute assertion sur le **vocabulaire complet** d'un composant doit les écarter, sinon
+elle échoue pour une raison qui n'a rien à voir avec le composant.
+
+### ⚠️ Un rejet jeté par un espion ne déclenche JAMAIS `unhandledRejection`
+
+Mesuré côte à côte : un `Promise.reject()` nu est bien signalé à Node ; celui que rend un
+`vi.fn().mockRejectedValue()`, appelé puis jeté, ne l'est **jamais** — l'espion attache son propre
+handler pour tracer ses résultats et absorbe le signal.
+
+Conséquence directe : **« ce code laisse-t-il échapper un rejet ? » n'est pas une question
+testable** dès que la source du rejet est un double. Un cas qui l'affirmerait serait vert par
+construction, avant comme après un correctif. Ce qui reste testable est l'effet observable — un
+toast apparaît, un état ne bascule pas.
+
+Le corollaire vaut au-delà des tests, et il a surpris ici : un handler d'événement Vue qui appelle
+un verbe `async` **sans rendre sa promesse** ne fait pas non plus remonter le rejet à
+`app.config.errorHandler`. `callWithAsyncErrorHandling` n'enveloppe que ce que le handler **rend**.
+Un rejet jeté à cet endroit disparaît sans trace : ni console, ni gestionnaire global.
+
+---
+
+## Géométrie et mise en page : ce que la suite ne verra jamais
+
+La suite JS ne calcule aucune mise en page — la raison et le partage sont dans
+[`architecture/tests.md`](../../architecture/tests.md#cette-suite-ne-calcule-aucune-mise-en-page).
+Deux pièges y sont déjà payés, à ne pas re-payer :
+
+**`isVisible()` ne teste pas le clipping par un ancêtre.** Il rend `true` sur une boîte non vide en
+`visibility:visible; opacity:1`, même entièrement hors du cadre d'un parent `overflow-hidden`. Ce
+qui tranche est la **géométrie comparée à celle de l'ancêtre**, ou une capture relue.
+
+**Une mesure sans canari de cascade est une mesure sans valeur.** `setContent()` part
+d'`about:blank` et n'y charge aucun `<link href="file://">`. Le 28/08, « h=51 dans les deux cas »
+s'est lu « le correctif ne sert à rien » alors que la page n'avait **aucune CSS**. D'où deux
+canaris binaires évalués **avant** toute mesure — `.d-none` ⇒ `display:none` (Bootstrap) et
+`.draggable-video` ⇒ `cursor:grab` (`_socializer.scss`) — et un contrôle placé **dans le même run**
+plutôt qu'un second run, pour qu'il ne puisse pas être oublié.
+
+⚠️ **Ne pas chercher de hauteur de référence.** La largeur du conteneur de page est un réglage
+(`layout_class_container` par route, à défaut `config('estarter.bootstrap_container_type')`), donc
+toute cote absolue est vraie d'une configuration et fausse d'une autre. Ce qui est stable et
+mesurable : le cadre sans la classe d'intention s'effondre, celui qui la porte tient son ratio, et
+rien n'est clippé.

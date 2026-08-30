@@ -12,3 +12,8 @@ composer.lock
 .phpunit.result.cache
 
 /laravel-socializer.iml
+
+# Captures produites par `tests/visual/` : ce sont des artefacts de mesure, à relire sur le
+# moment. Les versionner ferait entrer dans l'historique des PNG dont la valeur dépend du
+# build et de la machine qui les a produits.
+/tests/visual/out/

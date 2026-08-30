@@ -40,6 +40,31 @@ Configuration : le `vitest.config.js` **de l'hôte**, à sa racine. Points à co
 - ⚠️ **pas de `clearMocks`** : les `vi.fn()` globaux de `setup.js` ne sont pas réinitialisés entre les
   tests. Faire ses `mockReset()` en `beforeEach`.
 
+### Cette suite ne calcule aucune mise en page
+
+`happy-dom` (comme jsdom) n'implémente pas de moteur de rendu : `getBoundingClientRect()` y rend
+des zéros, et `getComputedStyle` ne résout pas la cascade d'une feuille externe.
+
+**N'y écrivez donc jamais d'assertion de géométrie.** Elle est soit rouge sur du code correct, soit
+verte sur les deux états — jamais discriminante. Ce n'est pas une difficulté à contourner, c'est
+une impossibilité, et changer de DOM virtuel n'y changerait rien.
+
+Ce qui la remplace vit dans **`tests/visual/`** : un harnais Playwright lancé **à la main**,
+invisible aux deux runners (`phpunit.xml` ne déclare que `tests/Feature` ; l'`include` de
+`vitest.config.js` ne prend que `src/resources/js/**/__tests__/**/*.test.js`). Playwright y est
+résolu depuis un runtime **hors dépôt**, ce qui laisse le `package.json` de l'hôte intact — et rend
+ces vérifications non portables, ce qui est assumé.
+
+> **Principe de partage** : la suite n'asserte que sur des **fichiers versionnés** ; `tests/visual/`
+> asserte sur les artefacts de **build**, où une absence ou une péremption doit être un échec dur,
+> jamais un silence.
+
+Ce qu'il reste possible d'épingler dans la suite, et qu'il ne faut pas abandonner sous prétexte que
+la mise en page échappe : le **contrat DOM** dont dépend une règle CSS — qu'une classe d'intention
+soit bien rendue, qu'un nœud contienne ou ne contienne pas tel enfant. C'est ce qui a été fait pour
+la vignette d'attente de WebRTC2 : six des sept maillons de son défaut étaient des faits sur des
+fichiers versionnés, un seul relevait du rendu.
+
 ---
 
 ## Suite PHP — dans le package, via Orchestra Testbench

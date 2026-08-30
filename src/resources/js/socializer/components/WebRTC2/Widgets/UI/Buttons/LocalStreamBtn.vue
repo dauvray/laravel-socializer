@@ -68,12 +68,15 @@
         }
     })
 
+    // Pas de `stop_audio` : aucun élément du template ne l'émettait, et « Stop stream »
+    // arrête aussi bien un flux audio seul (il s'affiche dès que `isStreaming` est vrai, et
+    // `stopAudio` n'est qu'un alias de `stopStream` en aval). Le vocabulaire complet est
+    // épinglé par `LocalStreamBtn.test.js`.
     const emit = defineEmits([
-        'start_video', 
-        'start_audio',  
-        'stop_video', 
-        'stop_audio', 
-        'toggle_audio', 
+        'start_video',
+        'start_audio',
+        'stop_video',
+        'toggle_audio',
         'toggle_video'
     ])
 
@@ -87,10 +90,6 @@
 
     const onStopBroadcastWebcam = () => {
         emit('stop_video')
-    }
-
-    const onStopAudioCall = () => {
-        emit('stop_audio')
     }
 
     const onToggleAudio = () => {

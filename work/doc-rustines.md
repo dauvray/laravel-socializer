@@ -124,8 +124,19 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
       [`docs/modules/webrtc2/INDEX.md`](../docs/modules/webrtc2/INDEX.md) — l'annotation qui la
       donnait pour simplement morte sous-estimait le problème, ce qui est pire que de l'ignorer.
 
-      Périmètre : 13 fichiers `WebRTC/`, le store `stores/peers.js`, et la migration des cinq
-      appelants vers `WebRTC2/`.
+      ⚠️ **Le couplage va aussi dans l'AUTRE sens, et ce tableau ne le disait pas** — relevé le
+      30/08/2026 en cadrant la tâche 8 des tests. `WebRTC/widgets/ui/AudioDefaultUserButtonUI.vue:13`
+      importe `WebRTC2/Widgets/UI/Audio/SpectrumAnalyzer.vue` : un fichier **v2** dont le seul
+      consommateur vivant est la **v1**. Ses deux consommateurs WebRTC2 sont commentés — et l'un des
+      deux usages commentés est *faux* (`v-bind="audioProps"` passe `{streamData}` à une prop
+      `streams: Array required`). Conséquences pour cette tâche : supprimer `components/WebRTC/`
+      rend `SpectrumAnalyzer` orphelin, **et c'est le bon moment pour trancher son sort** plutôt que
+      de le laisser en v2 sans appelant. Ses deux défauts propres sont classés dans
+      [webrtc2-todo.md](webrtc2-todo.md) ; il n'a aucun test, et n'en aura pas (`happy-dom` n'a pas
+      d'`AudioContext`).
+
+      Périmètre : 13 fichiers `WebRTC/`, le store `stores/peers.js`, la migration des cinq
+      appelants vers `WebRTC2/`, et le sort de `SpectrumAnalyzer`.
       Annotation (7 fichiers) : `CLAUDE.md` · `docs/INDEX.md` ·
       `docs/modules/webrtc2/INDEX.md` · `docs/modules/autres-modules.md` ·
       `docs/architecture/package.md` · `docs/modules/chat.md` ·

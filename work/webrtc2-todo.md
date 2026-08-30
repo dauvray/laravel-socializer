@@ -626,6 +626,21 @@ extractions : c'est 18 lignes, sous un filet cinq fois plus dense.
   Ce que le harnais ne couvre pas — que `awaitedPeers` rende bien un nœud — est ce que la mesure à
   deux onglets du 28/08 avait déjà établi (nœud DOM à 607 ms).
 
+  ✅ **Épinglé le 30/08/2026, par ses deux moitiés — l'item n'est PAS rouvert.** Contrat DOM :
+  `StreamSimpleUI.awaited.test.js` (la classe d'intention `.video-awaited`, l'absence de `<video>`,
+  l'asymétrie avec `MediaBroadcastPlayer` épinglée des deux côtés, la règle SCSS encore présente).
+  Géométrie : `tests/visual/check-awaited-thumbnail.mjs`, **à la main, sortie D** — `happy-dom` ne
+  calcule aucune mise en page, la case ne sera jamais cochable dans la suite. Le harnais porte le
+  sujet et le contrôle dans la même page et deux canaris de cascade ; mesuré le 30/08, le contrôle
+  s'effondre à **0 px exactement**.
+
+  ⚠️ **Les ~391 px ci-dessus ne sont pas un seuil réutilisable.** La largeur du conteneur de page
+  est un réglage (`layout_class_container` par route, à défaut
+  `config('estarter.bootstrap_container_type')` — `container-fluid` ici, `container` par défaut dans
+  le paquet), donc toute cote absolue est vraie d'une configuration et fausse de l'autre. Le harnais
+  mesure aux deux largeurs et n'asserte que ce qui n'en dépend pas. Arbitrage complet et bornes
+  assumées : [webrtc2-tests-plan.md](webrtc2-tests-plan.md), tâche 8.
+
 - [x] **Vérifier à la main que la vignette arrive tôt** `[S]` — **fait le 28/08/2026**, et le résultat
   n'est pas celui attendu : le correctif `10d634f` fonctionne, l'UI ne le montre pas, et le cas
   majoritaire n'est pas couvert. Les deux découvertes ont leurs items ci-dessus (fenêtre 3, rendu).
@@ -945,24 +960,82 @@ extractions : c'est 18 lignes, sous un filet cinq fois plus dense.
 
 ## Robustesse
 
-- [ ] 🟠 **Un refus de permission caméra ne produit RIEN à l'écran** `[S]` — relevé le 29/08/2026 en
-  fermant la tâche 7 des tests.
+- [ ] 🟢 **`useRemotePeerState` : un garde inatteignable, et une piste de signal perdu** `[S]` —
+  relevés le 30/08/2026 en cadrant la tâche 8. **À traiter avec le lot C**, qui couvrira ce
+  composable ; consignés ici pour ne pas les redécouvrir.
 
-  La moitié basse est faite : `useMediaBroadcast.getWebcamStream` / `getAudioStream` /
-  `startCapture` **rendent désormais la promesse** de leur verbe `async` (elles la jetaient), donc
-  un appelant peut enfin la traiter. Épinglé par `useMediaBroadcast.test.js` § démarrages de flux.
+  - **Le garde `signal.roomId !== peerId` (l. 20) ne peut jamais être vrai** — vérifié :
+    `dispatchSignal` (`stores/peers2/actions.js:632`) fait `const key = signal.roomId` puis pousse
+    dans `signalQueues[key]`, et c'est **l'unique écrivain**. Tout signal lu par
+    `getLastRoomSignal(X)` a donc `roomId === X` par construction. C'est le cas de figure
+    d'`isValidSlug` : si aucune contre-épreuve ne le fait rougir, il **se supprime, il ne se
+    commente pas**. Mesurer les 0 cas d'abord, les écrire, puis retirer.
+  - **Piste, non vérifiée** : le `watch` n'est pas `immediate`, et `RemoteMediaPlayer` ne se monte
+    qu'à l'arrivée du flux. Un `AUDIO_MUTE_TOGGLE` déjà en file au montage serait donc perdu, alors
+    que `useSignalingQueue.js:38-41` déclare « dernière valeur gagne » comme la sémantique correcte
+    pour ces signaux. **À confirmer avant de corriger** : reste à établir qu'un signal peut
+    réellement précéder le montage. ⚠️ Si `immediate: true` est ajouté, **re-mesurer toutes les
+    contre-épreuves du fichier** — cela change l'instant d'exécution du watcher.
 
-  **Ce qui reste est la moitié UI, et personne ne la fait** : `Widgets/UI/Buttons/GroupLocalStreamBtn.vue`
-  appelle les trois verbes sans `await` ni `.catch`. Rien n'attrape le rejet sur toute la chaîne —
-  `usePeerMedia` appelle `getUserMedia` / `getDisplayMedia` nus. Un `NotAllowedError` (l'utilisateur
-  refuse) ou un `NotFoundError` (pas de périphérique) devient donc un rejet non traité : pas de
-  toast, pas de changement d'état, `isStreaming` reste faux, et le bouton semble mort. C'est le
-  symptôme le plus courant d'un premier usage, et il est indistinguable d'une panne réseau.
+- [ ] 🟢 **`SpectrumAnalyzer` : deux défauts, et un fichier WebRTC2 que seule la v1 maintient en
+  vie** `[S]` — relevés le 30/08/2026 en cadrant la tâche 8, qui l'a **exclu** de son périmètre.
 
-  ⚠️ **Bloqué par l'étage sans tests** : ce composant est un des 12 `Widgets/**` sans aucun test
-  (tâche 8 du [plan de tests](webrtc2-tests-plan.md)). Y poser un `.catch` + `window.AWN` sans filet,
-  c'est écrire du code d'erreur qu'aucune contre-épreuve ne peut faire rougir — exactement ce qui
-  avait laissé passer la vignette à 0 px. Faire la tâche 8 d'abord, ou au minimum couvrir ce bouton.
+  Le fait structurel d'abord : `Widgets/UI/Audio/SpectrumAnalyzer.vue` est un fichier **WebRTC2**
+  dont les deux consommateurs WebRTC2 sont commentés, et dont **le seul consommateur vivant est la
+  v1** — `components/WebRTC/widgets/ui/AudioDefaultUserButtonUI.vue:13`, atteint par la route
+  `audio/:vertexId` via `AudioRoom/AudioComponent.vue`. C'est la direction inverse de celle que
+  [doc-rustines.md](doc-rustines.md) lot 1 enregistre (« la v1 est morte mais cinq composants
+  vivants l'importent ») : ici c'est **la v1 morte qui importe du v2 vivant**. À traiter avec la
+  suppression de `components/WebRTC/`, pas avant.
+
+  Les deux défauts, à corriger à ce moment-là ou à emporter avec le fichier :
+  - `startVisualizer` (l. 111-114) connecte les sources initiales **sans les enregistrer dans
+    `sourceMap`** : seules les sources ajoutées ensuite par `updateStreams` sont déconnectables ;
+  - l'usage commenté de `StreamSimpleUI.vue:24,54` est **faux, pas seulement désactivé** :
+    `v-bind="audioProps"` passe `{ streamData }` à un composant dont l'unique prop est
+    `streams: { type: Array, required: true }`. Le décommenter lèverait à `mounted()` sur
+    `streams.forEach`.
+
+  ℹ️ **Pourquoi il n'est pas testé** : `happy-dom` n'a pas d'`AudioContext` (ni `createAnalyser`,
+  ni `createMediaStreamSource`, ni `requestAnimationFrame` utilisable ici). Tout collaborateur
+  serait fabriqué à la main, et le test prouverait sa propre doublure.
+
+- [x] 🟠 **Un refus de permission caméra ne produit RIEN à l'écran** `[S]` — relevé le 29/08/2026 en
+  fermant la tâche 7 des tests, **fermé le 30/08/2026** (lot B de la tâche 8).
+
+  La moitié basse était faite : `useMediaBroadcast.getWebcamStream` / `getAudioStream` /
+  `startCapture` **rendent la promesse** de leur verbe `async`. La moitié UI l'est maintenant : les
+  trois démarrages de `GroupLocalStreamBtn` portent un `.catch` qui notifie par AWN. Le filet exigé
+  est là — `GroupLocalStreamBtn.test.js` (18 cas) puis `.permission.test.js` (9 cas), le cas
+  maître **vu rouge avant le correctif**.
+
+  **Trois décisions, à ne pas rouvrir sans les relire** :
+  - `inject('AWN', null)` **avec repli** sur `window.AWN`, sur le précédent de
+    `MediaBroadcastProvider.vue:39` et non celui de `CallRemotePeerBtn.vue:31`. ⚠️ Ce défaut `null`
+    n'évite **aucun plantage** — mesuré : un inject nu rend `undefined` et le repli marche pareil.
+    Il n'évite qu'un « injection "AWN" not found » de Vue sur un chemin où l'absence est normale
+    (les sous-apps de `usePeerMedia.js:118`). Le premier commentaire écrit ici affirmait un
+    plantage : c'était faux ;
+  - **le message porte `err.name`**, et `NotAllowedError` est distingué de `NotFoundError` : les
+    deux appellent des gestes **opposés** de l'utilisateur. Seul précédent du dépôt qui le faisait :
+    `callbacks/visioPlayerCallback.js:90`, dans la v1 — c'est ce que WebRTC2 avait perdu ;
+  - **silence sur `NotAllowedError` pour `startCapture` seulement.** `getDisplayMedia` rejette avec
+    la même erreur que l'utilisateur refuse la permission ou qu'il **ferme simplement le sélecteur
+    de partage** : indiscernables, et se raviser est un geste normal. Décision assumée.
+
+  **Non-objectifs, à ne pas croire oubliés** : aucun état réactif d'erreur, aucun `isLoading`. Le
+  panneau notifie, et s'arrête là.
+
+  ⚠️ **L'énoncé ci-dessus se trompait sur le mécanisme, et il faut le savoir avant de le citer.**
+  Ce n'était pas un « rejet non traité » au sens de Node : le handler appelait le verbe **sans
+  rendre** sa promesse, donc Vue ne la voyait jamais et `callWithAsyncErrorHandling` n'avait rien à
+  rattraper. Mesuré : ni `app.config.errorHandler`, ni `console.error`, ni
+  `process.on('unhandledRejection')` ne voyaient quoi que ce soit. Le symptôme décrit restait exact
+  — pas de toast, pas de changement d'état, un bouton mort — mais l'erreur disparaissait **sans la
+  moindre trace**, ce qui est pire. Et la propriété « le rejet s'échappe-t-il ? » est **intestable
+  à travers un espion** (`vi.fn().mockRejectedValue()` attache son propre handler et absorbe le
+  signal) : le cas qui la posait a été **supprimé, pas commenté**. Détail dans
+  [webrtc2-tests-plan.md](webrtc2-tests-plan.md), tâche 8.
 
 - [ ] 🟢 **Une remise à zéro en double dans `useCallManager`** `[S]` — mesuré le 29/08/2026 par
   contre-épreuve. `ctx.session.currentCallRoomId = null` (chemin `full` de `stopCallWithPeers`) est
