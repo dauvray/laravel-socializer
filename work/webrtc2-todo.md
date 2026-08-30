@@ -121,27 +121,13 @@ comme « le transport sait, laisse-le router ».
 > autres sites n'ont pas bougé une seule fois. Ce qui se recopie sans risque, c'est **le fichier et
 > la décision** ; le numéro de ligne se re-grep, toujours.
 
-- [ ] 🟠 **`topology: 'sfu'` est accepté aujourd'hui et produit un contexte MORT, en silence** `[S]`
-  — trouvé le 29/08/2026 en instruisant la question ci-dessus.
-
-  La valeur est annoncée comme supportée dans **trois docblocks**
-  (`MediaBroadcastProvider.vue:24`, `useMediaBroadcast.js:48`, `createPeerContext.js:76` :
-  « 'mesh' (pair à pair), 'star' (étoile) ou 'sfu' (serveur de diffusion) »). Passée pour de vrai :
-
-  - `useConnectionPool.syncUsersConnections` — `if (mesh)` … `else if (star && hubSlug)` … et
-    **pas d'`else`** : aucune connexion n'est ouverte vers personne ;
-  - `usePeerTransport.sendData` — traverse ses deux branches sans en prendre aucune : rien n'est
-    envoyé, et il n'y a pas de `console.warn` sur ce chemin ;
-  - `useBroadcastPresence` annonce dans le vide, puisque `sendData` n'envoie rien.
-
-  **Aucune ligne de log.** Un intégrateur qui suit la doc du composant obtient une room où personne
-  ne se connecte et où rien ne circule, sans un seul indice.
-
-  ⚠️ **C'est pire qu'une valeur non implémentée, et c'est ce qui menace la v2** : une future
-  intégration SFU partirait de la prémisse fausse « c'est déjà à moitié câblé ». Le correctif est
-  petit et il est le vrai geste « garder la porte ouverte » : **faire échouer bruyamment** —
-  `createPeerContext` refuse une topologie inconnue ou non implémentée, et le dit. Les trois
-  docblocks doivent alors nommer `'sfu'` comme **prévu, non implémenté**, pas comme une option.
+- [x] 🟠 **`topology: 'sfu'` produisait un contexte MORT, en silence** `[S]` — **fait le
+  30/08/2026**, avec un jumeau que l'énoncé ne nommait pas : `star` **sans** `hubSlug`, même
+  contexte mort, mêmes prédicats composés. `createPeerContext` lève désormais sur les deux, en
+  distinguant **réservée** d'**inconnue**. Le durable est dans
+  [`api.md § Topologies`](../docs/modules/webrtc2/api.md#topologies) — y compris la distinction que
+  la passe a dû écrire noir sur blanc : **`hubSlug` fourni n'est pas hub présent**, un hub absent
+  restant un état transitoire parfaitement légitime.
 
 ### Ce qui était réellement bloqué — plus rien depuis le 29/08/2026
 
@@ -917,6 +903,35 @@ extractions : c'est 18 lignes, sous un filet cinq fois plus dense.
 ---
 
 ## Observabilité
+
+- [ ] 🟠 **En star, un client dont le hub est absent n'a AUCUN signal à l'écran** `[S]` — relevé le
+  30/08/2026 en instruisant la garde de topologie, sur une question posée en revue.
+
+  Le comportement du module est correct et délibéré : le client ne compose pas un hub absent (aucun
+  POST, aucun jeton de cadence, aucun retry armé — épinglé par `useConnectionPool.test.js`), et le
+  tour de présence qui voit arriver le hub rétablit tout. **C'est l'UI qui manque, pas la logique.**
+
+  Le prédicat exact existe déjà et remonte jusqu'à l'UI : `isHubConnected`
+  (`createPeerContext.js`, exposé par `usePeerOrchestrator` puis `useMediaBroadcast`). **Son seul
+  lecteur est `Debug.vue`.** Pendant tout ce temps, chaque `sendData` du client jette son payload
+  avec un `console.warn` — pas de file, pas de retry — et l'utilisateur voit une room d'apparence
+  normale. Le geste est de câbler `isHubConnected` sur une UI d'attente, pas d'ajouter un état.
+
+  ⚠️ Ne surtout pas transformer ça en refus : `hubSlug` fourni n'est pas hub présent, et un hub
+  absent est un état transitoire légitime. La confusion entre les deux est écrite dans
+  [`api.md § Topologies`](../docs/modules/webrtc2/api.md#topologies).
+
+- [ ] 🟢 **En star, hub et client ouvrent CHACUN leur connexion sortante** `[S]` — deux
+  `RTCPeerConnection` par paire, une dans chaque sens, en fonctionnement nominal. C'est structurel :
+  les connexions **entrantes ne sont jamais enregistrées** dans le store (l'unique écrivain est le
+  chemin sortant de `usePeerConnections`), donc `hasOpenConnection` ne voit que son propre côté et
+  ne peut pas empêcher l'autre. Sans conséquence sur le routage — le client n'émet que sur sa
+  sortante vers le hub, le hub ne relaie que sur les siennes — le coût est en ressources.
+
+  **À décider, pas à corriger d'emblée** : le fait n'est aujourd'hui écrit **que dans un commentaire
+  de test** (`usePeerOrchestrator.broadcastPresence.test.js`), jamais asserté ni dans `docs/`. Sortie
+  C (l'épingler et l'assumer) ou A (dédoublonner), mais pas le laisser tacite — c'est lui qui oblige
+  déjà tout harnais star à semer une connexion sortante sous peine d'un test vert par vacuité.
 
 - [ ] **Logger centralisé** : remplacer les `console.log/warn/error` dispersés par un logger
   configuré par composable

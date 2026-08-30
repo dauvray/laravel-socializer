@@ -34,14 +34,16 @@ explicitement :
    > **avant**, en sortie D : pas d'extraction maintenant, déclencheur écrit (prochaine passe sur le
    > cycle de vie, ou 2000 lignes).
    >
-   > 👉 **Par quoi reprendre — deux choses, dans cet ordre :**
-   > 1. **Le 🟠 `topology: 'sfu'`** — valeur annoncée, acceptée, qui produit un contexte mort sans un
-   >    log. Petit, et c'est lui qui empêche la v2 de partir sur une prémisse fausse. ℹ️ Il a un
-   >    jumeau dans [doc-rustines.md](doc-rustines.md) (lot 1, « retirer `sfu` de `options.topology` »)
-   >    — une seule passe ferme les deux, et le volet doc y est déjà listé.
-   > 2. **La tâche 8 du plan de tests** — l'étage `Widgets/**`, 12 fichiers sur 15 sans aucun test.
-   >    Elle ne bloque rien, mais elle bloque désormais **un item nommé** : la moitié UI du refus de
-   >    permission caméra, qui vit dans un de ces composants.
+   > ✅ **Le 🟠 `topology: 'sfu'` est FAIT le 30/08** — et il a fermé son jumeau de
+   > [doc-rustines.md](doc-rustines.md) (lot 1) dans la même passe, comme annoncé. Il a aussi fermé
+   > un second contexte mort que son énoncé ne nommait pas, `star` **sans** `hubSlug` : mêmes
+   > prédicats composés, même silence. La passe a surtout trouvé que **trois tests épinglaient ces
+   > états morts comme s'ils étaient voulus** — tous verts, tous via des doubles, donc invisibles à
+   > une suite verte ; requalifiés, pas supprimés.
+   >
+   > 👉 **Par quoi reprendre : la tâche 8 du plan de tests** — l'étage `Widgets/**`, 12 fichiers sur
+   > 15 sans aucun test. Elle ne bloque rien, mais elle bloque désormais **un item nommé** : la
+   > moitié UI du refus de permission caméra, qui vit dans un de ces composants.
    >
    > ⚠️ **Rien de tout cela n'est livré** : le paquet n'a **aucun tag** et le `composer.lock` de
    > l'hôte épingle un commit du 29/05, plus de cent commits derrière. C'est le 🔴 restant de

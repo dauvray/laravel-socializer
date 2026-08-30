@@ -43,8 +43,8 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}, dep
         onAirRoom, // room dans laquelle le peer est actif (peut différer de currentRoom si on gère plusieurs rooms)
         currentCallRoomId, // roomId spécifique pour les appels audio/vidéo (différent de currentRoom qui est la room "logique")
         currentCallUsers, // liste des slugs des utilisateurs actuellement en appel avec moi (utile pour gérer les connexions et l'UI d'appel)
-        topology, // topologie de diffusion : 'mesh' (pair à pair), 'star' (étoile) ou 'sfu' (serveur de diffusion)
-        hubSlug, // slug du hub de diffusion
+        topology, // topologie de diffusion : 'mesh' (pair à pair) ou 'star' (étoile). 'sfu' est RÉSERVÉ, non implémenté : le passer lève à la construction du contexte
+        hubSlug, // slug du hub de diffusion — OBLIGATOIRE en 'star', son absence lève elle aussi
         isHub, // le peer est-il le hub de diffusion ?
         isHubConnected, // le hub de diffusion est-il présent dans la room.
 

@@ -63,7 +63,7 @@ Le `[L]` **gelé** de [webrtc2-todo.md](webrtc2-todo.md) — déplacer le routag
 
 ### Faisable en parallèle sans aucun risque
 
-Aucun de ces éléments n'est dans l'arbre WebRTC2 : `EventBus/webrtc2Events.js` (mort), `sfu`,
+Aucun de ces éléments n'est dans l'arbre WebRTC2 : `EventBus/webrtc2Events.js` (mort),
 `ACCESORS`, la casse de `Widgets/`, et les quatre zones mortes
 (`admin.php`, `console.php`, `table_names`, `SocializerUpgrade`).
 
@@ -165,12 +165,19 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
             est vide
       - [ ] Tests — `artisan route:list` et `artisan list` inchangés ; suite JS verte
 
-- [ ] **Retirer `sfu` de `options.topology`** · effort [S]
-      « **`sfu` est accepté** dans `options.topology` et **branché dans le fan-out** de
-      `syncUsersConnections`, **sans implémentation serveur** » — une option qui ne fait rien, mais
-      qu'un intégrateur peut passer en croyant l'activer.
-      Annotation : `docs/modules/webrtc2/api.md`
-      - [ ] Code — refuser la valeur, ou l'implémenter · - [ ] Doc · - [ ] Tests
+- [x] **Retirer `sfu` de `options.topology`** · effort [S] — **fermé le 30/08/2026, sortie A.**
+      La valeur est refusée à la construction (`createPeerContext` lève), et `sfu` reste nommé dans
+      la doc et le code comme **réservé, non implémenté** plutôt qu'effacé : le supprimer aurait
+      retiré au lecteur du code le seul signal que la question avait été instruite, alors que la
+      sortie D du 29/08 tient justement la porte ouverte pour une v2.
+      Annotation : `docs/modules/webrtc2/api.md` — **remplacée**, pas supprimée (sortie C sur le
+      volet doc : la ligne nomme le test qui épingle le refus).
+      - [x] Code — `IMPLEMENTED_TOPOLOGIES` / `RESERVED_TOPOLOGIES` + garde en tête de fabrique
+      - [x] Doc — `api.md` et `INDEX.md` (aucune autre couche ne citait `sfu` : ni le `CLAUDE.md`
+            du paquet, ni `core.blade.php`, donc **aucun `boost:update` requis**)
+      - [x] Tests — 5 cas neufs dans `createPeerContext.test.js`, rouges d'abord ; contre-épreuves
+            mesurées garde par garde (3 cas / 1 cas) ; 3 tests requalifiés qui épinglaient les
+            états morts comme voulus
 
 ## Lot 3 — Noms qui mentent · sortie A
 

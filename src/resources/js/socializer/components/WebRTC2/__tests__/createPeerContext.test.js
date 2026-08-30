@@ -104,6 +104,74 @@ describe('createPeerContext', () => {
             expect(ctx.media.videoContainer).toBe('#videoContainer')
         })
 
+        // ── Topologie refusée à la construction ───────────────────────────────
+        //
+        // Une topologie non implémentée traversait les SEPT sites de décision du
+        // module (`useConnectionPool`, `usePeerTransport`, `useBroadcastPresence`)
+        // sans prendre une seule branche : aucune connexion ouverte, aucune donnée
+        // envoyée, aucune ligne de log. Un intégrateur obtenait une room morte sans
+        // un seul indice.
+        //
+        // La garde LÈVE, elle n'avertit pas : la valeur vient d'une prop
+        // d'intégrateur (`MediaBroadcastProvider`, `type: Object` sans
+        // `validator`), c'est donc une erreur d'intégration — même nature que les
+        // deux seuls autres `throw` du module (`usePeerMedia`, conteneur DOM
+        // absent ; `LocalMediaPlayer`, provider parent manquant). Les
+        // `console.warn` du module sont réservés aux DONNÉES d'exécution.
+        //
+        // Les cas passants sont deux tests plus haut : « propage les options de
+        // session et de média » (star + hubSlug) et « retombe sur mesh […] sans
+        // options ». Ils ne sont pas redoublés ici.
+        //
+        // Contre-épreuve mesurée (30/08/2026), les DEUX gardes neutralisées
+        // SÉPARÉMENT — elles sont indépendantes, les neutraliser ensemble
+        // masquerait que l'une porte trois cas et l'autre un seul :
+        //   • garde de topologie neutralisée  ⇒ 3 cas rougissent (sfu, inconnue, contextId)
+        //   • garde star-sans-hubSlug         ⇒ 1 cas
+        // Dans les deux passes, le reste de la suite (1284 cas) reste vert : aucun
+        // test ne s'appuyait sur la possibilité de construire un contexte mort.
+        //
+        // ⚠️ Le dernier cas — « laisse passer une topologie falsy » — est vert des
+        // DEUX côtés par construction, et c'est voulu : il n'épingle pas la garde,
+        // il épingle l'ORDRE entre le repli et la garde. Sa contre-épreuve à lui
+        // est d'inverser les deux lignes dans la fabrique, pas de les neutraliser.
+        describe('topologie refusée à la construction', () => {
+            it("refuse 'sfu' en la nommant RÉSERVÉE, pas inconnue", () => {
+                expect(() => mountContext({ options: { topology: 'sfu' } }))
+                    .toThrow(/topologie 'sfu' réservée, non implémentée/)
+            })
+
+            it('refuse une topologie inconnue en listant les valeurs acceptées', () => {
+                expect(() => mountContext({ options: { topology: 'p2p' } }))
+                    .toThrow(/topologie 'p2p' inconnue.*mesh, star/)
+            })
+
+            // Le message nomme le contexte : un intégrateur qui monte plusieurs
+            // providers doit savoir LEQUEL a refusé.
+            it('nomme le contextId dans le message', () => {
+                expect(() => mountContext({ type: 'stream', room: 'live', options: { topology: 'sfu' } }))
+                    .toThrow(/createPeerContext\(stream-live\)/)
+            })
+
+            // Même contexte mort, autre porte : les prédicats de
+            // `_doSyncUsersConnections` et de `sendData` sont COMPOSÉS (`star` ET
+            // `hubSlug`). Un star sans hub les traverse tous les deux sans rien
+            // ouvrir ni rien envoyer.
+            it("refuse 'star' sans hubSlug, qui produit le même contexte mort", () => {
+                expect(() => mountContext({ options: { topology: 'star' } }))
+                    .toThrow(/topologie 'star' sans 'hubSlug'/)
+            })
+
+            // ⚠️ Pin d'ORDRE, pas de valeur : le repli falsy `|| 'mesh'` doit être
+            // évalué AVANT la garde. Inversé, il ferait lever un appel parfaitement
+            // légitime — celui que l'arbitrage de l'en-tête du fichier de production
+            // a justement voulu rendre possible (`options = {}` par défaut).
+            it('laisse passer une topologie falsy, que le repli ramène à mesh', () => {
+                expect(mountContext({ options: { topology: '' } }).topology.value).toBe('mesh')
+                expect(mountContext({ options: { topology: null } }).topology.value).toBe('mesh')
+            })
+        })
+
         it('crée la file de signaux de la room au montage', () => {
             const ctx = mountContext({ type: 'data', room: 'app' })
 

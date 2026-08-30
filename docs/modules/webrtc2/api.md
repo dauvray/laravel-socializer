@@ -240,5 +240,17 @@ dimensionné casserait le join — c'est le même piège côté serveur, voir
 - **star** — un hub relaie les messages data via `forwardStarMessage`. Grandes rooms. Le hub lit les
   payloads en clair : c'est ce qui rend la modération possible, et c'est un choix assumé — voir
   [securite.md](securite.md).
-- `sfu` est accepté dans `options.topology` et branché dans le fan-out de `syncUsersConnections`,
-  sans implémentation serveur.
+Toute autre valeur est **refusée à la construction** : `createPeerContext` lève, en distinguant une
+topologie **réservée** (`sfu` — prévue, non implémentée) d'une valeur **inconnue**. Même refus pour
+`star` sans `hubSlug`, qui produisait le même contexte mort. Épinglé par `createPeerContext.test.js`
+(« topologie refusée à la construction »).
+
+⚠️ **`hubSlug` fourni n'est pas hub présent.** Un hub absent de la room est un état transitoire
+normal : le client ne le compose pas, sans rien tenter ni journaliser, et le tour de présence qui
+voit arriver le hub rétablit la connexion. Ce qui est refusé ci-dessus, c'est l'absence de la
+*désignation* — sans elle, les prédicats de `useConnectionPool` et `usePeerTransport`, qui sont
+composés, sont faux pour toujours.
+
+Ce qui tient la porte ouverte pour un futur SFU n'est pas une valeur acceptée mais la couture
+recensée dans [`work/webrtc2-todo.md`](../../../work/webrtc2-todo.md) : un SFU est « star dont le hub
+est un serveur », donc une troisième branche aux sept mêmes sites de décision.

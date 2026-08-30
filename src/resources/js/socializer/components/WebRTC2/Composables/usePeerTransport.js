@@ -1871,7 +1871,8 @@ export function usePeerTransport(ctx) {
     //   STAR hub    : envoi direct aux destinataires (le hub a une connexion avec tout le monde)
     //   STAR client : envoi au hub dans une "enveloppe" → le hub se chargera de retransmettre
     //
-    //   SFU : non géré ici (le serveur SFU fait le routage lui-même)
+    //   SFU : RÉSERVÉ, non implémenté — refusé à la construction du contexte, donc
+    //         aucune valeur n'atteint la fin de cette fonction sans branche.
     // ─────────────────────────────────────────────────────────────────────────────
     const sendData = (data, destUserSlugs = null) => {
 

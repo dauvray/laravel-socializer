@@ -279,6 +279,33 @@ export const ASK_PEER_MAX_REQUESTS_PER_WINDOW = 3
  */
 export const VALID_CONNECTION_TYPES = new Set(['data', 'stream', 'screen', 'visio', 'vocal'])
 
+// ─── Topologies de diffusion ───────────────────────────────────────────────
+/**
+ * Topologies réellement implémentées — les seules que `createPeerContext` accepte.
+ *
+ * ⚠️ Cet ensemble est la contrepartie d'un fait structurel : la topologie est lue à
+ * SEPT endroits, dans trois fichiers seulement (`useConnectionPool`,
+ * `usePeerTransport`, `useBroadcastPresence` — le relevé se refait au `grep -rn
+ * topology`, jamais en recopiant des numéros de ligne), et **tous ces prédicats sont
+ * composés**, aucun n'a de branche par défaut. Une valeur absente d'ici les traverse
+ * donc tous sans en prendre un seul : ni connexion ouverte, ni donnée envoyée, ni
+ * ligne de log. Ajouter une valeur ici sans câbler ces sept sites recrée exactement
+ * ce contexte mort — l'ensemble n'est pas une déclaration d'intention, c'est un
+ * contrat.
+ */
+export const IMPLEMENTED_TOPOLOGIES = new Set(['mesh', 'star'])
+
+/**
+ * Topologies RÉSERVÉES : annoncées comme direction, refusées aujourd'hui.
+ *
+ * Distinguées des valeurs inconnues pour que le message d'erreur dise « pas encore »
+ * plutôt que « faute de frappe » — les deux appellent des gestes opposés chez celui
+ * qui le lit. Ce qui tient la porte ouverte pour un futur SFU n'est pas une valeur
+ * acceptée mais la couture recensée dans `work/webrtc2-todo.md` : un SFU est « star
+ * dont le hub est un serveur », donc une troisième branche à ces mêmes sept sites.
+ */
+export const RESERVED_TOPOLOGIES = new Set(['sfu'])
+
 // ─── Validation des slugs ──────────────────────────────────────────────────
 /**
  * Format autorisé pour un slug utilisateur : alphanumérique + `_ - .`, de 1 à 100

@@ -29,7 +29,7 @@ import { createCallStateMachine } from '~socializer/components/WebRTC2/Composabl
 import { isValidSlug } from '~socializer/components/WebRTC2/Composables/utils/validators.js'
 import { isPayloadWithinLimit } from '~socializer/components/WebRTC2/Composables/utils/payloadSize.js'
 import { sanitizeMetadataType } from '~socializer/components/WebRTC2/Composables/utils/sanitizeMetadata.js'
-import { ME_READY_TIMEOUT_MS, PRESENCE_SYNC_TIMEOUT_MS } from '~socializer/components/WebRTC2/webrtc2.config.js'
+import { ME_READY_TIMEOUT_MS, PRESENCE_SYNC_TIMEOUT_MS, IMPLEMENTED_TOPOLOGIES, RESERVED_TOPOLOGIES } from '~socializer/components/WebRTC2/webrtc2.config.js'
 
 // `options = {}` par défaut : `options.topology` / `options.hubSlug` /
 // `options.videoContainer` étaient lus SANS optional chaining alors que
@@ -40,6 +40,51 @@ import { ME_READY_TIMEOUT_MS, PRESENCE_SYNC_TIMEOUT_MS } from '~socializer/compo
 export function createPeerContext({ type, room, options = {} }) {
 
     const contextId = `${type}-${room}`
+
+    // ── GARDE DE TOPOLOGIE — avant toute construction ───────────────────────────
+    //
+    // Placée ici, et pas plus bas : rien ne doit avoir été construit quand on lève —
+    // ni la FSM d'appel, ni l'injection du bus, ni les stores. Le repli falsy est
+    // évalué AVANT la garde, sinon `createPeerContext({ type, room })` lèverait, ce
+    // que l'arbitrage ci-dessus a précisément voulu rendre possible.
+    //
+    // Pourquoi lever, alors que le module `console.warn` partout ailleurs : les warns
+    // gardent des DONNÉES d'exécution (payload d'un pair distant, ICE illisible), qui
+    // arrivent en vol et dont on se remet. Une topologie est une prop d'intégrateur,
+    // fixée à la construction et jamais réécrite — c'est une erreur d'INTÉGRATION,
+    // du même genre que les deux seuls autres `throw` du module (`usePeerMedia`,
+    // conteneur DOM absent ; `LocalMediaPlayer`, provider parent manquant).
+    //
+    // Ce qu'on refuse est un contexte MORT : les sept sites de décision de la
+    // topologie ont tous des prédicats composés et aucune branche par défaut, donc
+    // une valeur non implémentée n'ouvrait aucune connexion, n'envoyait rien, et ne
+    // journalisait pas une ligne. L'échec arrive désormais au point de la cause.
+    const topology = options.topology || 'mesh'
+    const hubSlug = options.hubSlug || null
+
+    if (!IMPLEMENTED_TOPOLOGIES.has(topology)) {
+        const qualificatif = RESERVED_TOPOLOGIES.has(topology)
+            ? 'réservée, non implémentée'
+            : 'inconnue'
+
+        throw new Error(
+            `[WebRTC2] createPeerContext(${contextId}) : topologie '${topology}' ${qualificatif}. `
+            + `Topologies acceptées : ${[...IMPLEMENTED_TOPOLOGIES].join(', ')}.`
+        )
+    }
+
+    // ⚠️ `hubSlug` FOURNI n'est pas hub PRÉSENT. Un hub absent de la room est un état
+    // transitoire légitime, que le tour de présence suivant répare (et que
+    // `useConnectionPool.test.js` épingle : « un client ne compose pas un hub absent
+    // de la room »). Ce qui est refusé ici, c'est l'absence de la CHAÎNE elle-même —
+    // sans elle, les prédicats composés (`_doSyncUsersConnections` et `sendData`,
+    // tous deux en `star && hubSlug`) sont faux pour toujours : le contexte est mort-né.
+    if (topology === 'star' && !hubSlug) {
+        throw new Error(
+            `[WebRTC2] createPeerContext(${contextId}) : topologie 'star' sans 'hubSlug' — `
+            + `aucune connexion ne serait ouverte ni aucune donnée envoyée.`
+        )
+    }
 
     // MACHINE D'ÉTAT D'APPEL
     // Remplace les trois flags éparpillés : callInprogress, isStoppingCall, closingUsers.
@@ -73,8 +118,8 @@ export function createPeerContext({ type, room, options = {} }) {
         // Registre de sécurité, à propriétaire unique (useCallManager) — voir les
         // accesseurs plus bas pour la raison d'être distincte de `currentCallUsers`.
         authorizedCallPeers: new Map(),
-        topology: options.topology || 'mesh', // topologie de diffusion : 'mesh' (pair à pair), 'star' (étoile) ou 'sfu' (serveur de diffusion)
-        hubSlug: options.hubSlug || null, // slug du hub de diffusion (si utilisé)
+        topology, // topologie de diffusion : 'mesh' (pair à pair) ou 'star' (étoile) — validée par la garde en tête de fabrique
+        hubSlug, // slug du hub de diffusion (obligatoire en 'star', null en 'mesh')
         isHub: null, // le peer est-il le hub de diffusion ? (si hubSlug fourni)
     })
 

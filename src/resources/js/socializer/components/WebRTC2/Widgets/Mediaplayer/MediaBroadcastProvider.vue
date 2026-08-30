@@ -21,8 +21,10 @@
         callbacks: { type: Object, default: null },
         // options de configuration pour la diffusion
         options: { type: Object, default: () => ({
-            topology: 'mesh', // topologie de diffusion : 'mesh' (pair à pair), 'star' (étoile) ou 'sfu' (serveur de diffusion)
-            hubSlug: null, // slug du hub de diffusion (si topologie 'star', qui joue le role de centralisateur des connexions)
+            // ⚠️ Ce `default` est remplacé EN BLOC dès qu'on passe un objet : `:options="{ hubSlug: 'x' }"`
+            // ne fusionne pas, il fait disparaître `topology`, qui retombe alors sur 'mesh' côté fabrique.
+            topology: 'mesh', // topologie de diffusion : 'mesh' (pair à pair) ou 'star' (étoile). 'sfu' est RÉSERVÉ, non implémenté : le passer lève à la construction du contexte
+            hubSlug: null, // slug du hub de diffusion (centralisateur des connexions) — OBLIGATOIRE en 'star', son absence lève
             videoContainer: '#videoContainer', // conteneur HTML pour l'affichage des flux vidéo
         })},
     })

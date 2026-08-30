@@ -245,6 +245,18 @@ describe('usePeerTransport — sendData en topologie star', () => {
         // le meilleur contrôle du fichier : neutraliser le conjoint `&& ctx.hubSlug.value`
         // fait entrer dans la branche client, qui cherche une connexion vers `null`, n'en
         // trouve pas, et loggue — les deux cas rougissent alors sur « aucun warn ».
+        //
+        // ⚠️ Ces deux cas n'épinglent PAS un état atteignable en production : depuis le
+        // 30/08/2026, `createPeerContext` lève sur `star` sans `hubSlug` — le contexte
+        // était mort-né (les prédicats de `_doSyncUsersConnections` et de `sendData` sont
+        // composés, donc faux pour toujours) et il produisait ce silence-là, sans un log.
+        // Ce qu'ils gardent, c'est le CONJOINT du prédicat de cette couche, qu'un double
+        // peut encore mettre en défaut ; la porte, elle, est fermée à la construction —
+        // `createPeerContext.test.js`, « topologie refusée à la construction ».
+        //
+        // ⚠️ Et surtout : à ne pas confondre avec un `hubSlug` FOURNI dont le hub est
+        // absent de la room, qui est un état transitoire parfaitement légitime — voir
+        // `useConnectionPool.test.js`, « un client ne compose pas un hub absent ».
 
         it('sort en silence côté client — aucun envoi, aucun avertissement', () => {
             const carolSend = addOpenConn('carol')

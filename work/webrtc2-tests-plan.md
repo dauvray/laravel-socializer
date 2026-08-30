@@ -40,7 +40,7 @@ et le seul étage où les incendies du paquet étaient détectables). Le harnais
 | Store — `peers2Store` : runtime, observabilité, `remotePeerId`, **phase du Peer**, **registre des contextes** | ✅ | — |
 | Composables d'UI — `useAwaitedStreams`, `useBroadcastPresence` | ✅ | — |
 | Tâche 8 · **Composants** `Widgets/**` — 15 fichiers, **3** couverts (`MediaBroadcastPlayer`, `useAwaitedStreams`, `Debug`) | **ouverte** | 12 sans aucun test, dont 10 des 12 composants `.vue` ; c'est l'étage d'où venait le dernier 🔴. `Debug` n'est couvert que sur son bloc de corroboration d'identité (29/08) |
-| Scénarios — smoke, `lateJoiner`, `broadcastLifecycle`, `peerDeparture`, `multiContext`, `incomingMappingInvariant`, `outgoingAuth`, `incomingSpoof` | ✅ | — |
+| Scénarios — smoke, `lateJoiner`, `broadcastLifecycle`, `peerDeparture`, `multiContext`, `incomingMappingInvariant`, `outgoingAuth`, `incomingSpoof` | 🟠 | **aucun scénario n'utilise la topologie star** (`grep topology scenarios/` : zéro) — `lateJoiner` est intégralement mesh. La transition **« hub absent → hub présent »** n'est donc épinglée à aucun étage : ni en unitaire, ni bout en bout. Relevé le 30/08/2026 |
 | Perte de connexion → re-composition — `scenarios/peerDeparture` (« A recharge en chevauchement »), `useConnectionPool`, `createPeerContext` | ✅ | — |
 | Hors WebRTC2 — `Chat/dateSeparatorRender`, `System/useReverbChannel` (dont le désabonnement de whisper par callback), `User/coverCallButton` | amorces | plan Chat : [chat-tests-plan.md](chat-tests-plan.md) |
 

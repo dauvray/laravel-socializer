@@ -82,7 +82,10 @@ Hors du dossier mais indissociables :
 - **mesh** — connexions pair-à-pair directes entre tous les membres, jusqu'à `MAX_PEERS_PER_ROOM`.
   Visio, vocal, petits salons.
 - **star** — un hub relaie les messages data via `forwardStarMessage`. Rooms nombreuses. Le hub voit
-  les payloads en clair, et c'est délibéré : [securite.md](securite.md).
+  les payloads en clair, et c'est délibéré : [securite.md](securite.md). `hubSlug` y est obligatoire.
+
+**Il n'y en a que deux, et toute autre valeur est refusée à la construction** — `sfu` compris, qui
+est réservé mais non implémenté. Le détail du refus est dans [api.md](api.md#topologies).
 
 ---
 

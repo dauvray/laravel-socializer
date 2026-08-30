@@ -440,7 +440,7 @@ export function useConnectionPool(ctx, { core, connections }) {
         //
         // Le garde porte sur le BLOC, pas sur la seule branche fautive : la règle est
         // « pas d'observation, pas d'émission », et elle ne doit pas dépendre du fait que
-        // mesh / hub / sfu itèrent aujourd'hui `newUsers`, vide ici par construction. Le
+        // mesh et hub itèrent aujourd'hui `newUsers`, vide ici par construction. Le
         // jour où l'une d'elles itérera `remotePeers` — comme le fait déjà
         // `startWebcamStream` — la protection incidente disparaîtrait sans un mot.
         //
@@ -558,7 +558,11 @@ export function useConnectionPool(ctx, { core, connections }) {
                 })
             }
         }
-        // SFU: pas de maillage pair à pair côté client.
+        // Aucun `else`, et c'est délibéré : toute autre valeur est refusée à la
+        // construction par `createPeerContext`, qui lève. Ce qui manque ici n'est donc
+        // pas une branche, c'est un cas qui ne peut plus se produire — épinglé par
+        // `useConnectionPool.test.js` (« le pool n'a pas d'else, la porte est fermée
+        // un étage plus haut ») et par `createPeerContext.test.js`.
     }
 
     /**

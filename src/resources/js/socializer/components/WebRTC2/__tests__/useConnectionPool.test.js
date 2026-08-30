@@ -918,7 +918,18 @@ describe('useConnectionPool', () => {
             expect(core.requestRemotePeerConnection).toHaveBeenCalledWith('alice', ctx.session.currentType)
         })
 
-        it('sfu : aucune connexion pair-à-pair côté client', async () => {
+        // Le pool n'a PAS d'`else` après ses deux branches, et ce cas épingle que c'est
+        // délibéré — pas que 'sfu' serait un mode supporté. La porte est fermée un étage
+        // plus haut : `createPeerContext` lève sur toute topologie non implémentée
+        // (`createPeerContext.test.js`, « topologie refusée à la construction »), donc
+        // aucun contexte de PRODUCTION ne peut plus arriver ici avec cette valeur.
+        //
+        // Ce qui est encore gardé ici, et pourquoi le cas reste : un DOUBLE peut poser
+        // n'importe quelle topologie, `ctx.session` étant `reactive` et ce fichier
+        // l'écrivant directement. Le jour où une valeur serait ajoutée à
+        // `IMPLEMENTED_TOPOLOGIES` sans câbler ce fan-out, la seule protection serait de
+        // relire ces lignes — d'où la défense en profondeur, qui ne coûte rien.
+        it("topologie non câblée : le fan-out n'ouvre rien, faute d'else", async () => {
             ctx.session.topology = 'sfu'
             connections.getRoomUsersDiff.mockResolvedValue({
                 newUsers: [{ slug: 'alice' }],
