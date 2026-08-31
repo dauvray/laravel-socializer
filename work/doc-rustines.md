@@ -194,10 +194,27 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
         Vitest : un fichier que plus rien n'importe n'entre dans aucune suite. C'est `npm run build`.
 
       - [ ] **A. Poser le filet — zéro changement de comportement** `[S]`
-            - [ ] A1 — test de `AlertComponent` + les deux alertes : montage selon `options.type`,
-                  clic Accepter / Refuser → `response-alert(slug, options, bool)` reçu par
-                  `Notifications`. **Rouge attendu sur la branche vocale** (voir B1) : c'est le bon
-                  signe, pas un échec de harnais
+            - [x] A1 — **fait le 31/08/2026. Deux fichiers, 21 cas, dont 4 ROUGES que B1 doit
+                  refermer sans toucher une ligne de test** :
+                  `System/__tests__/AlertComponent.test.js` (12 cas, 3 rouges — la branche vocale
+                  et l'énumération du vocabulaire) et `System/__tests__/Notifications.alerts.test.js`
+                  (9 cas, 1 rouge — le symptôme utilisateur, à l'altitude où c'en est un).
+                  Chaque rouge est précédé d'un garde-fou de présence : le message est « le verbe
+                  n'est pas atteint », jamais « bouton introuvable ».
+                  **Trois acquis qui servent aux lots suivants :**
+                  · **le lot C n'aura AUCUNE ligne de test à modifier** — les deux fichiers
+                  n'importent que `AlertComponent` et atteignent les alertes par leur `name` et
+                  leur titre rendu, deux identités qu'un `git mv` ne touche pas. Sa preuve
+                  annoncée (« sans autre modification que le chemin d'import ») est donc plus
+                  forte : seuls les deux `defineAsyncComponent` d'`AlertComponent.vue` changent.
+                  · **le second fichier est justifié par la mesure, pas par le rangement** : les
+                  huit contrôles de couture de `Notifications.vue` rougissent là-bas et **0 cas**
+                  des trois autres fichiers. `.AlertToUser` et `onResponseAlert` n'étaient
+                  couverts nulle part.
+                  · **`flushPromises` n'est pas un substitut de `dynamicImportSettled`, et la
+                  profondeur de la chaîne de modules décide** : au fichier unitaire (un niveau
+                  d'asynchrone) il passe, au fichier de couture (deux niveaux) il laisse 2 cas
+                  rouges. Mesuré des deux côtés, écrit dans les deux docblocks — ne pas re-mesurer.
             - [ ] A2 — établir pour Application / Whiteboard / ClassRoom si `users` est **remplacé**
                   ou **muté en place**, et l'écrire ici. Conditionne D : muté en place ⇒ l'appelant
                   passe une copie, le provider ne bouge pas
@@ -209,7 +226,26 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
             - [ ] B2 — `pickedUp` n'est jamais mis à `true` et le `setTimeout` n'est pas annulé au
                   `beforeUnmount` (seul l'`interval` l'est), dans les **deux** alertes : le timer
                   d'auto-refus survit au démontage. Test rouge d'abord — « accepter à 5 s n'émet pas
-                  de refus à 10 s »
+                  de refus à 10 s ». ⚠️ Le harnais de A1 tourne sous timers RÉELS et l'assume par
+                  une borne écrite dans ses deux docblocks (1,0 s et 1,1 s) : B2 est le premier à
+                  avoir besoin de faux timers, donc d'un troisième harnais — `describe` local ou
+                  fichier dédié, à trancher par la mesure à ce moment-là
+            - [ ] B3 — 🟢 **rien ne garde `mappingComponents[action][type]`** (`AlertComponent.vue:51`,
+                  double déréférencement) : un `action` inconnu **lève** au `created()`, un `type`
+                  hors `{vocal, visio}` rend silencieusement un écran vide. Relevé en écrivant A1,
+                  **délibérément non testé là-bas** : le garde existe une couche plus haut et il est
+                  déjà épinglé côté PHP (`/send-alert-to-user` exige
+                  `options.action ∈ VALID_INVITE_ACTIONS`, et `ValidationTest` nomme ce
+                  déréférencement). Un cas JS aurait été soit un rouge qu'aucun lot ne referme, soit
+                  un constat demandant au code de ne jamais être durci. Le `type` inatteignable par
+                  les deux alertes est, lui, **couvert** par A1 (cas « n'affiche rien, et ne lève
+                  pas »). Décider : garde + repli, ou sortie D datée
+            - [ ] B4 — 🟢 **`notificationComponent` est un `ref` qui porte un composant**
+                  (`Notifications.vue:68`) : Vue le journalise à chaque montage réel d'alerte
+                  (« Vue received a Component that was made a reactive object », `markRaw` /
+                  `shallowRef` attendus). Vu pour la première fois en montant l'alerte pour de vrai
+                  en A1 — donc présent en production, pas un artefact de test. Une ligne à changer,
+                  aucun comportement
       - [ ] **C. Déplacer les deux alertes** `[S]` — `git mv` vers `WebRTC2/Widgets/UI/Alerts/` + les
             deux `defineAsyncComponent` d'`AlertComponent`. Elles sont v1 **par leur chemin, pas par
             leurs dépendances** : elles n'importent que `IconWidget` et leur consommateur est déjà
