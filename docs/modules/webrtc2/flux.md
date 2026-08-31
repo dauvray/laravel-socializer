@@ -346,6 +346,43 @@ PeerJS avec les `GET /app` de nginx pour les distinguer.
 
 ---
 
+## Couper son micro ou sa caméra, et le dire aux autres
+
+Le seul protocole **applicatif** des Widgets — tout le reste du datachannel est de l'infra. Il
+n'a ni fichier de constantes ni table de routage : deux chaînes littérales, écrites une fois à
+l'émission et une fois à la réception.
+
+| Étape | Où | Ce qui se passe |
+|---|---|---|
+| 1 | `GroupLocalStreamBtn.onToggleAudioMute` | `api.toggleAudioMute()` **puis** `api.sendData({ roomId, type: 'AUDIO_MUTE_TOGGLE', isMuted })` — l'ordre est load-bearing : l'annonce doit porter l'état d'**après** la bascule |
+| 2 | `usePeerTransport.sendData` | diffusion à toute la room (mesh), ou encapsulation `__starRoute` et retransmission par le hub (star) |
+| 3 | wrap `onDataReceived` de l'orchestrateur | ni le routage star ni `BROADCAST_STATE` ne le consomment : il remonte à l'app, avec sa `conn` |
+| 4 | `StreamSimpleUI.handleStreamData` | `dispatchSignal({ roomId: conn.peer, payload: data })` — la clé de file est le **peerId de la connexion** |
+| 5 | `useRemotePeerState` | `getLastRoomSignal(metadata.peerId)` → `muted` / `videoActive` |
+| 6 | `MediaBroadcastPlayer` | `muted` rend **une icône** et rien d'autre ; `videoActive` faux fait basculer tout le player de la branche `<video>` vers la branche `<audio>` |
+
+Deux choses que cette chaîne **ne fait pas**, et qu'on lui prête volontiers :
+
+- **`muted` ne coupe aucun son.** C'est une information affichée. Le mute réel est chez
+  l'émetteur (`track.enabled` dans `usePeerOrchestrator.toggleAudioState`) ; recâbler le
+  `<video>` du récepteur sur cette prop rendrait un pair en sourdine inaudible pour tout le
+  monde, ce qu'aucune annonce ne demande.
+- **le `roomId` porté par la charge n'est lu par personne.** Le routage se fait sur la clé
+  d'enveloppe, donc sur `conn.peer`. Le champ est émis, il ne sert à rien à l'arrivée.
+
+Les deux bornes de la boucle — elle n'existe que sur le chemin `mode='stream'`, et un flux sans
+`peerId` est sourd — sont dans
+[architecture.md § Le joint de la projection d'état Widget](architecture.md#le-joint-de-la-projection-détat-widget).
+
+### Où ça casse — causes racines déjà vues
+
+| Symptôme | Cause racine | Correctif |
+|---|---|---|
+| Un pair qui avait coupé son micro **avant** que son flux n'arrive s'affiche micro ouvert | le datachannel s'ouvre avant le flux média, et le montage de la vignette **est** l'arrivée du flux : l'annonce attendait en file, et le `watch` n'était pas `immediate` | `{ immediate: true }` — qui reprend le dernier **signal**, pas l'état : micro puis caméra coupés avant l'arrivée ne restituent que la caméra |
+| Toutes les vignettes de partage d'écran basculent ensemble | sans `peerId`, la lecture retombait sur la clé `"undefined"` — exactement celle qu'écrit un dispatch sans connexion : une file poubelle commune à tous les écrans partagés | garde `!peerId` dans le `computed` ; la surdité d'un écran est voulue |
+
+---
+
 ## Départ d'un pair
 
 Deux transports, une seule séquence. Voir

@@ -38,7 +38,14 @@
  *    - `{ roomId: '<peerId PeerJS>', payload: { type, ... } }` — signaux datachannel
  *      des Widgets (AUDIO_MUTE_TOGGLE…), consommés par
  *      Widgets/Mediaplayer/Composables/useRemotePeerState.js. Ce sont des projections
- *      d'état où « dernière valeur gagne » est correct : elles restent hors de ce routage.
+ *      d'état : elles restent hors de ce routage.
+ *
+ * ⚠️ « Dernière valeur gagne » est vrai PAR CLÉ DE FILE, et la clé de ces projections est
+ *    le peerId — pas le type. Les deux pistes d'un même pair partagent donc un seul
+ *    emplacement : un AUDIO_MUTE_TOGGLE suivi d'un VIDEO_ACTIVE_TOGGLE dans le MÊME tick
+ *    perd le premier. Mesuré, et épinglé comme statu quo par un cas de
+ *    `__tests__/useRemotePeerState.test.js` — ce cas rougira le jour où la file sera
+ *    drainée par type, et se supprimera avec ce correctif-là.
  *
  * ⚠️ La consommation reste « dernier signal de la room » (ctx.lastRoomSignal), pas un
  *    drain de la file : deux signaux dispatchés dans le même tick n'en déclenchent

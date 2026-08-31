@@ -251,6 +251,20 @@ verbe demanderait de monter `Notifications.vue`, et le scénario ne parlerait pl
   `usePeerConnections` n'enregistre plus de hook depuis l'extraction de `useSignalingQueue` : lui
   aussi s'appelle directement. `createPeerContext` exige `withSetup` avec
   `provides: { eventBus: mockEventBus() }` (`inject`, `onBeforeMount`, `onUnmounted`).
+- **Semer une file de signaux passe par l'action `dispatchSignal`, jamais par une écriture directe
+  dans `signalQueues`.** C'est l'unique écrivain en production, et lui seul pose l'enveloppe (`ts`,
+  `seq`, plafond à 10 par file) : écrire la map à la main laisse le test inventer une forme que la
+  production n'écrit jamais.
+  - **Un `computed` au-dessus d'un getter Pinia paramétré est réactif y compris à la CRÉATION de
+    la clé** : un watcher posé sur `getLastRoomSignal('peer-a')` alors que la file n'existe pas
+    encore se déclenche au premier dispatch. Ne pas pré-créer la file « pour être sûr » — ça
+    masquerait une régression de réactivité.
+  - **Un seul `await nextTick()`** entre le dispatch et l'assertion. Si un cas en réclame deux,
+    c'est un signal à instruire, pas un tick à ajouter.
+  - ⚠️ **Deux dispatch sans tick entre eux ne réveillent le watcher qu'UNE fois**, avec le second :
+    la première annonce est perdue. Tout cas multi-signaux doit donc intercaler un tick — sauf
+    celui qui vise cette coalescence, et il doit dire pourquoi il ne le fait pas. Un cas écrit sans
+    ce tick est vert ou rouge pour la mauvaise raison ; c'est arrivé en écrivant le fichier.
 - **`createPeerContext` se teste avec les VRAIS stores Pinia**, pas avec des `vi.mock`. `peers2`, `me`
   et `server` sont des stores d'options **sans effet de bord à l'instanciation**, `setup.js` pose déjà
   une Pinia fraîche avant chaque test, et on couvre au passage la vraie intégration store ↔ contexte
@@ -410,11 +424,42 @@ Sans décompte, parce qu'il pourrit : l'état exact se lit dans
   sien avant — il faut neutraliser les deux.
 - `Widgets/**` — l'**étage de présentation**, couvert en partie depuis le 30/08/2026 : les trois
   boutons de flux local, le traitement du refus de permission média, et le contrat DOM de la
-  vignette d'attente. Restent le provider, les deux players et les deux boutons d'appel.
+  vignette d'attente. La **boucle des toggles** l'a rejoint le 31/08/2026, en trois fichiers dont
+  la séparation est une mesure : `useRemotePeerState.test.js` (le protocole, sans rendu),
+  `RemoteMediaPlayer.test.js` (l'adaptateur, avec le player réel) et
+  `StreamSimpleUI.toggles.test.js` (le **joint** `conn.peer`). Casser l'un des deux bouts du joint
+  ne rougit **que** le troisième — mesuré à 0 sur les deux autres : c'est ce qui prouve qu'aucun
+  n'est le doublon d'un autre. Restent le provider, `LocalMediaPlayer`, `useMediaControls` et les
+  deux boutons d'appel.
 
 ---
 
-## Tester un composant : trois faits mesurés
+## Tester un composant : cinq faits mesurés
+
+### ⚠️ Les `directives` passées en `global` sont INERTES
+
+Plusieurs fichiers passent `directives: { resize: noop, draggable: noop }` en croyant neutraliser
+`v-resize` / `v-draggable`. **Ils ne neutralisent rien.** `MediaBroadcastPlayer` fait
+`const vResize = resizeDirective` dans son `<script setup>` : le compilateur résout la directive
+en **binding de setup** et n'émet aucun `resolveDirective`, donc l'enregistrement global n'est
+jamais consulté. Les vraies directives tournent, dans ces fichiers comme dans les autres — elles
+sont inoffensives parce que `resizable` et `draggable` valent `false` par défaut et sortent en
+early-return, pas parce qu'on les aurait remplacées.
+
+Conséquence pratique : ne pas compter dessus pour isoler un test, et ne pas les ajouter « par
+sécurité » — elles font croire à une protection qui n'existe pas.
+
+### ⚠️ Un commentaire HTML en tête de `<template>` coupe le fallthrough des attributs
+
+Mesuré, et payé : un composant dont la racine est unique laisse Vue faire descendre les attributs
+du consommateur. **Ajouter un commentaire HTML avant cette racine rend le composant multi-racine**,
+et le fallthrough s'arrête — silencieusement. C'est arrivé en documentant le retrait d'un
+`v-bind="$attrs"` redondant dans `RemoteMediaPlayer.vue` : l'explication, écrite dans le
+`<template>`, a cassé ce qu'elle expliquait.
+
+Deux règles en sortent : un commentaire de ce genre vit dans le `<script setup>`, et **un contrôle
+de harnais dont la référence n'a pas été relue à 0 ne mesure rien** — le contrôle suivant avait
+rendu « 1 cas rougi » qui n'était pas le sien, mais la régression déjà présente.
 
 ### Monter les enfants réels, ne pas les stuber
 

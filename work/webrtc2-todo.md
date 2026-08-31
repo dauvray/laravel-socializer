@@ -960,22 +960,80 @@ extractions : c'est 18 lignes, sous un filet cinq fois plus dense.
 
 ## Robustesse
 
-- [ ] 🟢 **`useRemotePeerState` : un garde inatteignable, et une piste de signal perdu** `[S]` —
-  relevés le 30/08/2026 en cadrant la tâche 8. **À traiter avec le lot C**, qui couvrira ce
-  composable ; consignés ici pour ne pas les redécouvrir.
+- [x] ✅ **`useRemotePeerState` : le garde inatteignable et le signal perdu sont FERMÉS le
+  31/08/2026** — avec le lot C, comme prévu. Les deux moitiés de l'item ont tenu, et une troisième
+  correction est sortie en chemin.
 
-  - **Le garde `signal.roomId !== peerId` (l. 20) ne peut jamais être vrai** — vérifié :
-    `dispatchSignal` (`stores/peers2/actions.js:632`) fait `const key = signal.roomId` puis pousse
-    dans `signalQueues[key]`, et c'est **l'unique écrivain**. Tout signal lu par
-    `getLastRoomSignal(X)` a donc `roomId === X` par construction. C'est le cas de figure
-    d'`isValidSlug` : si aucune contre-épreuve ne le fait rougir, il **se supprime, il ne se
-    commente pas**. Mesurer les 0 cas d'abord, les écrire, puis retirer.
-  - **Piste, non vérifiée** : le `watch` n'est pas `immediate`, et `RemoteMediaPlayer` ne se monte
-    qu'à l'arrivée du flux. Un `AUDIO_MUTE_TOGGLE` déjà en file au montage serait donc perdu, alors
-    que `useSignalingQueue.js:38-41` déclare « dernière valeur gagne » comme la sémantique correcte
-    pour ces signaux. **À confirmer avant de corriger** : reste à établir qu'un signal peut
-    réellement précéder le montage. ⚠️ Si `immediate: true` est ajouté, **re-mesurer toutes les
-    contre-épreuves du fichier** — cela change l'instant d'exécution du watcher.
+  - **Le garde `signal.roomId !== peerId` : SUPPRIMÉ (sortie B).** 0 cas rougis, mesuré trois fois,
+    exactement comme l'item l'exigeait. Ce qui protège réellement d'une enveloppe serveur posée sur
+    la même clé est le **`switch` sans `default`** — 7 cas, et un cas dédié l'épingle désormais.
+  - **`immediate: true` : AJOUTÉ (sortie A), et la piste était juste.** Ce qui restait à établir
+    l'a été : le datachannel s'ouvre avant l'arrivée du flux, `createSignalQueueRoom` **ne vide
+    pas** une file existante (assertion dédiée dans `StreamSimpleUI.toggles.test.js`), et aucun
+    `v-if` ne retarde le montage — le montage *est* l'arrivée du flux. Trois cas vus rouges avant
+    le correctif. L'avertissement de l'item a été payé : les contrôles des **trois** fichiers ont
+    été re-mesurés, et l'un d'eux est passé de 2 à 15 cas.
+    ⚠️ Ce qui est repris est le **dernier signal, pas l'état** : micro puis caméra coupés avant
+    notre arrivée ne restituent que la caméra. Borne assumée, épinglée par un cas.
+  - **Défaut NEUF, trouvé en écrivant le test et corrigé dans la foulée (sortie A)** : un flux sans
+    `peerId` — toutes les vignettes de partage d'écran — lisait la clé `"undefined"`, qui est
+    **exactement celle qu'écrit `dispatchSignal` quand la connexion manque**. Tous les écrans
+    partagés partageaient donc une file poubelle commune, qu'un seul signal sans connexion aurait
+    fait basculer d'un coup. Garde `!peerId` dans le `computed` ; la surdité d'un écran est voulue
+    (règle symétrique de `LocalMediaPlayer`), donc pas de `console.warn`.
+
+- [ ] 🟢 **La coalescence tous types confondus, et l'affirmation qui la masquait** `[S]` — relevée
+  et **mesurée** le 31/08/2026 avec le lot C. `getLastRoomSignal` ne rend que la dernière entrée et
+  un `watch` sur un `computed` ne se réveille qu'une fois par flush : un `AUDIO_MUTE_TOGGLE` suivi
+  d'un `VIDEO_ACTIVE_TOGGLE` **dans le même tick** perd le premier.
+
+  `useSignalingQueue.js` déclarait « dernière valeur gagne » **correct** pour ces projections. Ce
+  n'est vrai que **par clé de file** — et la clé est le peerId, pas le type : les deux pistes d'un
+  même pair partagent un emplacement. Le commentaire est corrigé, et le comportement est épinglé
+  comme statu quo par un cas de `useRemotePeerState.test.js`.
+
+  **Pas de correctif de mécanisme ici, et c'est délibéré** : drainer la file par type change le
+  modèle de consommation **partagé** avec `useSignalingQueue` (curseur, ré-entrance, rewind,
+  détecteur de `seq`) ; le faire depuis un Widget découplerait les deux consommateurs de la même
+  file. Ça appartient à l'item « Drainer réellement la file de signaux », pas à un lot de tests de
+  présentation. Portée réelle : un clic utilisateur = un message = une tâche, donc la fenêtre
+  existe (retransmission hub, rafale) mais elle est étroite. Le cas de test se **supprime** avec
+  le correctif du drain.
+
+- [ ] 🟢 **L'état initial d'un pair n'est jamais semé — sortie D, avec son piège écrit** `[S]` —
+  relevée le 31/08/2026 avec le lot C, reportée sciemment. Un pair déjà en sourdine **avant**
+  notre arrivée s'affiche micro ouvert : `immediate` ne rattrape qu'un signal, et s'il n'y en a
+  jamais eu il n'y a rien à rattraper.
+
+  L'information est pourtant **déjà sur le fil** : `isAudioMuted` / `isVideoEnabled` sont portés
+  par la metadata d'appel (`usePeerConnections.js:594-595`) et déjà recopiés par
+  `StreamSimpleUI.vue:207-208`. **Personne ne les lit.**
+
+  ⚠️ **Le piège, et c'est lui qui a fait reporter** : `StreamSimpleUI.vue:208` écrit
+  `isVideoEnabled: rs.metadata?.isVideoEnabled ?? false` — il a **déjà écrasé `undefined` en
+  `false`**. Brancher naïvement un semis ferait basculer **tout le monde** sur la branche audio.
+  Il faut d'abord aligner le producteur (`=== true` / `!== false`, comme `useStreamManager.js:199`
+  le fait à moitié), soit un quatrième fichier de production touché et une re-mesure des trois
+  fichiers de test. Déclencheur : le premier signalement « il apparaît micro ouvert alors qu'il
+  est coupé ».
+
+- [ ] 🟢 **Pas de réinitialisation quand `peerIdSource` change — sortie D, épinglée** `[S]` — le
+  composable suit bien une `Ref` qui change (`unref` à chaque lecture), mais ne remet pas `muted` /
+  `videoActive` à leurs défauts. **Aucun des deux `v-for` de production ne l'atteint** : leurs
+  `:key` ne recyclent une instance que lorsque le `peerId` est absent, cas où le garde `!peerId`
+  rend le composable sourd de toute façon. Le comportement est épinglé par un cas ; le correctif
+  coûterait trois lignes et une re-mesure des trois fichiers pour un défaut inatteignable.
+  Déclencheur : un consommateur qui passe une `ref` de peerId mutable, ou un pool qui recycle un
+  `RemoteMediaPlayer`.
+
+- [ ] 🟢 **`v-bind="$attrs"` redondant dans `LocalMediaPlayer.vue:6` — mesure déjà faite** `[S]` —
+  le jumeau `RemoteMediaPlayer` portait le même : la racine étant un composant unique, Vue applique
+  déjà les attributs de fallthrough, et le `v-bind` explicite les appliquait une seconde fois
+  (idempotent, donc invisible). Retiré de `RemoteMediaPlayer` le 31/08 après 0 cas rougis sur trois
+  passes. `LocalMediaPlayer` n'est couvert par **aucun** test : il se traite au lot E, avec le sien.
+  ⚠️ Piège mesuré au passage : **un commentaire HTML placé dans le `<template>` avant la racine**
+  rend le composant multi-racine et coupe le fallthrough. L'explication du retrait vit donc dans le
+  `<script setup>`.
 
 - [ ] 🟢 **`SpectrumAnalyzer` : deux défauts, et un fichier WebRTC2 que seule la v1 maintient en
   vie** `[S]` — relevés le 30/08/2026 en cadrant la tâche 8, qui l'a **exclu** de son périmètre.

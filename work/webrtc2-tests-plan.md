@@ -39,7 +39,7 @@ et le seul étage où les incendies du paquet étaient détectables). Le harnais
 | Couches extraites de l'orchestrateur — `useConnectionPool`, `useCallManager`, `useStreamManager`, `useSignalingQueue` | ✅ | — |
 | Store — `peers2Store` : runtime, observabilité, `remotePeerId`, **phase du Peer**, **registre des contextes** | ✅ | — |
 | Composables d'UI — `useAwaitedStreams`, `useBroadcastPresence` | ✅ | — |
-| Tâche 8 · **Composants** `Widgets/**` — 15 fichiers, **8** couverts | 🟠 **lots A, B et V faits le 30/08** | restent 7 fichiers : `MediaBroadcastProvider`, `LocalMediaPlayer`, `RemoteMediaPlayer`, `useMediaControls`, `useRemotePeerState`, `CallManagerBtn`, `CallRemotePeerBtn` (+ `SpectrumAnalyzer`, exclu et classé). Le décompte « 3 couverts » de l'énoncé était **faux : c'était 4** — voir ci-dessous |
+| Tâche 8 · **Composants** `Widgets/**` — 15 fichiers, **10** couverts | 🟠 **lots A, B, V faits le 30/08 · lot C fait le 31/08** | restent 5 fichiers, en trois lots nommés : **D** `useMediaControls` + les contrôles de `MediaBroadcastPlayer`, **E** `LocalMediaPlayer` + `MediaBroadcastProvider`, **F** `CallManagerBtn` + `CallRemotePeerBtn` (+ `SpectrumAnalyzer`, exclu et classé). Deux décomptes de l'énoncé étaient **faux** — voir ci-dessous |
 | Scénarios — smoke, `lateJoiner`, `broadcastLifecycle`, `peerDeparture`, `multiContext`, `incomingMappingInvariant`, `outgoingAuth`, `incomingSpoof` | 🟠 | **aucun scénario n'utilise la topologie star** (`grep topology scenarios/` : zéro) — `lateJoiner` est intégralement mesh. La transition **« hub absent → hub présent »** n'est donc épinglée à aucun étage : ni en unitaire, ni bout en bout. Relevé le 30/08/2026 |
 | Perte de connexion → re-composition — `scenarios/peerDeparture` (« A recharge en chevauchement »), `useConnectionPool`, `createPeerContext` | ✅ | — |
 | Hors WebRTC2 — `Chat/dateSeparatorRender`, `System/useReverbChannel` (dont le désabonnement de whisper par callback), `User/coverCallButton` | amorces | plan Chat : [chat-tests-plan.md](chat-tests-plan.md) |
@@ -382,20 +382,40 @@ réellement dans `usePeerMedia.players.test.js` (17 cas ; seul `MediaBroadcastPl
 Il avait été manqué parce que le fichier porte le nom du **composable**, pas du composant. Une
 tâche 8 écrite sur l'énoncé aurait donc re-testé un composant déjà couvert.
 
-**État au 30/08/2026 — 8 fichiers couverts sur 15**, les lots A, B et V étant faits :
+**État au 31/08/2026 — 10 fichiers couverts sur 15**, les lots A, B, V et C étant faits :
 
 | Lot | Fichiers | Fichiers de test |
 |---|---|---|
 | **A** | `LocalStreamBtn`, `LocalCaptureBtn`, `GroupLocalStreamBtn` | `LocalStreamBtn.test.js`, `LocalCaptureBtn.test.js`, `GroupLocalStreamBtn.test.js` |
 | **B** | le refus de permission média (code + test) | `GroupLocalStreamBtn.permission.test.js` |
 | **V** | le contrat DOM du 🔴 de la vignette | `StreamSimpleUI.awaited.test.js` + `tests/visual/` |
+| **C** | `useRemotePeerState`, `RemoteMediaPlayer`, le joint `conn.peer` | `useRemotePeerState.test.js`, `RemoteMediaPlayer.test.js`, `StreamSimpleUI.toggles.test.js` |
 | déjà là | `MediaBroadcastPlayer`, `PlayerHost`, `useAwaitedStreams`, `Debug` | — |
 
-**Restent, non couverts** : `MediaBroadcastProvider`, `LocalMediaPlayer`, `RemoteMediaPlayer`,
-`useMediaControls`, `useRemotePeerState`, `CallManagerBtn`, `CallRemotePeerBtn`. Les deux
-composables et `RemoteMediaPlayer` forment un ensemble — c'est la boucle `AUDIO_MUTE_TOGGLE` /
-`VIDEO_ACTIVE_TOGGLE`, le seul protocole applicatif que possèdent les Widgets, aujourd'hui écrit
-aux deux bouts et asserté nulle part.
+**Les lots qui restent, nommés** — ils ne l'étaient pas, « lots C à F » ne désignait rien :
+
+| Lot | Fichiers de production | Pourquoi ils vont ensemble |
+|---|---|---|
+| **D** | `useMediaControls` + les contrôles de `MediaBroadcastPlayer` | son seul appelant, et le seul lecteur de sa sentinelle `null` |
+| **E** | `LocalMediaPlayer`, `MediaBroadcastProvider` | le pendant local du lot C, et le fournisseur de l'API |
+| **F** | `CallManagerBtn`, `CallRemotePeerBtn` | les deux boutons d'appel |
+
+> ⚠️ **L'énoncé de la tâche était FAUX sur le périmètre du lot C**, et il faut le dire parce que
+> l'erreur était structurante. Il écrivait : « les deux composables et `RemoteMediaPlayer` forment
+> un ensemble — c'est la boucle ». **`useMediaControls` n'est pas dans la boucle** : c'est un
+> composable purement DOM (plein écran, PiP, mute **natif** de l'élément), qui ne connaît ni pair,
+> ni signal, ni store. Son propre commentaire (l. 41) et celui de `MediaBroadcastPlayer.vue:61-67`
+> le disent déjà. L'ensemble réel est `useRemotePeerState` + `RemoteMediaPlayer` + le joint
+> `conn.peer` de `StreamSimpleUI`.
+>
+> Le suivre aurait mélangé deux harnais qui ne se touchent jamais : le lot C sème une file Pinia,
+> le lot D doit **fabriquer quatre membres de `document`** absents de happy-dom 20.0.10 (mesuré :
+> `fullscreenElement`, `exitFullscreen`, `pictureInPictureElement`, `exitPictureInPicture` sont
+> tous `undefined`, et `requestFullscreen` / `requestPictureInPicture` n'existent pas sur les
+> éléments). Deux graines pour le lot D, trouvées en cadrant : `isFullscreen` / `isPip` ne sont lus
+> par **aucun** template et mis à jour par **aucun** listener — ils mentent dès qu'on quitte par
+> Échap ; et la sentinelle `null` **est** atteignable en production, quand le consommateur fournit
+> un slot `#video` (`ref="player"` n'est alors jamais posé).
 
 > ℹ️ **`Debug` a été couvert par la bande, en fermant la mesure de bascule d'`enforce`** — et
 > seulement sur son bloc de corroboration d'identité, pas sur le reste du panneau. C'est le bon
@@ -471,6 +491,44 @@ changement le jour où une CI existe.
 vert sur un DOM que la production n'a plus ; le garde-fou est l'assertion de jeu de classes de
 `StreamSimpleUI.awaited.test.js`, qui, elle, tourne à chaque suite. Et le harnais dépend d'un
 runtime hors dépôt : ailleurs, il ne tourne pas — il s'arrête en le disant.
+
+#### Ce que le lot C a trouvé, et qui n'était pas dans l'énoncé
+
+**Trois corrections de production, dont une sortie B et deux sorties A** — le lot n'était pas qu'un
+lot de tests :
+
+1. **Le garde `signal.roomId !== peerId` : supprimé.** 0 cas rougis, trois passes, comme l'item
+   `webrtc2-todo.md` l'exigeait. Ce qui protège réellement est le `switch` sans `default` (7 cas).
+2. **`immediate: true` : ajouté**, la piste non vérifiée de l'item était juste. Trois cas vus
+   rouges avant. Coût réel payé : les contrôles des **trois** fichiers re-mesurés, l'un passant de
+   2 à 15 cas.
+3. **Défaut neuf** : un flux sans `peerId` lisait la clé `"undefined"`, **exactement celle qu'écrit
+   `dispatchSignal` quand la connexion manque** — une file poubelle commune à tous les partages
+   d'écran. Garde ajouté ; la surdité d'un écran reste voulue.
+
+**Le contrôle qui vaut le lot est un 0 croisé.** Casser l'un ou l'autre bout du joint `conn.peer`
+rougit 3 et 2 cas de `StreamSimpleUI.toggles.test.js` — et **0 cas** des deux autres fichiers,
+mesuré trois fois chacun. C'est la preuve chiffrée qu'un test par étage ne voit pas la boucle
+mourir : les deux couches restent vertes pendant que plus rien n'arrive à l'écran.
+
+⚠️ **Deux pièges de harnais payés, et le second est le plus coûteux :**
+
+- **La coalescence a rougi mon propre test avant d'être écrite en pin.** Un cas enchaînait deux
+  annonces sans tick, et perdait la première — la faute était dans le test, pas dans le code.
+  C'est la quatrième passe consécutive où une contre-épreuve ou un cas rate pour cette famille de
+  raison.
+- **Un commentaire HTML placé dans le `<template>` avant la racine coupe le fallthrough des
+  attributs** : le composant devient multi-racine, silencieusement. L'explication du retrait de
+  `v-bind="$attrs"`, écrite là, a cassé ce qu'elle expliquait. Et le contrôle mesuré juste après a
+  rendu « 1 cas rougi » **qui n'était pas le sien** — c'était la régression déjà présente. D'où la
+  règle, désormais dans `docs/modules/webrtc2/tests.md` : **un contrôle dont la référence n'a pas
+  été relue à 0 ne mesure rien.**
+
+**Deux sorties D, datées, avec déclencheur** — l'état initial jamais semé (avec son piège
+`?? false` écrit dans le todo, qui est ce qui coûte à redécouvrir) et l'absence de réinitialisation
+au changement de `peerIdSource` (inatteignable en production après la correction 3). Plus un
+report : la coalescence appartient à l'item « drainer réellement la file de signaux », pas à un lot
+de tests de présentation.
 
 #### Ce que les lots A et B ont trouvé, et qui n'était pas dans l'énoncé
 

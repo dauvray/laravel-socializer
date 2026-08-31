@@ -173,7 +173,17 @@ l'appelé — le lui faire afficher demanderait un champ `fromUserName` dans les
 `Widgets/UI/` — `Audio/SpectrumAnalyzer.vue`, `Report/Debug.vue`.
 
 `Widgets/Mediaplayer/Composables/` — `useAwaitedStreams(api)` (vignettes « en attente du flux »),
-`useRemotePeerState.js` (mute / vidéo distants), `useMediaControls.js`.
+`useRemotePeerState(peerIdSource)` → `{ muted, videoActive }` (état annoncé d'un pair distant ;
+`peerIdSource` est une valeur **ou une `Ref`**, et un id absent rend le composable sourd — cf. le
+joint de la projection Widget dans [architecture.md](architecture.md)), `useMediaControls(videoRef)`
+→ `{ isFullscreen, isPip, toggleFullscreen, togglePip, toggleNativeMute }`.
+
+⚠️ **Ces deux composables voisins n'ont rien à voir l'un avec l'autre**, et les confondre a déjà
+coûté un énoncé de tâche faux. `useRemotePeerState` porte le protocole applicatif des Widgets —
+le mute **annoncé** par le pair, qui n'est qu'une information affichée. `useMediaControls` ne
+touche que l'élément DOM local (plein écran, PiP, mute **navigateur**) : il ne connaît ni pair,
+ni signal, ni store. Le mute réel d'une piste se fait chez l'émetteur (`track.enabled`), jamais
+chez le récepteur.
 
 ---
 

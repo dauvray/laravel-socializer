@@ -343,6 +343,36 @@ les enveloppes **serveur** scopées sur `contextId`.
 **toujours** depuis la connexion (`utils/resolveRemoteSlug.js`, authentifiée à l'admission),
 jamais depuis un champ du payload.
 
+### Le joint de la projection d'état Widget
+
+La clé de file d'une projection Widget est le **peerId PeerJS de la connexion**, `conn.peer`, et
+cette même valeur est employée aux deux bouts :
+
+- **écriture** — l'app dispatche sur `conn.peer` (`StreamSimpleUI.handleStreamData`) ;
+- **lecture** — `useRemotePeerState` lit sur `metadata.peerId`, que `useStreamManager` a posé à
+  partir de ce même `conn.peer` en enregistrant le flux.
+
+Les deux bouts vivent dans des fichiers différents et peuvent diverger sans qu'aucun test d'étage
+ne bouge : c'est le seul endroit du module où casser un côté laisse les deux couches en dessous
+vertes. `__tests__/StreamSimpleUI.toggles.test.js` existe pour ça, et rien d'autre.
+
+Deux bornes, toutes deux voulues :
+
+- **la boucle n'existe que sur le chemin `mode='stream'`** — en visio, vocal ou écran, le pool
+  (`usePeerMedia` / `PlayerHost`) monte `MediaBroadcastPlayer` directement, sans passer par
+  `RemoteMediaPlayer`, donc sans `useRemotePeerState` : les props gardent leurs défauts ;
+- **un flux sans `peerId` est sourd**, et c'est la règle symétrique de `LocalMediaPlayer` : un
+  partage d'écran n'a pas de pair propriétaire, et un pair qui coupe sa webcam ne doit pas faire
+  disparaître son partage. Le composable s'en garde explicitement — sans quoi la lecture
+  retomberait sur la clé `"undefined"`, qui est exactement celle qu'écrirait un dispatch sans
+  connexion, et toutes les vignettes d'écran partagée basculeraient ensemble.
+
+**« Dernière valeur gagne » est vrai par clé de file, donc tous types confondus** : les deux
+pistes d'un même pair partagent un emplacement, et deux annonces reçues dans le même tick n'en
+laissent qu'une. Au montage, la dernière annonce en file est reprise (`immediate`) — c'est le
+dernier **signal**, pas l'état : un pair ayant coupé micro puis caméra avant notre arrivée ne
+restitue que la caméra.
+
 ---
 
 ## Le Peer PeerJS : un seul par onglet
