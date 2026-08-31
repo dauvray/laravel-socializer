@@ -268,15 +268,13 @@ chez le récepteur.
 Deux événements transitent par l'eventBus injecté : **`call-user`** `(slug, type)` et
 **`close-call`**.
 
-⚠️ **`EventBus/webrtc2Events.js` n'est consommé par personne, et il n'a plus rien à sauver.** Le
-module exporte `WEBRTC2_EVENTS`, `emitCallUser`, `emitCloseCall`, `onCallUser`, `onCloseCall` et
-`normalizeType`, mais les deux appelants réels — `System/Notifications.vue` et
-`Widgets/UI/Buttons/CallRemotePeerBtn.vue` — font toujours
-`eventBus.$emit('call-user', slug, type)` en direct. **Sa seule fonction qui valait,
-`normalizeType`, a été récupérée dans `Composables/utils/validators.js` sous le nom
-`normalizeDirectCallType`** — c'était le prédicat « les deux types d'un appel direct » qui manquait
-au paquet. La décision qu'attendait `work/doc-rustines.md` est donc tranchée : supprimer, il ne
-reste rien à brancher.
+Les deux appelants — `System/Notifications.vue` et `Widgets/UI/Buttons/CallRemotePeerBtn.vue` —
+émettent **en forme brute**, directement sur le bus (`eventBus.$emit('call-user', slug, type)`), et
+c'est cette forme que les tests épinglent des deux côtés (`CallRemotePeerBtn.test.js`). Le type, lui,
+passe par `normalizeDirectCallType` (`Composables/utils/validators.js`) **aux deux bouts** — le
+bouton normalise sa prop avant d'émettre, `useCallManager` renormalise le payload entrant : un
+`call-user` peut venir d'ailleurs que du bouton, et un type non normalisé devient un cul-de-sac en
+aval.
 
 `close-call` est **idempotent par contrat** : un même départ peut l'émettre deux fois
 (voir [flux.md](flux.md#départ-dun-pair)).

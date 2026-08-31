@@ -1007,8 +1007,12 @@ extractions : c'est 18 lignes, sous un filet cinq fois plus dense.
 - [ ] **État debug exposé** : computed readonly pour inspecter l'état interne (retries, connexions,
   flux) — `Widgets/UI/Report/Debug.vue` en consomme déjà une partie à la main
 - [ ] **Events structurés** : `peer:connected`, `peer:disconnected`, `call:started`, `call:failed`.
-  À croiser avec `EventBus/webrtc2Events.js`, écrit mais **pas encore consommé** (les appelants
-  émettent toujours en direct).
+  **À écrire de zéro** : il n'y a plus rien à recycler depuis le 31/08/2026, `EventBus/webrtc2Events.js`
+  ayant été supprimé (sortie B du lot 1 de `doc-rustines.md` ; le rationale est dans `api.md`, le
+  code dans `git log`). Ce qui existe aujourd'hui, et qui est le point de départ : les deux seuls
+  événements réels — `call-user` et `close-call` — transitent sur l'eventBus injecté **en forme
+  brute**, et c'est cette forme que les tests épinglent des deux côtés. Un jeu d'events structurés
+  devra donc soit coexister avec elle, soit changer les émetteurs ET leurs tests.
 
 ---
 

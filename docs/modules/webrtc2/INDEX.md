@@ -61,7 +61,6 @@ WebRTC2/
 │   └── utils/                     infra pure, sans état partagé, importable de partout
 │                                  useCallStateMachine · usePeerRetry · createRateLimiter
 │                                  payloadSize · sanitizeMetadata · resolveRemoteSlug · validators
-├── EventBus/webrtc2Events.js   ⚠️ MORT — à supprimer, il ne reste rien à brancher (api.md)
 ├── Widgets/                    Mediaplayer/ (provider, players, pool) · UI/ (boutons, audio, debug)
 ├── Exemples/                   Home.vue + 3 UI de démonstration — documentation exécutable
 └── __tests__/                  unitaires · mockFidelity · scenarios/ + helpers/ et __mocks__/

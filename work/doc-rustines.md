@@ -69,9 +69,10 @@ tranchée en **sortie D** (pas de SFU maintenant ; la couture est recensée dans
 
 ### Faisable en parallèle sans aucun risque
 
-Aucun de ces éléments n'est dans l'arbre WebRTC2 : `EventBus/webrtc2Events.js` (mort),
-`ACCESORS`, la casse de `Widgets/`, et les quatre zones mortes
-(`admin.php`, `console.php`, `table_names`, `SocializerUpgrade`).
+Aucun de ces éléments n'est dans l'arbre WebRTC2 : `ACCESORS`, la casse de `Widgets/`, et les
+quatre zones mortes (`admin.php`, `console.php`, `table_names`, `SocializerUpgrade`).
+`EventBus/webrtc2Events.js` en faisait partie — fait le 31/08, et la prédiction a tenu : la
+suppression n'a touché aucun fichier de l'arbre WebRTC2 vivant, hors deux commentaires.
 
 ### Le vrai risque de désynchronisation : les ancres, pas le code
 
@@ -153,23 +154,31 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
       - [ ] Tests — la suite JS complète reste verte (`npm run test:run`) ; vérification manuelle
             des quatre modules touchés (audio, application, tableau blanc, classe virtuelle)
 
-- [ ] **Supprimer `WebRTC2/EventBus/webrtc2Events.js`** · effort [S] · **décision TRANCHÉE le
-  31/08/2026 : SUPPRIMER, il ne reste rien à brancher.**
+- [x] **Supprimer `WebRTC2/EventBus/webrtc2Events.js`** · effort [S] — **fermé le 31/08/2026,
+  sortie B.**
 
-  La question ouverte était « le brancher (A) ou le supprimer (B) ». Elle est réglée par le fait,
-  pas par un arbitrage de goût : **la seule fonction du module qui valait quelque chose,
-  `normalizeType`, a été récupérée** dans `Composables/utils/validators.js` sous le nom
-  `normalizeDirectCallType` — c'était le prédicat « les deux types d'un appel direct » qui manquait
-  au paquet, et son absence fabriquait un cul-de-sac (`isValidCallType` acceptant `screen`). Le
-  reste du module — `emitCallUser`, `emitCloseCall`, `onCallUser`, `onCloseCall` — normalise un
-  payload à six champs que personne n'émet et que les tests des boutons d'appel épinglent désormais dans sa
-  **forme brute**, des deux côtés. Le brancher demanderait donc de changer quatre émetteurs pour
-  gagner zéro fait. Reste à faire : la suppression elle-même, et le retrait de la mention dans
-  `docs/modules/webrtc2/api.md` — déjà réécrite pour dire que le module n'a plus rien à sauver.
-      ⚠️ **Les deux couches de doc sont déjà à jour** — `api.md` porte le verdict et `INDEX.md`
-      l'annonce mort dans son arborescence. Il ne reste que le code, et la dernière mention.
-      Annotation : `docs/modules/webrtc2/api.md`
-      - [ ] Code · - [ ] Doc · - [ ] Tests
+  La question « le brancher (A) ou le supprimer (B) » avait été réglée par le fait, pas par un
+  arbitrage de goût : **la seule fonction du module qui valait quelque chose, `normalizeType`, avait
+  déjà été récupérée** dans `Composables/utils/validators.js` sous le nom `normalizeDirectCallType` —
+  le prédicat « les deux types d'un appel direct » qui manquait au paquet, et dont l'absence
+  fabriquait un cul-de-sac (`isValidCallType` acceptant `screen`). Le reste du module normalisait un
+  payload à six champs que personne n'émet, les tests des boutons d'appel épinglant la **forme
+  brute** des deux côtés : le brancher aurait demandé de changer quatre émetteurs pour gagner zéro
+  fait.
+      Annotation : `docs/modules/webrtc2/api.md` — **remplacée**, pas supprimée : le bloc ⚠️ portait
+      aussi deux faits qui ne sont pas des rustines (les appelants émettent en forme brute ; le type
+      est normalisé par `normalizeDirectCallType`), et le second n'était documenté nulle part dans
+      `docs/`. La ligne qui remplace l'avertissement est un contrat — et elle a corrigé au passage un
+      énoncé faux : la normalisation a lieu **aux deux bouts**, pas seulement à la réception.
+      - [x] Code — `EventBus/` disparaît (186 lignes) ; deux commentaires de `validators.js`
+            requalifiés — le module y reste nommé **comme supprimé**, pour que l'argument « le type
+            `'audio'` était mort » reste vérifiable dans `git log` au lieu d'égarer
+      - [x] Doc — `api.md` (remplacée) et `INDEX.md` (ligne d'arborescence retirée). **Aucun
+            `boost:update` requis**, vérifié : ni le `CLAUDE.md` du paquet ni `core.blade.php` ne
+            citaient `EventBus` — même configuration que la tâche `sfu`
+      - [x] Tests — aucun test à écrire : rien à épingler dans la suppression d'un module que
+            personne n'importe, et un test neuf ici serait vert par vacuité. Contrôle : suite JS
+            **82 fichiers / 1468 tests, inchangée** avant et après
 
 - [ ] **Vider les cinq poches mortes restantes** · effort [M]
       `docs/architecture/package.md` liste une section « Zones mortes connues » dont

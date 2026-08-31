@@ -13,8 +13,9 @@
  * la couche connexions. Un appel `'audio'` passait donc la validation d'entrée puis se
  * faisait refuser à l'ouverture de connexion : jamais fonctionnel, et l'échec arrivait
  * loin de sa cause. Vérification faite avant de trancher, `'audio'` n'était émis par
- * **aucun** appelant (seule sa propre définition le mentionnait) et `normalizeType`
- * (EventBus/webrtc2Events.js) ne reconnaît que `'visio' | 'vocal'` : le type était mort.
+ * **aucun** appelant (seule sa propre définition le mentionnait) et le seul normaliseur
+ * d'alors — `normalizeType`, dans `EventBus/webrtc2Events.js`, module mort supprimé le
+ * 31/08/2026 — ne reconnaissait que `'visio' | 'vocal'` : le type était mort.
  * D'où l'alignement sur `VALID_CONNECTION_TYPES`, qui fait autorité.
  */
 import { SLUG_PATTERN, VALID_CONNECTION_TYPES } from '../../webrtc2.config.js'
@@ -50,8 +51,8 @@ export const isValidCallType = (value) =>
  * silencieux, de la même famille que celui de l'invitation non émise.
  *
  * Le prédicat manquait au paquet, et pourtant il existait : `normalizeType`, dans
- * `EventBus/webrtc2Events.js` — un module que personne n'importe et dont la suppression est un
- * item de `work/doc-rustines.md`. C'est la seule chose qu'il valait ; elle est ici désormais.
+ * `EventBus/webrtc2Events.js` — un module que personne n'importait, supprimé le 31/08/2026.
+ * C'est la seule chose qu'il valait ; elle est ici désormais.
  */
 export const VALID_DIRECT_CALL_TYPES = ['visio', 'vocal']
 
