@@ -1327,6 +1327,23 @@ extractions : c'est 18 lignes, sous un filet cinq fois plus dense.
 
 Tous mesurés **avant** d'être écrits ici, aucun n'est une impression de lecture.
 
+- [ ] 🔴 **Accepter un appel VOCAL entrant ne fait rien** `[S]` — relevé le 31/08/2026 en cadrant la
+  migration des appelants v1.
+
+  `AudioCallAlert` émet `response-call` ; son parent `AlertComponent` écoute `response-alert`, et son
+  jumeau `VideoCallAlert` émet bien `response-alert`. **`response-call` n'a zéro écouteur dans tout le
+  paquet** (vérifié au grep) : sur un appel vocal entrant, « Accepter » et « Refuser » sont morts, et
+  l'auto-refus à 20 s aussi. Côté appelant, plus rien n'arrive jusqu'à l'abandon du moteur de retry
+  (« X n'a pas répondu ») ; côté destinataire, l'alerte reste à l'écran.
+
+  Second défaut, dans les **deux** alertes : `pickedUp` n'est jamais mis à `true` et le `setTimeout`
+  d'auto-refus n'est pas annulé au `beforeUnmount` (seul l'`interval` l'est) — le timer survit donc au
+  démontage.
+
+  ⚠️ **Ne pas traiter ici** : c'est le lot B du découpage de la migration v1, avec son test
+  préalable — [doc-rustines.md](doc-rustines.md), lot 1. Les deux fichiers déménagent vers
+  `WebRTC2/Widgets/UI/Alerts/` juste après, et le correctif doit précéder le déplacement.
+
 - [ ] 🟠 **Le mute et la caméra ne sont annoncés à personne dans un appel 1-à-1** `[M]`
 
   `CallManagerBtn` bascule bien les pistes — `toggleAudioState` pose `track.enabled = false`, donc le

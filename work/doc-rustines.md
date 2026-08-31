@@ -105,7 +105,8 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
 
 ## Lot 1 — Code mort · sortie B
 
-- [ ] **Migrer les 5 appelants de WebRTC v1, puis supprimer `components/WebRTC/`** · effort [L]
+- [ ] **Migrer les appelants de WebRTC v1 (5 + 1), puis supprimer `components/WebRTC/`** · effort [L]
+      **Découpé en sept lots le 31/08/2026 — le plan est plus bas, après le recensement.**
       **La tâche la plus rentable du paquet en volume de doc.** La v1 morte est annoncée dans
       **7 fichiers de doc**, dont le piège n°1 du `CLAUDE.md` et une ligne du `CLAUDE.md` de *tout
       projet hôte* — parce que deux arbres coexistent avec des fichiers homonymes
@@ -124,6 +125,18 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
       | `Whiteboard/WhiteboardComponent.vue` | idem |
       | `ClassRoom/ClassRoomComponent.vue` | idem |
       | `AudioRoom/__AudioComponent copy.vue` | `WebRTC/composables/usePeers.js` — fichier déjà désactivé (`__`) |
+      | **`Server/Server.vue`** | **`stores/peers.js` seul — jamais `WebRTC/`** · relevé le 31/08/2026 |
+
+      ⚠️ **Le recensement par `grep -rn "WebRTC/"` rate un consommateur, et c'est un défaut de la
+      commande, pas du recensement.** `Server/Server.vue` n'importe aucun fichier de `WebRTC/` : il
+      importe le **store v1** `stores/peers.js`, dont il lit deux getters (`getIsStreaming`,
+      `getIsCapturing`). Or le périmètre annonce la suppression de ce store. Le recompte demande
+      donc **deux** greps, `WebRTC/` **et** `stores/peers.js` — et la commande citée dans
+      `docs/modules/webrtc2/INDEX.md` est à corriger dans le volet doc.
+
+      Corollaire sur les trois appelants data : ils prennent aussi `sendData` du store v1 par
+      `mapActions(usePeerStore, ['sendData'])`. Leur migration n'est donc pas une substitution de
+      balise — elle débranche aussi le store.
 
       La v1 n'est donc pas « morte en attente de confirmation » : elle est **vivante sous cinq
       composants**, dont un en `defineAsyncComponent`, invisible à une recherche d'`import`
@@ -142,17 +155,107 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
       [webrtc2-todo.md](webrtc2-todo.md) ; il n'a aucun test, et n'en aura pas (`happy-dom` n'a pas
       d'`AudioContext`).
 
-      Périmètre : 13 fichiers `WebRTC/`, le store `stores/peers.js`, la migration des cinq
-      appelants vers `WebRTC2/`, et le sort de `SpectrumAnalyzer`.
+      Périmètre : 13 fichiers `WebRTC/`, le store `stores/peers.js` (+ son dossier
+      `stores/peers/`) et ses **six** consommateurs, la migration des cinq appelants vers
+      `WebRTC2/`, et le sort de `SpectrumAnalyzer`.
       Annotation (7 fichiers) : `CLAUDE.md` · `docs/INDEX.md` ·
       `docs/modules/webrtc2/INDEX.md` · `docs/modules/autres-modules.md` ·
       `docs/architecture/package.md` · `docs/modules/chat.md` ·
       `resources/boost/guidelines/core.blade.php` · plus le `CLAUDE.md` de tout projet hôte
-      - [ ] Code — migrer les 5 appelants, puis supprimer `components/WebRTC/` et `stores/peers.js`
-      - [ ] Doc — retirer la mention de la v1 des couches qui la portent encore, la dernière
-            partant avec le code
-      - [ ] Tests — la suite JS complète reste verte (`npm run test:run`) ; vérification manuelle
-            des quatre modules touchés (audio, application, tableau blanc, classe virtuelle)
+
+      **Deux faits relevés le 31/08/2026 en cadrant la tâche, et qui changent le plan.**
+
+      **1. Il n'y a pas de composant à écrire : `WebRTC2/Widgets/Mediaplayer/MediaBroadcastProvider.vue`
+      EST le provider data** — `mode` a `'data'` pour défaut, il fait `watchUsers` sur les `users`,
+      `initialize(callbacks)` si on lui en passe, et surtout `cleanup()` au démontage, que la v1 ne
+      faisait pas. Il a son test. Toute proposition d'un `DataPeerProvider` neuf est de la
+      sur-ingénierie : l'exemple d'usage exact est `WebRTC2/Exemples/Home.vue`.
+
+      **2. Mais le contrat du callback n'est PAS mappable 1 pour 1, et c'est là qu'est le travail.**
+      En v1, `callbackConnection` reçoit la `DataConnection` **brute** et l'appelant y branche
+      lui-même ses `conn.on("data")` / `conn.on("open")`. En v2 c'est le transport qui possède les
+      listeners et rappelle `onDataReceived(data, conn, metadata)`
+      (`createPeerContext.js`, garde de taille en amont) et `onConnectionOpen(conn)`. Chaque
+      appelant se **réécrit** donc. Bonne nouvelle : v2 ne parse pas le payload non plus, les
+      `JSON.parse` des trois appelants restent valables tels quels.
+
+      ℹ️ Le watch de `users` du provider v2 **n'est pas profond, et c'est un contrat épinglé**
+      (`MediaBroadcastProvider.test.js`, « une composition mutée en place n'est pas vue »). Si un
+      appelant mute sa liste en place, c'est **l'appelant** qui s'adapte — jamais le provider.
+
+      **Découpage — sept lots, chacun committable et vérifiable seul.**
+
+      Trois règles, qui expliquent l'ordre :
+
+      - **aucun lot ne change un comportement ET ne déplace un fichier** — on corrige en place, on
+        prouve, on déplace ensuite : la preuve du déplacement est le même test resté vert ;
+      - **on peut s'arrêter après n'importe quel lot** sans laisser l'arbre à moitié migré ;
+      - **la suppression est le dernier lot, jamais un effet de bord** — et sa preuve n'est pas
+        Vitest : un fichier que plus rien n'importe n'entre dans aucune suite. C'est `npm run build`.
+
+      - [ ] **A. Poser le filet — zéro changement de comportement** `[S]`
+            - [ ] A1 — test de `AlertComponent` + les deux alertes : montage selon `options.type`,
+                  clic Accepter / Refuser → `response-alert(slug, options, bool)` reçu par
+                  `Notifications`. **Rouge attendu sur la branche vocale** (voir B1) : c'est le bon
+                  signe, pas un échec de harnais
+            - [ ] A2 — établir pour Application / Whiteboard / ClassRoom si `users` est **remplacé**
+                  ou **muté en place**, et l'écrire ici. Conditionne D : muté en place ⇒ l'appelant
+                  passe une copie, le provider ne bouge pas
+      - [ ] **B. Le 🔴 vocal — indépendant de la migration, livrable seul** `[S]`
+            - [ ] B1 — `AudioCallAlert` émet `response-call` quand tout le monde écoute
+                  `response-alert` : **zéro écouteur dans le paquet**, donc Accepter et Refuser sont
+                  morts sur un appel VOCAL entrant, et l'auto-refus à 20 s aussi. L'appelant attend
+                  l'abandon du moteur de retry. Trois lignes ⇒ A1 passe au vert
+            - [ ] B2 — `pickedUp` n'est jamais mis à `true` et le `setTimeout` n'est pas annulé au
+                  `beforeUnmount` (seul l'`interval` l'est), dans les **deux** alertes : le timer
+                  d'auto-refus survit au démontage. Test rouge d'abord — « accepter à 5 s n'émet pas
+                  de refus à 10 s »
+      - [ ] **C. Déplacer les deux alertes** `[S]` — `git mv` vers `WebRTC2/Widgets/UI/Alerts/` + les
+            deux `defineAsyncComponent` d'`AlertComponent`. Elles sont v1 **par leur chemin, pas par
+            leurs dépendances** : elles n'importent que `IconWidget` et leur consommateur est déjà
+            branché sur la v2 (`Notifications.onResponseAlert` → `peers.acceptCallFromPeer`).
+            Preuve : les tests de A/B verts **sans autre modification que le chemin d'import**
+      - [ ] **D. Le canal data, un module à la fois** `[L]`
+            - [ ] D0 — écrire une fois la correspondance : `conn.on("data")` →
+                  `onDataReceived(data, conn, metadata)` · `conn.on("open")` → `onConnectionOpen(conn)`
+                  · `mapActions(usePeerStore, ['sendData'])` → `api.sendData()` par `ref` de template
+            - [ ] D1 — **Whiteboard**, le plus facile à prouver. Vérif : deux navigateurs, un trait
+                  tracé chez A apparaît chez B, le pointeur distant bouge
+            - [ ] D2 — **Application**. Vérif : l'iframe reçoit `connectionEnabled` puis les messages
+            - [ ] D3 — **ClassRoom**, en dernier : il imbrique Whiteboard, donc deux providers, donc
+                  deux contextes sur le Peer singleton (couvert par `scenarios/multiContext.test.js`).
+                  Vérif : bascules whiteboard / chat propagées entre deux navigateurs, **avec** D1
+                  déjà migré dessous
+      - [ ] **E. AudioRoom** `[M]`
+            - [ ] E1 — `AudioComponent` importe le `MediaBroadcastProvider` **v1** : l'homonyme en
+                  action. Comparer les deux contrats de slot avant de substituer (v2 :
+                  `v-slot="webrtc"`, api sous la clé `api`). Le module est atteignable par une vraie
+                  route (`routes/application.js`) et déclaré dans `Server/roomSettings.js` — ce n'est
+                  pas du code mort, la vérification manuelle est obligatoire
+            - [ ] E2 — trancher `SpectrumAnalyzer` : rebranché sur un consommateur v2, ou supprimé.
+                  **Décision datée** (sortie D) ; il n'a aucun test et n'en aura pas — `happy-dom`
+                  n'a pas d'`AudioContext`
+      - [ ] **F. La suppression** `[M]`
+            - [ ] F1 — `Server/Server.vue` : migrer `getIsStreaming` / `getIsCapturing` du store v1
+                  vers `peers2` (vérifier d'abord qu'il les expose ; sinon, l'ajouter est le
+                  préalable)
+            - [ ] F2 — supprimer `components/WebRTC/`, `stores/peers.js` et `stores/peers/`.
+                  Preuve : les **deux** greps rendent zéro · suite JS verte · **`npm run build`**,
+                  seul contrôle qui voie un import cassé dans un fichier qu'aucun test n'importe
+      - [ ] **G. La doc, en dernier** `[M]` — les 7 fichiers listés plus haut, dans l'ordre imposé
+            par [le `work/` du projet hôte](../../../../work/README.md), puis `boost:update`, puis
+            `grep 'laravel-socializer/core rules ===' CLAUDE.md`. Deux corrections à y porter au
+            passage : la commande de recompte de `docs/modules/webrtc2/INDEX.md` doit couvrir
+            **aussi** `stores/peers.js`, et la doc annonce **un** homonyme alors qu'il y en a deux —
+            `composables/useMediaBroadcast.js` (v1) / `Composables/useMediaBroadcast.js` (v2), qui ne
+            diffèrent que par la casse du dossier
+
+      **Les trois volets du gabarit, répartis** : *code* = B → F · *tests* = A et B, plus les
+      vérifications manuelles nommées de D et E (aucun des cinq appelants n'a de test, et aucun n'en
+      recevra : ce sont des composants métier hors du filet — la vérification à deux navigateurs les
+      remplace, et elle est nommée lot par lot) · *doc* = G.
+      **Chemin critique** : A → B → C sont livrables tout de suite et indépendants du reste ; F ne
+      part pas avant que D et E soient prouvés à la main.
 
 - [x] **Supprimer `WebRTC2/EventBus/webrtc2Events.js`** · effort [S] — **fermé le 31/08/2026,
   sortie B.**
