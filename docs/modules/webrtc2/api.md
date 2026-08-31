@@ -93,8 +93,22 @@ verbes de flux.** Elle peut rejeter, et c'est le cas nominal : l'utilisateur ref
 chaîne — `usePeerMedia` appelle `getUserMedia` / `getDisplayMedia` nus. **Un appelant qui ignore la
 valeur de retour transforme donc un refus en rejet non traité** : pas de toast, pas de changement
 d'état, un bouton qui semble mort. Les trois verbes d'arrêt sont synchrones et ne rendent rien.
-Borne assumée au 29/08/2026 : les boutons livrés (`GroupLocalStreamBtn`) ne traitent pas encore ce
-rejet — la façade rend la promesse, la moitié UI reste à faire.
+Traité côté UI depuis le 30/08/2026 : `GroupLocalStreamBtn` porte un `.catch` qui notifie par AWN,
+avec le nom de l'erreur — la seule exception assumée est `NotAllowedError` sur `startCapture`, que
+`getDisplayMedia` rend indiscernable d'une simple fermeture du sélecteur de partage.
+
+⚠️ **`startCallWithPeer` rend un verdict, et son appelant DOIT le lire** — `Promise<?string>` :
+l'`inviteId` si l'invitation est partie, `null` si elle a été refusée **après** que la FSM a été
+engagée, `undefined` si le payload était irrecevable (rien n'a été engagé, il n'y a personne à
+prévenir). Sur `null`, le verbe a déjà ramené la FSM à IDLE et purgé la session ; ce qui reste à
+l'appelant est de le dire à l'utilisateur et d'émettre `close-call`. Ignorer ce retour, c'était le
+cul-de-sac qui bloquait tout appel d'un onglet —
+[flux.md](flux.md#linvitation-ne-part-pas--aucun-peerid-local-publiable).
+
+⚠️ **Le mutex de `startCallWithPeer` tient malgré son `async`** : `callMachine.transition(CALLING)`
+est **avant** le premier `await`. Ne pas en conclure qu'on peut awaiter n'importe quoi dans ce
+verbe — awaiter `setLocalPeer()` déplacerait la transition après une suspension et ouvrirait la
+fenêtre de double clic.
 
 ### Niveau 3 — `usePeerOrchestrator(type, room, options)`
 
@@ -179,8 +193,39 @@ signalisation serveur ne transportant que des slugs, l'appelant ne connaît pas 
 l'appelé — le lui faire afficher demanderait un champ `fromUserName` dans les événements de
 `UserController`.
 
-`Widgets/UI/Buttons/` — `CallManagerBtn.vue`, `CallRemotePeerBtn.vue` (props `user`, `type`),
-`GroupLocalStreamBtn.vue` (prop `api`), `LocalStreamBtn.vue`, `LocalCaptureBtn.vue`.
+`Widgets/UI/Buttons/` — `GroupLocalStreamBtn.vue` (prop `api`), `LocalStreamBtn.vue`,
+`LocalCaptureBtn.vue`, et les deux boutons d'appel :
+
+- **`CallManagerBtn.vue`** — la barre de commande d'un appel en cours. Props `status` (les cinq
+  états de la FSM), `isMuted`, `isVideoEnabled` ; émet `stop-call`, `toggle-audio`,
+  `toggle-video`. Purement présentationnel, comme `LocalStreamBtn` : son adaptateur est
+  `System/Notifications.vue`.
+- **`CallRemotePeerBtn.vue`** — le bouton d'appel d'un mur. Props `user` (requise) et `type`,
+  **normalisé** à `visio | vocal` (voir ci-dessous). `AWN` est optionnel avec repli
+  `window.AWN` ; **`eventBus` est REQUIS** — sans lui le bouton se désactive et le journalise
+  une fois, au lieu de faire semblant.
+
+⚠️ **Les deux bascules de `CallManagerBtn` n'annoncent RIEN aux pairs, et ce n'est pas un oubli.**
+`GroupLocalStreamBtn` le fait par `sendData({ type: 'AUDIO_MUTE_TOGGLE' })` ; c'est hors de portée
+dans un appel 1-à-1, pour trois raisons cumulées : la branche `visio`/`vocal` de
+`usePeerConnections` n'ouvre que `peer.call()`, jamais `peer.connect()` — il n'existe donc aucun
+canal de données ; `sendData` lit `onAirRoom`, figé à `'app'` dans le contexte de `Notifications`,
+alors que les connexions d'appel sont rangées sous `currentCallRoomId` ; et `remotePeers` y reste
+vide, `watchUsers` n'y étant jamais appelé. La moitié utile fonctionne quand même sans
+signalisation : `toggleAudioState` pose `track.enabled = false` sur le flux local, donc le pair
+d'en face entend du silence immédiatement. Ce qui manque est le **badge** de son côté — item ouvert
+de `work/webrtc2-todo.md`.
+
+⚠️ **`normalizeDirectCallType` n'est PAS `isValidCallType`**, et les confondre a coûté un
+cul-de-sac. `isValidCallType` est dérivé de `VALID_CONNECTION_TYPES` : il accepte les **cinq**
+types de connexion (`data`, `stream`, `screen`, `visio`, `vocal`), ce qui est juste pour un type de
+**contexte** et faux pour un appel direct. `isValidCallType('screen')` rendant `true`, un
+`startCallWithPeer({type:'screen'})` passait la validation, basculait la FSM en CALLING, puis
+mourait à l'ouverture de connexion — où `config.stream` vaut `null` et où le `return true` **annule**
+le retry. `normalizeDirectCallType` (`Composables/utils/validators.js`) ne connaît que les **deux**
+types d'un appel, et normalise plutôt que de valider : le titre, l'icône et l'invitation disent
+alors tous les trois la même chose. Il remplace le repli du chemin **sortant** ; les trois chemins
+entrants gardent `isValidCallType`, délibérément.
 
 `Widgets/UI/` — `Audio/SpectrumAnalyzer.vue`, `Report/Debug.vue`.
 
@@ -217,12 +262,15 @@ chez le récepteur.
 Deux événements transitent par l'eventBus injecté : **`call-user`** `(slug, type)` et
 **`close-call`**.
 
-⚠️ **`EventBus/webrtc2Events.js` n'est consommé par personne.** Le module exporte
-`WEBRTC2_EVENTS`, `emitCallUser`, `emitCloseCall`, `onCallUser`, `onCloseCall` et
-`normalizeType` (qui n'accepte que `'visio' | 'vocal'`), mais les deux appelants réels —
-`System/Notifications.vue` et `Widgets/UI/Buttons/CallRemotePeerBtn.vue` — font toujours
-`eventBus.$emit('call-user', slug, type)` en direct. Le traiter comme la normalisation
-**visée**, pas comme le chemin en vigueur.
+⚠️ **`EventBus/webrtc2Events.js` n'est consommé par personne, et il n'a plus rien à sauver.** Le
+module exporte `WEBRTC2_EVENTS`, `emitCallUser`, `emitCloseCall`, `onCallUser`, `onCloseCall` et
+`normalizeType`, mais les deux appelants réels — `System/Notifications.vue` et
+`Widgets/UI/Buttons/CallRemotePeerBtn.vue` — font toujours
+`eventBus.$emit('call-user', slug, type)` en direct. **Sa seule fonction qui valait,
+`normalizeType`, a été récupérée le 31/08/2026 dans `Composables/utils/validators.js` sous le nom
+`normalizeDirectCallType`** — c'était le prédicat « les deux types d'un appel direct » qui manquait
+au paquet. La décision qu'attendait `work/doc-rustines.md` est donc tranchée : supprimer, il ne
+reste rien à brancher.
 
 `close-call` est **idempotent par contrat** : un même départ peut l'émettre deux fois
 (voir [flux.md](flux.md#départ-dun-pair)).

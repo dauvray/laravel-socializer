@@ -147,7 +147,19 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
       - [ ] Tests — la suite JS complète reste verte (`npm run test:run`) ; vérification manuelle
             des quatre modules touchés (audio, application, tableau blanc, classe virtuelle)
 
-- [ ] **Supprimer `WebRTC2/EventBus/webrtc2Events.js`** · effort [S]
+- [ ] **Supprimer `WebRTC2/EventBus/webrtc2Events.js`** · effort [S] · **décision TRANCHÉE le
+  31/08/2026 par le lot F : SUPPRIMER, il ne reste rien à brancher.**
+
+  La question ouverte était « le brancher (A) ou le supprimer (B) ». Elle est réglée par le fait,
+  pas par un arbitrage de goût : **la seule fonction du module qui valait quelque chose,
+  `normalizeType`, a été récupérée** dans `Composables/utils/validators.js` sous le nom
+  `normalizeDirectCallType` — c'était le prédicat « les deux types d'un appel direct » qui manquait
+  au paquet, et son absence fabriquait un cul-de-sac (`isValidCallType` acceptant `screen`). Le
+  reste du module — `emitCallUser`, `emitCloseCall`, `onCallUser`, `onCloseCall` — normalise un
+  payload à six champs que personne n'émet et que les tests du lot F épinglent désormais dans sa
+  **forme brute**, des deux côtés. Le brancher demanderait donc de changer quatre émetteurs pour
+  gagner zéro fait. Reste à faire : la suppression elle-même, et le retrait de la mention dans
+  `docs/modules/webrtc2/api.md` — déjà réécrite pour dire que le module n'a plus rien à sauver.
       « N'est consommé par personne » ; la seule mention dans le code est un commentaire de
       `Composables/utils/validators.js` (« le type était mort »). La doc demande de le traiter
       « comme la normalisation **visée**, pas comme le chemin en vigueur » — c'est-à-dire d'entretenir

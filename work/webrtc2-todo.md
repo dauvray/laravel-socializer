@@ -1095,9 +1095,22 @@ extractions : c'est 18 lignes, sous un filet cinq fois plus dense.
 
   `PlayerHost.vue:23-32` ne câble **pas** `videoActive`, qui vaut donc `true` par défaut
   (`MediaBroadcastPlayer.vue`), et `useStreamManager` passe par `createVideoElement` pour tout
-  `currentType !== 'stream'` — **vocal compris**. Une `<video>` sans piste vidéo est donc rendue,
-  avec ses trois boutons : `requestPictureInPicture()` y **rejette**, et le rejet part dans un
-  `console.error` que personne ne lit. Bouton visiblement mort, cadre noir à côté.
+  `currentType !== 'stream'` — **vocal compris**. Une `<video>` est donc rendue avec ses trois
+  boutons : `requestPictureInPicture()` y **rejette**, et le rejet part dans un `console.error` que
+  personne ne lit. Bouton visiblement mort, cadre noir à côté.
+
+  ⚠️ **La prémisse de cet énoncé était FAUSSE, corrigée le 31/08/2026 par le lot F.** Il disait
+  « une `<video>` **sans piste vidéo** » : la piste était bien là. `_enterCallSession` appelait
+  `media.startCurrentStream(true)` alors que la fonction ne prenait **aucun paramètre** — l'argument
+  était ignoré et les contraintes lisaient `isVideoEnabled`, vrai par défaut. Un appel « vocal »
+  capturait donc une piste vidéo **et la transmettait**, `peer.call` passant le flux tel quel : la
+  caméra s'allumait sur un appel où personne ne l'avait demandée. **Corrigé** (le type descend
+  jusqu'aux contraintes, avec un pouvoir de veto seulement), et épinglé par un 0 croisé —
+  `usePeerMedia.streams.test.js` pour le veto, `useCallManager.test.js` pour la transmission du type.
+
+  Ce qui reste ouvert ici est donc l'autre moitié, inchangée : `videoActive` non câblé par
+  `PlayerHost`, donc une `<video>` rendue et un bouton PIP qui rejette en silence. Le flux vocal
+  n'a maintenant plus de piste vidéo, ce qui rend le cadre noir **certain** au lieu de probable.
 
   Plus fréquent que le cas multi-vignette que le lot D vient de fermer, et écrit nulle part. La cause
   amont est l'item « l'état initial d'un pair n'est jamais semé » (`isVideoEnabled` porté par la
@@ -1229,10 +1242,92 @@ extractions : c'est 18 lignes, sous un filet cinq fois plus dense.
   par un commentaire disant qu'il est là pour l'ordre des opérations (il ne l'est pas : le setter
   du reset suit immédiatement).
 
-- [ ] **Graceful degradation eventBus** : si l'eventBus est indisponible, logger au lieu de crasher.
-  Partiellement en place (`createPeerContext` pose un no-op et warn) — reste à vérifier les
-  widgets qui l'injectent directement.
+- [x] **Graceful degradation eventBus** — **vérifié et TRANCHÉ le 31/08/2026 (lot F), et la décision
+  est l'INVERSE de l'intitulé de cet item.**
+
+  Le relevé demandé, au grep sur tout le paquet : `inject('eventBus')` **nu** n'existait qu'à
+  `CallRemotePeerBtn.vue`, `Notifications.vue`, `ChatComponent.vue` et `WebRTC/composables/usePeers.js`
+  (v1 morte). **Un seul widget WebRTC2 était concerné**, celui du lot.
+
+  Et il ne doit **pas** dégrader. Le bus EST la fonctionnalité de ce bouton : `onCallUser` n'a aucun
+  autre canal. Un no-op — le geste juste pour un *contexte*, qui a d'autres travaux — y produirait un
+  bouton qui accepte le clic, se désactive et n'envoie rien, c'est-à-dire exactement ce que son propre
+  consommateur condamne : « un bouton qui ne fait rien est pire que pas de bouton » (`Cover.vue:29-32`).
+  Retenu : `inject('eventBus', null)`, le **prédicat des trois méthodes** de `createPeerContext.js:96`,
+  `:disabled` si le bus manque, et un `console.error` **au setup** (une fois, pas par clic). Le bouton
+  avoue au lieu de faire semblant.
+
+  ⚠️ La dissymétrie avec `AWN` — qui, lui, dégrade — n'est pas une incohérence : c'est la différence
+  entre une dépendance et un ornement. Écrite dans l'en-tête de `CallRemotePeerBtn.vue`.
+
+  Reste hors périmètre : `ChatComponent.vue` (pas WebRTC2), et la v1 qui mourra avec `components/WebRTC/`.
 - [ ] **Cleanup `AbortController`** : annuler les opérations longues à la destruction du contexte.
+
+---
+
+## Les boutons d'appel — ce que le lot F a ouvert le 31/08/2026
+
+Tous mesurés **avant** d'être écrits ici, aucun n'est une impression de lecture.
+
+- [ ] 🟠 **Le mute et la caméra ne sont annoncés à personne dans un appel 1-à-1** `[M]`
+
+  `CallManagerBtn` bascule bien les pistes — `toggleAudioState` pose `track.enabled = false`, donc le
+  pair entend du silence immédiatement — mais **aucune annonce ne part**, donc aucun badge « micro
+  coupé » n'apparaît de son côté. `GroupLocalStreamBtn` le fait par `sendData`, ce qui est hors de
+  portée ici, et pas pour une raison de câblage : **quatre pièces manquent**, toutes vérifiées.
+
+  1. `usePeerConnections.js` n'ouvre `peer.connect()` que sur la branche `stream` — la branche
+     `visio`/`vocal` n'a **aucun canal de données** (comparer `:454-467` et `:487-500`) ;
+  2. `sendData` lit `session.onAirRoom`, figé à `'app'` à la construction du contexte, alors que les
+     connexions d'appel sont rangées sous `currentCallRoomId` — et `sendData` n'accepte pas de room ;
+  3. `Notifications.vue` ne passe **pas** d'`onDataReceived` à `initialize`, donc rien ne recevrait ;
+  4. `PlayerHost.vue:23-32` ne câble ni `muted` ni `videoActive` : ils valent `false`/`true` pour
+     toujours, si bien que le badge de `MediaBroadcastPlayer` n'est **jamais** rendu dans un appel,
+     des deux côtés.
+
+  Conséquence pour qui reprendrait : ce n'est pas « ajouter un `sendData` », c'est ouvrir un canal de
+  données sur la branche d'appel. À dimensionner avant. En attendant, la borne est écrite dans
+  `docs/modules/webrtc2/api.md`.
+
+- [ ] 🟠 **`isValidCallType` reste trop permissif sur les trois chemins ENTRANTS** `[S]`
+
+  Le chemin sortant normalise depuis le lot F (`normalizeDirectCallType`), mais `useCallManager.js`
+  garde `isValidCallType` aux l.191, 248 et 568 — délibérément : ils sont symétriques de ce que les
+  autres onglets émettent, et les durcir sans mesurer casserait la compatibilité entre deux versions
+  du bundle. Le constat reste : un `type: 'screen'` **forgé** y pose `session.currentType = 'screen'`
+  chez le récepteur. C'est un arbitrage de sécurité, pas un correctif de widget — à traiter avec
+  `docs/modules/webrtc2/securite.md`, jamais séparément.
+
+- [ ] 🟠 **Pendant `calling` et `receiving`, l'utilisateur n'a aucun moyen d'annuler** `[S]`
+
+  `CallManagerBtn` ne rend qu'un `<Spinner>` dans ces deux états : le seul bouton d'arrêt vit dans la
+  branche `v-else`, donc à partir de `connected`. Deux filets existent en aval (l'abandon du moteur
+  de retry à ≈55 s, et l'auto-refus de `VideoCallAlert` à 10 s), mais **aucun n'est un geste de
+  l'utilisateur**. C'est ce qui a rendu invisible, longtemps, la famille de régressions « FSM bloquée
+  en calling » — dont le lot F a fermé la troisième route. Épinglé en attendant par le cas « en
+  attente il n'y a rien à cliquer » de `CallManagerBtn.test.js`, dont le titre dit que c'est un
+  constat.
+
+- [ ] 🟢 **`startCallWithPeer` ne distingue pas ses quatre refus** `[S]`
+
+  Elle rend `null` sans dire pourquoi, alors que les causes appellent des messages **opposés** :
+  « vous êtes déjà en appel » n'est pas « votre connexion n'est pas prête ». Le toast actuel
+  (« Appel vers X impossible pour l'instant ») est donc volontairement vague. Un code de raison
+  rendrait le message juste. Reporté sciemment : le lot F avait à fermer le cul-de-sac, pas à
+  fignoler son libellé.
+
+- [ ] 🟢 **Le bouton « raccrocher » reste cliquable pendant `closing`** `[S]` — **sortie D, avec son
+  déclencheur écrit.**
+
+  Mesuré : **`closing` n'est jamais peint.** `stopCallWithPeers` (l.308-383) ne contient aucun
+  `await`, et ni `stopCurrentStream` ni `cleanupCallPlayers` n'en ont : CONNECTED → CLOSING → IDLE
+  tient dans un seul bloc synchrone que l'ordonnanceur de Vue ne coupe pas. Ajouter
+  `:disabled="status === 'closing'"` créerait donc un binding **prouvablement mort** — exactement ce
+  que le lot D a refusé pour la branche `else` de `toggleFullscreen`. Et le second clic est inoffensif :
+  `close-call` est idempotent par contrat, et la FSM refuse la transition avec un warn nommé.
+
+  **Déclencheur** : si un `await` apparaît un jour dans `stopCallWithPeers` — l'item « drainer la
+  file » en met un sur la trajectoire — alors `closing` devient peignable et l'arbitrage se rouvre.
 
 ---
 
@@ -1300,7 +1395,7 @@ prochaine passe ne repaie pas la mesure :
 
 ## Patterns proposés, non implémentés
 
-### Injection protective
+### ~~Injection protective~~ — **ÉCARTÉ le 31/08/2026 (lot F)**
 
 ```javascript
 const safeInject = (key, fallback = null) => {
@@ -1312,6 +1407,18 @@ const safeInject = (key, fallback = null) => {
     }
 }
 ```
+
+⚠️ **Ne pas l'implémenter.** Trois raisons mesurées en fermant l'item « graceful degradation
+eventBus » ci-dessus :
+
+1. **Le `try/catch` ne sert à rien** : `inject()` ne lève pas hors d'un `setup()`, il rend
+   `undefined` et journalise un avertissement. Mesuré au lot B.
+2. **Un repli uniforme est le mauvais geste**, et c'est le fond de la question : `AWN` doit
+   dégrader (un toaster absent ne doit pas empêcher un appel), `eventBus` doit faire échouer
+   visiblement (un bouton sans bus est nuisible). Un helper qui traite les deux pareil efface
+   précisément la distinction qui compte.
+3. **La forme retenue existe déjà et elle est vivante** : le prédicat des trois méthodes de
+   `createPeerContext.js:95-102`. La recopier coûte quatre lignes et ne cache rien.
 
 ### Lifecycle cleanup manager
 

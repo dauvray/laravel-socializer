@@ -39,7 +39,7 @@ et le seul étage où les incendies du paquet étaient détectables). Le harnais
 | Couches extraites de l'orchestrateur — `useConnectionPool`, `useCallManager`, `useStreamManager`, `useSignalingQueue` | ✅ | — |
 | Store — `peers2Store` : runtime, observabilité, `remotePeerId`, **phase du Peer**, **registre des contextes** | ✅ | — |
 | Composables d'UI — `useAwaitedStreams`, `useBroadcastPresence` | ✅ | — |
-| Tâche 8 · **Composants** `Widgets/**` — 15 fichiers, **12** couverts | 🟠 **lots A, B, V faits le 30/08 · lots C et D faits le 31/08** | restent 3 fichiers, en deux lots : **E** `LocalMediaPlayer` + `MediaBroadcastProvider`, **F** `CallManagerBtn` + `CallRemotePeerBtn` (+ `SpectrumAnalyzer`, exclu et classé). Deux décomptes de l'énoncé étaient **faux** — voir ci-dessous |
+| Tâche 8 · **Composants** `Widgets/**` — 15 fichiers, **14** couverts | ✅ **FERMÉE le 31/08/2026** (lots A, B, V, C, D, E, F) | il ne reste que `SpectrumAnalyzer`, **exclu et assumé** (pas d'`AudioContext` dans happy-dom, et son seul consommateur vivant est la v1 morte). Le lot F n'était pas un lot de tests : il a fermé un cul-de-sac qui bloquait **tout appel de l'onglet**, et un appel « vocal » qui **allumait la caméra** — voir ci-dessous |
 | Scénarios — smoke, `lateJoiner`, `broadcastLifecycle`, `peerDeparture`, `multiContext`, `incomingMappingInvariant`, `outgoingAuth`, `incomingSpoof` | 🟠 | **aucun scénario n'utilise la topologie star** (`grep topology scenarios/` : zéro) — `lateJoiner` est intégralement mesh. La transition **« hub absent → hub présent »** n'est donc épinglée à aucun étage : ni en unitaire, ni bout en bout. Relevé le 30/08/2026 |
 | Perte de connexion → re-composition — `scenarios/peerDeparture` (« A recharge en chevauchement »), `useConnectionPool`, `createPeerContext` | ✅ | — |
 | Hors WebRTC2 — `Chat/dateSeparatorRender`, `System/useReverbChannel` (dont le désabonnement de whisper par callback), `User/coverCallButton` | amorces | plan Chat : [chat-tests-plan.md](chat-tests-plan.md) |
@@ -403,13 +403,91 @@ boutons d'appel du lot F.
 | **C** | `useRemotePeerState`, `RemoteMediaPlayer`, le joint `conn.peer` | `useRemotePeerState.test.js`, `RemoteMediaPlayer.test.js`, `StreamSimpleUI.toggles.test.js` |
 | **D** | `useMediaControls` + les contrôles de `MediaBroadcastPlayer` | `useMediaControls.test.js`, `MediaBroadcastPlayer.controls.test.js`, `helpers/fakeFullscreen.js` |
 | **E** | `LocalMediaPlayer`, `MediaBroadcastProvider`, le joint de l'exception d'écran | `LocalMediaPlayer.test.js`, `MediaBroadcastProvider.test.js`, `StreamSimpleUI.local.test.js` |
+| **F** | `CallManagerBtn`, `CallRemotePeerBtn`, et la couture avec `Notifications` | `CallManagerBtn.test.js`, `CallRemotePeerBtn.test.js`, `System/__tests__/Notifications.callControls.test.js` |
 | déjà là | `MediaBroadcastPlayer`, `PlayerHost`, `useAwaitedStreams`, `Debug` | — |
 
-**Le lot qui reste** :
+**Plus aucun lot ouvert : la tâche 8 est fermée le 31/08/2026.**
 
-| Lot | Fichiers de production | Pourquoi ils vont ensemble |
-|---|---|---|
-| **F** | `CallManagerBtn`, `CallRemotePeerBtn` | les deux boutons d'appel |
+#### Ce que le lot F a trouvé, et qui n'était pas dans l'énoncé
+
+L'énoncé faisait deux noms de fichiers et six mots — « les deux boutons d'appel ». Il a rendu
+**+51 cas en 6 fichiers, DIX corrections de production, et six affirmations réfutées.**
+Suite : 79 fichiers / 1417 cas avant, **82 / 1468** après (relu dans la sortie du runner).
+
+**Le 🔴 que personne n'avait vu, et il ne concernait pas les boutons.** Sur le chemin
+« aucun peerId local publiable », `requestAuthorizationRemotePeerId` rend `null` **après** que la
+FSM est passée en CALLING, et **avant** d'armer le moteur de retry. Donc, par ordre de gravité :
+`callStatus` restait `'calling'` pour la vie de l'onglet ; `CallManagerBtn` n'affichant qu'un
+spinner dans cet état, l'utilisateur n'avait **aucune sortie** ; `transition(CALLING)` depuis
+`calling` étant invalide, **plus aucun appel n'était possible dans cet onglet, vers personne** ; la
+session restait polluée ; et seulement en quatrième, le bouton du mur restait désactivé. C'était la
+**troisième route** de la famille de régressions « FSM bloquée en calling » — les deux autres étaient
+fermées et documentées depuis le 29/08. Le commentaire de `usePeerCore` affirmait pourtant
+« l'utilisateur peut rappeler ».
+
+⭐ **Le chiffre qui vaut le lot : sept 0 croisés, et ils imposent le TROISIÈME fichier.** Renommer un
+attribut de la couture dans le template de `Notifications.vue`, couper une prop, croiser les deux
+écouteurs — chacune de ces sept mutations rougit `Notifications.callControls.test.js` et **0 cas** de
+`CallManagerBtn.test.js`. La barre et son adaptateur peuvent cesser entièrement de se parler sans
+qu'un seul cas de l'étage présentationnel bouge. Même forme que la mesure du lot C sur `conn.peer`.
+
+⭐ **Et deux autres 0 croisés, un par correction de fond.** La reprise de la FSM rougit 3 cas de
+`useCallManager.test.js` et **0** de `Notifications.test.js` ; le toast et le `close-call` rougissent
+2 cas de `Notifications.test.js` et **0** de l'autre. Idem pour le défaut vocal/caméra : retirer le
+veto rougit 1 cas de `usePeerMedia.streams.test.js` et **0** de l'appelant, faire repasser l'appelant
+au littéral `true` rougit 3 cas de l'appelant et **0** de l'autre. **Corriger une seule moitié aurait
+laissé la caméra s'allumer, suite verte à l'appui.**
+
+⚠️ **Trois contrôles ont rougi ZÉRO cas, et pour la première fois en six lots AUCUN n'était une
+faute du test.** Un 0 assumé (`[].some()` est faux de toute façon) et **deux 0 par absorption**, tous
+deux re-mesurés en neutralisant les **deux** mécanismes ensemble — et rouges alors, à 5 et 2 cas. Le
+défaut de prop `type` est absorbé par `normalizeDirectCallType` ; la garde de bus du handler est
+absorbée par `:disabled`, VTU refusant de dispatcher sur un bouton désactivé. La règle du lot E
+(« chercher quelle AUTRE ligne absorbe la mutation ») est ce qui a évité de supprimer deux lignes
+utiles.
+
+**Les six affirmations réfutées** — la première étape de la tâche, une fois de plus :
+
+1. **« la garde `v-if` de `CallManagerBtn` est redondante avec celle du parent »** — non. Celle de
+   l'enfant est son contrat (`status` n'est pas `required`) ; celle du parent garde le **chargement
+   paresseux** du chunk. Mesuré : retirer celle du parent rougit **0 cas** — le rendu est identique
+   — et ce que le parent garde en plus n'est observable dans aucun runner. Sortie D, notée.
+2. **« seuls `visio`/`vocal` sont acceptés en aval »** — faux. `isValidCallType` est dérivé de
+   `VALID_CONNECTION_TYPES` et accepte `data`, `stream`, `screen`. Un `type: 'screen'` passait donc
+   en CALLING puis mourait à l'ouverture de connexion, où le `return true` **annule** le retry :
+   **second cul-de-sac**, fermé par `normalizeDirectCallType`.
+3. **« il faut annoncer la bascule par `sendData` »** — impossible, et pas pour une raison de
+   câblage : la branche `visio`/`vocal` n'ouvre **aucun canal de données**, `sendData` lit une room
+   figée à `'app'`, et `remotePeers` y reste vide. Quatre pièces manquent, nommées dans l'item ouvert.
+   Corollaire utile : les deux handlers ne sont plus que `api.toggleX()`, donc **rien à extraire** —
+   aucune duplication de `GroupLocalStreamBtn`.
+4. **« l'état `closing` doit désactiver le bouton raccrocher »** — `closing` n'est **jamais peint** :
+   `stopCallWithPeers` ne contient aucun `await`. Le binding aurait été prouvablement mort. Sortie D
+   avec son déclencheur écrit.
+5. **« `flushPromises` résout un composant asynchrone »** — non. Quatre tours laissent le placeholder
+   `<!---->` en place : un `import()` dynamique est un chargement de module, pas une microtâche.
+   `vi.dynamicImportSettled()` le résout, **à lui seul**. Le « nombre de tours » n'existe pas.
+6. **« VTU apparie un stub sur le `name` du composant »** — non, sur le **binding local** du
+   `<script setup>`. `Spinner1.vue` déclare `name: 'Spinner1'`, mais `CallManagerBtn` l'importe sous
+   `Spinner` : c'est la clé. Avec la mauvaise, le spinner réel est monté et un cas qui n'assertait
+   que « 0 bouton » restait **vert sans exercer la branche d'attente**.
+
+**Deux corrections trouvées sans être cherchées.** Le double de `Notifications.test.js` posait
+`callStatus: vi.fn(() => 'calling')`, lu dans un `computed` : **aucune dépendance réactive**, donc le
+composant ne se re-rendait jamais sur un changement d'état d'appel, alors que la production est
+réactive. Le double ne mentait pas sur la valeur, il mentait sur la **réactivité** — et tout cas
+faisant varier l'appel serait resté vert sur un rendu mort. Et `Notifications.vue:137` lisait un
+`AWN` **non déclaré** là où ses deux voisines écrivent `window.AWN` : `ReferenceError` en module ESM,
+sur le chemin `.ChatInvitation`.
+
+**Les sorties de la doctrine, pour mémoire** : A ×5 (les deux boutons câblés, le cul-de-sac,
+les deux `inject`, la normalisation du type, le veto vocal), B ×1 (la tolérance sans producteur de
+`onCloseCall`), C ×1 (les deux refus d'entrée de `startCallWithPeer`, silence voulu à cet étage),
+D ×2 (le `v-if` du parent, le bouton pendant `closing`).
+
+⚠️ **Vérification manuelle qui reste due** : la moitié visuelle du câblage (la classe
+`.btn-toggle-on` et sa spécificité). `happy-dom` ne calcule aucune mise en page, et c'est la copie
+**hôte** du SCSS qui est compilée : le contrôle est un rendu réel après `socializer:build`.
 
 > ⚠️ **L'énoncé de la tâche était FAUX sur le périmètre du lot C**, et il faut le dire parce que
 > l'erreur était structurante. Il écrivait : « les deux composables et `RemoteMediaPlayer` forment

@@ -13,7 +13,11 @@
     <CallManagerBtn
         v-if="callStatus !== 'idle'"
         :status="callStatus"
+        :isMuted="isMuted"
+        :isVideoEnabled="isVideoEnabled"
         @stop-call="onStopCall"
+        @toggle-audio="onToggleAudioMute"
+        @toggle-video="onToggleVideoVisibility"
     ></CallManagerBtn>
 
     <ToasterNewMessage
@@ -69,6 +73,11 @@ const heartbeatIntervalId = ref(null)
 // Computed
 const userChannel = computed(() => me.value?.channel)
 const callStatus = computed(() => peers.callStatus())
+
+// Les deux états de piste que `CallManagerBtn` rend. Ce composant est l'adaptateur de la barre
+// de commande, comme `GroupLocalStreamBtn` l'est du panneau de diffusion.
+const isMuted = computed(() => peers.isMuted.value)
+const isVideoEnabled = computed(() => peers.isVideoEnabled.value)
 
 const { whisper: whisperPing } = useReverbChannel(userChannel, {
     type: 'private',
@@ -134,7 +143,12 @@ const { whisper: whisperPing } = useReverbChannel(userChannel, {
 
         '.ChatInvitation': (event) => {
             addConversation(event)
-            AWN.info('Vous avez été invité dans une nouvelle conversation', {
+            // `window.AWN`, comme ses deux voisines (le refus l.113 et l'abandon l.185) : un
+            // `AWN` nu était un identifiant NON DÉCLARÉ — ni `const`, ni `inject` — donc un
+            // `ReferenceError` en module ESM, toujours strict. Plus difficile à diagnostiquer
+            // qu'un `TypeError` : la trace ne nomme pas le toaster, elle nomme une variable
+            // inconnue. Trouvé le 2026-08-31 en cadrant le lot F.
+            window.AWN?.info('Vous avez été invité dans une nouvelle conversation', {
                 durations: { info: 0 },
             })
         },
@@ -210,6 +224,30 @@ function setOnlineStatus() {
     })
 }
 
+/**
+ * Coupe / rouvre son micro pendant un appel.
+ *
+ * ⚠️ Pas de `sendData` ici, contrairement à `GroupLocalStreamBtn.onToggleAudioMute` — et ce
+ * n'est pas un oubli. Un appel 1-à-1 n'a AUCUNE connexion de données : `usePeerConnections`
+ * n'appelle `peer.connect()` que sur la branche `stream`, jamais sur `visio`/`vocal`. Et
+ * `sendData` lit `onAirRoom`, figé à `'app'` dans ce contexte, alors que les connexions
+ * d'appel sont rangées sous `currentCallRoomId`. L'appeler ne ferait qu'écrire un
+ * « connexion indisponible » en console à chaque clic.
+ *
+ * Ce qui marche quand même, et c'est la moitié utile : `toggleAudioState` pose
+ * `track.enabled = false` sur le flux local, donc le pair d'en face entend du silence
+ * immédiatement. Ce qui manque est seulement le badge « micro coupé » de son côté — item
+ * ouvert de `work/webrtc2-todo.md`.
+ */
+function onToggleAudioMute() {
+    peers.toggleAudioMute()
+}
+
+/** Coupe / rouvre sa caméra pendant un appel. Même borne que ci-dessus sur l'annonce. */
+function onToggleVideoVisibility() {
+    peers.toggleVideoVisibility()
+}
+
 async function onStopCall() {
     const currentUsers = peers.currentCallUsers?.value ?? []
     const usersToStop = [...currentUsers]
@@ -217,8 +255,36 @@ async function onStopCall() {
     await peers.stopCallWithPeers(usersToStop)
 }
 
+/**
+ * Émet l'invitation demandée par un bouton d'appel, et rejoue le chemin du refus si elle ne
+ * part pas.
+ *
+ * ⚠️ Ce troisième chemin d'échec n'était fermé nulle part, et c'est le plus grave des trois :
+ * `startCallWithPeer` engage la FSM en CALLING **avant** de savoir si l'invitation peut partir,
+ * et son aval refuse d'émettre quand il n'y a pas de peerId local publiable. La FSM restait
+ * alors en CALLING pour la vie de l'onglet — spinner sans bouton raccrocher, et plus aucun
+ * appel possible vers qui que ce soit. Le moteur remet désormais la FSM à IDLE et rend `null` ;
+ * ici on ajoute ce que seul cet étage peut faire : le dire à l'utilisateur, et réarmer les
+ * boutons d'appel des murs. Les mêmes deux gestes que le refus (l.113) et l'abandon (l.185).
+ */
 async function onStartCall(toUserSlug, type) {
-    await peers.startCallWithPeer({ toUserSlug, type })
+    const inviteId = await peers.startCallWithPeer({ toUserSlug, type })
+
+    if (inviteId) return
+
+    const callType = type || 'visio'
+
+    window.AWN?.info(`Appel vers ${toUserSlug} impossible pour l'instant`)
+
+    // ⚠️ Le garde n'est pas décoratif : `startCallWithPeer` refuse AUSSI quand un appel est
+    // déjà en cours — y compris avec ce pair-là. Émettre `close-call` sans vérifier
+    // réarmerait son bouton PENDANT l'appel.
+    const dejaParticipant = (peers.currentCallUsers?.value ?? [])
+        .some((user) => user.userSlug === toUserSlug)
+
+    if (!dejaParticipant) {
+        eventBus.$emit('close-call', [{ userSlug: toUserSlug, type: callType }])
+    }
 }
 
 // Lifecycle

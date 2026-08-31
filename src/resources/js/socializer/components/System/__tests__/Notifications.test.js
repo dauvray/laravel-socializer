@@ -18,32 +18,19 @@
  * son unique consommateur, et il en rejoue le chemin du refus.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { nextTick, ref } from 'vue'
+import { nextTick } from 'vue'
 import { mount } from '@vue/test-utils'
+import { createCallPeersDouble } from './helpers/createCallPeersDouble.js'
 
 // ─── Doubles ─────────────────────────────────────────────────────────────────
 
 /** Écouteurs Reverb enregistrés par le composant, indexés par nom d'événement. */
 let reverbListeners = {}
 
-const peersDouble = {
-    initialize: vi.fn(),
-    handleStreamReceived: vi.fn(),
-    handleStreamRemoved: vi.fn(),
-    callStatus: vi.fn(() => 'calling'),
-    isCallInProgress: vi.fn(() => true),
-    isInviteDuplicate: vi.fn(() => false),
-    stopCallInviteRetry: vi.fn(),
-    clearAllCallInviteRetries: vi.fn(),
-    clearSeenInvites: vi.fn(),
-    openCallBetweenPeer: vi.fn(async () => {}),
-    acceptCallFromPeer: vi.fn(async () => {}),
-    startCallWithPeer: vi.fn(async () => {}),
-    stopCallWithPeers: vi.fn(async () => {}),
-    currentCallUsers: { value: [] },
-    // Un VRAI ref : le composant l'observe par `watch`, et c'est lui qui le remet à null.
-    inviteAbandonedSignal: ref(null),
-}
+// Le double et ses cinq fidélités vivent dans le helper, partagé avec
+// `Notifications.callControls.test.js` : une seule liste à tenir pour les deux fichiers.
+const peers = createCallPeersDouble()
+const peersDouble = peers.api
 
 vi.mock('~socializer/components/WebRTC2/Composables/useMediaBroadcast.js', () => ({
     useMediaBroadcast: () => peersDouble,
@@ -108,9 +95,10 @@ beforeEach(() => {
     vi.clearAllMocks()
     reverbListeners = {}
     window.AWN = { info: vi.fn(), alert: vi.fn() }
-    // `clearAllMocks` ne touche pas un ref : à remettre à null AVANT le montage, sinon le
-    // watcher du test suivant démarrerait sur la valeur laissée par le précédent.
-    peersDouble.inviteAbandonedSignal.value = null
+    // `clearAllMocks` ne touche ni un ref ni un reactive : il ne remet à zéro que des
+    // compteurs d'appels. D'où `reinitialiser()`, et AVANT le montage — sinon le watcher du
+    // test suivant démarrerait sur la valeur laissée par le précédent.
+    peers.reinitialiser()
     wrapper = mountNotifications()
 })
 
@@ -157,6 +145,66 @@ describe('Notifications — .ResponseToAuthorizationPeer', () => {
 
         await reverbListeners['.ResponseToAuthorizationPeer'](answer(true))
         expect(peersDouble.stopCallInviteRetry).toHaveBeenCalledWith('invite-1')
+    })
+})
+
+describe('Notifications — l\'invitation qui ne part pas', () => {
+    /**
+     * Le troisième chemin d'échec d'un appel sortant, et le seul qui n'était fermé nulle part.
+     *
+     * Les deux autres sont déjà couverts ci-dessus : le refus distant, et l'abandon du moteur
+     * de retry. Celui-ci arrive plus tôt — `startCallWithPeer` a engagé la FSM en CALLING, puis
+     * son aval a refusé d'émettre (aucun peerId local publiable). Avant le lot F la FSM restait
+     * en CALLING **pour la vie de l'onglet** : spinner sans bouton raccrocher, et plus aucun
+     * appel possible vers personne. Le moteur remet maintenant la FSM à IDLE et rend `null` ;
+     * ce qui se joue ICI est ce que seul cet étage peut faire — le dire, et réarmer les boutons.
+     */
+    const demanderUnAppel = (slug = 'bob', type = 'visio') =>
+        eventBus.$on.mock.calls
+            .filter(([nom]) => nom === 'call-user')
+            .at(-1)[1](slug, type)
+
+    it('⭐ prévient l\'utilisateur et réarme le bouton du mur', async () => {
+        peersDouble.startCallWithPeer.mockResolvedValueOnce(null)
+
+        await demanderUnAppel()
+
+        expect(window.AWN.info).toHaveBeenCalledWith('Appel vers bob impossible pour l\'instant')
+        expect(eventBus.$emit).toHaveBeenCalledWith('close-call', [
+            { userSlug: 'bob', type: 'visio' },
+        ])
+    })
+
+    it('une invitation qui PART ne produit ni toast ni close-call', async () => {
+        // L'assertion négative qui rend visible un chemin d'échec déclenché à tort — et c'est
+        // exactement ce qu'un double résolvant `undefined` provoquerait (fidélité n° 4).
+        await demanderUnAppel()
+
+        expect(window.AWN.info).not.toHaveBeenCalled()
+        expect(eventBus.$emit).not.toHaveBeenCalledWith('close-call', expect.anything())
+    })
+
+    it('⭐ mais PAS si je suis déjà en appel avec ce pair', async () => {
+        // `startCallWithPeer` refuse aussi quand un appel est en cours, ce pair-là compris.
+        // Émettre `close-call` sans garde réarmerait son bouton PENDANT l'appel — le bouton
+        // dirait « appeler » alors que la conversation est ouverte.
+        peersDouble.currentCallUsers.value = [{ userSlug: 'bob', type: 'visio' }]
+        peersDouble.startCallWithPeer.mockResolvedValueOnce(null)
+
+        await demanderUnAppel()
+
+        expect(window.AWN.info).toHaveBeenCalled()
+        expect(eventBus.$emit).not.toHaveBeenCalledWith('close-call', expect.anything())
+    })
+
+    it('un type absent retombe sur visio, comme les deux autres chemins d\'échec', async () => {
+        peersDouble.startCallWithPeer.mockResolvedValueOnce(null)
+
+        await demanderUnAppel('bob', undefined)
+
+        expect(eventBus.$emit).toHaveBeenCalledWith('close-call', [
+            { userSlug: 'bob', type: 'visio' },
+        ])
     })
 })
 

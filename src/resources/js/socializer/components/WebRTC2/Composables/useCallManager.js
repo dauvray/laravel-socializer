@@ -30,7 +30,11 @@
  */
 
 import { CALL_STATES } from '~socializer/components/WebRTC2/Composables/utils/useCallStateMachine.js'
-import { isValidSlug, isValidCallType } from '~socializer/components/WebRTC2/Composables/utils/validators.js'
+// ⚠️ `isValidCallType` reste utilisé sur les trois chemins ENTRANTS (l. 236, 293, 568), et
+// délibérément : ils sont symétriques de ce que les autres onglets émettent, et les durcir est
+// un arbitrage de sécurité à part — item ouvert de `work/webrtc2-todo.md`. Seul le chemin
+// SORTANT normalise, parce que c'est lui qui fabriquait le cul-de-sac.
+import { isValidSlug, isValidCallType, normalizeDirectCallType } from '~socializer/components/WebRTC2/Composables/utils/validators.js'
 
 export function useCallManager(ctx, { core, media, connections, transport, pool }) {
 
@@ -102,7 +106,23 @@ export function useCallManager(ctx, { core, media, connections, transport, pool 
     | OUVERTURE D'APPEL
     ------------------------*/
 
-    const startCallWithPeer = (payload) => {
+    /**
+     * Émet une invitation d'appel vers un pair.
+     *
+     * @param   {{toUserSlug: string, type?: string, room?: string}} payload
+     * @returns {Promise<?string>} l'`inviteId` si l'invitation est partie ; `null` si elle a
+     *          été refusée APRÈS avoir engagé la FSM (l'appelant doit alors prévenir
+     *          l'utilisateur) ; `undefined` si le payload était irrecevable — auquel cas rien
+     *          n'a été engagé et il n'y a personne à prévenir.
+     *
+     * ⚠️ Le corps est `async` mais **le mutex n'a PAS bougé**, et c'est ce qui rend le
+     * changement sûr : un corps `async` s'exécute synchronement jusqu'à son premier `await`, et
+     * `transition(CALLING)` est AVANT lui. Deux clics rapprochés restent donc départagés
+     * exactement comme avant. C'est ce qui distingue cette modification de celle que
+     * `docs/modules/webrtc2/flux.md` interdit — awaiter `setLocalPeer()` —, qui placerait la
+     * transition APRÈS une suspension et ouvrirait la fenêtre.
+     */
+    const startCallWithPeer = async (payload) => {
         if (!payload || typeof payload !== 'object') return
         if (!isValidSlug(payload.toUserSlug)) return
 
@@ -116,7 +136,12 @@ export function useCallManager(ctx, { core, media, connections, transport, pool 
         transport.setLocalPeer()
 
         const toUserSlug = payload.toUserSlug
-        const type = isValidCallType(payload.type) ? payload.type : 'visio'
+        // ⚠️ `normalizeDirectCallType` et NON `isValidCallType` : ce dernier est dérivé de
+        // `VALID_CONNECTION_TYPES`, donc il accepte aussi `data`/`stream`/`screen`. Le repli
+        // qui était ici ne rattrapait donc pas un `type: 'screen'` — il passait en CALLING puis
+        // mourait à l'ouverture de connexion, où `config.stream` vaut `null` et où le
+        // `return true` ANNULE le retry. Un appel direct n'a que deux types.
+        const type = normalizeDirectCallType(payload.type)
 
         // Room imposée par l'appelant (ex: salle déjà identifiée côté serveur).
         // Absente → ensureCurrentCallRoomId conserve la room courante ou en génère une.
@@ -131,8 +156,32 @@ export function useCallManager(ctx, { core, media, connections, transport, pool 
         ctx.addCurrentCallUser(toUserSlug, type)
         ctx.session.currentType = type
 
-        core.requestAuthorizationRemotePeerId({ toUserSlug, type })
-        return
+        const inviteId = await core.requestAuthorizationRemotePeerId({ toUserSlug, type })
+
+        // ⚠️ Le refus le plus coûteux du module, et il était SILENCIEUX.
+        //
+        // `requestAuthorizationRemotePeerId` rend `null` quand il n'y a pas de peerId local
+        // publiable — refuser d'émettre est le bon geste, une invitation partie avec un id nul
+        // ne se corrige plus. Mais à ce moment la FSM est déjà en CALLING, et le moteur de
+        // retry n'est PAS armé : le `return null` précède `scheduleRetry`. Sans la reprise
+        // ci-dessous, la FSM restait donc en CALLING **pour la vie de l'onglet** — `callStatus`
+        // bloqué, `CallManagerBtn` réduit à un spinner sans bouton raccrocher, et surtout plus
+        // AUCUN appel possible, `transition(CALLING)` depuis `calling` étant invalide.
+        //
+        // La reprise ne réinvente rien : c'est `openCallBetweenPeer({status:false})`, le chemin
+        // qu'emprunte déjà un refus distant (`Notifications.vue`, `.ResponseToAuthorizationPeer`)
+        // et un abandon du moteur de retry. Sa branche `!status` retire le participant puis,
+        // s'il était le dernier, fait le full stop CALLING → CLOSING → IDLE.
+        if (!inviteId) {
+            await openCallBetweenPeer({
+                fromUserSlug: toUserSlug,
+                status: false,
+                options: { type },
+            })
+            return null
+        }
+
+        return inviteId
     }
 
     /**
@@ -149,7 +198,9 @@ export function useCallManager(ctx, { core, media, connections, transport, pool 
         ctx.addCurrentCallUser(fromUserSlug, type)
         ctx.session.currentType = type
 
-        await media.startCurrentStream(true)
+        // Le TYPE d'appel, et non `true` : cet argument était ignoré (la fonction n'en prenait
+        // aucun), si bien qu'un appel `vocal` capturait et transmettait une piste vidéo.
+        await media.startCurrentStream(type)
 
         const me = ctx.meStore.getMe
 

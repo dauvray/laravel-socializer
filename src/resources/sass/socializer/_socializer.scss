@@ -309,6 +309,13 @@ $message_width: 60%;
         @extend .btn-sm;
     }
 
+    // L'état ACTIF d'une bascule (micro ouvert, caméra active). Il faut une classe et non un
+    // `btn-primary` posé dans le template : `#call-web-ui button` ci-dessus vaut (1,0,1) et
+    // l'écraserait, à (0,1,0). Même contournement que `.btn-stop-call`, à (1,1,0).
+    .btn-toggle-on {
+        @extend .btn-primary;
+    }
+
     .btn-stop-call {
         @extend .btn-danger;
     }

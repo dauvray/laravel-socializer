@@ -142,6 +142,127 @@ describe('useCallManager', () => {
             expect(ctx.session.currentCallRoomId).toBeTruthy()
             expect(ctx.session.currentCallRoomId).not.toBe('   ')
         })
+
+        it('normalise un type de CONNEXION en type d\'appel', () => {
+            // `isValidCallType` est dérivé de `VALID_CONNECTION_TYPES` : il accepte `data`,
+            // `stream` et `screen`, qui sont des types de contexte et non d'appel direct. Le
+            // repli d'avant ne rattrapait donc pas `'screen'` — il passait en CALLING puis
+            // mourait à l'ouverture de connexion, où `config.stream` vaut `null` et où le
+            // `return true` ANNULE le retry. Second cul-de-sac, fermé par
+            // `normalizeDirectCallType`, qui ne connaît que les deux types d'un appel.
+            cm.startCallWithPeer({ toUserSlug: 'alice', type: 'screen' })
+
+            expect(ctx.session.currentType).toBe('visio')
+            expect(core.requestAuthorizationRemotePeerId).toHaveBeenCalledWith({
+                toUserSlug: 'alice',
+                type: 'visio',
+            })
+        })
+    })
+
+    // ── startCallWithPeer : l'invitation n'est pas émise ─────────────────────
+
+    describe('startCallWithPeer — quand l\'invitation n\'est PAS émise', () => {
+        /**
+         * Le cul-de-sac fermé par le lot F, et il était bien pire que « le bouton reste gris ».
+         *
+         * `requestAuthorizationRemotePeerId` refuse d'émettre quand il n'y a pas de peerId
+         * local publiable, et rend `null` avec un simple `console.warn` (`usePeerCore.js:317`).
+         * Or à ce moment la FSM est DÉJÀ en CALLING, et le moteur de retry n'est PAS armé — le
+         * `return null` précède `userSlugToInviteId.set` et `scheduleRetry`. Donc, avant ce
+         * lot, et par ordre de gravité :
+         *
+         *   1. `callStatus` restait `'calling'` pour la vie de l'onglet, et `CallManagerBtn`
+         *      n'affiche qu'un spinner dans cet état : AUCUNE sortie pour l'utilisateur ;
+         *   2. `transition(CALLING)` depuis `calling` étant invalide, **plus aucun appel
+         *      n'était possible dans cet onglet**, vers qui que ce soit ;
+         *   3. `currentCallUsers`, `currentCallRoomId` et `currentType` restaient pollués ;
+         *   4. et seulement en quatrième, le bouton d'appel du mur restait désactivé.
+         *
+         * C'est exactement la régression que décrit l'en-tête de `Notifications.test.js`, par
+         * une TROISIÈME route que personne n'avait fermée. Et le commentaire de
+         * `usePeerCore.js` affirmait « l'utilisateur peut rappeler » : faux sur les points 1 à 3.
+         *
+         * La réparation ne réinvente rien : elle rejoue `openCallBetweenPeer({status:false})`,
+         * le chemin qu'emprunte déjà un refus distant et un abandon du retry.
+         *
+         * ── CONTRÔLES DE HARNAIS, mesurés le 2026-08-31 ───────────────────────────
+         * Référence relue verte : 89 cas ici, 18 dans `System/__tests__/Notifications.test.js`.
+         * La seconde colonne est ce fichier-là.
+         *
+         *    la reprise `openCallBetweenPeer({status:false})` retirée ........... 3 · 0
+         *    le verdict rendu remplacé par `undefined` ......................... 2 · 0
+         *    le toast retiré d'`onStartCall` (côté Notifications) .............. 0 · 2
+         *    le `close-call` de reprise retiré (côté Notifications) ............ 0 · 2
+         *    le garde `dejaParticipant` retiré ................................. — · 1
+         *    `normalizeDirectCallType` remplacé par l'ancien repli permissif .... 1 · —
+         *
+         * ⭐ **Deux 0 croisés, un par étage, et c'est ce qui valide le partage.** La FSM et la
+         * purge de session sont épinglées ICI et nulle part ailleurs ; le toast et le
+         * `close-call` sont épinglés LÀ-BAS et nulle part ailleurs. Aucun des deux fichiers ne
+         * voit la moitié de l'autre — donc chacune des deux moitiés devait être écrite.
+         *
+         * ⚠️ Le garde `dejaParticipant` rougit 1 et non 0 : le double sème bien un participant.
+         * Un 0 aurait voulu dire que le test ne distingue pas « déjà en appel avec ce pair » de
+         * « en appel », et c'est le test qu'il aurait fallu réparer.
+         */
+        beforeEach(() => {
+            core.requestAuthorizationRemotePeerId.mockResolvedValue(null)
+        })
+
+        it('⭐ ramène la FSM à IDLE au lieu de la laisser en CALLING à vie', async () => {
+            await cm.startCallWithPeer({ toUserSlug: 'alice', type: 'visio' })
+
+            expect(ctx.callMachine.callState.value).toBe(CALL_STATES.IDLE)
+        })
+
+        it('⭐ purge la session : plus de participant, plus de room', async () => {
+            await cm.startCallWithPeer({ toUserSlug: 'alice', type: 'visio' })
+
+            expect(ctx.session.currentCallUsers).toEqual([])
+            expect(ctx.session.currentCallRoomId).toBe(null)
+        })
+
+        it('⭐ un appel suivant redevient possible — le fait qui compte vraiment', async () => {
+            await cm.startCallWithPeer({ toUserSlug: 'alice', type: 'visio' })
+
+            // Sans la réparation, cette seconde tentative sortait sur `!transition(CALLING)`
+            // et n'émettait rien : l'onglet était condamné jusqu'au rechargement.
+            core.requestAuthorizationRemotePeerId.mockResolvedValue('invite-2')
+            const verdict = await cm.startCallWithPeer({ toUserSlug: 'bob', type: 'visio' })
+
+            expect(verdict).toBe('invite-2')
+            expect(ctx.callMachine.callState.value).toBe(CALL_STATES.CALLING)
+            expect(ctx.session.currentCallUsers).toEqual([{ userSlug: 'bob', type: 'visio' }])
+        })
+
+        it('rend `null` à l\'appelant, qui en a besoin pour prévenir l\'utilisateur', async () => {
+            // Le verdict est la moitié basse du correctif : c'est `Notifications.onStartCall`
+            // qui porte le toast et le `close-call`, et il n'a aucun autre moyen de savoir.
+            expect(await cm.startCallWithPeer({ toUserSlug: 'alice' })).toBe(null)
+        })
+
+        it('une invitation ÉMISE ne déclenche aucune reprise', async () => {
+            core.requestAuthorizationRemotePeerId.mockResolvedValue('invite-1')
+
+            const verdict = await cm.startCallWithPeer({ toUserSlug: 'alice', type: 'visio' })
+
+            expect(verdict).toBe('invite-1')
+            expect(ctx.callMachine.callState.value).toBe(CALL_STATES.CALLING)
+            expect(ctx.session.currentCallUsers).toEqual([{ userSlug: 'alice', type: 'visio' }])
+        })
+
+        it('les deux refus d\'ENTRÉE ne rendent rien, et n\'ont personne à prévenir', async () => {
+            // Sortie C, assumée : sur ces deux chemins il n'y a pas de slug à NOMMER, et
+            // `onCloseCall` filtre sur `userSlug`. Aucun `close-call` n'y est donc adressable.
+            // Ce n'est pas un état mort — c'est un silence voulu À CET ÉTAGE, gardé en amont
+            // par la garde de slug de `CallRemotePeerBtn`.
+            expect(await cm.startCallWithPeer(null)).toBeUndefined()
+            expect(await cm.startCallWithPeer({ toUserSlug: 'not a slug!' })).toBeUndefined()
+
+            expect(ctx.callMachine.callState.value).toBe(CALL_STATES.IDLE)
+            expect(ctx.session.currentCallUsers).toEqual([])
+        })
     })
 
     // ── acceptCallFromPeer ──────────────────────────────────────────────────
@@ -172,11 +293,24 @@ describe('useCallManager', () => {
             expect(ctx.callMachine.callState.value).toBe(CALL_STATES.RECEIVING)
             expect(ctx.session.currentCallRoomId).toBe('call-room-1')
             expect(ctx.session.currentCallUsers).toEqual([{ userSlug: 'alice', type: 'visio' }])
-            expect(media.startCurrentStream).toHaveBeenCalledWith(true)
+            // Le TYPE, et non `true` : l'argument littéral d'avant était ignoré par
+            // `startCurrentStream`, qui n'en prenait aucun — un appel `vocal` capturait donc
+            // une piste vidéo et la transmettait.
+            expect(media.startCurrentStream).toHaveBeenCalledWith('visio')
             expect(media.createVideoElement).toHaveBeenCalledWith(
                 expect.objectContaining({ videoId: 'local-webcam', type: 'visio', source: 'local' }),
                 ctx.media.currentStream
             )
+        })
+
+        it('⭐ un appel VOCAL transmet son type au flux local, pour ne pas ouvrir la caméra', async () => {
+            // Le joint du défaut vocal/caméra : c'est ici que le type doit descendre. Le
+            // veto lui-même est épinglé un étage plus bas, dans `usePeerMedia.streams.test.js`
+            // — sans ce cas-ci, on pourrait corriger `usePeerMedia` et laisser l'appelant
+            // passer un littéral, ce qui rendrait la correction inerte.
+            await cm.acceptCallFromPeer(invitePayload({ options: { room: 'call-room-1', type: 'vocal', peerId: 'peer-alice' } }))
+
+            expect(media.startCurrentStream).toHaveBeenCalledWith('vocal')
         })
 
         /**
@@ -298,7 +432,7 @@ describe('useCallManager', () => {
             ...overrides,
         })
 
-        beforeEach(() => {
+        beforeEach(async () => {
             // ⚠️ Le mock DOIT écrire la demande en vol, comme le fait la production
             // (`usePeerCore.requestAuthorizationRemotePeerId`) : c'est le fait que lit la
             // garde d'`openCallBetweenPeer`. Le mock nu d'avant laissait le store vide, si
@@ -316,7 +450,11 @@ describe('useCallManager', () => {
             // L'ouverture suit toujours une invitation émise. Room imposée pour qu'elle
             // coïncide avec celle qu'`answerPayload()` renvoie — le distant renvoie
             // `options.room` verbatim, la clé de la demande doit donc se refermer.
-            cm.startCallWithPeer({ toUserSlug: 'alice', type: 'visio', room: 'call-room-1' })
+            //
+            // ⚠️ `await` obligatoire depuis que `startCallWithPeer` rend un verdict : sans
+            // lui, la continuation du verbe (le contrôle du refus) partirait en promesse
+            // flottante et les deux `mockClear` ci-dessous s'exécuteraient au milieu.
+            await cm.startCallWithPeer({ toUserSlug: 'alice', type: 'visio', room: 'call-room-1' })
             core.requestAuthorizationRemotePeerId.mockClear()
             ctx.peerStore.addWaitingRemotePeerId.mockClear()
         })
@@ -338,7 +476,10 @@ describe('useCallManager', () => {
             expect(ctx.peerStore.removeWaitingRemotePeerId)
                 .toHaveBeenCalledWith('alice', 'call-room-1', 'visio')
             expect(ctx.peerStore.addRemotePeerId).toHaveBeenCalledWith('alice', 'peer-alice')
-            expect(media.startCurrentStream).toHaveBeenCalledWith(true)
+            // Le TYPE, et non `true` : l'argument littéral d'avant était ignoré par
+            // `startCurrentStream`, qui n'en prenait aucun — un appel `vocal` capturait donc
+            // une piste vidéo et la transmettait.
+            expect(media.startCurrentStream).toHaveBeenCalledWith('visio')
             expect(pool.requestOrConnectPeer).toHaveBeenCalledWith('alice')
         })
 

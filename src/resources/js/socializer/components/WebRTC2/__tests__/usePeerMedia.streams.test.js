@@ -90,6 +90,64 @@ describe('usePeerMedia — flux locaux', () => {
             })
         })
 
+        /**
+         * ── CONTRÔLES DE HARNAIS du veto vocal, mesurés le 2026-08-31 ─────────────
+         * Référence relue verte : 22 cas ici, 89 dans `useCallManager.test.js`.
+         * La seconde colonne est ce fichier-là.
+         *
+         *    le veto vocal de `startCurrentStream` retiré ...................... 1 · 0
+         *    le type non transmis par `_enterCallSession` (retour au littéral) .. 0 · 3
+         *    le veto rendu ABSOLU (il écraserait un `isVideoEnabled` à false) ... 2 · —
+         *
+         * ⭐ **Un 0 croisé parfait : la correction a deux moitiés, et chaque fichier n'en voit
+         * qu'une.** Retirer le veto ici ne rougit aucun cas de l'appelant ; faire repasser
+         * l'appelant au littéral `true` ne rougit aucun cas ici. Corriger une seule des deux
+         * aurait laissé la caméra s'allumer, suite verte à l'appui.
+         */
+        it('⭐ un appel VOCAL ne demande pas la caméra', async () => {
+            // Le défaut vécu, trouvé en cadrant le lot F : `_enterCallSession` appelait
+            // `startCurrentStream(true)` alors que la fonction ne prenait AUCUN paramètre.
+            // L'argument était donc ignoré, et les contraintes lisaient `isVideoEnabled`, vrai
+            // par défaut (`createPeerContext.js:153`). Un appel « vocal » capturait donc une
+            // piste vidéo — et la transmettait, `peer.call` passant le flux tel quel.
+            // La caméra s'allumait sur un appel où l'utilisateur ne l'avait pas demandée.
+            await media.startCurrentStream('vocal')
+
+            expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledWith({
+                video: false,
+                audio: true,
+            })
+        })
+
+        it('un appel visio la demande, et respecte quand même isVideoEnabled', async () => {
+            // Le type ne PRIME pas sur le réglage : `vocal` interdit la vidéo, `visio` ne
+            // l'impose pas. Sans la seconde moitié de ce cas, un `video: type !== 'vocal'` seul
+            // resterait vert — et rallumerait la caméra d'un utilisateur qui l'a coupée.
+            await media.startCurrentStream('visio')
+            expect(navigator.mediaDevices.getUserMedia).toHaveBeenLastCalledWith({
+                video: true,
+                audio: true,
+            })
+
+            ctx.ui.streamStates.isVideoEnabled = false
+            await media.startCurrentStream('visio')
+            expect(navigator.mediaDevices.getUserMedia).toHaveBeenLastCalledWith({
+                video: false,
+                audio: true,
+            })
+        })
+
+        it('appelée sans type — le chemin de la DIFFUSION — garde son comportement', async () => {
+            // `usePeerOrchestrator.js:250` l'appelle nue, hors appel : là, aucun type d'appel
+            // n'a de sens et les contraintes restent celles des réglages seuls.
+            await media.startCurrentStream()
+
+            expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledWith({
+                video: true,
+                audio: true,
+            })
+        })
+
         it('publie le flux dans le contexte, lève isStreaming et le retourne', async () => {
             const returned = await media.startCurrentStream()
 

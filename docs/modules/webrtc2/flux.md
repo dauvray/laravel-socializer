@@ -50,8 +50,15 @@ inversé dans le cas nominal). Mais depuis que sa promesse ne se règle qu'à l'
 - `acceptCallFromPeer` pose `addRemotePeerId` huit lignes plus bas, qui doit précéder l'arrivée
   du `peer.call` de l'initiateur. Un `await` de plusieurs secondes intercalé fait refuser cet
   appel entrant par `_isAuthorizedIncomingPeer`, et **un refus ne revient jamais à l'émetteur** ;
-- `startCallWithPeer` est synchrone : l'awaiter déplacerait `callMachine.transition(CALLING)`
-  après un point de suspension, donc deux clics rapides passeraient tous deux le garde.
+- `startCallWithPeer` place `callMachine.transition(CALLING)` **avant son premier `await`** :
+  l'awaiter y déplacerait la transition après un point de suspension, donc deux clics rapides
+  passeraient tous deux le garde.
+
+  > ℹ️ Le verbe est `async` depuis le 2026-08-31 (il attend le verdict de
+  > `requestAuthorizationRemotePeerId` et le rend à son appelant), et **cela ne change rien à ce
+  > qui précède** : un corps `async` s'exécute synchronement jusqu'à son premier `await`, et la
+  > transition est au-dessus. C'est la ligne de partage à retenir — awaiter `setLocalPeer()`
+  > reste interdit pour cette raison exacte, awaiter l'émission de l'invitation ne l'est pas.
 
 L'invitation part sans attendre l'ouverture : c'est `waitForMeReady` qui porte cette attente, en
 aval, et qui meurt avec son contexte.
@@ -105,6 +112,42 @@ Le libellé du toast diffère de celui du refus (« n'a pas répondu » vs « es
 capture d'écran, il dit lequel des deux chemins s'est produit. Gardé par
 `__tests__/usePeerCore.test.js` (le signal, et son absence tant qu'il reste des tentatives) et
 `components/System/__tests__/Notifications.test.js` (les trois gestes, et la consommation du signal).
+
+### L'invitation ne part pas : aucun peerId local publiable
+
+Le troisième chemin d'échec, et il arrive **plus tôt** que les deux autres : la FSM est déjà en
+CALLING quand `requestAuthorizationRemotePeerId` refuse d'émettre, faute de peerId local publiable.
+Refuser est le bon geste — une invitation partie avec un id nul ne se corrige plus, le destinataire
+peut accepter, il n'a aucun id vers lequel se connecter.
+
+```
+useCallManager.startCallWithPeer
+  ├─ callMachine.transition(CALLING)                       ← AVANT le premier await : le mutex tient
+  ├─ inviteId = await core.requestAuthorizationRemotePeerId(...)
+  └─ !inviteId ?
+       ├─ await openCallBetweenPeer({ status: false })     ← la branche du refus, réutilisée
+       └─ return null                                      ← le verdict, rendu à l'appelant
+Notifications.onStartCall
+  ├─ toast « Appel vers <slug> impossible pour l'instant »
+  └─ close-call, SI je ne suis pas déjà en appel avec ce pair   ← sinon on réarmerait son bouton
+```
+
+⚠️ **Ce chemin n'était fermé nulle part avant le 2026-08-31, et c'était le pire des trois.** Le
+`return null` de `usePeerCore` précède l'armement du moteur de retry : ni `.ResponseToAuthorizationPeer`
+ni `inviteAbandonedSignal` ne pouvaient donc arriver. La FSM restait en CALLING **pour la vie de
+l'onglet**, et par ordre de gravité : `CallManagerBtn` n'affiche qu'un spinner dans cet état, donc
+**aucune sortie** ; `transition(CALLING)` depuis `calling` étant invalide, **plus aucun appel
+possible vers personne** ; la session restait polluée ; et seulement en quatrième, le bouton du mur
+restait désactivé. Le commentaire de `usePeerCore` affirmait « l'utilisateur peut rappeler » : c'est
+vrai depuis, faux avant.
+
+⚠️ **Le garde « déjà participant » du `close-call` n'est pas décoratif** : `startCallWithPeer` refuse
+aussi quand un appel est en cours — ce pair-là compris. Émettre sans vérifier réarmerait son bouton
+d'appel **pendant** la conversation.
+
+Gardé des deux côtés, et les deux moitiés sont mesurées mutuellement aveugles : retirer la reprise
+rougit 3 cas de `__tests__/useCallManager.test.js` et **0** de `Notifications.test.js` ; retirer le
+toast rougit 2 cas de `Notifications.test.js` et **0** de l'autre.
 
 ---
 

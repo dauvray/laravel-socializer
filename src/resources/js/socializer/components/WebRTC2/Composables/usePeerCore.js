@@ -311,9 +311,19 @@ export function usePeerCore(ctx) {
         // requête ratée mais une invitation DÉFINITIVEMENT invalide, réémise en boucle : le
         // destinataire pouvait accepter, il n'avait aucun id vers lequel se connecter.
         //
-        // Refuser d'émettre est le bon comportement : l'appelant (`useCallManager.startCall`)
-        // ignore le retour et l'utilisateur peut rappeler — alors qu'une invitation partie
-        // avec un id nul ne se corrige plus.
+        // Refuser d'émettre est le bon comportement — une invitation partie avec un id nul ne
+        // se corrige plus.
+        //
+        // ⚠️ Ce commentaire disait « l'appelant ignore le retour et l'utilisateur peut
+        // rappeler », et c'était FAUX à trois titres : la FSM était déjà en CALLING, le moteur
+        // de retry n'était pas armé (le `return null` ci-dessous précède `scheduleRetry`), et
+        // aucune de ces deux choses ne se défaisait. L'onglet restait donc bloqué en `calling`
+        // pour sa durée de vie, sans bouton pour raccrocher, et `transition(CALLING)` refusant
+        // de partir de `calling`, plus aucun appel n'était possible — vers personne.
+        // Corrigé le 2026-08-31 (lot F) : `useCallManager.startCallWithPeer` **attend** ce
+        // retour et, sur `null`, rejoue `openCallBetweenPeer({status:false})` pour ramener la
+        // FSM à IDLE ; `Notifications.onStartCall` porte le toast et le `close-call`. Le retour
+        // n'est donc plus ignoré, et « l'utilisateur peut rappeler » est vrai maintenant.
         if (!localPeerId) {
             console.warn(
                 '[usePeerCore] requestAuthorizationRemotePeerId : aucun peerId local —' +

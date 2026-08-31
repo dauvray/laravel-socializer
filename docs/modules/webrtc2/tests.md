@@ -436,11 +436,15 @@ Sans décompte, parce qu'il pourrit : l'état exact se lit dans
   `provide(WEBRTC_API_KEY)` ne rougit que `MediaBroadcastProvider.test.js`, et reconstruire
   `screenStreamData.stream` en copie ne rougit que `StreamSimpleUI.local.test.js`. Cette clé n'a
   qu'un `provide` et qu'un `inject` dans tout le dépôt : aucun étage ne peut voir les deux bouts.
-  Restent les deux boutons d'appel.
+  **Les deux boutons d'appel** l'ont rejoint le 31/08/2026 et **ferment l'étage** — `CallManagerBtn`
+  et `CallRemotePeerBtn`, plus un troisième fichier pour la couture avec `Notifications`. Ce
+  troisième est justifié par la mesure la plus nette du chantier : les **sept** contrôles de
+  couture (attribut renommé, prop coupée, écouteurs croisés) rougissent le fichier du joint et
+  **0 cas** de celui de la barre. `SpectrumAnalyzer` reste hors périmètre, assumé.
 
 ---
 
-## Tester un composant : dix faits mesurés
+## Tester un composant : 14 faits mesurés
 
 ### ⚠️ Les `directives` passées en `global` sont INERTES
 
@@ -591,6 +595,56 @@ Corollaire de production, mesuré au même endroit : le `watch(() => props.users
 `MediaBroadcastProvider` **n'est pas profond**, donc toute la chaîne de présence dépend du fait que
 le fournisseur **réaffecte** son tableau. Y écrire un `push` rougit **0 cas sur 1417** et arrête
 silencieusement la synchronisation de tous les providers.
+
+### ⚠️ Un composant asynchrone ne se résout PAS avec `flushPromises`
+
+`defineAsyncComponent(() => import(…))` n'est pas une microtâche en attente : c'est un chargement de
+module. Mesuré à la sonde, sur `CallManagerBtn` monté à travers `Notifications` — **quatre tours de
+`flushPromises()` laissent le placeholder en place**, et le conteneur rend littéralement `<!---->`.
+Ce qui le résout est `await vi.dynamicImportSettled()`, et il le résout **à lui seul** : un
+`flushPromises()` ajouté derrière ne change plus rien.
+
+Le danger n'est pas le rouge, c'est le **vert par vacuité** : sur un placeholder, `findAll('button')`
+rend `[]` et `find('.btn-stop-call').exists()` rend `false`, donc tout cas écrit en négatif passe
+sans rien exercer. D'où la règle : **un fichier qui monte un composant asynchrone commence par un cas
+qui asserte sa PRÉSENCE**, avant toute autre assertion. Sur
+`Notifications.callControls.test.js`, remplacer `dynamicImportSettled` par `flushPromises` fait
+tomber 6 cas sur 7 — c'est la mesure du garde-fou lui-même.
+
+Corollaire à ne pas chercher : le « nombre de tours de `flushPromises` » n'existe pas ici.
+
+### ⚠️ Un stub s'apparie sur le nom du BINDING LOCAL, pas sur le `name` du composant
+
+`Spinner1.vue` (`~estarter`) déclare `name: 'Spinner1'`, et deux fichiers le stubent sous la clé
+`Spinner1` — parce que leurs composants l'**importent** sous ce nom.
+`CallManagerBtn.vue` fait `import Spinner from '…/Spinner1.vue'` : la clé y est donc `Spinner`.
+Mesuré : avec la clé `Spinner1`, le spinner réel est monté et `.spinner-stub` reste introuvable — un
+cas qui n'assertait que « 0 bouton » serait resté **vert sans jamais exercer la branche d'attente**.
+
+### ⚠️ `trigger` ne dispatche pas sur un élément portant l'attribut `disabled`
+
+`@vue/test-utils` sort silencieusement de `trigger()` quand `isDisabled()` rend vrai, et
+`isDisabled()` lit l'**attribut** `disabled` sur une liste de balises dont `BUTTON`
+(`dist/vue-test-utils.cjs.js:7228` et `:7060-7072`). Deux conséquences :
+
+- un état « désactivé » s'asserte par `attributes('disabled')`, **pas** par une propriété — l'inverse
+  du piège `muted` ci-dessus, où c'est la propriété qui compte ;
+- un cas de « second clic sur un bouton désactivé » mesure l'émulation du navigateur par VTU autant
+  que le composant. Acceptable : un vrai navigateur ferme au même endroit. Mais il **absorbe** toute
+  garde équivalente posée dans le handler — mesuré : retirer `if (!busPret) return` de
+  `CallRemotePeerBtn.onCallUser` rougit **0 cas**, et 2 dès qu'on neutralise aussi `:disabled`.
+  C'est un cas d'école de la règle « chercher quelle AUTRE ligne absorbe la mutation ».
+
+### Un double qui appelle une fonction dans un `computed` supprime la réactivité de la production
+
+`Notifications.vue:71` fait `computed(() => peers.callStatus())`. Le double posait
+`callStatus: vi.fn(() => 'calling')` : aucune dépendance réactive n'est alors créée, donc le composant
+**ne se re-rend jamais** sur un changement d'état d'appel — alors qu'en production `ctx.callStatus`
+est un `computed` ref (`createPeerContext.js:289`) et que la lecture est bien réactive.
+
+Le double ne mentait pas sur la *valeur*, il mentait sur la *réactivité* — et un test qui fait varier
+l'état d'appel serait resté vert sur un rendu mort. La parade est un vrai `ref` derrière le `vi.fn`,
+ce qui garde l'espionnabilité : `callStatus: vi.fn(() => statutAppel.value)`.
 
 ---
 

@@ -41,9 +41,25 @@ export function usePeerMedia(ctx) {
     const slotIndex = new Map() // videoId → { host, slot }
     let _slotSequence = 0
 
-    const startCurrentStream = async () => {
+    /**
+     * Démarre le flux local (webcam + micro), aux contraintes dérivées des réglages.
+     *
+     * @param {?string} typeAppel - le type de l'appel en cours (`'visio'` | `'vocal'`), ou
+     *        `null`/absent hors appel — c'est le cas de la DIFFUSION
+     *        (`usePeerOrchestrator.js:250`), où aucun type d'appel n'a de sens.
+     *
+     * ⚠️ Ce paramètre n'existait pas, et `_enterCallSession` passait pourtant
+     * `startCurrentStream(true)` : l'argument était ignoré en silence. Conséquence vécue —
+     * un appel **vocal** capturait une piste vidéo, `isVideoEnabled` valant `true` par défaut
+     * (`createPeerContext.js:153`), et la **transmettait** au pair, `peer.call` passant le flux
+     * tel quel. La caméra s'allumait sur un appel où personne ne l'avait demandée.
+     *
+     * Le type n'a qu'un pouvoir de VETO : `vocal` interdit la vidéo, `visio` ne l'impose pas —
+     * sinon un utilisateur qui a coupé sa caméra la verrait se rallumer à l'appel suivant.
+     */
+    const startCurrentStream = async (typeAppel = null) => {
         const stream = await navigator.mediaDevices.getUserMedia({
-            video: ctx.ui.streamStates.isVideoEnabled,
+            video: typeAppel !== 'vocal' && ctx.ui.streamStates.isVideoEnabled,
             audio: !ctx.ui.streamStates.isMuted,
         })
 
