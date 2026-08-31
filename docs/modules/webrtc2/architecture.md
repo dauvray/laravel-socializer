@@ -540,7 +540,7 @@ scénarios) et `_hubRateLimiter` (arbitrage « verbe `.reset()` plutôt que Pini
   Corollaire pour tout nouveau consommateur : la sortie `!ready` n'est pas facultative, c'est elle
   qui porte le teardown
 - **Verrou de `syncUsersConnections`** : il **coalesce**, il ne jette pas — et c'est désormais le
-  **seul** verrou du chemin. `getRoomUsersDiff` en a porté un seçond, `_diffLock`, censé garder un
+  **seul** verrou du chemin. `getRoomUsersDiff` en a porté un second, `_diffLock`, censé garder un
   TOCTOU entre la lecture de la composition précédente et son écriture ; il ne gardait rien, l'unique
   `await` de la fonction précédant la lecture, et il a été retiré avec la migration de la composition
   dans le store. Ne pas le réintroduire : ce qu'il aurait sérialisé l'est ici, par la boucle de drain.

@@ -45,12 +45,13 @@ qu'un test manquant, le contrôle de harnais — sont dans
 3. **Rien ne se pousse en rouge** — `hooks/pre-push` lance les deux suites. Son activation est une
    config locale, jamais versionnée : c'est le seul filet automatique du dépôt.
 
-⚠️ **Ne jamais recopier un décompte de tests de mémoire.** Ce chiffre a divergé du réel dans trois
-documents à la fois. Il se relit dans la sortie du runner, et n'a rien à faire dans une doc durable.
+⚠️ **Aucun décompte de tests dans cette page** — la règle et sa raison sont dans
+[architecture/tests.md](../../architecture/tests.md#les-règles). Ces chiffres se relisent dans la
+sortie du runner.
 
 ---
 
-## Le harnais de scénarios — cinq invariants
+## Le harnais de scénarios
 
 `__tests__/helpers/createVirtualPeer.js`, `helpers/fakeSignalingServer.js`,
 `__mocks__/peerjs.js` (mode bus).
@@ -63,13 +64,16 @@ documents à la fois. Il se relit dans la sortie du runner, et n'a rien à faire
   ℹ️ `contextRegistry` **n'est plus module-level** : il vit dans `stores/peers2/state.js` depuis que
   les dispatchers du Peer ont dû le consulter au travers d'un HMR. C'est donc la Pinia neuve de
   `setup.js` qui l'isole, pas le reset de modules.
-- **`destroy()` du mock émet `disconnected` et conserve `_handlers`.** Par fidélité au vrai
-  (`bundler.mjs:1810` et `:1789`) — c'est ce qui rend observable le détachement explicite des
-  listeners. Les vider « pour faire propre » rendrait vert un correctif inerte, et c'est exactement
-  ce qui s'est produit : un test existant est passé au **rouge** le jour où le mock a cessé de mentir.
-  Ce qui mentait était l'**ordre** (drapeau `destroyed` posé en premier, `disconnected` jamais émis).
-  Écart assumé : le mock ne met pas `_id = null` (le vrai le fait, l.1809) — le registre du bus est
-  keyé sur `id` et trois scénarios appellent `destroy()` directement.
+- **`destroy()` du mock émet `disconnected` et conserve `_handlers`.** Par fidélité au vrai, et
+  **c'est l'ordre qui est le fait utile** : `destroy()` délègue d'abord à `disconnect()`, qui émet
+  `"disconnected"` (`peerjs/dist/bundler.mjs:1810`), et ne pose `_destroyed = true` qu'**ensuite**
+  (`:1781`). L'événement passe donc alors que `peer.destroyed` vaut encore `false` — **un handler
+  gardé par ce drapeau ne filtre rien**, et seul le détachement explicite des listeners protège.
+  Le vrai ne vide par ailleurs que les listeners de la *socket* (`:1789`), jamais les `_handlers` de
+  l'émetteur : les vider dans le mock « pour faire propre » rendrait vert un correctif inerte, et
+  c'est exactement ce qui s'est produit — un test existant est passé au **rouge** le jour où le mock
+  a cessé de mentir. Écart assumé : le mock ne met pas `_id = null` (le vrai le fait, `:1809`) — le
+  registre du bus est keyé sur `id` et trois scénarios appellent `destroy()` directement.
 - **Une tâche de boucle d'événement par signal** (`setTimeout(…, 0)` dans le faux serveur). Un event
   Reverb = une frame WebSocket = une tâche. Dispatcher deux signaux dans le même tick fabriquerait
   une coalescence (`lastRoomSignal` = `at(-1)`) **impossible en production**, et ferait échouer des
@@ -197,7 +201,7 @@ verbe demanderait de monter `Notifications.vue`, et le scénario ne parlerait pl
   mock. Ces fichiers épinglent donc la cécité au bail du *harnais* ; celle du store est épinglée à
   part, sur Pinia réel, par `peers2Store.remotePeerId.test.js`. Même règle que le minuteur ICE
   ci-dessous — **le contrôle de harnais doit neutraliser les deux côtés**, sinon il ne prouve que
-  celui qu'on a doublé. (Contre-épreuve faite dans les deux sens le 26/08/2026.)
+  celui qu'on a doublé. (Contre-épreuve faite dans les deux sens.)
 - **Une attente pendante rougit par le `testTimeout`, pas par une assertion.** Le cas
   « `destroy()` résout les attentes en vol à `false` » (`createPeerContext.test.js`) reste pendant
   jusqu'à l'alarme du contexte (15 s) si le correctif saute : sa contre-épreuve met donc 10 s à
@@ -217,7 +221,7 @@ verbe demanderait de monter `Notifications.vue`, et le scénario ne parlerait pl
 - **`getRemotePeerId` rend `undefined` sur entrée absente, des deux côtés.** Le double rendait
   `null` : sans conséquence sur la production (ses lecteurs testent la truthiness ou comparent à
   `conn.peer`), mais sept assertions épinglaient la valeur du **double** au lieu du contrat du
-  store. Aligné le 29/08/2026. La règle générale : quand un double « normalise » une valeur de
+  store. Aligné depuis. La règle générale : quand un double « normalise » une valeur de
   retour, ce sont les tests qui finissent par documenter le double.
 - **`hasOpenConnection` ne peut pas servir de prédicat côté récepteur** : `usePeerTransport`
   n'enregistre **jamais** de connexion dans le store (aucun `prepareRoomConnection` /
@@ -270,7 +274,11 @@ verbe demanderait de monter `Notifications.vue`, et le scénario ne parlerait pl
   une Pinia fraîche avant chaque test, et on couvre au passage la vraie intégration store ↔ contexte
   (notamment la suppression **conditionnelle** de `removeRemotePeerId`).
 - **Le runtime du Peer singleton vit dans `peerStore`** : une Pinia fraîche ou un `ctx` neuf suffit à
-  l'isoler. Seuls `contextRegistry` et `_hubRateLimiter` exigent encore `vi.resetModules()`.
+  l'isoler. Ce qui exige encore `vi.resetModules()` est **exactement** ce qui est de portée module
+  dans `usePeerTransport`, et il n'y a que les deux limiteurs du hub : `_hubRateLimiter` **et**
+  `_hubByteLimiter`. ⚠️ `contextRegistry` n'en fait pas partie — voir la nuance en tête de
+  [« Le harnais de scénarios »](#le-harnais-de-scénarios) : il vit dans l'état Pinia, donc c'est la
+  Pinia neuve de `setup.js` qui l'isole.
 - **`remoteStreams` exclut les partages d'écran.** Asserter sur `remoteStreams` seul laisse passer
   toute régression d'écran — utiliser aussi `remoteScreens`.
 - **Simuler le HMR** : `vi.resetModules()` + ré-import **en gardant la même Pinia**, précédé d'un
@@ -369,14 +377,14 @@ verbe demanderait de monter `Notifications.vue`, et le scénario ne parlerait pl
   l'appel média et l'annonce arrive par le premier chemin — le test serait vert avant même le
   correctif.
 - **Une fonctionnalité qui traverse trois étages se contre-éprouve sur les trois.** En neutralisant
-  `noteBroadcastFromSignal` (27/08/2026), exactement trois cas tombent — le verbe
+  `noteBroadcastFromSignal`, exactement trois cas tombent — le verbe
   (`useBroadcastPresence`), le câblage (`usePeerOrchestrator.broadcastPresence`) et le scénario
   (`lateJoiner`) — et **le cas pré-existant « B est averti qu'A diffuse » reste vert**, puisqu'il
   passe par le data channel. C'est ce dernier point qui donne le rayon d'action : une contre-épreuve
   qui fait tomber plus que prévu dit qu'on a couplé deux chemins.
 - **Un seul pair, une seule connexion, un seul type : c'est là que naissent les verts gratuits.**
   Quatre contre-épreuves ont rougi **zéro** cas en écrivant `usePeerOrchestrator.*`
-  (29/08/2026), et les quatre fois la faute était dans le test. Le motif est toujours le même —
+  et les quatre fois la faute était dans le test. Le motif est toujours le même —
   **un périmètre à un seul élément ne distingue pas « cible précise » de « tout le monde »** :
 
   | Ce que le cas croyait prouver | Pourquoi il était vert sans le code |
@@ -389,62 +397,51 @@ verbe demanderait de monter `Notifications.vue`, et le scénario ne parlerait pl
   La parade est mécanique : **deux pairs, deux connexions, deux types** dès qu'un cas affirme une
   portée. Et le commentaire qui dit pourquoi le second existe, sans quoi un lecteur le retirera
   « pour simplifier ».
+- **Monter un hub coûte trois préparations, et deux d'entre elles fabriquent un vert par vacuité.**
+  Un contexte `star` dont le hub est moi ; `isHub` **résolu** — il vaut `null` tant que
+  `waitForMeReady` n'a pas tourné, et un tour de synchronisation sur une liste **vide** le déclenche
+  sans rien ouvrir ; et une connexion **sortante** semée vers un tiers (`prepareRoomConnection` puis
+  `storePeerConnection`, la paire de la production), car **les connexions entrantes ne sont pas
+  enregistrées dans le store** — le dispatcher n'y branche que ses listeners. Sans la troisième, le
+  hub n'a personne à qui retransmettre et le fan-out sort en silence.
+- **Un contrat « rien n'est `undefined` » ne voit pas un ref déballé** — il rend une valeur définie,
+  donc le garde le laisse passer. Un fichier qui asserte une surface doit vérifier **séparément** que
+  les états restent des refs (`useMediaBroadcast.surface.test.js`).
+- **Deux hooks de démontage sur la même trajectoire : neutraliser un seul laisse vert.** Mesuré sur
+  l'`onUnmounted` de `usePeerCore` — `usePeerRetry` enregistre le sien **avant**, donc il faut
+  neutraliser les deux. Même famille que le bail et le minuteur ICE ci-dessus, et cas d'application
+  de la règle « un contrôle à 0 » de
+  [architecture/tests.md](../../architecture/tests.md#les-règles).
 
 ---
 
-## Trous de couverture connus
+## Ce qui reste hors filet, et pourquoi
 
-Sans décompte, parce qu'il pourrit : l'état exact se lit dans
-[`work/webrtc2-tests-plan.md`](../../../work/webrtc2-tests-plan.md).
+Les trois étages sont couverts : composables, couches extraites, store, étage de présentation et
+scénarios. **Ne pas chercher ici un état d'avancement** — il se lit dans la sortie du runner, et le
+recensement par `find src/resources/js -path '*__tests__*' -name '*.test.js'`. Ce qui suit est ce
+qui reste délibérément dehors, avec la raison de chacun.
 
-- `usePeerOrchestrator` — **couvert depuis le 29/08/2026**, en quatre fichiers : le câblage de
-  l'annonce de diffusion (`.broadcastPresence`), les wraps de callbacks et la normalisation des
-  entrées (`.callbacks`), le teardown (`.teardown`), les flux locaux et les bascules (`.media`).
-  La branche hub du wrap `onDataReceived` a rejoint `.broadcastPresence` le même jour, une fois la
-  décision de routage descendue dans `usePeerTransport.routeIncomingData`. ⚠️ Le montage d'un hub
-  y demande trois préparations, et deux d'entre elles fabriquent un test **vert par vacuité** si on
-  les oublie : `isHub` vaut `null` tant que `waitForMeReady` n'a pas tourné, et une connexion
-  **entrante** n'est pas enregistrée dans le store — le hub n'a alors personne à qui retransmettre.
-- `useMediaBroadcast` — **couvert depuis le 29/08/2026**, en deux fichiers dont la séparation est un
-  fait mesuré, pas un rangement : le fichier de comportement double l'orchestrateur en entier (il
-  n'y a derrière que des passthroughs), et **un double définit la surface**, donc il est structurel-
-  lement aveugle à un renommage en amont — une clé renommée dans le `return` de l'orchestrateur
-  deviendrait un `undefined` ré-exporté sans qu'un seul cas de la suite ne bouge. C'est
-  `useMediaBroadcast.surface.test.js`, monté sur l'orchestrateur réel, qui tient ce contrat-là.
-  ⚠️ Il vérifie aussi que les états restent des **refs** : un ref déballé rend une valeur définie,
-  donc le garde « rien n'est `undefined` » le laisse passer.
-- `usePeerTransport` — couvert depuis le 29/08/2026 : `sendData` star
-  (`usePeerTransport.star.test.js`), le **câblage** du rate-limiting hub et la taille du chemin hub
-  (`usePeerTransport.forwardStar.test.js`), le registre des contextes des deux côtés
-  (`peers2Store.contextRegistry.test.js` pour la sémantique, `usePeerTransport.singleton.test.js`
-  pour le câblage).
-- `usePeerCore` — couvert depuis le 29/08/2026 : `notifyCloseConnectionToPeer`,
-  `stopCallInviteRetry*` et `onUnmounted`. Ce dernier porte un contrôle négatif **mesuré** :
-  neutraliser le seul hook de `usePeerCore` le laisse vert, parce que `usePeerRetry` enregistre le
-  sien avant — il faut neutraliser les deux.
-- `Widgets/**` — l'**étage de présentation**, couvert en partie depuis le 30/08/2026 : les trois
-  boutons de flux local, le traitement du refus de permission média, et le contrat DOM de la
-  vignette d'attente. La **boucle des toggles** l'a rejoint le 31/08/2026, en trois fichiers dont
-  la séparation est une mesure : `useRemotePeerState.test.js` (le protocole, sans rendu),
-  `RemoteMediaPlayer.test.js` (l'adaptateur, avec le player réel) et
-  `StreamSimpleUI.toggles.test.js` (le **joint** `conn.peer`). Casser l'un des deux bouts du joint
-  ne rougit **que** le troisième — mesuré à 0 sur les deux autres : c'est ce qui prouve qu'aucun
-  n'est le doublon d'un autre. **Les contrôles de la vignette** l'ont rejoint le 31/08/2026, en
-  deux fichiers dont la séparation est elle aussi une mesure (voir « Fabriquer le plein écran et le
-  PiP » ci-dessous). **Le provider et `LocalMediaPlayer`** l'ont rejoint le 31/08/2026, en trois
-  fichiers — et là encore la séparation est mesurée, par deux 0 croisés : permuter la clé de
-  `provide(WEBRTC_API_KEY)` ne rougit que `MediaBroadcastProvider.test.js`, et reconstruire
-  `screenStreamData.stream` en copie ne rougit que `StreamSimpleUI.local.test.js`. Cette clé n'a
-  qu'un `provide` et qu'un `inject` dans tout le dépôt : aucun étage ne peut voir les deux bouts.
-  **Les deux boutons d'appel** l'ont rejoint le 31/08/2026 et **ferment l'étage** — `CallManagerBtn`
-  et `CallRemotePeerBtn`, plus un troisième fichier pour la couture avec `Notifications`. Ce
-  troisième est justifié par la mesure la plus nette du chantier : les **sept** contrôles de
-  couture (attribut renommé, prop coupée, écouteurs croisés) rougissent le fichier du joint et
-  **0 cas** de celui de la barre. `SpectrumAnalyzer` reste hors périmètre, assumé.
+- **`SpectrumAnalyzer.vue` — exclu, et ce n'est pas un oubli.** Trois raisons qui se cumulent :
+  `happy-dom` n'a pas d'`AudioContext`, donc tout collaborateur serait fabriqué à la main et le test
+  prouverait sa propre doublure ; ses deux consommateurs WebRTC2 sont **commentés**, et l'un des
+  deux usages commentés est *faux* (`v-bind="audioProps"` passe `{streamData}` à un composant dont
+  l'unique prop est `streams: Array required` — le décommenter lèverait au montage) ; et son **seul
+  consommateur vivant est la v1 morte** (`components/WebRTC/widgets/ui/AudioDefaultUserButtonUI.vue`).
+  C'est un fichier WebRTC2 maintenu en vie par le module déclaré mort : il meurt avec
+  `components/WebRTC/`, et c'est à ce moment-là que son sort se tranche —
+  [`work/doc-rustines.md`](../../../work/doc-rustines.md), lot 1.
+- **La topologie star n'est exercée par aucun scénario.** `grep topology __tests__/scenarios/` rend
+  zéro : `lateJoiner` est intégralement mesh. La transition **« hub absent → hub présent »** n'est
+  donc épinglée à aucun étage, ni en unitaire ni bout en bout — alors que `api.md` pose qu'un hub
+  absent est un état transitoire *légitime*, ce qui en fait un chemin de production non couvert.
+  Item ouvert : [`work/webrtc2-todo.md`](../../../work/webrtc2-todo.md), § « Routage star ».
+- **La géométrie et la mise en page**, par impossibilité du runner — voir
+  [ci-dessous](#géométrie-et-mise-en-page--ce-que-la-suite-ne-verra-jamais).
 
 ---
 
-## Tester un composant : 14 faits mesurés
+## Tester un composant : les faits mesurés
 
 ### ⚠️ Les `directives` passées en `global` sont INERTES
 
@@ -659,7 +656,7 @@ Deux pièges y sont déjà payés, à ne pas re-payer :
 qui tranche est la **géométrie comparée à celle de l'ancêtre**, ou une capture relue.
 
 **Une mesure sans canari de cascade est une mesure sans valeur.** `setContent()` part
-d'`about:blank` et n'y charge aucun `<link href="file://">`. Le 28/08, « h=51 dans les deux cas »
+d'`about:blank` et n'y charge aucun `<link href="file://">`. Une fois, « h=51 dans les deux cas »
 s'est lu « le correctif ne sert à rien » alors que la page n'avait **aucune CSS**. D'où deux
 canaris binaires évalués **avant** toute mesure — `.d-none` ⇒ `display:none` (Bootstrap) et
 `.draggable-video` ⇒ `cursor:grab` (`_socializer.scss`) — et un contrôle placé **dans le même run**

@@ -50,6 +50,21 @@ Avant la tâche de montage du composant, prévoir des helpers locaux `__tests__/
 > Décision à acter : helpers Chat dédiés sous `Chat/__tests__/helpers/` **ou** promotion des
 > helpers WebRTC2 vers un dossier partagé. Par défaut : dédiés à Chat (couplage faible).
 
+⚠️ **`mockEcho` a un candidat existant, et deux fidélités à ne pas perdre en le partageant.**
+`WebRTC2/__tests__/helpers/createFakePresenceChannel.js` rejoue déjà les **client events** d'un canal
+de présence. Il ne couvre pas `here` / `joining` / `leaving`, que le Chat exercera — c'est donc une
+**extension**, pas une reprise telle quelle. Les deux propriétés qui portent tout l'intérêt du
+double, et qu'un partage naïf effacerait :
+
+- **l'émetteur ne reçoit pas son propre whisper** (Reverb exclut la connexion source) — sans quoi un
+  diffuseur s'annonce à lui-même et le garde « pas mon propre slug » masque l'erreur ;
+- **`metadata.user_id` vient du serveur, jamais de la charge utile**, comme sous
+  `accept_client_events_from: 'members'` — la seule configuration où un whisper est attribuable
+  ([securite.md](../docs/modules/webrtc2/securite.md)).
+
+Les défaire rendrait vert un correctif faux. Si la promotion est retenue, ces deux invariants
+partent avec le fichier, et le test qui les épingle avec eux.
+
 ---
 
 ## Avancement

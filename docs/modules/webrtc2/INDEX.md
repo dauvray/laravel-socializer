@@ -36,7 +36,7 @@ appelants, pas seulement d'effacer un dossier — le recompte se fait par
 | ajouter un composable, déplacer une responsabilité, toucher au Peer singleton | [architecture.md](architecture.md) |
 | savoir qui voit quoi, ou ouvrir un nouveau chemin de connexion | [securite.md](securite.md) |
 | écrire un test, ou comprendre pourquoi un test est vert à tort | [tests.md](tests.md) |
-| savoir ce qui reste ouvert | [`work/webrtc2-todo.md`](../../../work/webrtc2-todo.md) · [`work/webrtc2-tests-plan.md`](../../../work/webrtc2-tests-plan.md) |
+| savoir ce qui reste ouvert | [`work/webrtc2-todo.md`](../../../work/webrtc2-todo.md) |
 
 ---
 
@@ -61,7 +61,7 @@ WebRTC2/
 │   └── utils/                     infra pure, sans état partagé, importable de partout
 │                                  useCallStateMachine · usePeerRetry · createRateLimiter
 │                                  payloadSize · sanitizeMetadata · resolveRemoteSlug · validators
-├── EventBus/webrtc2Events.js   normalisation de call-user / close-call — ⚠️ pas encore consommée
+├── EventBus/webrtc2Events.js   ⚠️ MORT — à supprimer, il ne reste rien à brancher (api.md)
 ├── Widgets/                    Mediaplayer/ (provider, players, pool) · UI/ (boutons, audio, debug)
 ├── Exemples/                   Home.vue + 3 UI de démonstration — documentation exécutable
 └── __tests__/                  unitaires · mockFidelity · scenarios/ + helpers/ et __mocks__/
@@ -81,11 +81,13 @@ Hors du dossier mais indissociables :
 
 - **mesh** — connexions pair-à-pair directes entre tous les membres, jusqu'à `MAX_PEERS_PER_ROOM`.
   Visio, vocal, petits salons.
-- **star** — un hub relaie les messages data via `forwardStarMessage`. Rooms nombreuses. Le hub voit
-  les payloads en clair, et c'est délibéré : [securite.md](securite.md). `hubSlug` y est obligatoire.
+- **star** — un hub relaie les messages data. Rooms nombreuses. Le hub voit les payloads en clair,
+  et c'est délibéré : [securite.md](securite.md). `hubSlug` y est obligatoire.
 
 **Il n'y en a que deux, et toute autre valeur est refusée à la construction** — `sfu` compris, qui
-est réservé mais non implémenté. Le détail du refus est dans [api.md](api.md#topologies).
+est réservé mais non implémenté. Le refus, la distinction « réservée » / « inconnue » et le piège
+« `hubSlug` fourni n'est pas hub présent » sont dans [api.md](api.md#topologies) — une seule fois,
+là-bas.
 
 ---
 

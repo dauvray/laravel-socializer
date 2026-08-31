@@ -83,6 +83,12 @@ Verbes : `initialize` · `cleanup` · `watchUsers` · `sendData` · `getWebcamSt
 `isVideoEnabled` · `streamStates` · `topology` / `hubSlug` / `isHub` / `isHubConnected` ·
 `localPeerId` · `mySlug` / `myName`.
 
+⚠️ **`stopAudio` n'a plus aucun site d'appel dans le paquet.** Il reste sur la surface publique —
+c'est un export inutilisé mais **juste** (un alias de `stopStream` en aval), pas un export faux, et
+la politique du paquet ne retire que les seconds. Le câblage qui l'appelait était mort des deux
+côtés ; « Stop stream » couvre le cas, flux audio seul compris. Ne pas le prendre pour le chemin en
+vigueur.
+
 ⚠️ **`remoteStreams` exclut les partages d'écran** ; `remoteScreens` ne contient qu'eux — les deux
 sont des `computed` filtrant `remoteStreamsMap` sur `remoteType !== 'screen'` dans
 `createPeerContext.js`. Consommer `remoteStreams` seul rend tout partage d'écran invisible.
@@ -93,7 +99,7 @@ verbes de flux.** Elle peut rejeter, et c'est le cas nominal : l'utilisateur ref
 chaîne — `usePeerMedia` appelle `getUserMedia` / `getDisplayMedia` nus. **Un appelant qui ignore la
 valeur de retour transforme donc un refus en rejet non traité** : pas de toast, pas de changement
 d'état, un bouton qui semble mort. Les trois verbes d'arrêt sont synchrones et ne rendent rien.
-Traité côté UI depuis le 30/08/2026 : `GroupLocalStreamBtn` porte un `.catch` qui notifie par AWN,
+Traité côté UI : `GroupLocalStreamBtn` porte un `.catch` qui notifie par AWN,
 avec le nom de l'erreur — la seule exception assumée est `NotAllowedError` sur `startCapture`, que
 `getDisplayMedia` rend indiscernable d'une simple fermeture du sélecteur de partage.
 
@@ -235,7 +241,7 @@ entrants gardent `isValidCallType`, délibérément.
 joint de la projection Widget dans [architecture.md](architecture.md)), `useMediaControls(videoRef)`
 → `{ toggleFullscreen, togglePip, toggleNativeMute, releasePresentation }`.
 
-⚠️ **`useMediaControls` ne rend aucun drapeau d'état, et c'est une décision du 31/08/2026** —
+⚠️ **`useMediaControls` ne rend aucun drapeau d'état — décision du 31/08/2026** —
 `isFullscreen` et `isPip` ont été retirés de cette surface. Personne ne les lisait et aucun listener
 ne les mettait à jour : ils mentaient dès une sortie par Échap ou une fermeture de la fenêtre PiP.
 La vérité est `document.fullscreenElement` / `document.pictureInPictureElement`, relue à chaque
@@ -267,7 +273,7 @@ module exporte `WEBRTC2_EVENTS`, `emitCallUser`, `emitCloseCall`, `onCallUser`, 
 `normalizeType`, mais les deux appelants réels — `System/Notifications.vue` et
 `Widgets/UI/Buttons/CallRemotePeerBtn.vue` — font toujours
 `eventBus.$emit('call-user', slug, type)` en direct. **Sa seule fonction qui valait,
-`normalizeType`, a été récupérée le 31/08/2026 dans `Composables/utils/validators.js` sous le nom
+`normalizeType`, a été récupérée dans `Composables/utils/validators.js` sous le nom
 `normalizeDirectCallType`** — c'était le prédicat « les deux types d'un appel direct » qui manquait
 au paquet. La décision qu'attendait `work/doc-rustines.md` est donc tranchée : supprimer, il ne
 reste rien à brancher.
@@ -306,11 +312,13 @@ elles bougent, le fichier fait foi.
 
 Y vivent aussi `VALID_CONNECTION_TYPES` (`data` · `stream` · `screen` · `visio` · `vocal` — dont
 `VALID_CALL_TYPES` est **dérivé**, une seule source de vérité), `SLUG_PATTERN`, la table `ENDPOINTS`
-(5 routes de signalisation + 3 routes WebRTC qui ne relaient rien : ICE, attestation, vérification)
+(les routes de signalisation, plus celles qui ne relaient aucun signal : ICE, attestation,
+vérification)
 et le symbole `WEBRTC_API_KEY`.
 
-⚠️ **Le plafond `/ask-to-peer-id` est par cible et non global** : un join mesh émet légitimement
-jusqu'à 14 demandes dans le même tick (7 pairs × type principal + écran). Un cap global mal
+⚠️ **Le plafond `/ask-to-peer-id` est par cible et non global** : un join mesh émet légitimement,
+dans le même tick, une demande par pair déjà présent **et par type** — soit jusqu'à
+`2 × (MAX_PEERS_PER_ROOM - 1)` au plafond (type principal + écran). Un cap global mal
 dimensionné casserait le join — c'est le même piège côté serveur, voir
 [signalisation.md, invariant 5](../../architecture/signalisation.md#cinq-invariants-backend).
 
@@ -320,7 +328,8 @@ dimensionné casserait le join — c'est le même piège côté serveur, voir
 
 - **mesh** — connexions directes entre tous les membres, jusqu'à `MAX_PEERS_PER_ROOM`. Visio/vocal
   et petits salons. Aucun tiers applicatif ne voit les payloads.
-- **star** — un hub relaie les messages data via `forwardStarMessage`. Grandes rooms. Le hub lit les
+- **star** — un hub relaie les messages data via `forwardStarMessage`, **verbe interne au transport
+  et non exporté** (`usePeerTransport` le dit à son site de définition). Grandes rooms. Le hub lit les
   payloads en clair : c'est ce qui rend la modération possible, et c'est un choix assumé — voir
   [securite.md](securite.md).
 Toute autre valeur est **refusée à la construction** : `createPeerContext` lève, en distinguant une
@@ -336,4 +345,5 @@ composés, sont faux pour toujours.
 
 Ce qui tient la porte ouverte pour un futur SFU n'est pas une valeur acceptée mais la couture
 recensée dans [`work/webrtc2-todo.md`](../../../work/webrtc2-todo.md) : un SFU est « star dont le hub
-est un serveur », donc une troisième branche aux sept mêmes sites de décision.
+est un serveur », donc une troisième branche aux mêmes sites de décision — que ce fichier liste avec
+leur fichier propriétaire, les numéros de ligne se re-grepant.

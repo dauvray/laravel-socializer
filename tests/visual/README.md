@@ -92,5 +92,7 @@ vaut 16/9, rien n'est clippé. Les chiffres affichés sont indicatifs.
 - **Quoi que ce soit sur une machine sans le runtime hors dépôt.** Le script s'arrête alors
   avec le message qui le dit.
 - **Quoi que ce soit si personne ne le lance.** C'est un outil à verdict automatique, pas un
-  filet. C'est la borne assumée de la sortie D — arbitrage complet dans
-  `work/webrtc2-tests-plan.md`, tâche 8.
+  filet. C'est la borne assumée de la sortie D — l'arbitrage complet (le découpage du défaut en
+  sept maillons dont six sont retournés dans la suite, et pourquoi pas `@playwright/test` dans les
+  dépendances de l'hôte) est dans
+  [`docs/architecture/tests.md`](../../docs/architecture/tests.md#cette-suite-ne-calcule-aucune-mise-en-page).

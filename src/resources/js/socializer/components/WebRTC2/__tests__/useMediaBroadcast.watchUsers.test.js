@@ -5,11 +5,14 @@
  * (`watch(() => props.users, api.watchUsers, { immediate: true })`) et ce qui descend, ou
  * non, vers `syncUsersConnections`.
  *
- * ⚠️ **Exception assumée à la tâche 7 du plan de tests**, bloquée par le déménagement du
- * routage star hors de `usePeerOrchestrator`. Ce fichier n'asserte rien sur ce routage —
- * il mocke l'orchestrateur en entier — donc il survit au déménagement. Même statut que
- * `usePeerOrchestrator.broadcastPresence.test.js`, et pour la même raison. Élargir ce
- * fichier au reste de la façade rouvrirait le blocage.
+ * ⚠️ **Ce fichier mocke l'orchestrateur EN ENTIER, et c'est délibéré** : il épingle le seul
+ * point d'entrée de la chaîne de présence, donc il ne doit rien savoir de ce qui vit en
+ * dessous. Conséquence utile — il est insensible à l'endroit où vit la décision de routage
+ * star, qui est descendue dans `usePeerTransport.routeIncomingData` sans toucher un cas ici.
+ * Conséquence coûteuse, et c'est la contrepartie : **un double définit la surface**, donc
+ * aucun cas de ce fichier ne peut voir une clé renommée en amont. C'est
+ * `useMediaBroadcast.surface.test.js`, monté sur l'orchestrateur réel, qui tient ce contrat —
+ * cf. `docs/architecture/tests.md`, « le 0 croisé décide du découpage en fichiers ».
  *
  * `useMediaBroadcast` n'enregistre aucun hook de lifecycle Vue (c'est une façade + trois
  * closures) : il s'appelle directement, sans `withSetup`.

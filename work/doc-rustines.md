@@ -24,11 +24,15 @@ composer install && vendor/bin/phpunit  # PHP — depuis ce paquet
 ```
 
 > ⚠️ **Ne pas dupliquer les chantiers déjà ouverts.** Plusieurs rustines de la doc y sont déjà
-> cadrées, avec leur analyse : [webrtc2-todo.md](webrtc2-todo.md) (sémantique de
-> `peerInitPromise`, peerId fantôme),
-> [webrtc2-tests-plan.md](webrtc2-tests-plan.md) (trous de couverture),
+> cadrées, avec leur analyse : [webrtc2-todo.md](webrtc2-todo.md) et
 > [sass-todo.md](sass-todo.md) (thème sombre, `@extend`). Ce fichier y **renvoie** — une règle, un
 > seul endroit.
+>
+> ℹ️ **Le plan de tests WebRTC2 est clos et son fichier supprimé.** Son durable est remonté dans
+> [`docs/architecture/tests.md`](../docs/architecture/tests.md) — la méthode : comment lire un
+> contrôle à 0, et le 0 croisé qui décide du découpage en fichiers — et dans
+> [`docs/modules/webrtc2/tests.md`](../docs/modules/webrtc2/tests.md) pour le harnais. Ne pas le
+> chercher, ne pas le recréer.
 >
 > Le **chantier de sécurité d'août 2026 est clos** : ce qu'il portait (TURN, `getUsersList`, dérive
 > du réplica, écritures muettes) est livré, et son durable est dans
@@ -55,11 +59,13 @@ attend, comme les autres lots.
 | ~~Renommer `canJoinRoom` / `canJoinServer` (lot 3)~~ | **Débloqué le 21/08** : E4.1 est livrée, les quatre gardes refusent par défaut et `canJoinchatRoom` exige l'appartenance. Le renommage ne touche plus au comportement, seulement aux noms et à leurs appelants |
 | ~~Renommer `hasOpenConnection` / `isConnectionEstablished` (lot 4)~~ | **Débloqué** : les gardes des lots A et B sont livrés et épinglés. ⚠️ Reste un renommage sur un chemin de sécurité — les deux prédicats sont ce que lit le moteur de retry, et les confondre est la panne du 13/08 |
 | ~~Renommer `remoteStreams` (lot 3)~~ | **Débloqué** : `createPeerContext` ne bouge plus |
-| Convertir les 9 pièges de mock en tests (lot 4) | **Toujours bloqué** : le harnais bouge encore — [webrtc2-tests-plan.md](webrtc2-tests-plan.md) a des tâches ouvertes, dont 6 et 7 **gelées** |
+| ~~Convertir les 9 pièges de mock en tests (lot 4)~~ | **Débloqué** : le plan de tests est clos, le harnais a cessé de bouger. C'était la dernière collision |
 | ~~Migrer les appelants v1 (lot 1)~~ | **Débloqué** : plus aucun audit en cours sur `Notifications.vue` ni `AlertComponent.vue` |
 
-Le `[L]` **gelé** de [webrtc2-todo.md](webrtc2-todo.md) — déplacer le routage star dans
-`usePeerTransport` — reste gelé. Rien ici ne le dégèle.
+ℹ️ Le `[L]` « déplacer le routage star », longtemps gelé, **ne l'est plus** : (a) est faite — la
+décision de routage vit dans `usePeerTransport.routeIncomingData` — et (b), le routeur générique, est
+tranchée en **sortie D** (pas de SFU maintenant ; la couture est recensée dans
+[webrtc2-todo.md](webrtc2-todo.md)). Plus aucune collision ouverte avec le module WebRTC2.
 
 ### Faisable en parallèle sans aucun risque
 
@@ -148,7 +154,7 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
             des quatre modules touchés (audio, application, tableau blanc, classe virtuelle)
 
 - [ ] **Supprimer `WebRTC2/EventBus/webrtc2Events.js`** · effort [S] · **décision TRANCHÉE le
-  31/08/2026 par le lot F : SUPPRIMER, il ne reste rien à brancher.**
+  31/08/2026 : SUPPRIMER, il ne reste rien à brancher.**
 
   La question ouverte était « le brancher (A) ou le supprimer (B) ». Elle est réglée par le fait,
   pas par un arbitrage de goût : **la seule fonction du module qui valait quelque chose,
@@ -156,15 +162,12 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
   `normalizeDirectCallType` — c'était le prédicat « les deux types d'un appel direct » qui manquait
   au paquet, et son absence fabriquait un cul-de-sac (`isValidCallType` acceptant `screen`). Le
   reste du module — `emitCallUser`, `emitCloseCall`, `onCallUser`, `onCloseCall` — normalise un
-  payload à six champs que personne n'émet et que les tests du lot F épinglent désormais dans sa
+  payload à six champs que personne n'émet et que les tests des boutons d'appel épinglent désormais dans sa
   **forme brute**, des deux côtés. Le brancher demanderait donc de changer quatre émetteurs pour
   gagner zéro fait. Reste à faire : la suppression elle-même, et le retrait de la mention dans
   `docs/modules/webrtc2/api.md` — déjà réécrite pour dire que le module n'a plus rien à sauver.
-      « N'est consommé par personne » ; la seule mention dans le code est un commentaire de
-      `Composables/utils/validators.js` (« le type était mort »). La doc demande de le traiter
-      « comme la normalisation **visée**, pas comme le chemin en vigueur » — c'est-à-dire d'entretenir
-      un fichier inutilisé et de l'expliquer à chaque lecteur.
-      Décision à prendre : le brancher (sortie A) ou le supprimer (B). Ne pas le laisser en l'état.
+      ⚠️ **Les deux couches de doc sont déjà à jour** — `api.md` porte le verdict et `INDEX.md`
+      l'annonce mort dans son arborescence. Il ne reste que le code, et la dernière mention.
       Annotation : `docs/modules/webrtc2/api.md`
       - [ ] Code · - [ ] Doc · - [ ] Tests
 
@@ -454,7 +457,9 @@ arbitrages datés.
       `str_contains`) plutôt que dans deux fichiers de doc.
       Annotation : `docs/architecture/tests.md` · `docs/modules/webrtc2/securite.md`
 
-- [ ] **Trous de couverture** — « **Rien** pour Feed, Comment, Server, User, System, Application,
-      Page, Whiteboard, les stores Pinia hors `peers2` ». C'est un état, pas une rustine : sa place
-      est dans [chat-tests-plan.md](chat-tests-plan.md) et les plans de test, pas dans `docs/`.
-      Annotation : `docs/architecture/tests.md`
+- [x] **Trous de couverture** — **fermé en clôturant le plan de tests WebRTC2.** La citation
+      (« **Rien** pour Feed, Comment, Server, User, System… ») était devenue **fausse sur quatre
+      modules** : Feed, Server, User et System ont un filet. C'était exactement le mode de panne
+      annoncé — une liste d'absences se périme sans virer au rouge.
+      `docs/architecture/tests.md` dit désormais **où il y a un filet, pas combien**, avec la
+      commande qui recense les fichiers ; ce qui reste réellement à découvert y tient en une ligne.

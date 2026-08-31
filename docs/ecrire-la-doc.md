@@ -63,6 +63,24 @@ work/                        todo, audits, plans de tests, notes de chantier
 L'historique est dans git. Un fichier de `docs/` doit rester vrai sans être mis à jour à chaque
 commit.
 
+> ⚠️ **Une décision datée n'est PAS une date de session, et elle est *requise*.** La confusion coûte
+> dans les deux sens, et les deux erreurs ont été commises ici — des journaux de session laissés
+> dans `docs/`, puis une date d'arbitrage retirée en les nettoyant.
+>
+> | Interdit — journal de session | Requis — arbitrage |
+> |---|---|
+> | « couvert depuis le 29/08 », « aligné le 29/08 », « mesuré le 27/08 : 118 imports » | « **Décision du 24/08** : les gardes ont cessé de lire l'appartenance dans le graphe, parce que… » |
+> | dit **quand on a travaillé** : pourrit, et n'apprend rien | dit **dans quel état du monde l'arbitrage a été pris** : c'est ce qui permet de le rouvrir |
+>
+> La **sortie D** du chantier de dé-rustinage exige littéralement « une décision datée et
+> argumentée » : retirer ces dates-là détruit de l'information. Un **incident vécu** suit la même
+> règle qu'une décision — « un 401 bouclait sur le rechargement d'`AjaxService`, vécu le 29/08 » est
+> une cause racine déjà vue, donc elle se garde.
+>
+> Le test qui tranche : **est-ce que la date change ce que je fais de la phrase ?** Pour un
+> arbitrage, oui — elle dit ce qui était connu à ce moment-là. Pour un état d'avancement, non : cet
+> état se relit dans l'outil.
+
 ---
 
 ## Modèle d'une doc de module

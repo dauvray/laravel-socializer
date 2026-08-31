@@ -111,9 +111,10 @@ profond pour traverser l'arbre. L'alias est défini côté hôte dans `vite.conf
 jour où l'arborescence bouge. Alias disponibles : `~` (app), `~socializer`, `~estarter`,
 `~formdesigner`, `~eblogger`.
 
-**Le relatif court reste la norme à l'INTÉRIEUR d'un module**, et c'est ce que le code fait :
-mesuré le 29/08/2026 sur WebRTC2 + `stores/peers2`, **118 imports relatifs contre 159 en alias**, les
-118 étant tous de la forme `./utils/payloadSize.js` ou `../webrtc2.config.js`. Une règle qui dirait
+**Le relatif court reste la norme à l'INTÉRIEUR d'un module**, et c'est ce que le code fait : le
+relatif y pèse environ un tiers des imports, tous de la forme `./utils/payloadSize.js` ou
+`../webrtc2.config.js`. Le rapport se re-mesure, il ne se recopie pas —
+`grep -rhoE "from '(\.\.?/|~)[^']*'" <module> | cut -c7 | sort | uniq -c`. Une règle qui dirait
 « toujours l'alias » serait donc contredite par le tiers des imports du plus gros module du paquet,
 et se ferait re-débattre à chaque revue. Ce qui compte n'est pas la forme du chemin, c'est **qu'aucun
 import ne remonte au-dessus du module qui le porte**.

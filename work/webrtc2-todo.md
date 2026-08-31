@@ -2,7 +2,9 @@
 
 > Chantier ouvert. Les items **terminés** sont élagués : leur rationale vit dans
 > [`docs/modules/webrtc2/`](../docs/modules/webrtc2/INDEX.md), leur récit dans `git log`.
-> Tests : [webrtc2-tests-plan.md](webrtc2-tests-plan.md).
+> Tests : le harnais et ses pièges sont dans
+> [`docs/modules/webrtc2/tests.md`](../docs/modules/webrtc2/tests.md) ; la méthode transverse dans
+> [`docs/architecture/tests.md`](../docs/architecture/tests.md).
 >
 > Effort : `[S]` `[M]` `[L]`
 
@@ -121,6 +123,25 @@ comme « le transport sait, laisse-le router ».
 > autres sites n'ont pas bougé une seule fois. Ce qui se recopie sans risque, c'est **le fichier et
 > la décision** ; le numéro de ligne se re-grep, toujours.
 
+- [ ] 🟠 **Aucun scénario n'exerce la topologie star** `[M]` — relevé le 30/08/2026 en clôturant le
+  plan de tests, et c'est le seul trou de couverture ouvert du module.
+
+  Mesuré : `grep -rn topology __tests__/scenarios/` rend **zéro**, et `lateJoiner` est intégralement
+  mesh. La transition **« hub absent → hub présent »** n'est donc épinglée **à aucun étage** — ni en
+  unitaire, ni bout en bout.
+
+  **Pourquoi c'est cet item qui tient la porte, et pas la couture ci-dessus.** La couture dit *où* un
+  SFU se câblerait ; elle ne dit pas que la branche star **fonctionne**. Or [`api.md`
+  § Topologies](../docs/modules/webrtc2/api.md#topologies) pose qu'un hub absent est un état
+  transitoire **légitime** : le client ne le compose pas, sans rien tenter ni journaliser, et le tour
+  de présence qui voit arriver le hub rétablit la connexion. C'est donc un chemin de production
+  **silencieux par conception** que rien ne surveille — exactement la forme des incendies de ce
+  module, vrais ou faux seulement vus du pair d'en face.
+
+  Le harnais ne manque de rien : `createVirtualPeer` monte déjà plusieurs contextes par onglet et
+  `helpers/createFakePresenceChannel.js` livre la présence pair par pair, ce qui est précisément ce
+  qu'exige « le hub arrive après ». Ce qui manque est le scénario.
+
 - [x] 🟠 **`topology: 'sfu'` produisait un contexte MORT, en silence** `[S]` — **fait le
   30/08/2026**, avec un jumeau que l'énoncé ne nommait pas : `star` **sans** `hubSlug`, même
   contexte mort, mêmes prédicats composés. `createPeerContext` lève désormais sur les deux, en
@@ -153,6 +174,18 @@ extractions : c'est 18 lignes, sous un filet cinq fois plus dense.
 ---
 
 ## usePeerTransport
+
+- [ ] 🟢 **Le commentaire « ce qui RESTE au niveau du module » en oublie la moitié** `[S]` — relevé
+  le 31/08/2026 en clôturant le plan de tests, et **il a déjà menti une fois par ricochet.**
+
+  `usePeerTransport.js:76-78` énumère ce qui demeure volontairement de portée module et ne nomme que
+  `_hubRateLimiter`. Il y en a **deux** : `_hubRateLimiter` (l.482) et `_hubByteLimiter` (l.491), et
+  ce sont les deux seules déclarations de portée module du fichier. `docs/modules/webrtc2/tests.md`
+  avait hérité de l'omission — c'est corrigé côté doc, pas côté code.
+
+  Pourquoi ça compte : cette liste est ce qu'un lecteur consulte pour savoir ce que
+  `vi.resetModules()` doit isoler. Un limiteur oublié fait partager une fenêtre de débit entre deux
+  pairs d'un scénario, ce qui ne rougit rien — ça verdit au mauvais endroit.
 
 - [x] **`peerInitPromise` couvre jusqu'à `'open'`** `[M]` — **fermé le 29/08/2026**, sous tests verts
   (1034 → 1039 cas). `_doInit` `await` réellement l'`'open'` : résolution dans le handler existant,
@@ -638,8 +671,10 @@ extractions : c'est 18 lignes, sous un filet cinq fois plus dense.
   est un réglage (`layout_class_container` par route, à défaut
   `config('estarter.bootstrap_container_type')` — `container-fluid` ici, `container` par défaut dans
   le paquet), donc toute cote absolue est vraie d'une configuration et fausse de l'autre. Le harnais
-  mesure aux deux largeurs et n'asserte que ce qui n'en dépend pas. Arbitrage complet et bornes
-  assumées : [webrtc2-tests-plan.md](webrtc2-tests-plan.md), tâche 8.
+  mesure aux deux largeurs et n'asserte que ce qui n'en dépend pas. Arbitrage complet — le découpage
+  des sept maillons, et pourquoi pas `@playwright/test` :
+  [`docs/architecture/tests.md`](../docs/architecture/tests.md#cette-suite-ne-calcule-aucune-mise-en-page)
+  et [`tests/visual/README.md`](../tests/visual/README.md).
 
 - [x] **Vérifier à la main que la vignette arrive tôt** `[S]` — **fait le 28/08/2026**, et le résultat
   n'est pas celui attendu : le correctif `10d634f` fonctionne, l'UI ne le montre pas, et le cas
@@ -848,6 +883,25 @@ extractions : c'est 18 lignes, sous un filet cinq fois plus dense.
   l'appelant** tant que `hash_equals` n'est pas passé, ce qui place la frontière du journal à une
   ligne précise de la méthode et non à son bord — sans quoi un inconnu écrirait au journal le nom de
   qui il veut.
+
+- [ ] 🟠 **Basculer `SOCIALIZER_PEER_ATTESTATION_ENFORCE=true`** `[S]` — **le code est prêt et
+  mesuré depuis le 29/08/2026 ; il ne reste qu'un geste de DÉPLOIEMENT.** Seul reste ouvert de la
+  famille « attestation d'identité ».
+
+  La procédure et ses **trois termes** sont dans
+  [`securite.md` § « Ce qu'il faut regarder pour basculer »](../docs/modules/webrtc2/securite.md#ce-quil-faut-regarder-pour-basculer-enforce).
+  Deux avertissements qui décident du résultat :
+
+  - ⚠️ **Ne jamais basculer sur un seul des deux indicateurs.** Le journal serveur ne voit QUE les
+    attestations *présentées* — il est structurellement aveugle au cas majoritaire de la phase
+    d'observation (un onglet resté sur un bundle antérieur n'appelle jamais la route). Les trois
+    compteurs de `Debug.vue`, eux, ne voient qu'un onglet.
+  - ⚠️ **Un refus entrant n'est jamais rattrapable** : il ne revient pas à l'émetteur. Une bascule
+    trop tôt coupe des pairs légitimes en silence, de leur point de vue comme du nôtre.
+
+  Le terme 2 est une **borne assumée**, non mesurable sur un serveur : il s'établit par un argument
+  de déploiement (durée de vie d'onglet vs actifs hachés par Vite), corroboré par un échantillon au
+  panneau.
 
 - [x] 🔴 **`/attest-peer-id` bouclait le rechargement de la page de login pour tout invité** `[S]` —
   **trouvé et fermé le 29/08/2026**, en allant simplement REGARDER le panneau que l'item ci-dessus
@@ -1230,8 +1284,8 @@ extractions : c'est 18 lignes, sous un filet cinq fois plus dense.
   — pas de toast, pas de changement d'état, un bouton mort — mais l'erreur disparaissait **sans la
   moindre trace**, ce qui est pire. Et la propriété « le rejet s'échappe-t-il ? » est **intestable
   à travers un espion** (`vi.fn().mockRejectedValue()` attache son propre handler et absorbe le
-  signal) : le cas qui la posait a été **supprimé, pas commenté**. Détail dans
-  [webrtc2-tests-plan.md](webrtc2-tests-plan.md), tâche 8.
+  signal) : le cas qui la posait a été **supprimé, pas commenté**. Les deux faits sont épinglés dans
+  [`docs/modules/webrtc2/tests.md`](../docs/modules/webrtc2/tests.md#tester-un-composant--les-faits-mesurés).
 
 - [ ] 🟢 **Une remise à zéro en double dans `useCallManager`** `[S]` — mesuré le 29/08/2026 par
   contre-épreuve. `ctx.session.currentCallRoomId = null` (chemin `full` de `stopCallWithPeers`) est
@@ -1328,6 +1382,12 @@ Tous mesurés **avant** d'être écrits ici, aucun n'est une impression de lectu
 
   **Déclencheur** : si un `await` apparaît un jour dans `stopCallWithPeers` — l'item « drainer la
   file » en met un sur la trajectoire — alors `closing` devient peignable et l'arbitrage se rouvre.
+
+- [ ] **Vérifier à l'écran la moitié visuelle du câblage** `[S]` — la classe `.btn-toggle-on` et sa
+  spécificité. **Ce n'est pas un test et ça ne le sera pas** : `happy-dom` ne calcule aucune mise en
+  page, et c'est la copie **hôte** du SCSS qui est compilée. Le contrôle est un rendu réel après
+  `socializer:build`. Même nature que la géométrie de la vignette, et même arbitrage —
+  [`docs/architecture/tests.md`](../docs/architecture/tests.md#cette-suite-ne-calcule-aucune-mise-en-page).
 
 ---
 

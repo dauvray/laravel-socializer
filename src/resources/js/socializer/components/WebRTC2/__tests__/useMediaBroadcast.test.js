@@ -8,7 +8,21 @@
  * `openCallBetweenPeer`, `stopCallWithPeers`, `remoteStopCall`, `handleStreamReceived` et
  * `handleStreamRemoved` sont des passthroughs **verbatim** : les tester ici asserterait une
  * identité de référence, pas un comportement — le doublon exact que la tâche 6 a évité.
- * Le tableau de renvois est dans `work/webrtc2-tests-plan.md`.
+ *
+ * **Où sont parties les cases qui semblent manquer ici** — huit étaient des doublons stricts de
+ * cas existants, trois n'étaient couvertes que par morceaux, et une était FAUSSE :
+ *   - lifecycle du data channel → `usePeerOrchestrator.callbacks` (init), `useConnectionPool`
+ *     (sync), `usePeerOrchestrator.teardown` (cleanup), et les `scenarios/` pour la séquence ;
+ *   - `sendDataToPeer` / `onDataReceived` → `usePeerOrchestrator.media` et `.broadcastPresence`,
+ *     `usePeerTransport.mesh` et `.star`, `createPeerContext` ;
+ *   - flux initiateur et récepteur complets → `useCallManager` § « le cycle complet » ;
+ *   - refus d'appel (`status: false`), `remoteStopCall`, `close-call` → `useCallManager` ;
+ *   - `handleStreamReceived` modes `stream` / `visio` → `useStreamManager` +
+ *     `usePeerOrchestrator.callbacks` ;
+ *   - `handleStreamRemoved` → `useStreamManager`, et **c'est là que l'énoncé était faux** : elle
+ *     ne supprime plus le videoElement depuis l'extraction des couches, ce que
+ *     `useStreamManager.test.js` épingle à l'envers. L'écrire tel qu'annoncé aurait produit un
+ *     test rouge contre le code voulu — et, pire, une « correction » du code pour le faire passer.
  *
  * Trois propriétés vivent ici et nulle part ailleurs :
  *

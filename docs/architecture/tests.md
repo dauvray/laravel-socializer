@@ -61,9 +61,23 @@ ces vérifications non portables, ce qui est assumé.
 
 Ce qu'il reste possible d'épingler dans la suite, et qu'il ne faut pas abandonner sous prétexte que
 la mise en page échappe : le **contrat DOM** dont dépend une règle CSS — qu'une classe d'intention
-soit bien rendue, qu'un nœud contienne ou ne contienne pas tel enfant. C'est ce qui a été fait pour
-la vignette d'attente de WebRTC2 : six des sept maillons de son défaut étaient des faits sur des
-fichiers versionnés, un seul relevait du rendu.
+soit bien rendue, qu'un nœud contienne ou ne contienne pas tel enfant.
+
+**Découper avant de conclure « pas testable ».** Le dernier 🔴 de WebRTC2 — une vignette effondrée à
+0 px — était une chaîne de **sept** maillons, dont **six étaient des faits sur des fichiers
+versionnés** : un jeu de classes rendu, l'absence d'un enfant, une règle SCSS présente. Un seul
+relevait du moteur de rendu. Le défaut n'était donc pas « invérifiable », il était **non vérifié sur
+six maillons vérifiables** — et ces six sont dans la suite aujourd'hui. Une sortie « on assume » ne
+vaut que pour ce qui reste après ce découpage, et il reste presque toujours moins que le craint
+(règle 6).
+
+⚠️ **Pourquoi pas `@playwright/test` dans les dépendances de l'hôte.** La question se repose à
+chaque ajout ici ; la réponse tient à un fait unique : **il n'y a aucune CI.** Sans CI, la
+couverture réelle d'une suite Playwright et d'un script `node` est identique — ce qui tourne est ce
+qu'on lance —, pour le prix d'une dépendance à faire approuver et d'un test qui appartient au
+**paquet**, lequel n'a ni `package.json` ni `node_modules`. Le fixture et les assertions se
+transposent sans changement le jour où une CI existe : c'est ce qui rend l'arbitrage réversible,
+donc tenable. Il se rouvre avec la CI, pas avant.
 
 ---
 
@@ -202,6 +216,45 @@ C'est le découpage validé sur WebRTC2, et le modèle à reprendre.
 L'étage bout en bout est celui qui manque toujours et sans lequel les vrais symptômes ne sont pas
 observables : ils ne sont vrais ou faux que **vus de l'autre côté**.
 
+⚠️ **Et il reste un quatrième étage que rien ne remplace : ouvrir la page.** Les deux derniers
+défauts bloquants du paquet ont été trouvés ainsi, **les deux suites au vert** — une vignette
+effondrée à 0 px, et une boucle de rechargement qui empêchait *toute* connexion (un invité recevait
+401 sur la page de login, `AjaxService` rechargeait ; 168 navigations en 20 s, mesuré). Le second ne
+se voyait même pas sur la machine de développement, dont le cache `route:cache` était antérieur aux
+routes concernées — **un `route:cache` construit au déploiement l'aurait rendu en production.** Une
+suite verte dit que les faits épinglés tiennent ; elle ne dit pas que l'application fonctionne.
+
+### Le 0 croisé décide du découpage en fichiers
+
+**Combien de fichiers de test pour une fonctionnalité n'est pas une question de rangement : c'est
+une mesure.** La méthode : muter une ligne, compter les cas rouges **par fichier**. Quand une
+mutation rougit un fichier et **zéro** cas des autres, elle vient de nommer une frontière réelle.
+
+Quatre mesures concordantes l'ont établi, chacune sur une fonctionnalité différente :
+
+| Mutation | rougit | reste vert |
+|---|---|---|
+| l'un des deux bouts d'un joint entre deux couches | 3 et 2 cas du fichier du joint | **0** dans les deux fichiers d'étage |
+| le nom d'une prop exposée par un composant d'un autre paquet | 8 cas du fichier qui monte le vrai composant | **0** du fichier qui le double |
+| la clé d'un `provide` dont le dépôt n'a qu'un `provide` et qu'un `inject` | 1 cas du fournisseur | **0** dans les deux autres |
+| un attribut de couture, une prop coupée, deux écouteurs croisés | le fichier de la couture | **0** de celui du composant |
+
+La règle qui en sort : **quand une propriété tient à un joint entre deux étages, aucun test d'étage
+ne peut la voir mourir.** Les deux couches restent vertes pendant que plus rien n'arrive à l'écran.
+Il faut le fichier du joint, et c'est la mesure qui l'impose — pas le goût.
+
+Trois corollaires, tous payés :
+
+- **Deux fichiers que la mesure sépare ne sont pas des doublons.** Les fusionner « pour
+  simplifier » perd la détection, sans qu'un seul cas ne rougisse au moment de la fusion.
+- **Un double définit la surface, donc il est structurellement aveugle à un renommage en amont.**
+  Un fichier qui double sa dépendance ne peut pas voir une clé disparaître de ce qu'elle expose : le
+  double, lui, l'expose toujours. D'où le fichier jumeau qui monte la dépendance **réelle** et ne
+  fait que ça.
+- **Ne pas stuber ce dont le nom EST le contrat.** Un stub qui expose `nomAttendu` valide sa propre
+  orthographe. C'est la mesure qui l'interdit, et le dépôt en avait le cadavre : deux composants
+  voisins exposant deux clés différentes.
+
 ### Les règles
 
 1. **Un bug vécu s'écrit d'abord en repro, rouge avant le fix.** C'est le seul protocole qui n'a
@@ -210,14 +263,40 @@ observables : ils ne sont vrais ou faux que **vus de l'autre côté**.
    signe : il ne teste pas ce qu'on croit.
 3. **Un mock qui ment est pire qu'un test manquant** — il rend vert pour la mauvaise raison.
 4. **Contrôle de harnais** : neutraliser la ligne de production censée porter le correctif et
-   vérifier que les tests rougissent. Quand deux mécanismes indépendants tiennent la même propriété,
-   il faut les neutraliser tous les deux — et c'est à écrire dans le docblock du test.
+   vérifier que les tests rougissent. Le résultat s'écrit dans le docblock du test — sans quoi le
+   prochain lecteur le re-mesure.
 5. **Une assertion négative ne vaut que si on l'a vue rouge une fois.** Elle ne signale rien quand
    elle cesse de garder quoi que ce soit — voir juste en dessous.
-6. **Une raison plausible de ne pas tester se vérifie comme le reste.** Un « pas testable » annoté
-   dans une doc ou un docblock est une affirmation, pas un constat : les avertissements de ce type
-   trouvés ici étaient faux, et le vrai blocage était ailleurs et plus petit. Exhiber la dépendance
-   qui bloque, nommément — l'ensemble transitif réel est presque toujours plus court que le craint.
+6. **Un énoncé est une affirmation, pas un constat — le relire contre le code est la première
+   étape de la tâche, pas une précaution.** Vaut pour les trois formes rencontrées :
+   - un **« pas testable »** annoté dans une doc ou un docblock : ceux trouvés ici étaient faux, et
+     le vrai blocage était ailleurs et plus petit. Exhiber la dépendance qui bloque, nommément —
+     l'ensemble transitif réel est presque toujours plus court que le craint ;
+   - un **énoncé de tâche**, même écrit par soi-même : périmé, il ne fait pas que perdre du temps,
+     il fait écrire un test qui **demande au code de régresser**. C'est arrivé — un énoncé décrivait
+     un comportement que la suite épinglait déjà à l'envers, et le suivre aurait fait « corriger »
+     le code pour verdir le test ;
+   - un **périmètre annoncé** : plusieurs fois faux, et dans les deux sens — un fichier déjà couvert
+     sous un autre nom, un défaut dont le site vivait hors du dossier nommé.
+
+   Le coût de la relecture est toujours inférieur à celui d'un lot écrit sur un énoncé faux.
+7. **Un contrôle à 0 se lit dans cet ordre, et « la ligne est inutile » vient en dernier.** Quatre
+   lots consécutifs ont produit des contre-épreuves à zéro, et la faute était **dans le test** à
+   chaque fois avant d'être ailleurs :
+   1. **faute du test** — le périmètre ne discrimine pas ce qu'il croit (voir la règle du périmètre
+      à un seul élément dans [modules/webrtc2/tests.md](../modules/webrtc2/tests.md#ce-quil-faut-savoir-avant-décrire)) ;
+   2. **une autre ligne absorbe la mutation** — quand deux mécanismes indépendants tiennent la même
+      propriété, il faut les neutraliser **tous les deux**. Une ligne redondante peut *désarmer* le
+      contrôle du voisin : tant qu'un `v-bind="$attrs"` superflu était là, le contrôle
+      `inheritAttrs: false` rougissait 0 cas d'un côté contre 1 chez son jumeau ;
+   3. **la référence n'a pas été relue à 0** — alors le contrôle ne mesure rien. Un « 1 cas rougi »
+      a déjà été celui d'une régression **déjà présente**, pas celui de la mutation ;
+   4. **et le contrôle lui-même se prépare** : pour mesurer un `catch`, retirer le `try` avec lui —
+      vider le corps laisse la suite compiler sans rien mesurer, le retirer seul l'empêche de
+      compiler, et le 0 se lit alors « ce `catch` ne sert à rien ».
+
+   Un **0 conservé s'écrit avec sa raison** : contrat d'une sentinelle, message d'erreur porté à la
+   place d'une trace opaque, garde décoratif assumé. Sans cette ligne, il sera re-mesuré ou supprimé.
 
 ### Le sérialiseur transforme l'aiguille
 
@@ -262,12 +341,23 @@ donc sur son en-tête d'import, sans avoir à parcourir le fichier.
 
 ## Ce qui est couvert aujourd'hui
 
+La liste des fichiers se relit par `find src/resources/js -path '*__tests__*' -name '*.test.js'`,
+et les cas dans la sortie du runner. **Ce qui suit dit où il y a un filet, pas combien.**
+
 - **WebRTC2** — les trois étages, de loin le module le mieux couvert. Harnais, invariants et
-  pièges de mock : [modules/webrtc2/tests.md](../modules/webrtc2/tests.md). Avancement chiffré et
-  ce qui reste : [`work/webrtc2-tests-plan.md`](../../work/webrtc2-tests-plan.md).
-- **Chat** — un seul fichier (`dateSeparatorRender.test.js`). Plan en 5 couches, non démarré :
-  [`work/chat-tests-plan.md`](../../work/chat-tests-plan.md), avec une décision en attente (helpers
-  dédiés vs partagés — `mockEcho`, `mockRoute`, `seedChatStore`).
+  pièges de mock : [modules/webrtc2/tests.md](../modules/webrtc2/tests.md), qui nomme aussi ce qui
+  reste délibérément hors filet.
+- **System** — `useReverbChannel` (dont le désabonnement d'un whisper par callback), et
+  `Notifications.vue` en deux fichiers : son propre câblage, et la **couture** avec les boutons
+  d'appel de WebRTC2 — celle-ci parce que la mesure l'a imposée, cf.
+  [le 0 croisé](#le-0-croisé-décide-du-découpage-en-fichiers).
+- **Server** — la navigation entre rooms, et le libellé d'état de connexion.
+- **Feed** — le câblage de cycle de vie de `Feed.vue` : ordre de démontage, join du canal avant le
+  chargement des posts, routage des listeners Reverb vers les actions du store.
+- **User** — une amorce, `coverCallButton`.
+- **Chat** — `dateSeparatorRender` seulement. Plan en 5 couches, non démarré :
+  [`work/chat-tests-plan.md`](../../work/chat-tests-plan.md), avec une décision en attente sur les
+  helpers (dédiés à Chat, ou promotion des helpers WebRTC2 vers un dossier partagé).
 - **PHP** — le socle Testbench, les routes de signalisation vues du serveur, et les gardes
   d'autorisation de `Socializable` : gardes de canal de broadcast et garde de relation. Ce que ces
   gardes décident, et ce que le harnais ne prouve pas d'eux :
@@ -276,9 +366,7 @@ donc sur son en-tête d'import, sans avoir à parcourir le fichier.
   elle ne décide pas), l'idempotence du réseau d'un utilisateur, du sommet d'un article, et du
   serveur d'un groupe avec son propriétaire résolu sans acteur authentifié :
   `tests/Feature/Graph/`. Ce que ces fichiers ne prouvent pas est écrit en tête de chacun.
-- **Une amorce seulement** pour `User` (`coverCallButton`) et `System`
-  (`composables/useReverbChannel`) — un fichier chacun, hors des trois étages.
-- **Rien** pour Feed, Comment, Application, Whiteboard, les stores Pinia hors `peers2`, ni les
+- **Rien** pour Comment, Application, Whiteboard, Page, les stores Pinia hors `peers2`, ni les
   services PHP au-delà de l'inscription au chat et de la projection.
 
 Les invariants d'une doc de module (`docs/modules/*`) sont des **points de test**, pas des choses à
