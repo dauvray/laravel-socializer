@@ -24,8 +24,12 @@ import { useRemotePeerState } from '~socializer/components/WebRTC2/Widgets/Media
  * pour cette raison : `inheritAttrs: false`, et **un commentaire HTML placé dans le `<template>`
  * avant la racine** — le composant devient alors multi-racine et Vue cesse de faire descendre les
  * attributs. Mesuré : les deux rougissent le cas « un attribut du consommateur atteint la racine
- * du player » de `RemoteMediaPlayer.test.js`. Le jumeau `LocalMediaPlayer.vue` porte encore le
- * `v-bind` redondant ; il n'est couvert par aucun test, il se traitera avec lui.
+ * du player » de `RemoteMediaPlayer.test.js`.
+ *
+ * ℹ️ Le jumeau `LocalMediaPlayer.vue` a été traité au lot E (31/08/2026), avec son propre
+ * fichier de tests. Sa mesure a ajouté un fait que celle-ci n'avait pas : tant que le `v-bind`
+ * était en place, le contrôle `inheritAttrs: false` y rougissait **0** cas au lieu de 1 — la
+ * ligne redondante désarmait le test qui garde cette transparence.
  */
 const props = defineProps({
     streamData: { type: Object, required: true },

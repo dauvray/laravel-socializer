@@ -23,16 +23,31 @@ import { vi } from 'vitest'
  *   4. **`currentRoom` est un leurre**, distinct d'`onAirRoom` : sans une seconde room,
  *      « l'annonce part dans la bonne room » et « l'annonce part dans une room » sont le
  *      même vert.
+ *   5. **`currentStream` et `screenStream` portent les flux EUX-MÊMES, pas des copies.**
+ *      `LocalMediaPlayer` distingue les deux par **identité de référence**
+ *      (`props.streamData.stream === api.screenStream.value`) : un double qui rendrait un
+ *      clone à chaque lecture ferait échouer la comparaison sur du code correct, et un
+ *      double qui rendrait le même objet pour les deux flux la ferait réussir toujours.
+ *      Les deux valent `null` par défaut — l'état hors diffusion, où les `v-if` de
+ *      `StreamSimpleUI` ne montent aucun player local.
  *
- * @param {{isStreaming?: boolean, isCapturing?: boolean, isMuted?: boolean, isVideoEnabled?: boolean}} etatInitial
+ * @param {{isStreaming?: boolean, isCapturing?: boolean, isMuted?: boolean, isVideoEnabled?: boolean, currentStream?: Object, screenStream?: Object}} etatInitial
  */
-export const createMediaApiDouble = ({ isStreaming = false, isCapturing = false, ...etatsInit } = {}) => {
+export const createMediaApiDouble = ({
+    isStreaming = false,
+    isCapturing = false,
+    currentStream = null,
+    screenStream = null,
+    ...etatsInit
+} = {}) => {
     // Une seule source pour les deux pistes, comme `context.ui.streamStates`.
     const etats = reactive({ isMuted: false, isVideoEnabled: true, ...etatsInit })
 
     return {
         isStreaming: ref(isStreaming),
         isCapturing: ref(isCapturing),
+        currentStream: ref(currentStream),
+        screenStream: ref(screenStream),
         streamStates: computed(() => etats),
         isMuted: computed(() => etats.isMuted),
         isVideoEnabled: computed(() => etats.isVideoEnabled),

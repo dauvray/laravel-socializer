@@ -53,8 +53,11 @@
  *
  * ⚠️ Le n° 5 rougit **1 cas et pas 0**. Zéro voudrait dire que le cas « l'icône ne coupe aucun
  * son » ne distingue pas « affiché » de « coupé » — et ce serait le test qu'il faudrait réparer.
- * Le jumeau `LocalMediaPlayer.vue` porte le même `v-bind="$attrs"` redondant : il n'est PAS
- * touché ici, aucun test ne le couvre encore. La mesure est faite, l'item est au lot E.
+ *
+ * ℹ️ Le `v-bind="$attrs"` redondant du jumeau `LocalMediaPlayer.vue` a été retiré au lot E
+ * (31/08/2026), après la même mesure à 0 — voir `LocalMediaPlayer.test.js`, dont le contrôle
+ * n° 8 montre que cette ligne rendait le contrôle `inheritAttrs: false` aveugle (0 au lieu
+ * de 1).
  */
 import { describe, it, expect } from 'vitest'
 import { nextTick } from 'vue'

@@ -1017,6 +1017,14 @@ extractions : c'est 18 lignes, sous un filet cinq fois plus dense.
   fichiers de test. Déclencheur : le premier signalement « il apparaît micro ouvert alors qu'il
   est coupé ».
 
+  ℹ️ **La moitié LOCALE est morte, elle, et c'est mesuré (lot E, 31/08/2026)** :
+  `localStreamData` (`StreamSimpleUI.vue:170-171`) pose aussi `isAudioMuted` et `isVideoEnabled`,
+  mais ces deux-là ne partent sur aucun fil — la vignette locale lit `api.isMuted` /
+  `api.isVideoEnabled` directement. Les retirer rougit **0 cas sur 1417**, et aucun lecteur
+  n'existe au grep. **Non retirés délibérément** : ce sont les mêmes noms que ceux dont cet item
+  doit décider côté distant, et les supprimer d'un côté pendant que l'autre attend une décision
+  rendrait la lecture de la metadata locale incohérente. **À trancher avec cet item, pas avant.**
+
 - [ ] 🟢 **Pas de réinitialisation quand `peerIdSource` change — sortie D, épinglée** `[S]` — le
   composable suit bien une `Ref` qui change (`unref` à chaque lecture), mais ne remet pas `muted` /
   `videoActive` à leurs défauts. **Aucun des deux `v-for` de production ne l'atteint** : leurs
@@ -1026,14 +1034,42 @@ extractions : c'est 18 lignes, sous un filet cinq fois plus dense.
   Déclencheur : un consommateur qui passe une `ref` de peerId mutable, ou un pool qui recycle un
   `RemoteMediaPlayer`.
 
-- [ ] 🟢 **`v-bind="$attrs"` redondant dans `LocalMediaPlayer.vue:6` — mesure déjà faite** `[S]` —
-  le jumeau `RemoteMediaPlayer` portait le même : la racine étant un composant unique, Vue applique
-  déjà les attributs de fallthrough, et le `v-bind` explicite les appliquait une seconde fois
-  (idempotent, donc invisible). Retiré de `RemoteMediaPlayer` le 31/08 après 0 cas rougis sur trois
-  passes. `LocalMediaPlayer` n'est couvert par **aucun** test : il se traite au lot E, avec le sien.
-  ⚠️ Piège mesuré au passage : **un commentaire HTML placé dans le `<template>` avant la racine**
-  rend le composant multi-racine et coupe le fallthrough. L'explication du retrait vit donc dans le
-  `<script setup>`.
+- [x] 🟢 **`v-bind="$attrs"` redondant dans `LocalMediaPlayer.vue:6`** `[S]` — **fait le
+  31/08/2026** au lot E, sortie B, après 0 cas rougis sur référence relue verte (79 fichiers,
+  1417 cas). L'explication vit dans le `<script setup>`, jamais dans le `<template>`.
+
+  **La mesure a rendu un fait que l'énoncé n'avait pas, et qui vaut plus que le retrait** : cette
+  ligne ne faisait pas que doubler le fallthrough, elle **désarmait le contrôle du voisin**. Tant
+  qu'elle était là, ajouter `inheritAttrs: false` rougissait **0** cas — le `v-bind` rendait les
+  attributs de toute façon — contre 1 cas chez le jumeau, qui ne l'avait plus. Après retrait :
+  1 des deux côtés. Conséquence de méthode, remontée dans
+  [`docs/modules/webrtc2/tests.md`](../docs/modules/webrtc2/tests.md) : **un contrôle à 0 doit
+  faire chercher quelle AUTRE ligne absorbe la mutation**, avant de conclure que le test est
+  inutile.
+
+- [ ] 🟠 **La présence de TOUS les providers dépend d'une réaffectation chez un autre fichier —
+  0 cas sur 1417** `[S]` — relevé et **mesuré** le 31/08/2026 par le lot E.
+
+  `MediaBroadcastProvider` suit la composition par `watch(() => props.users, …)`, **non profond** :
+  seul un remplacement de tableau déclenche `api.watchUsers`. `useReverbChannel` le respecte
+  partout — `users.value = [...users.value, user]` (l. 148) et deux autres réaffectations — mais
+  **rien ne l'y oblige, et rien ne le garde**. Mesuré : y écrire `users.value.push(user)` rougit
+  **0 cas sur 1417** alors que la synchronisation de présence de tous les providers s'arrête.
+
+  Conséquence : `syncUsersConnections` n'est plus appelé, donc `remotePeers` — l'allowlist que
+  lisent les deux gardes d'autorisation — cesse d'être écrite. Panne **fail-closed** (les
+  arrivants ne sont jamais admis, aucune brèche) mais totalement muette.
+
+  La moitié testable côté provider **est faite** : `MediaBroadcastProvider.test.js` épingle que le
+  watch n'est pas profond, dans les deux sens. Ce qui reste est la moitié d'en face, et le paquet a
+  déjà la forme qui convient : un **filet mécanique au grep** sur les sources de production, comme
+  `roomMembersSourceOfTruth.test.js` en porte un pour interdire les setters de `roomMembers` —
+  ici, interdire `users.value.push` / `.splice` dans `useReverbChannel.js`. À poser dans
+  `components/System/composables/__tests__/useReverbChannel.test.js`, qui existe déjà.
+
+  ⚠️ Piège de harnais déjà payé, écrit pour ne pas le re-payer : **un cas qui distingue watch
+  superficiel et profond doit semer par un `ref`**. Écrit avec un tableau littéral, le cas est vert
+  des deux côtés — pousser dans un tableau non réactif n'est vu par aucun watcher.
 
 - [ ] 🟠 **Le bouton `Fullscreen` est un aller sans retour** `[S]` — relevé le 31/08/2026 par le lot
   D, qui a écarté pour ça la « moitié plein écran » de son propre énoncé.

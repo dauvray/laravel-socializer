@@ -431,11 +431,16 @@ Sans décompte, parce qu'il pourrit : l'état exact se lit dans
   ne rougit **que** le troisième — mesuré à 0 sur les deux autres : c'est ce qui prouve qu'aucun
   n'est le doublon d'un autre. **Les contrôles de la vignette** l'ont rejoint le 31/08/2026, en
   deux fichiers dont la séparation est elle aussi une mesure (voir « Fabriquer le plein écran et le
-  PiP » ci-dessous). Restent le provider, `LocalMediaPlayer` et les deux boutons d'appel.
+  PiP » ci-dessous). **Le provider et `LocalMediaPlayer`** l'ont rejoint le 31/08/2026, en trois
+  fichiers — et là encore la séparation est mesurée, par deux 0 croisés : permuter la clé de
+  `provide(WEBRTC_API_KEY)` ne rougit que `MediaBroadcastProvider.test.js`, et reconstruire
+  `screenStreamData.stream` en copie ne rougit que `StreamSimpleUI.local.test.js`. Cette clé n'a
+  qu'un `provide` et qu'un `inject` dans tout le dépôt : aucun étage ne peut voir les deux bouts.
+  Restent les deux boutons d'appel.
 
 ---
 
-## Tester un composant : huit faits mesurés
+## Tester un composant : dix faits mesurés
 
 ### ⚠️ Les `directives` passées en `global` sont INERTES
 
@@ -461,6 +466,14 @@ et le fallthrough s'arrête — silencieusement. C'est arrivé en documentant le
 Deux règles en sortent : un commentaire de ce genre vit dans le `<script setup>`, et **un contrôle
 de harnais dont la référence n'a pas été relue à 0 ne mesure rien** — le contrôle suivant avait
 rendu « 1 cas rougi » qui n'était pas le sien, mais la régression déjà présente.
+
+⚠️ **Corollaire mesuré sur le jumeau, et c'est le plus contre-intuitif : une ligne redondante peut
+DÉSARMER le contrôle du voisin.** Tant que `LocalMediaPlayer` portait son `v-bind="$attrs"`
+superflu, le contrôle « `inheritAttrs: false` ajouté » y rougissait **0** cas — le `v-bind`
+rendait les attributs de toute façon — contre 1 cas chez `RemoteMediaPlayer`, qui ne l'avait plus.
+Après retrait : 1 des deux côtés. Une ligne idempotente n'est donc pas seulement du bruit ; elle
+peut rendre aveugle le test censé garder la transparence, et un contrôle à 0 doit faire chercher
+**quelle autre ligne** absorbe la mutation avant de conclure que le test est inutile.
 
 ### Monter les enfants réels, ne pas les stuber
 
@@ -554,6 +567,30 @@ Vue via la prop `:muted`. Un stub qui omet ce binding rend rouge, sur du code co
 pool recycle la vignette ». Mesure qui tranche : renommer `nativeVideo` chez `~estarter` rougit
 **8 cas du fichier qui monte le vrai lecteur et 0 du fichier composable**, dont le
 `ref({ nativeVideo })` fait main valide sa propre orthographe.
+
+### ⚠️ `wrapper.vm` traverse `defineExpose` — un test d'exposition écrit ainsi ne peut pas échouer
+
+Mesuré : retirer `defineExpose({ api })` de `MediaBroadcastProvider` laisse
+`expect(wrapper.vm.api)` **vert**. `wrapper.vm` de VTU atteint les bindings d'un `<script setup>`
+que le composant les expose ou non — alors qu'un `<script setup>` est **fermé par défaut** pour
+tout le reste du monde.
+
+Ce qu'il faut écrire à la place est le chemin que la production emploie : une **ref de template**
+posée par un composant parent (`$refs.provider.api`), qui ne voit que l'exposé. La contre-épreuve
+rougit alors 1 cas. Un test d'exposition sans ref de template n'atteste rien.
+
+### ⚠️ Pousser dans un tableau NU n'est vu par aucun watcher, profond ou pas
+
+Un cas qui distingue `watch` superficiel et `deep: true` doit semer sa donnée à travers un `ref`,
+comme la production. Mesuré : un `props.users` passé en tableau littéral puis muté par `push`
+laisse le cas vert **des deux côtés** de la mutation `deep: true` — il ne dit pas « le watch est
+superficiel », il dit « mon tableau de test est inerte ». `ref([])` réactive en profondeur, et
+c'est ce proxy-là qu'un watcher profond observerait (`useReverbChannel` expose `users` ainsi).
+
+Corollaire de production, mesuré au même endroit : le `watch(() => props.users)` de
+`MediaBroadcastProvider` **n'est pas profond**, donc toute la chaîne de présence dépend du fait que
+le fournisseur **réaffecte** son tableau. Y écrire un `push` rougit **0 cas sur 1417** et arrête
+silencieusement la synchronisation de tous les providers.
 
 ---
 

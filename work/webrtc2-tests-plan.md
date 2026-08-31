@@ -382,7 +382,18 @@ réellement dans `usePeerMedia.players.test.js` (17 cas ; seul `MediaBroadcastPl
 Il avait été manqué parce que le fichier porte le nom du **composable**, pas du composant. Une
 tâche 8 écrite sur l'énoncé aurait donc re-testé un composant déjà couvert.
 
-**État au 31/08/2026 — 12 fichiers couverts sur 15**, les lots A, B, V, C et D étant faits :
+**État au 31/08/2026 — 12 fichiers de `Widgets/**` exercés sur 15** (10 avant le lot E), les lots
+A, B, V, C, D et E étant faits. Les 3 restants : `SpectrumAnalyzer` (hors périmètre, assumé —
+[voir plus bas](#pourquoi-ça-compte-et-ce-nest-pas-une-question-de-pourcentage)) et les deux
+boutons d'appel du lot F.
+
+> ⚠️ **Ce décompte est re-mesuré, pas repris de la ligne précédente, et les deux ne sont pas
+> comparables** : la série antérieure comptait `StreamSimpleUI`, qui vit dans `Exemples/` et non
+> dans `Widgets/**`. La mesure se refait sur les chemins d'import réels — un nom trouvé au grep
+> peut n'être qu'une mention en commentaire, ce qui a fait passer `CallRemotePeerBtn` pour couvert
+> le temps d'une vérification. `PlayerHost`, à l'inverse, n'est importé par aucun test et **est**
+> exercé : `usePeerMedia.js:105` l'importe dynamiquement et le rend, et
+> `usePeerMedia.players.test.js` ne mocke que `MediaBroadcastPlayer`.
 
 | Lot | Fichiers | Fichiers de test |
 |---|---|---|
@@ -391,13 +402,13 @@ tâche 8 écrite sur l'énoncé aurait donc re-testé un composant déjà couver
 | **V** | le contrat DOM du 🔴 de la vignette | `StreamSimpleUI.awaited.test.js` + `tests/visual/` |
 | **C** | `useRemotePeerState`, `RemoteMediaPlayer`, le joint `conn.peer` | `useRemotePeerState.test.js`, `RemoteMediaPlayer.test.js`, `StreamSimpleUI.toggles.test.js` |
 | **D** | `useMediaControls` + les contrôles de `MediaBroadcastPlayer` | `useMediaControls.test.js`, `MediaBroadcastPlayer.controls.test.js`, `helpers/fakeFullscreen.js` |
+| **E** | `LocalMediaPlayer`, `MediaBroadcastProvider`, le joint de l'exception d'écran | `LocalMediaPlayer.test.js`, `MediaBroadcastProvider.test.js`, `StreamSimpleUI.local.test.js` |
 | déjà là | `MediaBroadcastPlayer`, `PlayerHost`, `useAwaitedStreams`, `Debug` | — |
 
-**Les lots qui restent** :
+**Le lot qui reste** :
 
 | Lot | Fichiers de production | Pourquoi ils vont ensemble |
 |---|---|---|
-| **E** | `LocalMediaPlayer`, `MediaBroadcastProvider` | le pendant local du lot C, et le fournisseur de l'API |
 | **F** | `CallManagerBtn`, `CallRemotePeerBtn` | les deux boutons d'appel |
 
 > ⚠️ **L'énoncé de la tâche était FAUX sur le périmètre du lot C**, et il faut le dire parce que
@@ -491,6 +502,86 @@ changement le jour où une CI existe.
 vert sur un DOM que la production n'a plus ; le garde-fou est l'assertion de jeu de classes de
 `StreamSimpleUI.awaited.test.js`, qui, elle, tourne à chaque suite. Et le harnais dépend d'un
 runtime hors dépôt : ailleurs, il ne tourne pas — il s'arrête en le disant.
+
+#### Ce que le lot E a trouvé, et qui n'était pas dans l'énoncé
+
+**25 cas, 3 fichiers, 23 contrôles de harnais mesurés.** Suite complète verte : 79 fichiers,
+1417 cas (76 / 1392 avant le lot).
+
+**Trois affirmations de l'énoncé ne tenaient pas**, et il faut les dire parce que deux étaient
+structurantes :
+
+1. **`helpers/fakeFullscreen.js` n'a servi à rien.** L'index l'annonçait « réutilisable tel quel » ;
+   `useMediaControls` ne touche `document` que sur une action de bascule, et aucun cas du lot n'en
+   déclenche. Le précédent qui tranchait était sous les yeux : `RemoteMediaPlayer.test.js` monte le
+   même player réel sans ce helper. Ce qui était réellement réutilisable est l'autre moitié du
+   précédent du lot D — monter les vrais lecteurs plutôt que des stubs.
+2. **Le joint du lot n'est pas dans les deux fichiers nommés, il est ENTRE eux.**
+   `WEBRTC_API_KEY` n'a qu'un `provide` (`MediaBroadcastProvider.vue:44`) et qu'un `inject`
+   (`LocalMediaPlayer.vue:23`) dans tout le dépôt.
+3. **La seconde moitié de l'exception d'écran vit hors du périmètre annoncé**, dans
+   `StreamSimpleUI.vue:176` — d'où le troisième fichier. Aucun test ne pouvait monter ce chemin :
+   les deux fichiers `StreamSimpleUI.*` sèment les deux flux locaux à `null`, donc les `v-if` sont
+   faux et `LocalMediaPlayer` ne se monte jamais (il aurait levé, faute de provider).
+
+⭐ **Les deux chiffres qui valent le lot sont deux 0 croisés, un par joint** — et ce sont eux qui
+justifient trois fichiers plutôt qu'un :
+
+| Mutation | rougit | reste vert |
+|---|---|---|
+| la clé de `provide` permutée | 1 cas, `MediaBroadcastProvider.test.js` | **0** dans les deux autres |
+| `screenStreamData.stream` reconstruit en copie | 1 cas, `StreamSimpleUI.local.test.js` | **0** dans les deux autres |
+
+Le premier veut dire que le joint provide/inject peut mourir entièrement pendant que les deux
+étages restent verts. Le second, que mon écran partagé peut disparaître dès que je coupe ma caméra
+sans qu'un cas d'étage bouge.
+
+**Une sortie B, et sa mesure dit plus que le retrait.** `v-bind="$attrs"` retiré de
+`LocalMediaPlayer.vue:6` (0 cas, comme chez le jumeau). Mais cette ligne **désarmait le contrôle du
+voisin** : tant qu'elle était là, `inheritAttrs: false` rougissait **0** cas ici contre 1 chez le
+jumeau, qui ne l'avait plus. Après retrait : 1 des deux côtés. D'où une règle remontée dans
+[`tests.md`](../docs/modules/webrtc2/tests.md) — **un contrôle à 0 doit faire chercher quelle AUTRE
+ligne absorbe la mutation** avant de conclure que le test est inutile.
+
+⚠️ **Deux contre-épreuves ont rougi ZÉRO cas, et les deux fois la faute était dans le test** —
+quatrième lot consécutif où ce motif revient, et cette fois les deux fautes sont des faits de
+harnais réutilisables, écrits dans `tests.md` :
+
+- **`wrapper.vm` traverse `defineExpose`.** Le cas d'exposition, écrit `monter().vm.api`, ne
+  pouvait pas échouer : VTU atteint les bindings d'un `<script setup>` que le composant les expose
+  ou non. Réécrit avec une **ref de template** — un `<script setup>` est fermé par défaut, et
+  c'est le chemin que la production emploie (`Home.vue:12`). La contre-épreuve rougit alors 1 cas.
+- **Pousser dans un tableau NU n'est vu par aucun watcher, profond ou pas.** Le cas du watch
+  superficiel était vert des deux côtés de la mutation `deep: true` : il ne disait pas « le watch
+  est superficiel », il disait « mon tableau de test est inerte ». La composition passe donc par un
+  `ref`, comme `useReverbChannel` l'expose.
+
+**Un défaut latent trouvé en écrivant le second, et ouvert comme item mesuré** : le
+`watch(() => props.users)` du provider n'étant pas profond, toute la chaîne de présence dépend du
+fait qu'`useReverbChannel` **réaffecte** son tableau. Y écrire un `push` rougit **0 cas sur 1417**
+et arrête silencieusement la synchronisation de tous les providers — fail-closed, sans une trace.
+La moitié provider est épinglée ; la moitié d'en face demande un filet mécanique au grep, sur le
+modèle de `roomMembersSourceOfTruth.test.js`.
+
+**Deux faits de production corrigés en chemin, tous deux dans la doc du jumeau** : ses deux
+mentions « `LocalMediaPlayer` porte encore le `v-bind` redondant, aucun test ne le couvre »
+étaient devenues fausses (`RemoteMediaPlayer.vue`, `RemoteMediaPlayer.test.js`).
+
+**Un doublon évité par relecture, et c'est la leçon des lots 6 et 7 qui a servi** : l'anti-écho
+(`isMe` ⇒ lecteur muet, pas de bouton Mute) était au plan du lot E. Il est **déjà** épinglé sur le
+lecteur réel par `MediaBroadcastPlayer.controls.test.js` § « mon propre flux ». Ce qui n'était
+couvert nulle part est l'**origine** du drapeau — que `localStreamData` et `screenStreamData` le
+posent — et cela n'est visible qu'au troisième fichier.
+
+ℹ️ **Un contrôle à 0 conservé sans correctif** : le repli `null` d'`inject`
+(`inject(WEBRTC_API_KEY, null)`). Il n'affirme rien de faux, le garde levant dans les deux cas ; il
+sert à ce que la levée porte son message plutôt qu'un `injection not found` suivi d'un `TypeError`.
+Même arbitrage que le `if (m !== null)` du lot D.
+
+ℹ️ **Un couplage à connaître avant de toucher au template de `StreamSimpleUI`** : retirer le `v-if`
+du second player local rougit **12** cas — 1 attendu, plus 6 dans `.awaited` et 5 dans `.toggles`,
+qui ne fournissent aucune api et voient donc `LocalMediaPlayer` lever. Ces deux fichiers ne sont
+protégés du player local que par ce `v-if`.
 
 #### Ce que le lot D a trouvé, et qui n'était pas dans l'énoncé
 
