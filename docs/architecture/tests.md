@@ -63,7 +63,7 @@ Ce qu'il reste possible d'épingler dans la suite, et qu'il ne faut pas abandonn
 la mise en page échappe : le **contrat DOM** dont dépend une règle CSS — qu'une classe d'intention
 soit bien rendue, qu'un nœud contienne ou ne contienne pas tel enfant.
 
-**Découper avant de conclure « pas testable ».** Le dernier 🔴 de WebRTC2 — une vignette effondrée à
+**Découper avant de conclure « pas testable ».** Un 🔴 de WebRTC2 — une vignette effondrée à
 0 px — était une chaîne de **sept** maillons, dont **six étaient des faits sur des fichiers
 versionnés** : un jeu de classes rendu, l'absence d'un enfant, une règle SCSS présente. Un seul
 relevait du moteur de rendu. Le défaut n'était donc pas « invérifiable », il était **non vérifié sur

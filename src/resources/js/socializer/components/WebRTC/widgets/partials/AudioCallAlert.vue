@@ -13,7 +13,7 @@
     export default {
         name: 'AudioCallAlert',
         emits: [
-            'response-call',
+            'response-alert',
         ],
         props: {
             fromUserSlug: {
@@ -58,11 +58,11 @@
             },
             onRefuseCall() {
                 this.stopDing()
-                this.$emit('response-call', false)
+                this.$emit('response-alert', false)
             },
             onAcceptCall() {
                 this.stopDing()
-                this.$emit('response-call', true)
+                this.$emit('response-alert', true)
             }
         }
     }

@@ -35,22 +35,30 @@
  * ARRIVE, et ça garde `CallManagerBtn` (le second composant asynchrone du template) hors du
  * montage — donc pas de stub `Spinner`, et un seul chemin asynchrone à drainer.
  *
- * ⚠️ **La DURÉE de ce fichier est une borne de correction** : 1,1 s au 2026-08-31 (174 ms de
- * tests). Le `setTimeout` d'auto-refus des alertes n'est pas annulé au démontage (défaut B2) ;
- * au-delà de 10 s de temps mur, le timer d'un cas antérieur produirait ici un
- * `acceptCallFromPeer` FANTÔME pendant un cas ultérieur. C'est le défaut B2 vu depuis le harnais.
+ * ⚠️ **La DURÉE de ce fichier est une borne de correction** : 1,2 s au 2026-08-31 (259 ms de
+ * tests, les deux fichiers d'alertes ensemble). Le `setTimeout` d'auto-refus des alertes n'est pas
+ * annulé au démontage (défaut B2) ; au-delà de 10 s de temps mur, le timer d'un cas antérieur
+ * produirait ici un `acceptCallFromPeer` FANTÔME pendant un cas ultérieur. C'est le défaut B2 vu
+ * depuis le harnais — **et B1 l'a armé sur la branche vocale** : le timer d'`AudioCallAlert`
+ * émettait dans le vide, il émet désormais un vrai refus. Les deux alertes sont concernées.
  *
- * ── 🔴 UN CAS ROUGE JUSQU'À B1 — le symptôme, à l'altitude où c'en est un ─────
- * « Accepter un appel VOCAL entrant ne fait rien » : `AudioCallAlert` émet `response-call`,
- * personne ne l'écoute, `acceptCallFromPeer` n'est jamais atteint, l'alerte reste à l'écran et
- * l'appelant attend l'abandon du moteur de retry (« bob n'a pas répondu »). La CAUSE est nommée
- * par le cas de vocabulaire d'`AlertComponent.test.js` ; l'EFFET est ici. Trois lignes dans
- * `AudioCallAlert.vue` referment les deux — `work/doc-rustines.md`, lot 1 · B1.
+ * ── CE QUE CE FICHIER A ÉPINGLÉ : B1, fermé le 2026-08-31 ─────────────────────
+ * Écrit rouge d'un cas — le symptôme, à l'altitude où c'en est un : « accepter un appel VOCAL
+ * entrant ne fait rien ». `AudioCallAlert` émettait `response-call`, personne ne l'écoutait,
+ * `acceptCallFromPeer` n'était jamais atteint, l'alerte restait à l'écran et l'appelant attendait
+ * l'abandon du moteur de retry (« bob n'a pas répondu »). **Le partage vaut d'être gardé** : la
+ * CAUSE est nommée par le cas de vocabulaire d'`AlertComponent.test.js`, l'EFFET est ici — un seul
+ * défaut, deux altitudes, et c'est ce qui a fait que le diagnostic n'a pas eu à être cherché.
  *
  * ── CONTRÔLES DE HARNAIS (convention du paquet), mesurés le 2026-08-31 ────────
- * Chiffres = rouges TOTAUX du fichier, la référence n'étant pas verte : **1 ici** (le rouge de
- * B1) · **3** dans `AlertComponent.test.js` (les siens) · **0** dans `Notifications.test.js` et
- * `Notifications.callControls.test.js`. Colonnes : ce fichier · unitaire · câblage · callControls.
+ * ⚠️ **Mesurés AVANT B1, quand la référence n'était pas verte** : rouges TOTAUX du fichier sous
+ * mutation, la référence en portant **1 ici** (le rouge de B1) · **3** dans
+ * `AlertComponent.test.js` (les siens) · **0** dans `Notifications.test.js` et
+ * `Notifications.callControls.test.js`. Elle est verte depuis B1, mais **on ne les convertit pas en
+ * écarts par soustraction** : le n° 1 du fichier unitaire le prouve — sa mutation rougissait des cas
+ * que B1 rendait verts. Chaque conversion demande la mesure ; dette assumée, à reprendre au lot C,
+ * qui déplace les deux alertes.
+ * Colonnes : ce fichier · unitaire · câblage · callControls.
  *
  * LA COUTURE — mutations dans `Notifications.vue` :
  *    1. `@response-alert="onResponseAlert"` retiré (l. 9) ......... 4 · 3 · 0 · 0
@@ -334,15 +342,15 @@ describe('Notifications — .AlertToUser, l\'invitation d\'appel affichée', () 
         })
     })
 
-    describe('🔴 un appel VOCAL entrant — rouge attendu jusqu\'à B1', () => {
+    describe('un appel VOCAL entrant — ce que B1 a fermé', () => {
 
-        it('⭐🔴 « Accepter » un appel VOCAL demande l\'ouverture de l\'appel au moteur', async () => {
+        it('⭐ « Accepter » un appel VOCAL demande l\'ouverture de l\'appel au moteur', async () => {
             wrapper = await monter()
             await recevoirLInvitation('vocal')
 
-            // Garde-fou d'abord : l'alerte vocale est bien là, et son bouton aussi. Le rouge de
-            // ce cas doit être « le verbe n'est pas atteint », jamais « le bouton n'a pas été
-            // trouvé » — c'est ce qui distingue le défaut B1 d'un harnais cassé.
+            // Garde-fou d'abord : l'alerte vocale est bien là, et son bouton aussi. C'est ce qui a
+            // fait que le rouge de ce cas disait « le verbe n'est pas atteint », et jamais « le
+            // bouton n'a pas été trouvé » — la distinction entre le défaut B1 et un harnais cassé.
             expect(alerte(wrapper, 'AudioCallAlert').exists()).toBe(true)
             expect(accepter(wrapper).exists()).toBe(true)
 

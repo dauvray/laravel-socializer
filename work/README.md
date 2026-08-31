@@ -12,24 +12,16 @@ Le détail est dans le fichier ; le récit est dans `git log`.
 
 ---
 
-## ⚠️ La suite JS est ROUGE, volontairement — 4 cas, jusqu'à B1
-
-Depuis le 31/08/2026, `AlertComponent.test.js` et `Notifications.alerts.test.js` portent **4 cas
-rouges** : le filet du lot A1 épingle le 🔴 vocal *avant* son correctif, comme l'exige la règle
-« rouge d'abord ». Ce n'est pas une régression, et **ce n'est pas à contourner** : trois lignes dans
-`AudioCallAlert.vue` (lot B1 de [doc-rustines.md](doc-rustines.md)) les referment sans toucher une
-ligne de test. En attendant, `hooks/pre-push` refusera le push — c'est le prix assumé.
-
 ## Ordre de priorité
 
 Aucun chantier ne passe devant les autres. L'ordre par défaut, tant que rien n'est demandé
 explicitement :
 
 1. **Le module WebRTC2 au fil de l'eau — [webrtc2-todo.md](webrtc2-todo.md).**
-   🔴 **Un rouge depuis le 31/08 : accepter un appel VOCAL entrant ne fait rien** — `AudioCallAlert`
-   émet un événement que personne n'écoute. **Il est désormais épinglé par un test** (A1, ci-dessus)
-   et il **ne se traite pas là-bas** : c'est le lot B du découpage ci-dessous, parce que le
-   déménagement du fichier appartient à la migration v1.
+   **Aucun 🔴 ouvert depuis le 31/08** : « accepter un appel vocal entrant ne fait rien » est fermé
+   (lot B1, trois lignes), et le second défaut des alertes — le timer d'auto-refus qui survit au
+   démontage — reste ouvert en 🟠, promu en item propre puisque B1 vient de l'armer sur la branche
+   vocale.
 
    ✅ **Le plan de tests est clos** : les trois étages sont couverts, y compris
    l'étage de présentation, et son fichier de suivi a été supprimé après remontée de son durable
@@ -46,10 +38,12 @@ explicitement :
    [`work/deploiement-tiers.md`](../../../../work/deploiement-tiers.md) du projet hôte.
 
 2. [doc-rustines.md](doc-rustines.md) — le volet de ce paquet dans le chantier transverse. Le lot 0
-   est terminé, et le lot 1 est **entamé** : `webrtc2Events.js` supprimé (31/08), puis **le filet du
-   lot A1 posé le 31/08** — deux fichiers de test sur les alertes d'appel entrant, 21 cas dont les
-   4 rouges annoncés en tête. **La tâche suivante est B1**, trois lignes dans `AudioCallAlert.vue`,
-   qui les referme et rend la suite verte. Le reste de la migration des appelants de WebRTC v1 est
+   est terminé, et le lot 1 est **entamé** : `webrtc2Events.js` supprimé (31/08), le filet du lot A1
+   posé (31/08) — deux fichiers de test sur les alertes d'appel entrant, 21 cas dont 4 rouges — puis
+   **B1 fermé le 31/08** : trois lignes dans `AudioCallAlert.vue`, les 4 rouges au vert sans qu'une
+   assertion change. **La tâche suivante est B2** — même fichier, et B1 vient d'y armer le timer
+   d'auto-refus, qui n'est annulé au démontage dans aucune des deux alertes ; premier lot à demander
+   de faux timers, donc un troisième harnais. Le reste de la migration des appelants de WebRTC v1 est
    la tâche la plus rentable du paquet en volume de doc — **sept lots A→G**, dont A2 (une lecture,
    pas du code) est encore ouvert. Le cadrage a trouvé un **sixième** consommateur du code v1, que
    le recompte de la doc rate : `Server/Server.vue`, par le store `stores/peers.js` et non par
@@ -88,8 +82,8 @@ explicitement :
 
 | Fichier | État | En une phrase |
 |---|---|---|
-| [webrtc2-todo.md](webrtc2-todo.md) | ouvert, **un 🔴** | Le suivi vivant du module. **Le 🔴 : accepter un appel vocal entrant ne fait rien** — désormais **épinglé par un test** (lot A1, 31/08) et il se traite dans le lot B de [doc-rustines.md](doc-rustines.md), pas ici. **Un 🟠 de couverture** — aucun scénario n'exerce la topologie star, donc « hub absent → hub présent » n'est épinglé à aucun étage — et **un 🟠 de déploiement**, la bascule `SOCIALIZER_PEER_ATTESTATION_ENFORCE`, dont la procédure impose de lire **deux** indicateurs et jamais un seul. Le reste est de la pérennisation 🟢/🟠 : fidélité du mock PeerJS, observabilité, robustesse, et ce que la couverture des boutons d'appel a ouvert. Les items terminés y sont élagués — leur rationale vit dans [`docs/`](../docs/modules/webrtc2/INDEX.md), leur récit dans `git log`. |
-| [doc-rustines.md](doc-rustines.md) | 🟠 démarré — **lot 0 terminé, lot 1 entamé** | rendre la doc exempte d'annotations qui compensent un défaut du code. `webrtc2Events.js` est supprimé (31/08, sortie B) et **le filet du lot A1 est posé (31/08) : 4 cas rouges, que B1 referme**. **Reste au lot 1** : migrer les composants vivants qui importent encore la v1 WebRTC — ce qui retire l'annotation de **sept** fichiers de doc, dont le piège n°1 du `CLAUDE.md` et une ligne du `CLAUDE.md` de tout projet hôte — puis vider les cinq poches mortes. **Découpé en sept lots A→G le 31/08** : le filet d'abord, le 🔴 vocal ensuite, le déplacement des alertes, les trois modules data un par un, AudioRoom, la suppression, la doc. Trois faits du cadrage : le provider data v2 existe déjà (rien à écrire), le contrat de callback n'est pas mappable 1 pour 1 (chaque appelant se réécrit), et il y a un **sixième** consommateur hors du recompte. |
+| [webrtc2-todo.md](webrtc2-todo.md) | ouvert, **aucun 🔴** | Le suivi vivant du module. **Un 🟠 sur les alertes d'appel** : le timer d'auto-refus survit au démontage dans les deux, et B1 vient de l'armer côté vocal — il se traite dans le lot B2 de [doc-rustines.md](doc-rustines.md), pas ici. **Un 🟠 de couverture** — aucun scénario n'exerce la topologie star, donc « hub absent → hub présent » n'est épinglé à aucun étage — et **un 🟠 de déploiement**, la bascule `SOCIALIZER_PEER_ATTESTATION_ENFORCE`, dont la procédure impose de lire **deux** indicateurs et jamais un seul. Le reste est de la pérennisation 🟢/🟠 : fidélité du mock PeerJS, observabilité, robustesse, et ce que la couverture des boutons d'appel a ouvert. Les items terminés y sont élagués — leur rationale vit dans [`docs/`](../docs/modules/webrtc2/INDEX.md), leur récit dans `git log`. |
+| [doc-rustines.md](doc-rustines.md) | 🟠 démarré — **lot 0 terminé, lot 1 entamé** | rendre la doc exempte d'annotations qui compensent un défaut du code. `webrtc2Events.js` est supprimé (31/08, sortie B), le filet du lot A1 est posé et **B1 est fermé (31/08) : les 4 rouges au vert en trois lignes, aucune assertion touchée** — ce qui débloque le lot C. **Reste au lot 1** : migrer les composants vivants qui importent encore la v1 WebRTC — ce qui retire l'annotation de **sept** fichiers de doc, dont le piège n°1 du `CLAUDE.md` et une ligne du `CLAUDE.md` de tout projet hôte — puis vider les cinq poches mortes. **Découpé en sept lots A→G le 31/08** : le filet d'abord, le correctif vocal ensuite, le déplacement des alertes, les trois modules data un par un, AudioRoom, la suppression, la doc. Trois faits du cadrage : le provider data v2 existe déjà (rien à écrire), le contrat de callback n'est pas mappable 1 pour 1 (chaque appelant se réécrit), et il y a un **sixième** consommateur hors du recompte. |
 | [projection-graphe-todo.md](projection-graphe-todo.md) | ⏸️ **suspendu — au besoin seulement** | suites du correctif « un utilisateur = un mur + un feed ». Rien n'y bloque ; deux items portent une exigence d'exploitation (sauvegarder le space NebulaGraph, que rien ne reconstruira). |
 | [chat-tests-plan.md](chat-tests-plan.md) | **non démarré** | plan de tests du Chat en 5 couches ; un seul fichier de test existe. Décision en attente sur les helpers (`mockEcho`, `mockRoute`, `seedChatStore`) : dédiés à Chat, ou promotion des helpers WebRTC2 — le fichier nomme le candidat existant et les deux fidélités qu'un partage naïf effacerait. |
 | [front-todo.md](front-todo.md) | **non démarré** | deux items. Le ping d'ouverture de session part avant que pusher n'ait confirmé l'abonnement, et Reverb le rejette — l'utilisateur peut rester hors ligne deux minutes ; le correctif naïf (`subscribed(cb)`) ne part jamais sur un canal déjà confirmé. Et `isEmpty(element.store)` lève sur un commentaire de post chargé par la liste, **dans un listener Reverb donc en silence** — quatre appelants, deux étages possibles pour le correctif. |

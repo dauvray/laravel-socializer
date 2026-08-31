@@ -194,13 +194,18 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
         Vitest : un fichier que plus rien n'importe n'entre dans aucune suite. C'est `npm run build`.
 
       - [ ] **A. Poser le filet — zéro changement de comportement** `[S]`
-            - [x] A1 — **fait le 31/08/2026. Deux fichiers, 21 cas, dont 4 ROUGES que B1 doit
-                  refermer sans toucher une ligne de test** :
+            - [x] A1 — **fait le 31/08/2026. Deux fichiers, 21 cas, dont 4 ROUGES refermés par B1
+                  sans qu'une ASSERTION change** :
                   `System/__tests__/AlertComponent.test.js` (12 cas, 3 rouges — la branche vocale
                   et l'énumération du vocabulaire) et `System/__tests__/Notifications.alerts.test.js`
                   (9 cas, 1 rouge — le symptôme utilisateur, à l'altitude où c'en est un).
-                  Chaque rouge est précédé d'un garde-fou de présence : le message est « le verbe
+                  Chaque rouge était précédé d'un garde-fou de présence : le message était « le verbe
                   n'est pas atteint », jamais « bouton introuvable ».
+                  ⚠️ **La promesse « sans toucher une ligne de test » était trop large, et B1 l'a
+                  mesuré** : les assertions n'ont pas bougé, mais **6 titres et les 2 docblocks**
+                  portaient l'annotation « rouge jusqu'à B1 » et sont devenus faux à la seconde où
+                  le correctif est passé. Une prose de test est une couche du volet doc comme une
+                  autre — à énumérer d'avance, comme les autres.
                   **Trois acquis qui servent aux lots suivants :**
                   · **le lot C n'aura AUCUNE ligne de test à modifier** — les deux fichiers
                   n'importent que `AlertComponent` et atteignent les alertes par leur `name` et
@@ -218,16 +223,44 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
             - [ ] A2 — établir pour Application / Whiteboard / ClassRoom si `users` est **remplacé**
                   ou **muté en place**, et l'écrire ici. Conditionne D : muté en place ⇒ l'appelant
                   passe une copie, le provider ne bouge pas
-      - [ ] **B. Le 🔴 vocal — indépendant de la migration, livrable seul** `[S]`
-            - [ ] B1 — `AudioCallAlert` émet `response-call` quand tout le monde écoute
-                  `response-alert` : **zéro écouteur dans le paquet**, donc Accepter et Refuser sont
-                  morts sur un appel VOCAL entrant, et l'auto-refus à 20 s aussi. L'appelant attend
-                  l'abandon du moteur de retry. Trois lignes ⇒ A1 passe au vert
+      - [ ] **B. Les défauts propres aux deux alertes — indépendants de la migration, livrables
+            seuls** `[S]` — B1 fermé, restent les timers (B2) et deux 🟢
+            - [x] B1 — **fait le 31/08/2026, sortie A.** `AudioCallAlert` émettait `response-call`
+                  quand tout le monde écoute `response-alert` : **zéro écouteur dans le paquet**,
+                  donc Accepter et Refuser étaient morts sur un appel VOCAL entrant, et l'auto-refus
+                  à 20 s aussi ; l'appelant attendait l'abandon du moteur de retry. Trois lignes
+                  (`emits` + les deux `$emit`) ⇒ les 4 rouges de A1 au vert.
+                  **La forme était contrainte par un test**, et c'est ce qui rend le lot C possible :
+                  un seul vocabulaire pour les deux alertes, pas un second écouteur chez le parent —
+                  elles restent interchangeables vues d'`AlertComponent`.
+                  ⚠️ **Effet de bord à connaître avant B2 : B1 a ARMÉ le timer d'auto-refus vocal.**
+                  Il émettait dans le vide, il émet désormais un vrai refus. Les deux alertes sont
+                  donc également exposées au défaut B2, là où une seule l'était.
+                  Annotation : **aucune couche de `docs/`** — le 🔴 n'y avait jamais été rustiné, il
+                  y était *ignoré* (`docs/modules/webrtc2/flux.md` décrivait la chaîne d'appel
+                  entrant comme fonctionnelle pour les deux types, et B1 la rend vraie **sans une
+                  ligne d'édition**). Une doc fausse par omission, cas que le chantier ne prévoit
+                  pas. En revanche **deux docblocks de test** la portaient. **Aucun `boost:update`
+                  requis**, vérifié : ni le `CLAUDE.md` du paquet ni `core.blade.php` ne citaient
+                  `response-call` — troisième tâche d'affilée dans cette configuration, après `sfu`
+                  et `webrtc2Events` : la frontière est nette, `core.blade.php` ne descend jamais au
+                  niveau du widget.
+                  - [x] Code — 3 lignes dans `AudioCallAlert.vue` · - [x] Doc — les 2 docblocks
+                        (bannières requalifiées en sortie C, l'exemple périmé reformulé sans exemple
+                        nommé, la contrainte de forme promue en garde de non-régression, les caveats
+                        des contrôles de harnais requalifiés — chiffres **non re-mesurés**, dette
+                        nommée pour le lot C : ils ne se convertissent pas en écarts par
+                        soustraction) + `webrtc2-todo.md`, les deux `work/README.md` et une ligne de
+                        `docs/architecture/tests.md` · - [x] Tests — aucun à écrire, A1 les avait
+                        posés : 21/21 verts, **aucune assertion touchée**, 6 titres requalifiés.
+                        Suites inchangées par ailleurs — JS 84 fichiers, 0 échec (4 avant) ; PHP 286
+                        OK
             - [ ] B2 — `pickedUp` n'est jamais mis à `true` et le `setTimeout` n'est pas annulé au
                   `beforeUnmount` (seul l'`interval` l'est), dans les **deux** alertes : le timer
-                  d'auto-refus survit au démontage. Test rouge d'abord — « accepter à 5 s n'émet pas
+                  d'auto-refus survit au démontage. **Priorité relevée par B1**, qui a rendu ce timer
+                  effectif sur la branche vocale. Test rouge d'abord — « accepter à 5 s n'émet pas
                   de refus à 10 s ». ⚠️ Le harnais de A1 tourne sous timers RÉELS et l'assume par
-                  une borne écrite dans ses deux docblocks (1,0 s et 1,1 s) : B2 est le premier à
+                  une borne écrite dans ses deux docblocks (1,1 s et 1,2 s) : B2 est le premier à
                   avoir besoin de faux timers, donc d'un troisième harnais — `describe` local ou
                   fichier dédié, à trancher par la mesure à ce moment-là
             - [ ] B3 — 🟢 **rien ne garde `mappingComponents[action][type]`** (`AlertComponent.vue:51`,
@@ -292,6 +325,9 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
       remplace, et elle est nommée lot par lot) · *doc* = G.
       **Chemin critique** : A → B → C sont livrables tout de suite et indépendants du reste ; F ne
       part pas avant que D et E soient prouvés à la main.
+      **État au 31/08/2026** : A1 et B1 sont faits, donc **C est débloqué** — sa condition était « on
+      corrige en place, on prouve, on déplace ensuite », et la preuve est le test resté vert. Le
+      déplacement ne demande plus que les deux `defineAsyncComponent` d'`AlertComponent.vue`.
 
 - [x] **Supprimer `WebRTC2/EventBus/webrtc2Events.js`** · effort [S] — **fermé le 31/08/2026,
   sortie B.**

@@ -9,9 +9,10 @@
  *
  * ⚠️ **Les deux alertes sont montées POUR DE VRAI, et `IconWidget` (~estarter) aussi.**
  * « Vue ne se plaint jamais d'un événement que personne n'écoute — seul un montage réel le
- * voit », et ce fichier en est la démonstration littérale : `@response-alert` posé sur
- * `AudioCallAlert`, qui déclare `emits: ['response-call']`, ne produit **aucun** warning. Vue en
- * fait un écouteur DOM sur le `<div class="alert">`, où rien ne le déclenchera jamais.
+ * voit » : un `@x` posé sur un enfant qui n'émet pas `x` ne produit **aucun** warning, Vue en fait
+ * un écouteur DOM sur l'élément racine de l'enfant, où rien ne le déclenchera jamais. C'est
+ * précisément le défaut que ce fichier a épinglé (B1, plus bas), et rien de moins qu'un montage
+ * réel ne l'aurait vu — un stub aurait asserté le vocabulaire de son propre double.
  *
  * ⚠️ **Aucun import des deux alertes par leur chemin.** Elles sont atteintes par leur `name` et
  * par leur titre rendu — deux identités qu'un déplacement de fichier ne touche pas. C'est ce qui
@@ -34,30 +35,34 @@
  * l'attribut `src` — aucune requête réseau — et `play()` est async et résout, donc aucun rejet
  * non traité. La sonnerie est coupée par `beforeUnmount` → `stopDing()`, d'où l'`afterEach`.
  *
- * ⚠️ **La DURÉE de ce fichier est une borne de correction, pas une statistique** : 1,0 s au
- * 2026-08-31 (157 ms de tests). Le `setTimeout` d'auto-refus des deux alertes n'est pas annulé au
+ * ⚠️ **La DURÉE de ce fichier est une borne de correction, pas une statistique** : 1,1 s au
+ * 2026-08-31 (259 ms de tests). Le `setTimeout` d'auto-refus des deux alertes n'est pas annulé au
  * démontage (défaut B2) : un fichier qui dépasserait 10 s verrait le timer d'un cas antérieur
  * émettre un refus pendant un cas ultérieur. Tant qu'on reste à ~1 s, la question ne se pose pas
  * — d'où ce chiffre, mesurable de nouveau.
+ *
+ * ⚠️ **Et B1 a ARMÉ ce risque sur la branche vocale** — fait relevé en le fermant. Avant, le timer
+ * d'`AudioCallAlert` émettait `response-call` dans le vide : inoffensif. Depuis, il émet un vrai
+ * refus, comme son jumeau visio le faisait déjà. Les deux alertes sont donc désormais également
+ * concernées par B2, et la borne ci-dessus est ce qui garde la mesure honnête en attendant.
  *
  * ⚠️ `emitted()` capte AUSSI les événements DOM natifs qui remontent à la racine — un `click` à
  * chaque `trigger`, sur le wrapper parent COMME sur celui d'un enfant obtenu par
  * `findComponent`. Les écarter n'affaiblit rien : ce qui est asserté est le vocabulaire qu'un
  * parent peut écouter en `@…`.
  *
- * ── 🔴 CE FICHIER EST ROUGE JUSQU'À B1, ET C'EST LE BON SIGNE ─────────────────
- * Trois cas rouges (les deux de « la branche VOCALE », et l'énumération du vocabulaire) :
- * `AudioCallAlert` émet `response-call` quand son parent écoute `response-alert` et que son
- * jumeau `VideoCallAlert` émet bien `response-alert`. `response-call` a **zéro écouteur dans tout
- * le paquet** : sur un appel vocal entrant, « Accepter » et « Refuser » sont morts. Trois lignes
- * dans `AudioCallAlert.vue` les referment — `work/doc-rustines.md`, lot 1 · B1, et
- * `work/webrtc2-todo.md` § « Les boutons d'appel ».
+ * ── CE QUE CE FICHIER A ÉPINGLÉ : B1, fermé le 2026-08-31 ─────────────────────
+ * Écrit rouge de trois cas, et vert au correctif sans qu'une assertion change. Il épinglait
+ * `AudioCallAlert` émettant `response-call` quand son parent écoute `response-alert` et que son
+ * jumeau `VideoCallAlert` émet bien `response-alert` — événement sans **aucun** écouteur dans le
+ * paquet : sur un appel vocal entrant, « Accepter » et « Refuser » étaient morts.
  *
- * ⭐ **Le cas du vocabulaire contraint la FORME du correctif B1** : un seul vocabulaire pour les
- * deux alertes, pas un second écouteur `@response-call` chez le parent. Les deux alertes doivent
- * rester interchangeables vues d'`AlertComponent` — c'est ce qui rend leur déplacement possible
- * au lot C. Et le cas « un clic n'émet qu'une réponse » ferme l'autre forme fautive : un parent
- * qui écouterait les deux vocabulaires émettrait deux fois.
+ * ⭐ **Ce qui reste après le correctif est une garde de non-régression, et elle est load-bearing.**
+ * Le cas du vocabulaire contraignait la FORME de B1 — un seul vocabulaire pour les deux alertes,
+ * pas un second écouteur `@response-call` chez le parent — et c'est cette forme qui garde les deux
+ * alertes **interchangeables vues d'`AlertComponent`**, donc déplaçables au lot C. Le cas « un clic
+ * n'émet qu'une réponse » ferme l'autre forme fautive : un parent qui écouterait les deux
+ * vocabulaires émettrait deux fois. Les rétablir séparément recasse le lot C, pas ce fichier.
  *
  * ── HORS PÉRIMÈTRE, NOMMÉMENT ────────────────────────────────────────────────
  * • **les timers des deux alertes** (`pickedUp` jamais mis à `true`, handle du `setTimeout`
@@ -78,14 +83,18 @@
  *   changement de comportement.
  *
  * ── CONTRÔLES DE HARNAIS (convention du paquet), mesurés le 2026-08-31 ────────
- * ⚠️ **La référence n'est pas verte** — c'est la particularité de ce fichier, et elle change la
- * lecture du bloc. Les chiffres sont les rouges TOTAUX du fichier, pas des écarts : référence
- * **3 ici · 1** dans `Notifications.alerts.test.js` (seconde colonne), qui sont les rouges de B1.
+ * ⚠️ **Ces chiffres ont été mesurés AVANT B1, quand la référence n'était pas verte** : ce sont les
+ * rouges TOTAUX du fichier sous mutation, et la référence en portait alors 3 ici · 1 dans
+ * `Notifications.alerts.test.js` (seconde colonne). La référence est verte depuis B1 — mais **on ne
+ * les convertit pas en écarts par soustraction**, et le n° 1 est la contre-épreuve : ses 10 rouges
+ * incluaient les 3 de B1 *passés au vert par leurs symétriques visio*, donc son total ne baisse pas
+ * de 3. Chaque conversion demande la mesure. Dette assumée : re-mesurer au prochain lot qui touche
+ * ces fichiers — le lot C, qui les déplace.
  *
  *    1. mapping `vocal`/`visio` croisé ............................ 10 · 7
- *       ⚠️ et les 3 rouges de B1 y passent au VERT, remplacés par leurs symétriques visio :
- *          l'alerte vidéo répond correctement, où qu'on la branche. Lire « presque tout le
- *          fichier », pas « +7 ».
+ *       ⚠️ la mutation reste presque totale mais pour une raison qui n'est pas « tout casse » :
+ *          branchée sur l'autre type, chaque alerte répond correctement — ce qui rougit, c'est
+ *          l'identité de l'alerte affichée, pas la réponse. Lire « presque tout le fichier ».
  *    2. `created()` vidé — `currentComponent` reste `null` ........ 11 · 7
  *    3. `@response-alert` retiré du `<component>` .................. 7 · 4
  *    4. `onResponseAlert` n'émet que `status` ...................... 6 · 3
@@ -287,22 +296,22 @@ describe('AlertComponent — l\'alerte d\'appel entrant et la réponse qu\'elle 
 
             await accepter(wrapper).trigger('click')
 
-            // Ce cas ferme la seconde forme fautive du correctif B1 : un parent qui écouterait
-            // les DEUX vocabulaires (`@response-alert` et `@response-call`) sur une alerte qui
-            // les émettrait tous les deux remonterait deux réponses pour un clic — donc deux
-            // `acceptCallFromPeer`, dont le second sur une session déjà ouverte.
+            // Ce cas ferme la seconde forme fautive qu'aurait pu prendre le correctif B1 : un
+            // parent qui écouterait les DEUX vocabulaires sur une alerte qui les émettrait tous
+            // les deux remonterait deux réponses pour un clic — donc deux `acceptCallFromPeer`,
+            // dont le second sur une session déjà ouverte.
             expect(wrapper.emitted('response-alert')).toHaveLength(1)
         })
     })
 
-    describe('🔴 la branche VOCALE — rouge attendu jusqu\'à B1', () => {
+    describe('la branche VOCALE — ce que B1 a fermé', () => {
 
-        it('⭐🔴 « Accepter » sur un appel VOCAL remonte response-alert(…, true)', async () => {
+        it('⭐ « Accepter » sur un appel VOCAL remonte response-alert(…, true)', async () => {
             wrapper = await monter('vocal')
 
             // Garde-fou avant l'assertion qui compte : l'alerte vocale est bien montée et son
-            // bouton est bien là. Le rouge de ce cas doit être « rien n'a été remonté », jamais
-            // « bouton introuvable ».
+            // bouton est bien là. C'est ce qui a fait que le rouge de ce cas disait « rien n'a été
+            // remonté », et jamais « bouton introuvable ».
             expect(alerte(wrapper, 'AudioCallAlert').exists()).toBe(true)
 
             await accepter(wrapper).trigger('click')
@@ -312,7 +321,7 @@ describe('AlertComponent — l\'alerte d\'appel entrant et la réponse qu\'elle 
             ])
         })
 
-        it('⭐🔴 « Refuser » sur un appel VOCAL remonte response-alert(…, false)', async () => {
+        it('⭐ « Refuser » sur un appel VOCAL remonte response-alert(…, false)', async () => {
             wrapper = await monter('vocal')
 
             expect(alerte(wrapper, 'AudioCallAlert').exists()).toBe(true)
@@ -330,11 +339,12 @@ describe('AlertComponent — l\'alerte d\'appel entrant et la réponse qu\'elle 
 
     describe('le vocabulaire d\'événements des deux alertes', () => {
 
-        it('⭐🔴 chaque alerte n\'émet que « response-alert »', async () => {
+        it('⭐ chaque alerte n\'émet que « response-alert »', async () => {
             // L'énumération exacte remplace l'assertion négative : elle rougit aussi bien si un
-            // second nom d'événement apparaît que si `response-alert` disparaît. C'est elle qui
-            // NOMME la cause de B1 — `AudioCallAlert` parle un vocabulaire que personne
-            // n'écoute — là où les deux cas de la branche vocale n'en montrent que l'effet.
+            // second nom d'événement apparaît que si `response-alert` disparaît. C'est elle qui a
+            // NOMMÉ la cause de B1 — `AudioCallAlert` parlait un vocabulaire que personne
+            // n'écoutait — là où les deux cas de la branche vocale n'en montraient que l'effet.
+            // Elle garde désormais l'invariant qui rend les deux alertes interchangeables.
             for (const [type, nom] of [['vocal', 'AudioCallAlert'], ['visio', 'VideoCallAlert']]) {
                 const w = await monter(type)
                 const enfant = alerte(w, nom)

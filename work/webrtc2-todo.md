@@ -1327,22 +1327,20 @@ extractions : c'est 18 lignes, sous un filet cinq fois plus dense.
 
 Tous mesurés **avant** d'être écrits ici, aucun n'est une impression de lecture.
 
-- [ ] 🔴 **Accepter un appel VOCAL entrant ne fait rien** `[S]` — relevé le 31/08/2026 en cadrant la
-  migration des appelants v1.
+- [ ] 🟠 **Le timer d'auto-refus des deux alertes survit au démontage** `[S]` — relevé le 31/08/2026
+  en cadrant la migration des appelants v1, avec le 🔴 vocal qui l'a précédé (fermé le même jour).
 
-  `AudioCallAlert` émet `response-call` ; son parent `AlertComponent` écoute `response-alert`, et son
-  jumeau `VideoCallAlert` émet bien `response-alert`. **`response-call` n'a zéro écouteur dans tout le
-  paquet** (vérifié au grep) : sur un appel vocal entrant, « Accepter » et « Refuser » sont morts, et
-  l'auto-refus à 20 s aussi. Côté appelant, plus rien n'arrive jusqu'à l'abandon du moteur de retry
-  (« X n'a pas répondu ») ; côté destinataire, l'alerte reste à l'écran.
+  Dans les **deux** alertes : `pickedUp` n'est jamais mis à `true` et le handle du `setTimeout`
+  d'auto-refus n'est pas stocké, donc `beforeUnmount` ne l'annule pas — seul l'`interval` de la
+  sonnerie l'est.
 
-  Second défaut, dans les **deux** alertes : `pickedUp` n'est jamais mis à `true` et le `setTimeout`
-  d'auto-refus n'est pas annulé au `beforeUnmount` (seul l'`interval` l'est) — le timer survit donc au
-  démontage.
+  ⚠️ **Le correctif du 🔴 vocal a ARMÉ ce défaut sur la branche vocale** : le timer d'`AudioCallAlert`
+  émettait `response-call` dans le vide, il émet désormais un vrai refus. Les deux alertes sont donc
+  également exposées, là où une seule l'était.
 
-  ⚠️ **Ne pas traiter ici** : c'est le lot B du découpage de la migration v1, avec son test
-  préalable — [doc-rustines.md](doc-rustines.md), lot 1. Les deux fichiers déménagent vers
-  `WebRTC2/Widgets/UI/Alerts/` juste après, et le correctif doit précéder le déplacement.
+  ⚠️ **Ne pas traiter ici** : c'est le lot B2 du découpage de la migration v1 — il demande un
+  troisième harnais à faux timers, les deux fichiers de A1 tournant sous timers réels et l'assumant
+  par une borne écrite. [doc-rustines.md](doc-rustines.md), lot 1 · B2.
 
 - [ ] 🟠 **Le mute et la caméra ne sont annoncés à personne dans un appel 1-à-1** `[M]`
 
