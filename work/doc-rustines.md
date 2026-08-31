@@ -105,21 +105,23 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
 
 ## Lot 1 — Code mort · sortie B
 
-- [ ] **Migrer les appelants de WebRTC v1 (5 + 1), puis supprimer `components/WebRTC/`** · effort [L]
+- [ ] **Migrer les appelants de WebRTC v1 (4 + 1, un migré), puis supprimer `components/WebRTC/`** ·
+      effort [L]
       **Découpé en sept lots le 31/08/2026 — le plan est plus bas, après le recensement.**
       **La tâche la plus rentable du paquet en volume de doc.** La v1 morte est annoncée dans
       **7 fichiers de doc**, dont le piège n°1 du `CLAUDE.md` et une ligne du `CLAUDE.md` de *tout
       projet hôte* — parce que deux arbres coexistent avec des fichiers homonymes
       (`MediaBroadcastProvider.vue`) et qu'un symbole trouvé au grep peut venir de la v1.
 
-      **Vérifié : cinq appelants vivants**, plus un fichier désactivé. L'archive de lecture
+      **Vérifié : cinq appelants vivants au cadrage, quatre depuis le lot C**, plus un fichier
+      désactivé. L'archive de lecture
       `work/webrtc-v1-notes.md` a été supprimée : sa condition de conservation — « le temps de
       vérifier qu'aucun appelant ne subsiste » — était remplie, et le recensement vit désormais
       dans la doc du module, avec la commande qui le recompte.
 
       | Appelant | Ce qu'il importe |
       |---|---|
-      | `System/widgets/AlertComponent.vue` | `WebRTC/widgets/partials/AudioCallAlert.vue`, `VideoCallAlert.vue` |
+      | ~~`System/widgets/AlertComponent.vue`~~ | ✅ **migré le 31/08/2026 (lot C)** — les deux alertes vivent dans `WebRTC2/Widgets/UI/Alerts/` |
       | `AudioRoom/AudioComponent.vue` | `WebRTC/widgets/MediaBroadcastProvider.vue`, `ui/AudioDefaultUserButtonUI.vue` |
       | `Application/ApplicationComponent.vue` | `WebRTC/widgets/DataUserPeerConnection.vue` |
       | `Whiteboard/WhiteboardComponent.vue` | idem |
@@ -131,8 +133,9 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
       commande, pas du recensement.** `Server/Server.vue` n'importe aucun fichier de `WebRTC/` : il
       importe le **store v1** `stores/peers.js`, dont il lit deux getters (`getIsStreaming`,
       `getIsCapturing`). Or le périmètre annonce la suppression de ce store. Le recompte demande
-      donc **deux** greps, `WebRTC/` **et** `stores/peers.js` — et la commande citée dans
-      `docs/modules/webrtc2/INDEX.md` est à corriger dans le volet doc.
+      donc **deux** greps, `WebRTC/` **et** `stores/peers.js` — ✅ **la commande de
+      `docs/modules/webrtc2/INDEX.md` est corrigée depuis le lot C** (31/08), et ce fait y a été
+      remonté avec elle plutôt que de rester ici.
 
       Corollaire sur les trois appelants data : ils prennent aussi `sendData` du store v1 par
       `mapActions(usePeerStore, ['sendData'])`. Leur migration n'est donc pas une substitution de
@@ -155,9 +158,9 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
       [webrtc2-todo.md](webrtc2-todo.md) ; il n'a aucun test, et n'en aura pas (`happy-dom` n'a pas
       d'`AudioContext`).
 
-      Périmètre : 13 fichiers `WebRTC/`, le store `stores/peers.js` (+ son dossier
-      `stores/peers/`) et ses **six** consommateurs, la migration des cinq appelants vers
-      `WebRTC2/`, et le sort de `SpectrumAnalyzer`.
+      Périmètre : **11** fichiers `WebRTC/` (13 au cadrage — le lot C en a sorti deux), le store
+      `stores/peers.js` (+ son dossier `stores/peers/`) et ses **six** consommateurs, la migration
+      des **quatre** appelants restants vers `WebRTC2/`, et le sort de `SpectrumAnalyzer`.
       Annotation (7 fichiers) : `CLAUDE.md` · `docs/INDEX.md` ·
       `docs/modules/webrtc2/INDEX.md` · `docs/modules/autres-modules.md` ·
       `docs/architecture/package.md` · `docs/modules/chat.md` ·
@@ -339,11 +342,33 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
                   de couture, donc `Notifications.alerts.test.js`, où le cas « une seconde invitation
                   réaffiche une alerte » porte déjà le commentaire qui dit qu'il ne le couvre pas
                   - [ ] Code · - [ ] Doc · - [ ] Tests
-      - [ ] **C. Déplacer les deux alertes** `[S]` — `git mv` vers `WebRTC2/Widgets/UI/Alerts/` + les
-            deux `defineAsyncComponent` d'`AlertComponent`. Elles sont v1 **par leur chemin, pas par
-            leurs dépendances** : elles n'importent que `IconWidget` et leur consommateur est déjà
+      - [x] **C. Déplacer les deux alertes** `[S]` — **fait le 31/08/2026, sortie B.** `git mv` vers
+            `WebRTC2/Widgets/UI/Alerts/` + les deux `defineAsyncComponent` d'`AlertComponent`. Elles
+            étaient v1 **par leur chemin, pas par leurs dépendances** : elles n'importent que
+            `IconWidget` (par alias, donc insensible au chemin) et leur consommateur était déjà
             branché sur la v2 (`Notifications.onResponseAlert` → `peers.acceptCallFromPeer`).
-            Preuve : les tests de A/B verts **sans autre modification que le chemin d'import**
+            La preuve annoncée a tenu **exactement** : `git status` montre trois entrées — deux
+            renommages (`R`) et **une seule ligne modifiée ailleurs**, la paire d'imports
+            d'`AlertComponent.vue`. Zéro fichier de test touché, suite JS **85 fichiers / 1498 cas,
+            0 échec** — identique à la baseline de B2 — et `npm run build` vert, seul contrôle qui
+            voie la résolution Rollup d'un import dynamique.
+            ℹ️ **Ce que le lot a coûté en plus de son diff : trois lignes de doc devenues fausses au
+            même instant**, toutes des *comptes* — les appelants v1 passent de cinq à quatre, les
+            fichiers de `WebRTC/` de 13 à 11, et `Widgets/UI/` gagne un sous-dossier. Le
+            déplacement le plus mécanique du chantier avait quand même un volet doc : un lot qui ne
+            change aucun comportement peut périmer un décompte, et un décompte est une annotation
+            comme une autre.
+            - [x] Code — 2 `git mv` + 2 lignes ; `WebRTC/widgets/partials/` disparaît, vide
+            - [x] Doc — `docs/modules/webrtc2/INDEX.md` (le compte, l'arborescence, **et** la
+                  commande de recompte, corrigée ici au lieu du lot G) et
+                  `docs/modules/webrtc2/api.md` (l'inventaire `Widgets/UI/` omettait deux widgets du
+                  module). **Aucun `boost:update` requis**, vérifié : ni le `CLAUDE.md` du paquet ni
+                  `core.blade.php` ne contiennent la chaîne `alert` — même configuration que `sfu`
+                  et `EventBus`
+            - [x] Tests — **aucun**, et c'est le contrat du lot : les trois fichiers d'alerte
+                  atteignent les composants par leur `name` d'option et leur titre rendu, deux
+                  identités qu'un `git mv` ne touche pas. Un rouge chez eux aurait dit « chemin
+                  d'import faux », rien d'autre
       - [ ] **D. Le canal data, un module à la fois** `[L]`
             - [ ] D0 — écrire une fois la correspondance : `conn.on("data")` →
                   `onDataReceived(data, conn, metadata)` · `conn.on("open")` → `onConnectionOpen(conn)`
@@ -373,21 +398,25 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
                   seul contrôle qui voie un import cassé dans un fichier qu'aucun test n'importe
       - [ ] **G. La doc, en dernier** `[M]` — les 7 fichiers listés plus haut, dans l'ordre imposé
             par [le `work/` du projet hôte](../../../../work/README.md), puis `boost:update`, puis
-            `grep 'laravel-socializer/core rules ===' CLAUDE.md`. Deux corrections à y porter au
-            passage : la commande de recompte de `docs/modules/webrtc2/INDEX.md` doit couvrir
-            **aussi** `stores/peers.js`, et la doc annonce **un** homonyme alors qu'il y en a deux —
+            `grep 'laravel-socializer/core rules ===' CLAUDE.md`. **Une** correction à y porter au
+            passage : la doc annonce **un** homonyme alors qu'il y en a deux —
             `composables/useMediaBroadcast.js` (v1) / `Composables/useMediaBroadcast.js` (v2), qui ne
-            diffèrent que par la casse du dossier
+            diffèrent que par la casse du dossier. *(La seconde — la commande de recompte à deux
+            greps — a été faite au lot C, dans le paragraphe qu'il réécrivait de toute façon.)*
 
       **Les trois volets du gabarit, répartis** : *code* = B → F · *tests* = A et B, plus les
-      vérifications manuelles nommées de D et E (aucun des cinq appelants n'a de test, et aucun n'en
-      recevra : ce sont des composants métier hors du filet — la vérification à deux navigateurs les
-      remplace, et elle est nommée lot par lot) · *doc* = G.
+      vérifications manuelles nommées de D et E (aucun des appelants restants n'a de test, et aucun
+      n'en recevra : ce sont des composants métier hors du filet — la vérification à deux navigateurs
+      les remplace, et elle est nommée lot par lot) · *doc* = G, **plus les décomptes que chaque lot
+      périme au passage** — le lot C l'a montré, et le gabarit ne l'annonçait pas.
       **Chemin critique** : A → B → C sont livrables tout de suite et indépendants du reste ; F ne
       part pas avant que D et E soient prouvés à la main.
-      **État au 31/08/2026** : A1 et B1 sont faits, donc **C est débloqué** — sa condition était « on
-      corrige en place, on prouve, on déplace ensuite », et la preuve est le test resté vert. Le
-      déplacement ne demande plus que les deux `defineAsyncComponent` d'`AlertComponent.vue`.
+      **État au 31/08/2026** : **A1, B1, B2 et C sont faits.** Le chemin court est épuisé — tout ce
+      qui restait indépendant du canal data est livré. La suite est donc **A2**, une lecture qui ne
+      touche aucun code : établir pour Application / Whiteboard / ClassRoom si `users` est *remplacé*
+      ou *muté en place*, parce que la réponse décide de qui s'adapte en D (l'appelant passe une
+      copie, ou rien à faire). B5 reste ouvert en parallèle, sans dépendance : il ferme un 🟠 qui
+      mord aujourd'hui, mais demande de trancher une question produit avant d'écrire la `key`.
 
 - [x] **Supprimer `WebRTC2/EventBus/webrtc2Events.js`** · effort [S] — **fermé le 31/08/2026,
   sortie B.**

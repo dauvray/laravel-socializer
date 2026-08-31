@@ -233,7 +233,17 @@ types d'un appel, et normalise plutôt que de valider : le titre, l'icône et l'
 alors tous les trois la même chose. Il remplace le repli du chemin **sortant** ; les trois chemins
 entrants gardent `isValidCallType`, délibérément.
 
-`Widgets/UI/` — `Audio/SpectrumAnalyzer.vue`, `Report/Debug.vue`.
+`Widgets/UI/` — `Audio/SpectrumAnalyzer.vue`, `Report/Debug.vue`, et les deux alertes d'appel
+entrant :
+
+- **`Alerts/AudioCallAlert.vue`** et **`Alerts/VideoCallAlert.vue`** — jumelles, qui ne diffèrent que
+  par leur libellé et par leur délai. Props `fromUserSlug` et `options`, requises ; émettent
+  `response-alert` avec un booléen. **Aucune ne se monte directement** : leur seul consommateur est
+  `System/widgets/AlertComponent.vue`, qui les charge en `defineAsyncComponent` et choisit sur
+  `options.type` (`vocal` → audio, `visio` → vidéo). Chacune sonne en boucle et **s'auto-refuse**
+  seule au bout de son délai (les valeurs et ce qu'un refus déclenche : [flux.md](flux.md#refus-du-distant--le-même-chemin-jamais-un-raccourci)) ;
+  les trois chemins qui la terminent — accepter, refuser, quitter l'écran — passent par le même
+  `stopAlert()`, épinglé par `AlertComponent.timers.test.js`.
 
 `Widgets/Mediaplayer/Composables/` — `useAwaitedStreams(api)` (vignettes « en attente du flux »),
 `useRemotePeerState(peerIdSource)` → `{ muted, videoActive }` (état annoncé d'un pair distant ;

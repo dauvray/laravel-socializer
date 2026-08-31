@@ -15,15 +15,22 @@ Code : `src/resources/js/socializer/components/WebRTC2/`
 l'arbre, avec des fichiers **homonymes** de ceux de WebRTC2 (`MediaBroadcastProvider.vue`) : un
 symbole trouvé au grep peut venir de là. Rien ne doit y être ajouté.
 
-**Elle n'est pas orpheline, et c'est ce qui empêche de la supprimer** : cinq composants vivants
+**Elle n'est pas orpheline, et c'est ce qui empêche de la supprimer** : quatre composants vivants
 l'importent encore, chacun dans un autre module — `Application/ApplicationComponent.vue`,
-`AudioRoom/AudioComponent.vue`, `ClassRoom/ClassRoomComponent.vue`,
-`Whiteboard/WhiteboardComponent.vue` et `System/widgets/AlertComponent.vue` (en
-`defineAsyncComponent`, donc invisible à une recherche d'`import` statique). Les symboles concernés
-sont `usePeers`, `DataUserPeerConnection`, `MediaBroadcastProvider` et les deux alertes d'appel.
-Les fichiers préfixés `__` sont déjà désactivés. La supprimer suppose donc de migrer ces cinq
-appelants, pas seulement d'effacer un dossier — le recompte se fait par
-`grep -rn "WebRTC/" src/resources/js/socializer/components/ | grep -v WebRTC2`.
+`AudioRoom/AudioComponent.vue`, `ClassRoom/ClassRoomComponent.vue` et
+`Whiteboard/WhiteboardComponent.vue`. Les symboles concernés sont `usePeers`,
+`DataUserPeerConnection` et `MediaBroadcastProvider`. Les fichiers préfixés `__` sont déjà
+désactivés. La supprimer suppose donc de migrer ces appelants, pas seulement d'effacer un dossier.
+
+⚠️ **Un cinquième consommateur n'apparaît dans AUCUN grep de `WebRTC/`, et c'est un défaut de la
+commande de recompte, pas du recensement.** `Server/Server.vue` n'importe aucun fichier du dossier :
+il importe le **store v1** `stores/peers.js`, dont il lit deux getters — et ce store fait partie de
+ce qui doit disparaître avec la v1. Le recompte demande donc **deux** greps :
+
+```bash
+grep -rn "WebRTC/" src/resources/js/socializer/components/ | grep -v WebRTC2
+grep -rn "stores/peers.js" src/resources/js/socializer/
+```
 
 ---
 
@@ -61,7 +68,8 @@ WebRTC2/
 │   └── utils/                     infra pure, sans état partagé, importable de partout
 │                                  useCallStateMachine · usePeerRetry · createRateLimiter
 │                                  payloadSize · sanitizeMetadata · resolveRemoteSlug · validators
-├── Widgets/                    Mediaplayer/ (provider, players, pool) · UI/ (boutons, audio, debug)
+├── Widgets/                    Mediaplayer/ (provider, players, pool)
+│                               UI/ (boutons, audio, alertes d'appel entrant, debug)
 ├── Exemples/                   Home.vue + 3 UI de démonstration — documentation exécutable
 └── __tests__/                  unitaires · mockFidelity · scenarios/ + helpers/ et __mocks__/
 ```

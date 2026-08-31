@@ -19,8 +19,8 @@
             'response-alert'
         ],
         components: {
-            AudioCallAlert: defineAsyncComponent(() => import('~socializer/components/WebRTC/widgets/partials/AudioCallAlert.vue')),
-            VideoCallAlert: defineAsyncComponent(() => import('~socializer/components/WebRTC/widgets/partials/VideoCallAlert.vue')),
+            AudioCallAlert: defineAsyncComponent(() => import('~socializer/components/WebRTC2/Widgets/UI/Alerts/AudioCallAlert.vue')),
+            VideoCallAlert: defineAsyncComponent(() => import('~socializer/components/WebRTC2/Widgets/UI/Alerts/VideoCallAlert.vue')),
         },
         props: {
             fromUserSlug: {
