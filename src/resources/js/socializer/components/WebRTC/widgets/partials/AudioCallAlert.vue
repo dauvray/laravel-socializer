@@ -32,36 +32,39 @@
           return {
             ding: new Audio('/vendor/socializer/sounds/phone-call.mp3'),
             interval: null,
-            pickedUp: false,
-          }  
+            autoRefuseTimeout: null,
+          }
         },
         mounted() {
             this.interval = setInterval(() => {
                 this.ding.play()
             }, 1000)
 
-            setTimeout(() => {
-                if(!this.pickedUp) {
-                    this.onRefuseCall()
-                }
+            this.autoRefuseTimeout = setTimeout(() => {
+                this.onRefuseCall()
             }, 20000)
-            
+
         },
         beforeUnmount() {
-            this.ding.pause()
-            this.stopDing()
+            this.stopAlert()
         },
         methods: {
-            stopDing() {
+            /**
+             * Tout ce que `mounted()` a armé s'arrête ensemble : la sonnerie, sa répétition et
+             * l'auto-refus. Les trois chemins qui terminent l'alerte — accepter, refuser, quitter
+             * l'écran — passent par ici, et aucun n'a le droit d'en oublier un.
+             */
+            stopAlert() {
                 this.ding.pause()
                 clearInterval(this.interval)
+                clearTimeout(this.autoRefuseTimeout)
             },
             onRefuseCall() {
-                this.stopDing()
+                this.stopAlert()
                 this.$emit('response-alert', false)
             },
             onAcceptCall() {
-                this.stopDing()
+                this.stopAlert()
                 this.$emit('response-alert', true)
             }
         }

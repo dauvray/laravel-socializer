@@ -1327,20 +1327,32 @@ extractions : c'est 18 lignes, sous un filet cinq fois plus dense.
 
 Tous mesurés **avant** d'être écrits ici, aucun n'est une impression de lecture.
 
-- [ ] 🟠 **Le timer d'auto-refus des deux alertes survit au démontage** `[S]` — relevé le 31/08/2026
-  en cadrant la migration des appelants v1, avec le 🔴 vocal qui l'a précédé (fermé le même jour).
+- [ ] 🟠 **Une seconde invitation ne remonte pas l'alerte, elle la PATCHE** `[S]` — relevé le
+  31/08/2026 en cadrant le lot B2, sur lequel il est adjacent sans en faire partie.
 
-  Dans les **deux** alertes : `pickedUp` n'est jamais mis à `true` et le handle du `setTimeout`
-  d'auto-refus n'est pas stocké, donc `beforeUnmount` ne l'annule pas — seul l'`interval` de la
-  sonnerie l'est.
+  `Notifications.vue:93` réaffecte `notificationComponent.value = AlertComponent` — **le même objet
+  composant**. Vue patche donc au lieu de remonter : ni `AlertComponent.created()` (`:50-52`) ni le
+  `mounted()` de l'alerte ne rejouent. Deux conséquences, toutes deux visibles à l'écran :
 
-  ⚠️ **Le correctif du 🔴 vocal a ARMÉ ce défaut sur la branche vocale** : le timer d'`AudioCallAlert`
-  émettait `response-call` dans le vide, il émet désormais un vrai refus. Les deux alertes sont donc
-  également exposées, là où une seule l'était.
+  1. **`currentComponent` reste celui de la PREMIÈRE invitation** : une invitation `vocal` reçue
+     par-dessus une `visio` affiche encore « Appel video de … ».
+  2. **Aucun nouveau minuteur d'auto-refus n'est armé, et l'ancien continue de courir.** Alice
+     appelle en visio à t=0 (10 s), Bob à t=6 s : à t=10 s le minuteur d'Alice tire sur l'instance
+     vivante, qui porte désormais les `options` de Bob — **Bob est refusé au bout de 4 s**, et son
+     moteur de retry s'arrête sur ce refus explicite. Alice, elle, n'est jamais auto-refusée.
 
-  ⚠️ **Ne pas traiter ici** : c'est le lot B2 du découpage de la migration v1 — il demande un
-  troisième harnais à faux timers, les deux fichiers de A1 tournant sous timers réels et l'assumant
-  par une borne écrite. [doc-rustines.md](doc-rustines.md), lot 1 · B2.
+  `isInviteDuplicate` ne l'attrape pas : elle dédoublonne par `inviteId`, et deux appelants distincts
+  ont deux `inviteId` distincts.
+
+  ⚠️ **Ce n'est PAS le défaut B2, et B2 ne le referme pas** : il n'y a pas de démontage, donc
+  l'annulation du minuteur n'a rien à annuler. B2 en est en revanche le **préalable** — poser une
+  `key` sans lui échangerait ce défaut contre une fuite de minuteur à chaque remontage. Et là où B2
+  était latent (l'émission d'une instance démontée est avalée par Vue), **celui-ci mord aujourd'hui** :
+  l'instance est vivante, l'émission remonte, `acceptCallFromPeer({status: false})` est atteint.
+
+  ⚠️ **Ne pas traiter ici** : c'est le lot **B5** du découpage de la migration v1 —
+  [doc-rustines.md](doc-rustines.md), lot 1 · B5, qui porte le correctif candidat et la question
+  produit à trancher avant de coder.
 
 - [ ] 🟠 **Le mute et la caméra ne sont annoncés à personne dans un appel 1-à-1** `[M]`
 
@@ -1375,8 +1387,8 @@ Tous mesurés **avant** d'être écrits ici, aucun n'est une impression de lectu
 
   `CallManagerBtn` ne rend qu'un `<Spinner>` dans ces deux états : le seul bouton d'arrêt vit dans la
   branche `v-else`, donc à partir de `connected`. Deux filets existent en aval (l'abandon du moteur
-  de retry à ≈55 s, et l'auto-refus de `VideoCallAlert` à 10 s), mais **aucun n'est un geste de
-  l'utilisateur**. C'est ce qui a rendu invisible, longtemps, la famille de régressions « FSM bloquée
+  de retry à ≈55 s, et l'auto-refus des deux alertes — 10 s en visio, 20 s en vocal), mais **aucun
+  n'est un geste de l'utilisateur**. C'est ce qui a rendu invisible, longtemps, la famille de régressions « FSM bloquée
   en calling » — dont le lot F a fermé la troisième route. Épinglé en attendant par le cas « en
   attente il n'y a rien à cliquer » de `CallManagerBtn.test.js`, dont le titre dit que c'est un
   constat.

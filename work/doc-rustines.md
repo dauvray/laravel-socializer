@@ -224,7 +224,7 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
                   ou **muté en place**, et l'écrire ici. Conditionne D : muté en place ⇒ l'appelant
                   passe une copie, le provider ne bouge pas
       - [ ] **B. Les défauts propres aux deux alertes — indépendants de la migration, livrables
-            seuls** `[S]` — B1 fermé, restent les timers (B2) et deux 🟢
+            seuls** `[S]` — B1 et B2 fermés, restent deux 🟢 et un 🟠 (B5) ouvert par le cadrage de B2
             - [x] B1 — **fait le 31/08/2026, sortie A.** `AudioCallAlert` émettait `response-call`
                   quand tout le monde écoute `response-alert` : **zéro écouteur dans le paquet**,
                   donc Accepter et Refuser étaient morts sur un appel VOCAL entrant, et l'auto-refus
@@ -255,14 +255,49 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
                         posés : 21/21 verts, **aucune assertion touchée**, 6 titres requalifiés.
                         Suites inchangées par ailleurs — JS 84 fichiers, 0 échec (4 avant) ; PHP 286
                         OK
-            - [ ] B2 — `pickedUp` n'est jamais mis à `true` et le `setTimeout` n'est pas annulé au
-                  `beforeUnmount` (seul l'`interval` l'est), dans les **deux** alertes : le timer
-                  d'auto-refus survit au démontage. **Priorité relevée par B1**, qui a rendu ce timer
-                  effectif sur la branche vocale. Test rouge d'abord — « accepter à 5 s n'émet pas
-                  de refus à 10 s ». ⚠️ Le harnais de A1 tourne sous timers RÉELS et l'assume par
-                  une borne écrite dans ses deux docblocks (1,1 s et 1,2 s) : B2 est le premier à
-                  avoir besoin de faux timers, donc d'un troisième harnais — `describe` local ou
-                  fichier dédié, à trancher par la mesure à ce moment-là
+            - [x] B2 — **fait le 31/08/2026, sortie A + sortie B.** Dans les **deux** alertes, le
+                  handle du `setTimeout` d'auto-refus n'était pas stocké — `beforeUnmount` n'annulait
+                  que l'`interval` — et `pickedUp` n'était jamais écrit à `true`. Un seul
+                  `clearTimeout`, posé sur le chemin commun aux TROIS sorties (accepter, refuser,
+                  quitter l'écran), ferme les deux moitiés : l'ensemble des chemins qui auraient posé
+                  `pickedUp = true` est exactement celui qui appelle la méthode d'arrêt. `pickedUp`
+                  devient donc mort au sens strict ⇒ **supprimé** (sortie B), et `stopDing` est
+                  renommé `stopAlert` — y absorber `clearTimeout` sans renommer aurait fabriqué un
+                  nom qui ment. Le `ding.pause()` en double du `beforeUnmount` part par construction.
+                  ⚠️ **Ne PAS livrer les deux gardes ensemble** : `pickedUp` et `clearTimeout`
+                  tiendraient la même propriété par deux mécanismes, et la mutation n° 2 ne
+                  rougirait plus que 2 cas au lieu de 5 — le contrôle de harnais mentirait.
+                  ⚠️ **Le rouge annoncé ici (« accepter à 5 s n'émet pas de refus à 10 s ») serait né
+                  VERT à l'étage de couture**, et c'est ce qui a décidé du fichier : `Notifications`
+                  démonte l'alerte en première ligne d'`onResponseAlert`, et Vue 3.5.24 **avale
+                  l'émission d'une instance démontée** (`runtime-core.cjs.js:6367`) — VTU supprimant
+                  par ailleurs l'historique au démontage. Le cas vit donc à l'étage `AlertComponent`,
+                  qui ne démonte jamais l'alerte. **Le `describe` local est écarté**, pour trois
+                  raisons dont deux non anticipées : l'`afterEach` d'un `describe` imbriqué tourne
+                  AVANT celui du parent, donc `useRealTimers()` passerait avant `unmount()` ; et il
+                  aurait fallu réécrire la section « hors périmètre » de `AlertComponent.test.js`,
+                  qui déclare ne pas appeler `vi.useFakeTimers()`.
+                  Annotation : **aucune couche injectée** — `grep` sur `core.blade.php` et le
+                  `CLAUDE.md` du paquet rend zéro, donc **aucun `boost:update`** ; quatrième tâche
+                  d'affilée dans cette configuration, après `sfu`, `webrtc2Events` et B1.
+                  - [x] Code — ~9 lignes dans chacune des deux alertes, `diff` des deux fichiers
+                        **toujours à 4 lignes** (titre, `name:`, 20000/10000) : le lot C est intact
+                        · - [x] Doc — une ligne de `docs/modules/webrtc2/flux.md` (l'auto-refus n'y
+                        nommait que la branche visio, fausse par omission depuis que B1 a armé la
+                        vocale) + les deux docblocks de A1 (les **deux bornes de durée chiffrées
+                        partent AVEC leur cause** — le démontage annule désormais le minuteur —,
+                        `stopDing` renommé, le commentaire d'`afterEach` requalifié en contrat du
+                        composant, `pickedUp` retiré de l'énumération hors-périmètre) + un
+                        commentaire de constat sur le voisin non couvert (B5) + `webrtc2-todo.md`
+                        (item élagué, B5 posé, la ligne des « deux filets » corrigée) + les deux
+                        `work/README.md`. ⚠️ Les 11 + 11 contrôles de harnais de A1 **non
+                        re-mesurés** : ce sont des mutations d'`AlertComponent.vue`, que B2 ne touche
+                        pas — la dette reste propriété du lot C · - [x] Tests —
+                        `AlertComponent.timers.test.js`, **le troisième harnais et le premier montage
+                        de composant Vue sous horloge factice du paquet** : 9 cas dont **5 rouges
+                        d'abord**, verts au correctif sans qu'une assertion change. 12 mutations
+                        mesurées, référence relue à 0 avant chacune. Suites : JS **85 fichiers /
+                        1498 cas, 0 échec** (84 / 1489 avant) ; PHP 286 OK
             - [ ] B3 — 🟢 **rien ne garde `mappingComponents[action][type]`** (`AlertComponent.vue:51`,
                   double déréférencement) : un `action` inconnu **lève** au `created()`, un `type`
                   hors `{vocal, visio}` rend silencieusement un écran vide. Relevé en écrivant A1,
@@ -279,6 +314,31 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
                   `shallowRef` attendus). Vu pour la première fois en montant l'alerte pour de vrai
                   en A1 — donc présent en production, pas un artefact de test. Une ligne à changer,
                   aucun comportement
+            - [ ] B5 — 🟠 **une seconde invitation PATCHE l'alerte vivante au lieu de la remonter**
+                  `[S]` — trouvé au cadrage de B2, adjacent et distinct. `Notifications.vue:93`
+                  réaffecte le **même objet** composant : ni `AlertComponent.created()` ni le
+                  `mounted()` de l'alerte ne rejouent, donc le type d'alerte affiché reste celui de
+                  la première invitation, aucun nouveau minuteur d'auto-refus n'est armé, et l'ancien
+                  tire sur les `options` du second appelant — qui est refusé au bout du reliquat, son
+                  moteur de retry s'arrêtant sur ce refus explicite. `isInviteDuplicate` ne l'attrape
+                  pas : elle dédoublonne par `inviteId`, et deux appelants en ont deux.
+                  ⚠️ **B2 ne le referme pas** — il n'y a pas de démontage, donc l'annulation du
+                  minuteur n'a rien à annuler. B2 en est le **préalable** : sans lui, poser une `key`
+                  échangerait le défaut contre une fuite. Et là où B2 était latent (Vue avale
+                  l'émission d'une instance démontée), **celui-ci mord aujourd'hui**.
+                  Correctif candidat : `key` sur le `<component>` de `Notifications.vue:4-10`, **par
+                  compteur monotone et non par `inviteId`**, qui est `nullable` côté serveur — une
+                  `key` `undefined` retombe sur le patch. Écarté : un `watch` dans les deux alertes,
+                  qui descend une responsabilité du parent dans deux enfants que le lot C déplace.
+                  ⚠️ **La question produit se tranche AVANT d'écrire la `key`** : que doit-il se
+                  passer quand un second appel arrive pendant une invitation affichée ? La `key`
+                  livre « le dernier appelant gagne, proprement » ; l'autre réponse défendable est
+                  « occupé ⇒ refus automatique du second ». Ne pas coder la première en croyant
+                  qu'elle est neutre. **Rouge d'abord, et il ne demande AUCUN faux timer** : `visio`
+                  puis `vocal` sans avoir répondu ⇒ l'écran doit basculer sur `AudioCallAlert`. Cas
+                  de couture, donc `Notifications.alerts.test.js`, où le cas « une seconde invitation
+                  réaffiche une alerte » porte déjà le commentaire qui dit qu'il ne le couvre pas
+                  - [ ] Code · - [ ] Doc · - [ ] Tests
       - [ ] **C. Déplacer les deux alertes** `[S]` — `git mv` vers `WebRTC2/Widgets/UI/Alerts/` + les
             deux `defineAsyncComponent` d'`AlertComponent`. Elles sont v1 **par leur chemin, pas par
             leurs dépendances** : elles n'importent que `IconWidget` et leur consommateur est déjà

@@ -66,7 +66,11 @@ aval, et qui meurt avec son contexte.
 ### Refus du distant : le même chemin, jamais un raccourci
 
 Un refus arrive par **le même signal** que l'acceptation, avec `status: false` — c'est aussi la
-forme que prend une **non-réponse** : `VideoCallAlert` s'auto-refuse au bout de 10 s.
+forme que prend une **non-réponse** : les deux alertes s'auto-refusent seules, `VideoCallAlert` au
+bout de 10 s et `AudioCallAlert` au bout de 20 s. Ce minuteur **meurt avec l'alerte** : répondre ou
+quitter l'écran l'annule, comme la sonnerie, sur le chemin commun `stopAlert()` — épinglé par
+`AlertComponent.timers.test.js`, le seul fichier du paquet à monter un composant sous horloge
+factice.
 
 ```
 Reverb .ResponseToAuthorizationPeer (status: false) → Notifications.vue

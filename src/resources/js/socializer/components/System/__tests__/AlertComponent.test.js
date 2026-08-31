@@ -33,18 +33,12 @@
  *
  * ⚠️ **Pas de stub `Audio`.** happy-dom l'implémente : `new Audio(url)` ne fait que poser
  * l'attribut `src` — aucune requête réseau — et `play()` est async et résout, donc aucun rejet
- * non traité. La sonnerie est coupée par `beforeUnmount` → `stopDing()`, d'où l'`afterEach`.
+ * non traité. La sonnerie est coupée par `beforeUnmount` → `stopAlert()`, d'où l'`afterEach`.
  *
- * ⚠️ **La DURÉE de ce fichier est une borne de correction, pas une statistique** : 1,1 s au
- * 2026-08-31 (259 ms de tests). Le `setTimeout` d'auto-refus des deux alertes n'est pas annulé au
- * démontage (défaut B2) : un fichier qui dépasserait 10 s verrait le timer d'un cas antérieur
- * émettre un refus pendant un cas ultérieur. Tant qu'on reste à ~1 s, la question ne se pose pas
- * — d'où ce chiffre, mesurable de nouveau.
- *
- * ⚠️ **Et B1 a ARMÉ ce risque sur la branche vocale** — fait relevé en le fermant. Avant, le timer
- * d'`AudioCallAlert` émettait `response-call` dans le vide : inoffensif. Depuis, il émet un vrai
- * refus, comme son jumeau visio le faisait déjà. Les deux alertes sont donc désormais également
- * concernées par B2, et la borne ci-dessus est ce qui garde la mesure honnête en attendant.
+ * ℹ️ **Ce fichier tourne sous timers RÉELS, et c'est sans conséquence depuis B2** : le démontage
+ * annule l'auto-refus des deux alertes comme il annule la sonnerie, donc l'`afterEach` suffit et
+ * aucun minuteur d'un cas ne peut émettre pendant un cas ultérieur. Une borne de durée chiffrée
+ * vivait ici tant que ce n'était pas vrai ; elle est partie avec sa cause.
  *
  * ⚠️ `emitted()` capte AUSSI les événements DOM natifs qui remontent à la racine — un `click` à
  * chaque `trigger`, sur le wrapper parent COMME sur celui d'un enfant obtenu par
@@ -65,10 +59,11 @@
  * vocabulaires émettrait deux fois. Les rétablir séparément recasse le lot C, pas ce fichier.
  *
  * ── HORS PÉRIMÈTRE, NOMMÉMENT ────────────────────────────────────────────────
- * • **les timers des deux alertes** (`pickedUp` jamais mis à `true`, handle du `setTimeout`
- *   d'auto-refus non stocké et non annulé au `beforeUnmount` — seul l'`interval` l'est) : lot
- *   **B2**, avec son propre harnais à faux timers. Rien ici n'appelle `vi.useFakeTimers()`,
- *   n'asserte sur les 20 s / 10 s, ni sur `ding` / `interval` / `pickedUp`.
+ * • **les timers des deux alertes** — la sonnerie, l'auto-refus, et leur annulation : c'est
+ *   `AlertComponent.timers.test.js`, le troisième harnais, seul du paquet à monter un composant
+ *   sous horloge factice. **Rien ici n'appelle `vi.useFakeTimers()`** ni n'asserte sur les 20 s /
+ *   10 s ou sur `ding` / `interval` : c'est ce partage qui vaut le fichier séparé, et sa mesure est
+ *   là-bas (la mutation qui y rougit 5 cas n'en rougit **aucun** ici).
  * • **`options.action` inconnu ⇒ TypeError au `created()`** (double déréférencement sans garde,
  *   `AlertComponent.vue:51`). Le garde existe **une couche plus haut** et il est déjà testé :
  *   `/send-alert-to-user` exige `options.action ∈ VALID_INVITE_ACTIONS`
@@ -176,10 +171,9 @@ const vocabulaire = (w) => Object.keys(w.emitted()).filter((e) => e !== 'click')
 let wrapper
 
 afterEach(() => {
-    // Coupe la sonnerie (`beforeUnmount` → `stopDing`). ⚠️ Le `setTimeout` d'auto-refus, lui,
-    // n'est PAS annulé — c'est le défaut du lot B2, pas une faute de ce harnais. Sous timers
-    // réels il ne se déclencherait qu'après 10 s (visio) / 20 s (vocal), et l'`abort()` de
-    // teardown de l'environnement happy-dom l'emporte en fin de fichier.
+    // Coupe TOUT ce que le montage a armé (`beforeUnmount` → `stopAlert`) : la sonnerie et
+    // l'auto-refus. Ce n'est pas une précaution de harnais, c'est le contrat du composant — et
+    // c'est ce qui rend ce fichier insensible à l'horloge sous laquelle il tourne.
     wrapper?.unmount()
     wrapper = undefined
 })

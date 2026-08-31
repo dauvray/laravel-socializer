@@ -35,12 +35,11 @@
  * ARRIVE, et ça garde `CallManagerBtn` (le second composant asynchrone du template) hors du
  * montage — donc pas de stub `Spinner`, et un seul chemin asynchrone à drainer.
  *
- * ⚠️ **La DURÉE de ce fichier est une borne de correction** : 1,2 s au 2026-08-31 (259 ms de
- * tests, les deux fichiers d'alertes ensemble). Le `setTimeout` d'auto-refus des alertes n'est pas
- * annulé au démontage (défaut B2) ; au-delà de 10 s de temps mur, le timer d'un cas antérieur
- * produirait ici un `acceptCallFromPeer` FANTÔME pendant un cas ultérieur. C'est le défaut B2 vu
- * depuis le harnais — **et B1 l'a armé sur la branche vocale** : le timer d'`AudioCallAlert`
- * émettait dans le vide, il émet désormais un vrai refus. Les deux alertes sont concernées.
+ * ℹ️ **Ce fichier tourne sous timers RÉELS, et c'est sans conséquence depuis B2** : le démontage
+ * annule l'auto-refus des alertes, donc aucun minuteur d'un cas antérieur ne peut plus produire ici
+ * un `acceptCallFromPeer` FANTÔME pendant un cas ultérieur. Une borne de durée chiffrée vivait ici
+ * tant que ce n'était pas vrai ; elle est partie avec sa cause. Les minuteurs eux-mêmes se testent
+ * sous horloge factice, dans `AlertComponent.timers.test.js`.
  *
  * ── CE QUE CE FICHIER A ÉPINGLÉ : B1, fermé le 2026-08-31 ─────────────────────
  * Écrit rouge d'un cas — le symptôme, à l'altitude où c'en est un : « accepter un appel VOCAL
@@ -330,6 +329,13 @@ describe('Notifications — .AlertToUser, l\'invitation d\'appel affichée', () 
         })
 
         it('une seconde invitation réaffiche une alerte : répondre n\'éteint pas le canal', async () => {
+            // ⚠️ **Ce cas ne couvre PAS son voisin, et c'est ici qu'on croira le contraire.** Il
+            // passe par `notificationComponent.value = null` (on a répondu), donc l'alerte est
+            // REMONTÉE. Une seconde invitation reçue **sans avoir répondu** ne l'est pas : Vue
+            // patche la même instance, `created()` et `mounted()` ne rejouent pas — le type
+            // d'alerte affiché ne change plus et l'auto-refus du premier appelant tire sur les
+            // options du second. C'est le lot **B5** de `work/doc-rustines.md`, et son rouge est
+            // de couture, donc il viendra dans ce fichier.
             wrapper = await monter()
             await recevoirLInvitation('visio')
             await accepter(wrapper).trigger('click')
