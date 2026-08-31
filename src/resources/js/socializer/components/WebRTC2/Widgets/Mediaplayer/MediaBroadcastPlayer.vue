@@ -1,6 +1,5 @@
 <template>
-    <div class="draggable-video" 
-        ref="container"
+    <div class="draggable-video"
         v-resize="resizeOptions"
         v-draggable="draggableOptions"
         @pointerdown="onBringToFront">
@@ -32,7 +31,7 @@
                 :controls="true"
                 :autoplay="true"
                 :loop="false"
-                :muted="props.streamData.metadata?.isMe || false"
+                :muted="isLocallyMuted"
             ></AudioPlayer>
         </slot>
 
@@ -64,6 +63,13 @@
                     vidéo, ces boutons seraient inertes. Le plein écran et le PIP n'ont de
                     toute façon pas de sens sur un <audio>, qui porte déjà ses propres
                     contrôles natifs (dont le mute).
+
+                    Ce n'est pas une préférence mais une nécessité, et elle est mesurée :
+                    `AudioPlayer` expose `nativeAudio` (et non `nativeVideo`), donc la
+                    sentinelle `null` de `_getEl()` est STRUCTURELLE sur toute la branche
+                    audio — slot fourni ou pas. Épinglé des deux côtés dans
+                    `MediaBroadcastPlayer.controls.test.js`, par la paire de cas sur le
+                    slot `#controls` : il coupe le son en vidéo, il ne coupe rien en audio.
                 -->
                 <template v-if="props.videoActive">
                     <button v-if="!props.streamData.metadata?.isMe"
@@ -104,7 +110,10 @@ const vResize = resizeDirective
 const vDraggable = draggableDirective
 
 const player = ref(null) // référence au composant vidéo/audio pour les contrôles (fullscreen, pip...)
-const container = ref(null) // référence à la div englobante pour les fonctionnalités de déplacement/redimensionnement
+// Pas de ref sur la div englobante : les directives v-resize / v-draggable reçoivent leur
+// élément par le contrat de directive et stockent leur état sur lui (`el._resizeDirective`).
+// Un `ref="container"` a vécu ici, jamais lu, entretenu par un commentaire qui le disait
+// nécessaire au déplacement — retiré le 31/08/2026 après 0 cas rougis.
 
 const slots = useSlots()
 
@@ -117,6 +126,11 @@ const isBuffering = ref(true)
 // Le spinner n'a de sens que si un flux est réellement attendu sur ce slot.
 // ⚠️ Neutralisé quand le consommateur fournit son propre slot `video` : nos écouteurs
 // `can-play` ne seraient alors jamais branchés et le spinner tournerait à vie.
+// ⚠️ Cette condition teste la FORME du slot, pas ce qui est réellement monté : Vue retombe
+// sur notre repli quand le slot ne rend que des commentaires (`ensureValidVNode`), et nos
+// écouteurs sont alors bien branchés — le spinner est éteint pour une raison qui a cessé
+// d'exister. Sans symptôme aujourd'hui (aucun consommateur ne fournit `#video`) ; le
+// correctif visé est la sentinelle elle-même, `!!player.value` — item de `work/`.
 const showSpinner = computed(() =>
     isBuffering.value
     && props.videoActive
@@ -130,8 +144,12 @@ const showViewersCount = computed(() =>
     props.streamData.metadata?.countViewers != null
 )
 
-// si c'est mon propre flux, on mute toujours localement (sinon écho)
-const isLocallyMuted = computed(() => 
+// Si c'est mon propre flux, on mute toujours localement (sinon écho).
+// ⚠️ Les DEUX branches le lisent, et c'est ce qui fait survivre le mute à l'extinction de
+// la caméra : le pair coupe sa vidéo, `videoActive` bascule, l'<audio> se monte — et sans
+// ce partage il se montait NON muté, on réentendait le pair sans pouvoir le recouper (le
+// bouton Mute n'existe pas sur cette branche, seuls les contrôles natifs de l'<audio>).
+const isLocallyMuted = computed(() =>
     props.streamData.metadata?.isMe || nativeMuted.value
 )
 
@@ -148,6 +166,9 @@ watch(() => props.streamData?.stream, () => {
     // Même raison pour le spinner : sur une instance recyclée, l'ancien `can-play` avait
     // déjà éteint l'attente — sans ce reset, le flux suivant s'afficherait sans spinner.
     isBuffering.value = true
+    // Et le PiP / plein écran, qui eux ne sont pas des états Vue : ils survivraient au
+    // recyclage et afficheraient le flux suivant sous l'identité du précédent.
+    controls.releasePresentation()
 })
 
 const onBringToFront = (event) => {

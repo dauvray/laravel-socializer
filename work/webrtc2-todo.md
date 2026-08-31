@@ -1035,6 +1035,95 @@ extractions : c'est 18 lignes, sous un filet cinq fois plus dense.
   rend le composant multi-racine et coupe le fallthrough. L'explication du retrait vit donc dans le
   `<script setup>`.
 
+- [ ] 🟠 **Le bouton `Fullscreen` est un aller sans retour** `[S]` — relevé le 31/08/2026 par le lot
+  D, qui a écarté pour ça la « moitié plein écran » de son propre énoncé.
+
+  `useMediaControls` met en plein écran l'élément exposé en `nativeVideo`, donc la `<video>` **nue**.
+  Or les trois boutons vivent dans un `.video-controls` qui en est le **frère** : en plein écran, ils
+  ne sont pas peints. Et `VideoPlayer` est monté `:controls="false"`, donc il n'y a pas non plus de
+  contrôles natifs. L'utilisateur n'a que Échap ou F11 — ce qui marche, mais que rien n'annonce.
+
+  Conséquence mesurée, et c'est elle qui a bloqué la correction du lot D : **la branche `else` de
+  `toggleFullscreen` est déjà inatteignable** depuis l'UI par défaut (rien d'autre dans l'app ne pose
+  `fullscreenElement` — grep : seulement la v1 morte, `WebRTC/widgets/VideoComponent.vue:258`). Y
+  ajouter la comparaison `!== el`, comme pour le PiP, l'aurait rendue **prouvablement** morte :
+  aucune contre-épreuve sur un chemin atteignable ne peut la faire rougir. Laissée telle quelle.
+
+  La piste, si ce ticket s'ouvre : mettre **le cadre** `.draggable-video` en plein écran plutôt que
+  la `<video>`, ce qui embarquerait les contrôles — et alors la branche `else` reprendrait un sens,
+  et `!== el` deviendrait nécessaire. ⚠️ Ce n'est pas gratuit : le cadre porte `v-resize` /
+  `v-draggable`, dont la géométrie serait à réexaminer en plein écran.
+
+- [ ] 🟠 **Dans le pool, un appel VOCAL prend la branche vidéo — donc le bouton PIP y est mort et
+  muet** `[S]` — relevé le 31/08/2026 par le lot D.
+
+  `PlayerHost.vue:23-32` ne câble **pas** `videoActive`, qui vaut donc `true` par défaut
+  (`MediaBroadcastPlayer.vue`), et `useStreamManager` passe par `createVideoElement` pour tout
+  `currentType !== 'stream'` — **vocal compris**. Une `<video>` sans piste vidéo est donc rendue,
+  avec ses trois boutons : `requestPictureInPicture()` y **rejette**, et le rejet part dans un
+  `console.error` que personne ne lit. Bouton visiblement mort, cadre noir à côté.
+
+  Plus fréquent que le cas multi-vignette que le lot D vient de fermer, et écrit nulle part. La cause
+  amont est l'item « l'état initial d'un pair n'est jamais semé » (`isVideoEnabled` porté par la
+  metadata et lu par personne) ; **la conséquence sur les contrôles est celle-ci**, et elle se
+  corrige indépendamment : câbler `videoActive` depuis le type du flux dans `PlayerHost`.
+
+- [ ] 🟢 **Le slot `#controls` ne reçoit pas de quoi reproduire les gardes du repli — et il rouvre
+  l'écho** `[S]` — relevé le 31/08/2026 par le lot D, qui l'a épinglé sans le corriger.
+
+  `MediaBroadcastPlayer.vue` expose `:controls="controls"` mais ni `videoActive`, ni `nativeMuted`,
+  ni un `isMe` dérivé. Un consommateur qui remplace les contrôles ne peut donc reproduire **aucune**
+  des deux gardes du contenu par défaut. La seconde compte : `toggleNativeMute` sur son propre flux
+  ré-ouvre l'écho déjà subi (`useCallManager` en garde la trace), et le mécanisme est le double
+  écrivain de `el.muted` — l'écriture impérative du composable contre la prop `:muted` de Vue. Quand
+  `isMe` est vrai, `isLocallyMuted` vaut constamment `true`, donc la prop ne change pas, donc **Vue
+  ne repatche pas** : le démutage impératif tient.
+
+  Épinglé en attendant : `MediaBroadcastPlayer.controls.test.js` couvre ce que le slot reçoit
+  aujourd'hui (2 cas rougis si `:controls` est retiré). ⚠️ Trancher d'abord **si ce slot est un
+  contrat** : le lot D a retiré deux clés de la charge utile en s'appuyant sur le fait que personne
+  ne le fournit. Les deux réponses ne peuvent pas être vraies en même temps.
+
+- [ ] 🟢 **`showSpinner` teste la FORME du slot, pas ce qui est monté** `[S]` — relevé le 31/08/2026
+  par le lot D. Mesuré contre le Vue installé (3.5.24) : `renderSlot` passe par `ensureValidVNode`,
+  qui rend `null` quand tous les enfants sont des `Comment`, **récursivement à travers les
+  Fragments** — donc un slot `#video` ne contenant qu'un commentaire fait rendre **notre repli**, et
+  nos écouteurs `can-play` **sont** branchés. Or `showSpinner` teste `!slots.video` : il éteint le
+  spinner pour une raison qui a cessé d'exister.
+
+  Sans symptôme aujourd'hui — aucun consommateur ne fournit `#video`, et les deux `#audio`
+  commentés de `StreamSimpleUI.vue:23-24,53-54` ne sont pas lus par cette condition, qui exige
+  `videoActive`. Correctif visé : la **sentinelle** elle-même, `!!player.value`, insensible à la
+  forme du slot. ⚠️ À mesurer avant : les refs de template sont posées après le premier rendu, donc
+  le spinner serait éteint pendant une frame au montage. Voisin immédiat : `slots.video` n'est pas
+  une dépendance réactive — le `computed` ne se réévalue que parce que `isBuffering` en est une.
+
+- [ ] 🟢 **`draggable.js` démarre un drag quand on appuie sur un bouton de contrôle** `[S]` — relevé
+  le 31/08/2026 par le lot D. `draggable.js` attache son `pointerdown` sur le **wrapper**, et son
+  seul garde est `.resize-grip` : les boutons `Mute` / `Fullscreen` / `PIP` en sont descendants, donc
+  tout appui démarre un drag, et le moindre mouvement déplace la vignette. Atteignable — le pool fige
+  `draggable: true` (`PlayerHost.vue:31`). Le fichier est hors du périmètre de la tâche 8 (c'est une
+  directive, pas un widget) : consigné, pas élargi.
+
+  ⚠️ Écrire un test qui l'exerce demande de monter la configuration du pool (`draggable: true`), et
+  alors les vraies directives ne sortent plus en early-return : `resizable.js` insère un wrapper réel
+  dans le DOM. Les fichiers de test actuels ne sont inoffensifs que parce que les défauts sont
+  `false` — et les `directives` passées en `global` n'y changent rien, elles sont **inertes**.
+
+- [ ] 🟢 **`onBringToFront` : z-index inline monotone, jamais remis à zéro** `[S]` — relevé le
+  31/08/2026 par le lot D. `MediaBroadcastPlayer.vue` écrit `el.style.zIndex = maxZ + 1` à **chaque**
+  `pointerdown`, boutons de contrôle compris : croissance sans borne, et le style inline n'est pas
+  remis à zéro au recyclage du slot (le `watch` du flux ne le touche pas), donc un slot repris hérite
+  du z-index du flux précédent. Accessoirement, `document.querySelectorAll('.is-draggable')` est
+  **global** et fait un `getComputedStyle` par frère à chaque appui.
+
+- [ ] 🟢 **Les deux `catch` de `useMediaControls` ne rendent rien à l'utilisateur** `[S]` — relevé le
+  31/08/2026 par le lot D. `console.error` seul, alors que le lot B a établi la convention du toast
+  pour un échec média (repli `inject('AWN', null)` + `window.AWN`, message portant `err.name`). Un
+  PIP qui rejette — sur un vocal, cf. l'item ci-dessus, ou hors geste utilisateur — est totalement
+  muet. Le filet existe déjà : deux cas de `useMediaControls.test.js` asservissent la **cause** tracée
+  à la fonctionnalité (`'Fullscreen'` / `'PIP'`), ils passeront au toast sans être réécrits.
+
 - [ ] 🟢 **`SpectrumAnalyzer` : deux défauts, et un fichier WebRTC2 que seule la v1 maintient en
   vie** `[S]` — relevés le 30/08/2026 en cadrant la tâche 8, qui l'a **exclu** de son périmètre.
 

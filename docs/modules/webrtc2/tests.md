@@ -429,12 +429,13 @@ Sans décompte, parce qu'il pourrit : l'état exact se lit dans
   `RemoteMediaPlayer.test.js` (l'adaptateur, avec le player réel) et
   `StreamSimpleUI.toggles.test.js` (le **joint** `conn.peer`). Casser l'un des deux bouts du joint
   ne rougit **que** le troisième — mesuré à 0 sur les deux autres : c'est ce qui prouve qu'aucun
-  n'est le doublon d'un autre. Restent le provider, `LocalMediaPlayer`, `useMediaControls` et les
-  deux boutons d'appel.
+  n'est le doublon d'un autre. **Les contrôles de la vignette** l'ont rejoint le 31/08/2026, en
+  deux fichiers dont la séparation est elle aussi une mesure (voir « Fabriquer le plein écran et le
+  PiP » ci-dessous). Restent le provider, `LocalMediaPlayer` et les deux boutons d'appel.
 
 ---
 
-## Tester un composant : cinq faits mesurés
+## Tester un composant : huit faits mesurés
 
 ### ⚠️ Les `directives` passées en `global` sont INERTES
 
@@ -497,6 +498,62 @@ Le corollaire vaut au-delà des tests, et il a surpris ici : un handler d'évén
 un verbe `async` **sans rendre sa promesse** ne fait pas non plus remonter le rejet à
 `app.config.errorHandler`. `callWithAsyncErrorHandling` n'enveloppe que ce que le handler **rend**.
 Un rejet jeté à cet endroit disparaît sans trace : ni console, ni gestionnaire global.
+
+### Fabriquer le plein écran et le PiP : un emplacement, lu par des accesseurs
+
+`happy-dom` n'a **aucun** des six membres dont `useMediaControls` a besoin :
+`document.fullscreenElement`, `exitFullscreen`, `pictureInPictureElement`,
+`exitPictureInPicture` sont absents au sens `in` — donc un `Object.defineProperty` suivi d'un
+`delete` restaure exactement l'état d'origine — et `requestFullscreen` / `requestPictureInPicture`
+n'existent pas sur les éléments. Contrairement à la mise en page, **ce n'est pas une impossibilité :
+c'est une fabrication**, et `helpers/fakeFullscreen.js` la porte.
+
+Son invariant est ce qui l'empêche de mentir : **un seul emplacement par fonctionnalité, détenu par
+la scène, et `document.*Element` installés en accesseurs `get` qui le lisent.** Un faux
+`requestFullscreen` qui « oublierait » de mettre à jour ce que le code lit devient structurellement
+impossible — il n'y a pas deux vérités à synchroniser. Le mode de panne évité est un DOM où un
+élément serait en plein écran sans que `document.fullscreenElement` le dise, ce qu'aucun navigateur
+ne produit.
+
+Trois corollaires opérationnels :
+
+- **Équiper aussi le concurrent.** Un cas qui prouve *quel* élément est retenu doit équiper les deux
+  (la `<video>` **et** le cadre `.draggable-video`), sinon c'est l'absence d'une méthode sur le
+  perdant qui décide, et non le code testé. Même règle pour un lecteur audio : on l'équipe, et ce
+  qui décide reste la clé exposée (`nativeAudio` ≠ `nativeVideo`).
+- **La sortie par Échap et la fermeture de la fenêtre PiP se simulent en appelant `document.exit*()`
+  depuis le test.** C'est fidèle : la production n'observe que l'emplacement, et le navigateur le
+  vide dans les deux cas. Elle n'écoute ni `fullscreenchange` ni `leavepictureinpicture`, et c'est
+  précisément ce que ces cas épinglent.
+- **Ne fabriquer que ce qui est lu.** Pas de `fullscreenEnabled`, `pictureInPictureEnabled`,
+  `onfullscreenchange` ni `disablePictureInPicture` : fabriquer un membre que personne ne lit, c'est
+  inventer un DOM.
+
+### `console.error` n'est pas discriminant au niveau composant
+
+C'est ce qui a coupé les contrôles de la vignette en deux fichiers, et la coupe est une mesure :
+retirer le `try/catch` de `toggleFullscreen` ou de `togglePip` rougit **1 cas du fichier composable
+et 0 du fichier composant**. La raison est le corollaire ci-dessus : `@click="controls.togglePip"`
+passe par `callWithAsyncErrorHandling`, qui journalise déjà en `console.error` le rejet d'un
+handler. « Notre `catch` a tracé la cause » et « Vue a tracé à sa place » y donnent donc le même
+vert. **Tout cas d'échec appartient à l'étage où le composable s'appelle nu.**
+
+⚠️ Et le contrôle lui-même se prépare : vider le corps d'un `catch` laisse la suite compiler sans
+rien mesurer, le retirer seul laisse un `try` orphelin — la suite ne compile plus, et le « 0 cas
+rouge » se lit alors comme « ce `catch` ne sert à rien ». Il faut retirer le `try` **avec** lui.
+
+### `happy-dom` réfléchit `muted` en attribut, un vrai navigateur non
+
+Mesuré : après `el.muted = true`, `el.hasAttribute('muted')` rend `true` sous happy-dom, alors
+qu'un navigateur ne réfléchit que `defaultMuted`. **N'asserter jamais `attributes('muted')`** —
+toujours la **propriété** `.muted`, sinon on épingle un artefact du runner.
+
+Corollaire, et c'est ce qui interdit de stuber `VideoPlayer` dans un test de mute : il y a **deux
+écrivains** de `el.muted` en production — l'écriture impérative de `toggleNativeMute` et le patch de
+Vue via la prop `:muted`. Un stub qui omet ce binding rend rouge, sur du code correct, le cas « le
+pool recycle la vignette ». Mesure qui tranche : renommer `nativeVideo` chez `~estarter` rougit
+**8 cas du fichier qui monte le vrai lecteur et 0 du fichier composable**, dont le
+`ref({ nativeVideo })` fait main valide sa propre orthographe.
 
 ---
 

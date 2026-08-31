@@ -39,7 +39,7 @@ et le seul étage où les incendies du paquet étaient détectables). Le harnais
 | Couches extraites de l'orchestrateur — `useConnectionPool`, `useCallManager`, `useStreamManager`, `useSignalingQueue` | ✅ | — |
 | Store — `peers2Store` : runtime, observabilité, `remotePeerId`, **phase du Peer**, **registre des contextes** | ✅ | — |
 | Composables d'UI — `useAwaitedStreams`, `useBroadcastPresence` | ✅ | — |
-| Tâche 8 · **Composants** `Widgets/**` — 15 fichiers, **10** couverts | 🟠 **lots A, B, V faits le 30/08 · lot C fait le 31/08** | restent 5 fichiers, en trois lots nommés : **D** `useMediaControls` + les contrôles de `MediaBroadcastPlayer`, **E** `LocalMediaPlayer` + `MediaBroadcastProvider`, **F** `CallManagerBtn` + `CallRemotePeerBtn` (+ `SpectrumAnalyzer`, exclu et classé). Deux décomptes de l'énoncé étaient **faux** — voir ci-dessous |
+| Tâche 8 · **Composants** `Widgets/**` — 15 fichiers, **12** couverts | 🟠 **lots A, B, V faits le 30/08 · lots C et D faits le 31/08** | restent 3 fichiers, en deux lots : **E** `LocalMediaPlayer` + `MediaBroadcastProvider`, **F** `CallManagerBtn` + `CallRemotePeerBtn` (+ `SpectrumAnalyzer`, exclu et classé). Deux décomptes de l'énoncé étaient **faux** — voir ci-dessous |
 | Scénarios — smoke, `lateJoiner`, `broadcastLifecycle`, `peerDeparture`, `multiContext`, `incomingMappingInvariant`, `outgoingAuth`, `incomingSpoof` | 🟠 | **aucun scénario n'utilise la topologie star** (`grep topology scenarios/` : zéro) — `lateJoiner` est intégralement mesh. La transition **« hub absent → hub présent »** n'est donc épinglée à aucun étage : ni en unitaire, ni bout en bout. Relevé le 30/08/2026 |
 | Perte de connexion → re-composition — `scenarios/peerDeparture` (« A recharge en chevauchement »), `useConnectionPool`, `createPeerContext` | ✅ | — |
 | Hors WebRTC2 — `Chat/dateSeparatorRender`, `System/useReverbChannel` (dont le désabonnement de whisper par callback), `User/coverCallButton` | amorces | plan Chat : [chat-tests-plan.md](chat-tests-plan.md) |
@@ -382,7 +382,7 @@ réellement dans `usePeerMedia.players.test.js` (17 cas ; seul `MediaBroadcastPl
 Il avait été manqué parce que le fichier porte le nom du **composable**, pas du composant. Une
 tâche 8 écrite sur l'énoncé aurait donc re-testé un composant déjà couvert.
 
-**État au 31/08/2026 — 10 fichiers couverts sur 15**, les lots A, B, V et C étant faits :
+**État au 31/08/2026 — 12 fichiers couverts sur 15**, les lots A, B, V, C et D étant faits :
 
 | Lot | Fichiers | Fichiers de test |
 |---|---|---|
@@ -390,13 +390,13 @@ tâche 8 écrite sur l'énoncé aurait donc re-testé un composant déjà couver
 | **B** | le refus de permission média (code + test) | `GroupLocalStreamBtn.permission.test.js` |
 | **V** | le contrat DOM du 🔴 de la vignette | `StreamSimpleUI.awaited.test.js` + `tests/visual/` |
 | **C** | `useRemotePeerState`, `RemoteMediaPlayer`, le joint `conn.peer` | `useRemotePeerState.test.js`, `RemoteMediaPlayer.test.js`, `StreamSimpleUI.toggles.test.js` |
+| **D** | `useMediaControls` + les contrôles de `MediaBroadcastPlayer` | `useMediaControls.test.js`, `MediaBroadcastPlayer.controls.test.js`, `helpers/fakeFullscreen.js` |
 | déjà là | `MediaBroadcastPlayer`, `PlayerHost`, `useAwaitedStreams`, `Debug` | — |
 
-**Les lots qui restent, nommés** — ils ne l'étaient pas, « lots C à F » ne désignait rien :
+**Les lots qui restent** :
 
 | Lot | Fichiers de production | Pourquoi ils vont ensemble |
 |---|---|---|
-| **D** | `useMediaControls` + les contrôles de `MediaBroadcastPlayer` | son seul appelant, et le seul lecteur de sa sentinelle `null` |
 | **E** | `LocalMediaPlayer`, `MediaBroadcastProvider` | le pendant local du lot C, et le fournisseur de l'API |
 | **F** | `CallManagerBtn`, `CallRemotePeerBtn` | les deux boutons d'appel |
 
@@ -491,6 +491,85 @@ changement le jour où une CI existe.
 vert sur un DOM que la production n'a plus ; le garde-fou est l'assertion de jeu de classes de
 `StreamSimpleUI.awaited.test.js`, qui, elle, tourne à chaque suite. Et le harnais dépend d'un
 runtime hors dépôt : ailleurs, il ne tourne pas — il s'arrête en le disant.
+
+#### Ce que le lot D a trouvé, et qui n'était pas dans l'énoncé
+
+**28 cas, 2 fichiers, 1 helper partagé, 30 contrôles de harnais mesurés.** Suite complète verte :
+76 fichiers, 1392 cas (74 / 1364 avant le lot).
+
+**Quatre corrections de production, une sortie B de nettoyage — et DEUX des trois défauts fermés
+n'étaient pas dans l'énoncé :**
+
+1. **sortie A — `togglePip` compare enfin `document.pictureInPictureElement` à SON élément.** Le
+   pool rend une vignette par flux et `_acquireSlot` n'a aucun plafond : cliquer `PIP` sur la
+   vignette B pendant que A y était **fermait le PiP de A sans ouvrir celui de B**. Deux clics
+   nécessaires, et le PiP d'un tiers volé au premier. Vu rouge d'abord, aux deux étages (1 cas + 1).
+2. **sortie A — le recyclage d'un slot rend la présentation** (`releasePresentation`, appelé par le
+   `watch` du player). `PlayerHost` est un `v-show` : l'instance **et** l'élément `<video>` survivent
+   au changement de flux, mais le PiP et le plein écran ne sont pas des états Vue. La fenêtre PiP
+   ouverte « sur Bob » affichait donc Carol, sans bandeau d'identité — et la vignette libérée étant
+   masquée, plus **aucun bouton** ne la fermait. Absent de l'énoncé. 2 cas vus rouges d'abord.
+3. **sortie A — le mute natif survit à l'extinction de la caméra.** L'`<AudioPlayer>` recevait
+   `metadata?.isMe || false` là où le `<VideoPlayer>` recevait `isLocallyMuted` : un pair qu'on avait
+   coupé se faisait **réentendre** dès qu'il éteignait sa caméra (la boucle `VIDEO_ACTIVE_TOGGLE`
+   que le lot C vient d'épingler), et le bouton Mute n'existe pas sur cette branche. Absent de
+   l'énoncé. 1 cas vu rouge d'abord.
+4. **sortie B — `isFullscreen` et `isPip` retirés**, du `return` et de `api.md`. Écritures
+   neutralisées ⇒ **0 cas**, trois passes sur référence relue verte. Conséquence non anticipée et
+   qui vaut d'être dite : le composable **n'importe plus rien de Vue**. C'est un retrait de surface
+   publique, assumé sur trois constats (aucun consommateur de `#controls`, aucun hors paquet, aucun
+   tag) — et **sans alias de transition**, contrairement à la politique habituelle, un alias
+   propageant la valeur fausse. Ce qui le distingue du précédent `stopAudio`, gardé sur la surface
+   publique : garder un export inutilisé mais **juste** n'est pas garder un export **faux**.
+5. **sortie B — le `ref="container"` mort**, avec sa déclaration : les directives reçoivent leur
+   élément par le contrat de directive et stockent leur état sur lui. 0 cas rougis. **Deux fois dans
+   le même fichier, une annotation avait maintenu du code mort en vie** — celle du `container` le
+   disait « nécessaire au déplacement », celle de `showSpinner` justifie encore une condition qui a
+   cessé d'être vraie dans un cas. C'est le mode de panne de ce fichier.
+
+⭐ **Le chiffre qui vaut le lot : renommer `nativeVideo` chez `~estarter` rougit 8 cas du fichier
+qui monte le vrai lecteur, et 0 du fichier composable.** Le joint testé **est le nom** : un stub qui
+expose `nativeVideo` valide sa propre orthographe, et le dépôt en avait déjà le cadavre —
+`AudioPlayer` expose `nativeAudio`, ce qui rend la sentinelle `null` **structurelle** sur toute la
+branche audio. C'est cette mesure, et pas une préférence de style, qui interdit de stuber le lecteur.
+
+**La coupe en deux fichiers est une mesure, pas un rangement** : retirer le `try/catch` de l'un ou
+l'autre toggle rougit **1 cas du fichier composable et 0 du fichier composant**. Au niveau composant
+`console.error` n'est pas discriminant — `callWithAsyncErrorHandling` journalise déjà le rejet d'un
+handler, donc « notre `catch` a tracé » et « Vue a tracé à sa place » y donnent le même vert. Tout
+cas d'échec appartient à l'étage où le composable s'appelle nu.
+
+**Deux affirmations de l'énoncé ne tenaient pas, et il fallait relire le code pour le voir :**
+
+- **« la comparaison à `el` » n'était un défaut que pour le PiP.** Pour le plein écran, `el` est la
+  `<video>` nue et nos boutons sont ses **frères** : ils ne sont pas peints tant qu'elle est en plein
+  écran, et rien d'autre dans l'app ne pose `fullscreenElement` (grep : seulement la v1 morte). La
+  branche `else` de `toggleFullscreen` est donc **déjà morte** — y ajouter `!== el` l'aurait rendue
+  prouvablement morte, ce qui n'est pas une sortie A. Non touchée ; le fait part en item 🟠 (le
+  bouton plein écran est un **aller sans retour**).
+- **« la sentinelle `null` est atteignable en production quand le consommateur fournit un slot
+  `#video` »** décrit une **capacité du contrat**, pas un chemin existant : aucun consommateur du
+  dépôt ne fournit `#video` ni `#controls`. Le chemin réellement atteignable est ailleurs, et
+  l'énoncé ne le nommait pas — **toute la branche audio**, où `_getEl()` rend `null` par
+  construction. C'est ce que le lot épingle, par la paire de cas sur le slot `#controls`.
+
+⚠️ **Un piège de harnais payé, et il vise les contrôles eux-mêmes** : pour mesurer un `catch`, il
+faut retirer le `try` **avec** lui. Vider le corps du `catch` laisse la suite compiler sans rien
+mesurer ; le retirer seul laisse un `try` orphelin, la suite ne compile plus, et le « 0 cas rouge »
+se lit alors comme « ce `catch` ne sert à rien ». Première mesure de cette passe, jetée et refaite.
+
+**Trois zéros conservés, avec leur raison écrite dans les docblocks** pour ne pas les re-mesurer :
+`?? null` de `_getEl` et `if (m !== null)` du composant (0 aux deux étages) sont le **contrat** de la
+sentinelle, pas des lignes qui mentent — la sortie B est pour une ligne fausse, pas pour toute ligne
+immesurable ; et `v-if="props.videoActive"` du bloc de contrôles rougit **0 cas ici, 2 ailleurs**
+(`spinner.test.js`, `RemoteMediaPlayer.test.js`), ce qui est la preuve qu'il ne fallait pas dupliquer
+« aucun bouton sur la branche audio ».
+
+**Pas de sortie `tests/visual/` ici, et c'est un résultat** : contrairement à la mise en page, le
+plein écran et le PiP se **fabriquent** (`helpers/fakeFullscreen.js`, un emplacement unique lu par
+des accesseurs). Ce qui resterait invérifiable — la boîte réelle d'une `<video>` en plein écran, la
+vignette PiP — n'est pas ce que la production décide : elle **désigne un élément**, et c'est
+exactement ce que la suite asserte.
 
 #### Ce que le lot C a trouvé, et qui n'était pas dans l'énoncé
 

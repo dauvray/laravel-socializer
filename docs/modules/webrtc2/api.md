@@ -143,6 +143,18 @@ PIP, fullscreen, overlay d'attente d'image), `LocalMediaPlayer.vue` / `RemoteMed
 `PlayerHost.vue` (hôte du pool d'instances). ⚠️ `LocalMediaPlayer` **jette** sans
 `MediaBroadcastProvider` parent.
 
+⚠️ **Le pool recycle l'instance ET son élément `<video>`** — c'est tout son intérêt — mais le plein
+écran et le PiP ne sont pas des états Vue : ils survivraient au changement de flux. Le player les
+rend donc explicitement quand son `streamData.stream` change (`releasePresentation`, cf. plus bas),
+et ce n'est pas une précaution : sans ça la fenêtre PiP ouverte sur un pair affiche le flux du
+suivant sous l'identité du précédent, la vignette libérée étant masquée par le pool (`v-show`) donc
+sans aucun bouton pour la fermer.
+
+⚠️ **Le mute natif choisi par l'utilisateur est partagé par les deux branches** (`isLocallyMuted`),
+et pas seulement par la vidéo : un pair coupé qui éteint sa caméra bascule sur l'`<audio>`, qui doit
+se monter muté. Sinon on le réentend sans pouvoir le recouper — le bouton Mute n'existe pas sur
+cette branche, seuls les contrôles natifs de l'`<audio>` offrent la voie de retour.
+
 ⚠️ **Ce que le player affiche vient uniquement de `streamData.metadata`** — il n'interroge aucun
 store. Champs lus : `fromName` (sinon « Inconnu »), `isMe` (coupe le son du player local),
 `countViewers` (compteur d'audience, affiché **seulement s'il est fourni** : un appel direct n'a
@@ -176,7 +188,20 @@ l'appelé — le lui faire afficher demanderait un champ `fromUserName` dans les
 `useRemotePeerState(peerIdSource)` → `{ muted, videoActive }` (état annoncé d'un pair distant ;
 `peerIdSource` est une valeur **ou une `Ref`**, et un id absent rend le composable sourd — cf. le
 joint de la projection Widget dans [architecture.md](architecture.md)), `useMediaControls(videoRef)`
-→ `{ isFullscreen, isPip, toggleFullscreen, togglePip, toggleNativeMute }`.
+→ `{ toggleFullscreen, togglePip, toggleNativeMute, releasePresentation }`.
+
+⚠️ **`useMediaControls` ne rend aucun drapeau d'état, et c'est une décision du 31/08/2026** —
+`isFullscreen` et `isPip` ont été retirés de cette surface. Personne ne les lisait et aucun listener
+ne les mettait à jour : ils mentaient dès une sortie par Échap ou une fermeture de la fenêtre PiP.
+La vérité est `document.fullscreenElement` / `document.pictureInPictureElement`, relue à chaque
+appel. Aucun alias de transition n'a été posé, contrairement à la politique habituelle : un alias
+propagerait la valeur fausse. Un consommateur qui veut un libellé « Quitter le plein écran » pose son
+propre listener `fullscreenchange` — épinglé par `useMediaControls.test.js`.
+
+`releasePresentation()` est l'inverse des deux bascules : il sort l'élément du PiP **et** du plein
+écran, mais seulement s'il les détient. `MediaBroadcastPlayer` l'appelle quand le pool réattribue son
+slot à un autre flux — sans lui, la fenêtre PiP ouverte « sur Bob » affiche le flux suivant sous
+l'identité de Bob, et la vignette libérée étant masquée (`v-show`), plus aucun bouton ne la ferme.
 
 ⚠️ **Ces deux composables voisins n'ont rien à voir l'un avec l'autre**, et les confondre a déjà
 coûté un énoncé de tâche faux. `useRemotePeerState` porte le protocole applicatif des Widgets —

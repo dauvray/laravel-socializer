@@ -254,7 +254,9 @@ testable directement, et ça se voit.
 Le meilleur exemple du dépôt tient dans un seul dossier —
 `WebRTC2/Widgets/Mediaplayer/Composables/`, deux fichiers voisins de part et d'autre de la règle :
 `useRemotePeerState` enregistre `onUnmounted` (**obligatoire**), `useMediaControls` n'enregistre
-rien et n'injecte rien (**interdit** : il ne touche qu'un élément DOM qu'on lui passe).
+rien et n'injecte rien (**interdit** : il ne touche qu'un élément DOM qu'on lui passe). Depuis le
+retrait de ses deux drapeaux d'état, le second n'importe même plus rien de Vue — le critère se lit
+donc sur son en-tête d'import, sans avoir à parcourir le fichier.
 
 ---
 
