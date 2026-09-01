@@ -179,8 +179,15 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
       lui-même ses `conn.on("data")` / `conn.on("open")`. En v2 c'est le transport qui possède les
       listeners et rappelle `onDataReceived(data, conn, metadata)`
       (`createPeerContext.js`, garde de taille en amont) et `onConnectionOpen(conn)`. Chaque
-      appelant se **réécrit** donc. Bonne nouvelle : v2 ne parse pas le payload non plus, les
-      `JSON.parse` des trois appelants restent valables tels quels.
+      appelant se **réécrit** donc.
+      ⚠️ **La « bonne nouvelle » écrite ici — « v2 ne parse pas le payload non plus, les `JSON.parse`
+      des trois appelants restent valables tels quels » — était FAUSSE, et D0 l'a mesurée le
+      01/09/2026.** v1 **sérialise avant d'émettre** (`stores/peers/actions.js`, `safeStringify(message.data)` :
+      c'est une **chaîne** qui part sur le fil, d'où le `JSON.parse` de chaque récepteur), alors que
+      v2 émet l'**objet** brut (`usePeerTransport.sendData` → `conn.send(data)`) et qu'aucun
+      consommateur v2 ne parse quoi que ce soit. Les trois `JSON.parse` doivent donc **disparaître** :
+      laissés en place, ils reçoivent un objet et lèvent. La table complète est dans
+      [webrtc-data-v1-v2.md](webrtc-data-v1-v2.md).
 
       ℹ️ Le watch de `users` du provider v2 **n'est pas profond, et c'est un contrat épinglé**
       (`MediaBroadcastProvider.test.js`, « une composition mutée en place n'est pas vue »). Si un
@@ -439,9 +446,42 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
                   identités qu'un `git mv` ne touche pas. Un rouge chez eux aurait dit « chemin
                   d'import faux », rien d'autre
       - [ ] **D. Le canal data, un module à la fois** `[L]`
-            - [ ] D0 — écrire une fois la correspondance : `conn.on("data")` →
-                  `onDataReceived(data, conn, metadata)` · `conn.on("open")` → `onConnectionOpen(conn)`
-                  · `mapActions(usePeerStore, ['sendData'])` → `api.sendData()` par `ref` de template
+            - [x] D0 — **fait le 01/09/2026.** La correspondance est écrite une fois, et **partagée
+                  en deux** : le contrat v2 — signatures des quatre callbacks,
+                  `sendData(data, destUserSlugs)`, les quatre cas où `onDataReceived` n'arrive pas ou
+                  arrive en **arité 1** — est allé dans `docs/modules/webrtc2/api.md`, qui n'en
+                  listait que les **clés** ; le delta v1→v2 et les spécificités des trois modules dans
+                  [webrtc-data-v1-v2.md](webrtc-data-v1-v2.md), qui **pointe** `api.md` au lieu de le
+                  recopier et porte sa condition de suppression en tête (il part avec la v1, au lot
+                  F/G — précédent : `webrtc-v1-notes.md`).
+                  **La lecture a rapporté plus que la table**, et c'est le résultat du lot :
+                  · **une ligne du cadrage était fausse** — les `JSON.parse` (⚠️ ci-dessus), corrigée
+                  à sa source plutôt que contournée ;
+                  · **l'avertissement d'`api.md` sur `callbacks` était faux aussi**, et sur un piège
+                  vécu : « passer `callbacks`
+                  **et** initialiser dans l'enfant initialiserait deux fois ». Non — le stockage est
+                  **write-once par clé**, le second jeu est **perdu en silence** et les callbacks de
+                  l'enfant ne prennent jamais effet. `usePeerOrchestrator.callbacks.test.js` le disait
+                  déjà mot pour mot ; l'avertissement porte désormais le nom de son test ;
+                  · **`exclude` n'a AUCUN équivalent v2** (`destUserSlugs` ne rend qu'`include`) : un
+                  message v1 portant `include` passerait en v2 comme un champ de payload, **sans
+                  filtrer personne et sans erreur**. Application en est le seul consommateur ⇒ point
+                  ouvert rattaché à **D2**, pas au lot D en général.
+                  ℹ️ **L'écart de sérialisation est la seule affirmation structurante que rien
+                  n'épingle** : `usePeerTransport.mesh.test.js` tient bien l'absence de transformation
+                  à l'émission, mais tous ses cas passent une chaîne ou un `ArrayBuffer`, jamais un
+                  objet. Écrit comme tel dans le fichier de delta.
+                  - [x] Code — **aucun, par définition** : D0 est une écriture, comme A2
+                  - [x] Doc — les cinq couches, énumérées d'avance : `docs/modules/webrtc2/api.md`
+                        (substance + la correction) · `work/webrtc-data-v1-v2.md` (neuf) · cet item et
+                        le ⚠️ du cadrage · `work/README.md` du paquet · le `work/README.md` de l'hôte.
+                        **Aucun `boost:update`** — vérifié : `sendData`, `callbacks`, `onData` et
+                        `initialize` rendent **zéro** sur le `CLAUDE.md` du paquet **et** sur
+                        `core.blade.php`. Sixième tâche d'affilée dans cette configuration, après
+                        `sfu`, `webrtc2Events`, B1, B2 et A2
+                  - [x] Tests — **aucun**, volet code vide. Ce qui remplace le rouge de naissance :
+                        chaque affirmation du contrat v2 nomme le test qui l'épingle, ou dit qu'aucun
+                        ne le tient (le cas de la sérialisation, ci-dessus)
             - [ ] D1 — **Whiteboard**, le plus facile à prouver. Vérif : deux navigateurs, un trait
                   tracé chez A apparaît chez B, le pointeur distant bouge
             - [ ] D2 — **Application**. Vérif : l'iframe reçoit `connectionEnabled` puis les messages
@@ -480,18 +520,23 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
       périme au passage** — le lot C l'a montré, et le gabarit ne l'annonçait pas.
       **Chemin critique** : A → B → C sont livrables tout de suite et indépendants du reste ; F ne
       part pas avant que D et E soient prouvés à la main.
-      **État au 01/09/2026** : **le lot A est CLOS** (A1, A2, A3), et **B1, B2 et C sont faits**.
-      A2 a levé la dernière inconnue du canal data — la liste de présence est **réaffectée**, donc
-      **ni l'appelant ni le provider n'ont à s'adapter en D**. La suite est **D0** (la
-      correspondance des callbacks, à écrire une fois) puis **D1**, Whiteboard, le plus facile à
-      prouver à deux navigateurs. B5 reste ouvert en parallèle, sans dépendance : il ferme un 🟠 qui
-      mord aujourd'hui, mais demande de trancher une question produit avant d'écrire la `key`.
-      ⚠️ **Ce que A2 et A3 ajoutent au gabarit, et qui vaut pour D** : une tâche **sans volet code**
-      peut avoir le volet doc le plus lourd du lot. A2 n'a touché aucun fichier de code et a
-      réécrit quatre endroits ; A3 n'a écrit que du test et a **périmé deux mesures** — dont une
-      dans `docs/`. Le lot C avait montré qu'un décompte est une annotation ; ici c'est **une
-      mesure de contrôle à 0** qui en est une, et elle devient fausse à la seconde où le filet
-      qu'elle réclamait est posé. Les chercher dès qu'un lot pose un test.
+      **État au 01/09/2026** : **le lot A est CLOS** (A1, A2, A3), **B1, B2 et C sont faits**, et
+      **D0 est fait** — la table de traduction existe, elle est dans
+      [webrtc-data-v1-v2.md](webrtc-data-v1-v2.md) et le contrat v2 qu'elle a mis au jour est dans
+      `docs/modules/webrtc2/api.md`. A2 avait levé la dernière inconnue du canal data — la liste de
+      présence est **réaffectée**, donc **ni l'appelant ni le provider n'ont à s'adapter en D**.
+      **La suite est D1**, Whiteboard, le plus facile à prouver à deux navigateurs — et le seul des
+      trois à imbriquer `on("data")` dans `on("open")`. B5 reste ouvert en parallèle, sans
+      dépendance : il ferme un 🟠 qui mord aujourd'hui, mais demande de trancher une question produit
+      avant d'écrire la `key`.
+      ⚠️ **Ce que A2, A3 et D0 ajoutent au gabarit** : une tâche **sans volet code** peut avoir le
+      volet doc le plus lourd du lot. A2 n'a touché aucun fichier de code et a réécrit quatre
+      endroits ; A3 n'a écrit que du test et a **périmé deux mesures** — dont une dans `docs/` ;
+      **D0 n'a écrit que de la prose et a retourné deux affirmations fausses**, une dans ce fichier et
+      une dans `docs/`. Le lot C avait montré qu'un décompte est une annotation ; A3 y a ajouté la
+      **mesure de contrôle à 0** ; D0 y ajoute la **« bonne nouvelle »** — une phrase qui dit qu'il
+      n'y a rien à faire est la plus coûteuse des annotations fausses, parce qu'elle est écrite pour
+      être crue sans être revérifiée. Les chercher dès qu'un lot lit du code.
 
 - [x] **Supprimer `WebRTC2/EventBus/webrtc2Events.js`** · effort [S] — **fermé le 31/08/2026,
   sortie B.**

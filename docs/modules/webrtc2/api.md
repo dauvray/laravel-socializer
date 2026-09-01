@@ -44,8 +44,12 @@ L'API est exposée de **trois** façons : slot scopé (`v-slot="webrtc"`),
 
 ⚠️ **`callbacks` est optionnel et son absence est significative** : sans lui, `api.initialize()`
 n'est **pas** appelé par le provider — c'est alors au composant enfant de le faire (modèle de
-`StreamSimpleUI`, qui gère lui-même la réception). Passer `callbacks` **et** initialiser dans
-l'enfant initialiserait deux fois.
+`StreamSimpleUI`, qui gère lui-même la réception). Les deux voies sont **exclusives**, et pas parce
+qu'elles feraient le travail deux fois : le stockage est **write-once par clé**
+(`storeConnectionEventCallbacks`, garde `if (!eventEntry.isActive)`), donc passer `callbacks` **et**
+initialiser dans l'enfant **perd le second jeu en silence** — les callbacks de l'enfant ne prennent
+jamais effet. Épinglé par `usePeerOrchestrator.callbacks.test.js`, « une seconde initialisation garde
+SILENCIEUSEMENT les premiers callbacks ».
 
 ℹ️ **`provide(REVERB_CHANNEL, reverb)` n'est pas une prop, et c'est optionnel** : le provider
 l'`inject` (défaut `null`) et le transmet à la couche présence. Sans lui tout fonctionne, mais
@@ -119,6 +123,56 @@ fenêtre de double clic.
 ### Niveau 3 — `usePeerOrchestrator(type, room, options)`
 
 Façade technique. Rarement nécessaire hors tests.
+
+---
+
+## Le canal data : les callbacks et `sendData`
+
+Vrai aux trois niveaux d'entrée. `callbacks` est un objet opaque pour le provider : ce qu'il accepte
+est décidé par la table `connectionEvents` de `createPeerContext.js`, qui reconnaît **cinq clés et
+seulement cinq**. Toute autre clé, et tout ce qui n'est pas une `function`, est **ignoré en silence**
+(`storeConnectionEventCallbacks`).
+
+| Clé | Invocation réelle | À savoir |
+|---|---|---|
+| `onDataReceived` | `(data, conn, conn.metadata)` | le 3ᵉ argument **est** `conn.metadata`, pas un objet reconstruit |
+| `onConnectionOpen` | `(conn)` | wrapper nommé **parce que** `conn.on('open')` n'émet aucun argument ; l'annonce de diffusion part **avant** le callback applicatif |
+| `onConnectionClose` | `(conn)` | **une seule fois par connexion**, garde `customCloseEmitted` |
+| `onConnectionError` | l'argument brut de PeerJS | **le seul jamais wrappé** — épinglé par `usePeerOrchestrator.callbacks.test.js` |
+| `onStreamReceived` | `(stream, conn, conn.metadata)` | hors canal data ; son wrap `await` le suivi interne avant l'appel applicatif |
+
+⚠️ **Ne pas poser soi-même `conn.on('data')` sur la connexion reçue en `onConnectionOpen`.** Le
+transport possède déjà ce listener (`handleData`) : un second doublerait chaque réception **et**
+contournerait la garde de taille en entrée ainsi que l'interception de `BROADCAST_STATE` et des
+enveloppes `__starRoute`. Le geste est `onDataReceived`, jamais `conn.on('data')`.
+
+### `api.sendData(data, destUserSlugs = null)`
+
+`useMediaBroadcast.js:169`, sur la façade. Quatre propriétés qui ne se devinent pas :
+
+- **aucun argument de room** — elle est figée dans `session.onAirRoom` à la construction du contexte ;
+  émettre vers deux rooms demande **deux contextes**, donc deux providers ;
+- **le payload part tel quel** : aucune sérialisation, aucune enveloppe. Ce qu'on passe est ce que le
+  pair reçoit — un objet arrive en objet. `usePeerTransport.mesh.test.js` épingle l'absence de
+  transformation (la valeur ressort identique, chaîne comme `ArrayBuffer`) ;
+- `destUserSlugs = null` ⇒ tous les `remotePeers` (mon slug n'y est jamais). En topologie star côté
+  client, la liste est portée par l'enveloppe et c'est le hub qui la respecte ;
+- au-delà de `MAX_PAYLOAD_BYTES` (64 Ko, `webrtc2.config.js:106`), ou si le payload n'est pas
+  mesurable, **l'envoi est entièrement annulé sans un mot**. Un destinataire injoignable ne produit
+  qu'un `console.warn` par slug.
+
+### Les quatre cas où `onDataReceived` n'est pas appelé, ou l'est amputé
+
+1. **`{ type: 'BROADCAST_STATE', … }` est consommé par l'infra** et n'atteint jamais l'app
+   ([architecture.md](architecture.md#signaux-datachannel--trois-enveloppes-trois-consommateurs)) — **le champ `type` est
+   donc réservé** : un payload applicatif qui reprendrait ce nom serait avalé.
+2. **Payload au-delà de la limite** : abandonné en réception aussi, silencieusement, sans déconnecter
+   le pair.
+3. **Hub star recevant une enveloppe `__starRoute` : le callback est appelé en ARITÉ 1** — pas de
+   `conn`, pas de `metadata`, parce que la connexion est celle du relais et non celle de l'émetteur
+   d'origine. Un consommateur qui lit `conn.peer` sans `?.` casse **sur le hub seulement**.
+4. **Client star** : le message relayé arrive **nu**, l'identité de son émetteur perdue par la
+   retransmission — d'où le `data?.payload ?? data` de `Exemples/ChatSimple/useChatSimple.js`.
 
 ---
 
