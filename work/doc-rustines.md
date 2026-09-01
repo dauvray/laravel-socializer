@@ -587,20 +587,24 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
                               files`) · `docs/modules/webrtc2/tests.md` (le piège de mock) ·
                               `work/webrtc-data-v1-v2.md` (§C écart 5 et §D1) · cet item · les deux
                               `work/README.md`. **Deux tâches ouvertes**, ci-dessous et au lot 5
-                        - [ ] **Re-vérif à deux navigateurs — RESTE À FAIRE.** Mêmes points qu'avant,
-                              plus deux que le 🔴 a rendus discriminants : (1) un trait tracé chez A
-                              apparaît chez B, **sans aucune erreur en console** ; (2) le pointeur de
-                              A bouge chez B (non-régression) ; (3) **B arrive après que A a tracé**
-                              ⇒ B voit le tableau déjà tracé, **une seule fois** — un double
-                              `update_scene` dirait que le test de sens est faux ; (4) sur un tableau
-                              `isSavable`, le dessin est **persisté** après rechargement — c'était
-                              cassé par le throw ; (5) **coller une image** : si la propagation
-                              échoue, elle doit le faire avec un `[Mesh] Payload ignoré` explicite,
-                              **pas un throw** — les deux cas sont désormais distinguables, et c'est
-                              ce qui alimentera la tâche des 64 Ko. ⚠️ Rechargement dur des deux
-                              côtés avant de mesurer, et **aucune écriture dans `.env`** pendant
-                              (`.ai/rules/web-r-t-c2.md` de l'hôte : Vite redémarre et périme les
-                              peerId)
+                        - [x] **Re-vérif à deux navigateurs — PASSÉE le 01/09.** Traits et curseurs
+                              propagés, **aucune erreur des deux côtés** : le 🔴 est fermé, et le
+                              contrat de D1 est tenu.
+                              ℹ️ **Le cas de l'image collée reste rouge, et il est HORS de D1** — il
+                              l'était déjà en v1. Il a fait sortir **deux** défauts antérieurs à la
+                              migration, chacun devenu une tâche du lot 5 : le collage ne propage
+                              rien (aucun `pointerup`, donc aucune émission — d'où le silence des
+                              deux côtés qui a fait croire un moment à autre chose), et une scène
+                              portant une image pèse **294 409 octets**, mesurés, soit **4,5×** le
+                              plafond. Les deux se tiennent : traiter l'un sans l'autre ne fait rien
+                              apparaître chez le pair.
+                              ⚠️ **Ce que cette re-vérif apprend sur la méthode** : le premier
+                              symptôme (« aucun message d'erreur des deux côtés ») désignait deux
+                              défauts empilés, dont un **silencieux par conception** — le second
+                              n'était lisible qu'en `console.warn`, jamais en erreur. Le geste qui a
+                              tranché n'était pas une relecture mais **un test discriminant demandé
+                              à l'utilisateur** : tracer un trait après le collage sépare « rien
+                              n'est émis » de « l'émission est refusée ».
             - [ ] D2 — **Application**. Vérif : l'iframe reçoit `connectionEnabled` puis les messages.
                   ⚠️ **Le test de sens de D1 y est obligatoire**, voir ci-dessus
             - [ ] D3 — **ClassRoom**, en dernier : il imbrique Whiteboard, donc deux providers, donc
@@ -940,6 +944,26 @@ arbitrages datés.
       mécanique que le garde de taille)
       - [ ] Code · - [ ] Doc · - [ ] Tests
 
+- [ ] **Le Whiteboard ne se synchronise que sur un relâchement de pointeur** · effort [M] —
+      **relevé le 01/09/2026 en instruisant le cas de l'image collée.**
+      `ExcalidrawElement` n'émet que **deux** événements : `excalidraw-mouseup` (sur `pointerup`) et
+      `excalidraw-pointer` (sur `pointermove`). Le `onChange` qui émettrait `excalidraw-change` est
+      **commenté dans le JSX** (l.36-38), et son écoute est commentée dans le composant Vue
+      (`mounted` / `beforeUnmount` / la méthode `handleExcalidrawChange`).
+      **Conséquence : tout ce qui ne finit pas par un relâchement de pointeur sur le canvas ne
+      propage rien** — un collage (`Ctrl+V`), un `Ctrl+Z`, la touche Suppr, une insertion depuis la
+      bibliothèque. L'auteur voit sa modification, les autres non, **jusqu'au prochain clic** — et
+      sans un mot en console des deux côtés, puisque rien n'est même tenté. C'est ce qui a fait
+      croire, un moment, que l'image butait sur les 64 Ko.
+      ⚠️ **Antérieur à la migration** : la v1 avait les deux mêmes événements et le même `onChange`
+      commenté. Ce n'est pas une régression de D1.
+      ⚠️ **Et ce n'est pas une ligne à décommenter** : `onChange` tire à **chaque** modification, y
+      compris pendant un tracé — brancher tel quel inonderait le canal de scènes complètes, chacune
+      pouvant approcher le plafond. Un débounce ne suffit pas à le rendre raisonnable : c'est la même
+      tâche que la synchronisation par **delta**, ci-dessus. Les traiter ensemble ou pas du tout.
+      Annotation : aucune — le fait n'est écrit nulle part, et c'est le défaut
+      - [ ] Code · - [ ] Doc · - [ ] Tests
+
 - [ ] **`ExcalidrawElement.updateScene` lit `data.state`, que personne n'émet** · effort [S] —
       **relevé le 01/09/2026 en corrigeant D1.**
       `this.excalidrawAPI.updateScene({ elements: data.elements, appState: data.state, files: data.files })`
@@ -966,13 +990,21 @@ arbitrages datés.
       l'émetteur. Symptôme produit : « le tableau ne se synchronise plus », sans erreur.
       ⚠️ **C'est une régression de la migration v1 → v2, pas une limite historique** : le `sendData`
       du store v1 n'avait aucun plafond (`safeStringify` puis `conn.send`, PeerJS chunkant lui-même).
-      **Trois sorties, à arbitrer :** relever `MAX_PAYLOAD_BYTES` pour le mode data (⚠️ c'est la
-      surface anti-DoS de [`securite.md`](../docs/modules/webrtc2/securite.md), appliquée aux **deux**
-      bouts — un plafond d'émission relevé sans le pendant en réception ne change rien) · découper la
-      scène en frames applicatives · synchroniser par **delta** plutôt que par scène entière (la
-      seule qui fasse aussi baisser le débit de `pointer_move` + `update_scene` en régime nominal).
-      **Mesurer d'abord** : la taille réelle d'un `update_scene` sur quelques tracés, puis avec une
-      image — l'arbitrage n'a pas de sens sans ce chiffre, et personne ne l'a.
+      ✅ **MESURÉ le 01/09/2026, à deux navigateurs** — le chiffre que cette tâche réclamait :
+      **`[Mesh] Payload ignoré: trop volumineux (294409 octets > 65536)`** pour une scène portant
+      **une seule image collée**. Soit **4,5× le plafond**. Quelques tracés seuls passent sans
+      problème ; c'est bien `files` (le dataURL base64) qui domine, et lui seul.
+      **Ce que la mesure élimine :** passer le base64 en binaire ne gagnerait que ~27 % (≈ 215 Ko,
+      toujours 3× trop), et un plafond relevé « un peu » ne résout rien — il faudrait des **Mo**.
+      **Les sorties qui restent, et aucune n'est petite :**
+      · **relever `MAX_PAYLOAD_BYTES` à l'échelle des images** — ⚠️ c'est la surface anti-DoS de
+      [`securite.md`](../docs/modules/webrtc2/securite.md), appliquée aux **deux** bouts : accepter
+      5 Mo en émission, c'est accepter que n'importe quel pair m'en pousse 5 Mo par trame ;
+      · **sortir les images du canal data** — elles sont déjà persistées côté serveur sur un tableau
+      `isSavable` (`saveWhiteBoard`) : n'émettre que les `elements` et laisser le récepteur chercher
+      le fichier. ⚠️ Ne couvre **pas** les tableaux non savables, qui n'ont aucune copie serveur ;
+      · **découper en frames applicatives**, ou **synchroniser par delta** — la seule qui fasse aussi
+      baisser le débit de `update_scene` en régime nominal, et la seule qui traite le fond.
       Annotation : `docs/modules/webrtc2/api.md` (sous `api.sendData`, le ⚠️ qui nomme la scène
       Excalidraw) · `WhiteboardComponent.vue` (docblock de `handleExcalidrawMouseUp`) ·
       `work/webrtc-data-v1-v2.md` (écart 5, qui part avec la v1)

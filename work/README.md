@@ -71,7 +71,12 @@ explicitement :
    **Correctif gratuit, trouvé en lisant le récepteur avant de choisir comment sérialiser** :
    `ExcalidrawElement.updateScene` lit `data.state`, une clé que **personne n'émet** — l'`appState`
    transmis n'a jamais été appliqué. On ne l'émet plus : la `Map` disparaît, le payload maigrit, et
-   rien ne change pour personne. **Re-vérification à deux navigateurs ouverte**, seule case décochée. **Le lot a corrigé la recette de D0 sur deux points, et les deux servent D2 et D3** :
+   rien ne change pour personne. ✅ **Re-vérifié à deux navigateurs : traits et curseurs propagés, zéro
+   erreur. D1 est CLOS.** Le cas de l'**image collée** reste rouge et sort du lot — il l'était déjà en
+   v1, et il a fait tomber **deux** défauts antérieurs à la migration, désormais tâches du lot 5 : le
+   collage n'émet **rien** (aucun `pointerup` ; `onChange` est commenté dans le JSX), et une scène
+   portant une image pèse **294 409 octets** — mesuré, **4,5×** le plafond. Les deux se tiennent :
+   traiter l'un sans l'autre ne fait rien apparaître chez le pair. **Le lot a corrigé la recette de D0 sur deux points, et les deux servent D2 et D3** :
    `onConnectionOpen` tire dans les **deux sens** en v2 alors que le `callbackConnection` de la v1 ne
    tirait que sur l'entrant — donc « préserver l'effet de bord » ne peut pas se faire par substitution
    (sans garde, chaque pair renvoyait sa scène deux fois ; chez D2, l'iframe recevrait une annonce de
