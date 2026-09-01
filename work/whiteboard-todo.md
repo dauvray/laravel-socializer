@@ -88,6 +88,16 @@ Ce n'est pas un oubli de garde, c'est une politique absente. Trois questions, da
 
 ## Ailleurs, et volontairement pas ici
 
+> ⚓ **Cette section est POINTÉE depuis l'extérieur** : `work/webrtc-data-v1-v2.md` §D1 y renvoie
+> pour la preuve que le défaut du renvoi de scène est antérieur au lot D1, au lieu de la recopier.
+> Ne pas la renommer ni élaguer les deux pièges de grep ci-dessous tant que ce renvoi vit — il
+> pointerait dans le vide, en silence.
+>
+> ℹ️ **Et cette obligation a une date de fin, écrite ici pour qu'elle ne survive pas à sa cause** :
+> `webrtc-data-v1-v2.md` est un fichier de recette qui **part avec `components/WebRTC/`** au lot F/G
+> de [`doc-rustines.md`](doc-rustines.md). Le jour où il disparaît, plus rien ne pointe ici et cette
+> section redevient libre.
+
 - **Les trois défauts du chemin de chargement** (`loadWhiteBoard` rend `null` et `updateScene`
   l'applique en silence · `loadScene()` sans `.catch`, appelé dans `created()` avant l'existence des
   refs · la fenêtre où `excalidrawAPI` n'est pas prêt à l'arrivée d'une scène) sont au **lot 5 de
