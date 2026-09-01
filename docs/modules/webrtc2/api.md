@@ -146,6 +146,16 @@ transport possède déjà ce listener (`handleData`) : un second doublerait chaq
 contournerait la garde de taille en entrée ainsi que l'interception de `BROADCAST_STATE` et des
 enveloppes `__starRoute`. Le geste est `onDataReceived`, jamais `conn.on('data')`.
 
+⚠️ **`onConnectionOpen` est appelé dans les DEUX SENS, et en mesh chaque paire a deux connexions.**
+`setUpConnectionListeners` est appelé par `usePeerConnections` sur la connexion **sortante** que
+j'ouvre, et par `usePeerTransport` sur celle que je **reçois** : un effet de bord posé là s'exécute
+donc **deux fois par pair**, pas une. Il n'y a pas de drapeau de sens — il se lit sur la metadata,
+qui est construite par l'émetteur de la connexion : sur une **sortante** `conn.metadata.from` est
+**mon** slug, sur une **entrante** c'est celui du pair. Un consommateur qui ne veut réagir qu'à
+l'arrivée d'autrui doit poser ce test lui-même (modèle :
+`Whiteboard/WhiteboardComponent.vue#handleConnectionOpen`, qui renvoie la scène courante à
+l'arrivant).
+
 ### `api.sendData(data, destUserSlugs = null)`
 
 `useMediaBroadcast.js:169`, sur la façade. Quatre propriétés qui ne se devinent pas :
@@ -160,6 +170,14 @@ enveloppes `__starRoute`. Le geste est `onDataReceived`, jamais `conn.on('data')
 - au-delà de `MAX_PAYLOAD_BYTES` (64 Ko, `webrtc2.config.js:106`), ou si le payload n'est pas
   mesurable, **l'envoi est entièrement annulé sans un mot**. Un destinataire injoignable ne produit
   qu'un `console.warn` par slug.
+
+⚠️ **Ce plafond de 64 Ko n'est pas théorique : un consommateur du paquet le frôle.** La scène
+Excalidraw du Whiteboard (`update_scene` : `getSceneElements()` + `getAppState()` + `getFiles()`)
+est le plus gros payload du paquet, et le seul dont la taille est pilotée par l'utilisateur — une
+image collée dans le tableau, encodée en base64 dans `files`, suffit à le franchir. L'abandon étant
+muet des deux côtés, le symptôme produit est « le tableau ne se synchronise plus », sans erreur.
+Aucune découpe ni synchronisation par delta n'existe aujourd'hui : c'est une **borne assumée**, pas
+un cas traité.
 
 ### Les quatre cas où `onDataReceived` n'est pas appelé, ou l'est amputé
 

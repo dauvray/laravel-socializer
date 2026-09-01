@@ -10,21 +10,31 @@
             👆 <span class="badge text-bg-light">{{ id }}</span>
           </div>
       </div>
-      <DataUserPeerConnection 
+      <!--
+        `:room` TOUJOURS explicite : sans elle la prop retombe sur 'app' et le contextId
+        devient `data-app`, celui que System/Notifications.vue occupe en permanence sur
+        toute page. Le registre de contextes est en last-write-wins MUET : le dernier
+        monté capterait tout le routage entrant et celui-ci resterait vivant et sourd.
+
+        `mode` non écrit ('data' est le défaut) et `options` non passée : un objet
+        remplacerait le défaut EN BLOC, faisant disparaître `topology` — qui retomberait
+        alors silencieusement sur le mesh dont ce module a besoin.
+      -->
+      <MediaBroadcastProvider
+          ref="dataBroadcast"
           v-if="users && whiteBoardId"
           :users="users"
-          :roomId="whiteBoardId"
-          :callback-connection="connectionDataCallback"
-      ></DataUserPeerConnection>
+          :room="whiteBoardId"
+          :callbacks="dataCallbacks"
+      ></MediaBroadcastProvider>
     </div>
 </template>
-  
+
   <script>
-  
+
     import { defineAsyncComponent } from '@vue/runtime-core'
     import "./ExcalidrawElement.jsx"; // Import du Web Component
-    import DataUserPeerConnection from '~socializer/components/WebRTC/widgets/DataUserPeerConnection.vue'
-    import { usePeerStore } from '~socializer/stores/peers.js'
+    import MediaBroadcastProvider from '~socializer/components/WebRTC2/Widgets/Mediaplayer/MediaBroadcastProvider.vue'
     import { mapActions, mapState } from 'pinia'
     import { useMeStore } from '~estarter/stores/me.js'
     import { useServerStore } from '~socializer/stores/server.js'
@@ -33,7 +43,7 @@
     export default {
         name: "Whiteboard",
         components: {
-          DataUserPeerConnection,
+          MediaBroadcastProvider,
           RoomUsersList: defineAsyncComponent(() => import('~socializer/components/Server/widgets/RoomUsersList.vue')),
           ChatCreatorButton,
         },
@@ -84,7 +94,26 @@
               }
               return this.room
             }
-          }
+          },
+          /**
+           * Callbacks du canal data, passés au MediaBroadcastProvider.
+           *
+           * ⚠️ `:callbacks` XOR une initialisation de l'api dans un enfant, jamais les
+           * deux : le stockage est write-once par clé et le second jeu serait perdu EN
+           * SILENCE. Ici il n'y a pas d'enfant dans le slot, donc c'est bien cette voie.
+           *
+           * Le provider ne lit cet objet qu'une fois, en onMounted : sa réactivité de
+           * computed ne sert à rien. Ce sont les méthodes qu'il pointe qui voient l'état
+           * frais, par `this`.
+           *
+           * @returns {{ onDataReceived: Function, onConnectionOpen: Function }}
+           */
+          dataCallbacks: function() {
+            return {
+              onDataReceived: this.handleDataReceived,
+              onConnectionOpen: this.handleConnectionOpen,
+            }
+          },
         },
         created() {
           if(this.isSavable) {
@@ -122,53 +151,77 @@
           this.$refs.excalidrawElement.removeEventListener("excalidraw-pointer", this.handlePointerMove);
         },
         methods: {
-          ...mapActions(usePeerStore, [
-                'sendData',
-            ]),
           ...mapActions(useServerStore, [
                 'loadWhiteBoard',
                 'saveWhiteBoard',
             ]),
 
           /*------  DATA CONNECTION ----------*/
-          connectionDataCallback(conn) {
-                  conn.on("open", () => {
+          /**
+           * Réception sur le canal data.
+           *
+           * ⚠️ Aucun JSON.parse : le sendData de la v2 émet le payload TEL QUEL, là où le
+           * store v1 le sérialisait avant d'envoyer. Un JSON.parse laissé en place
+           * recevrait un objet et lèverait.
+           *
+           * ⚠️ Et surtout : ne JAMAIS poser de conn.on('data') soi-même. Le transport
+           * possède déjà ce listener — un second doublerait chaque réception ET
+           * contournerait la garde de taille en entrée comme l'interception des
+           * enveloppes d'infra. Le geste est ce callback, pas conn.on('data').
+           *
+           * @param {{ action: string, from: string, details: Object }} data
+           * @returns {void}
+           */
+          handleDataReceived(data) {
+            switch(data.action) {
+                case 'update_scene':
+                  this.updateScene(data.details)
+                  break
 
-                    conn.on("data", (data) => {
-                      data = JSON.parse(data)
+                case 'pointer_move':
+                  this.pointers[data.from] = data.details;
+                  break
+            }
+          },
+          /**
+           * Renvoie la scène courante à un arrivant : c'est ce qui fait qu'il voit le
+           * tableau déjà tracé. Sous `isSavable`, il le charge du serveur à la place.
+           *
+           * ⚠️ Restreint aux connexions ENTRANTES, et ce garde n'est pas cosmétique : le
+           * `callbackConnection` de la v1 n'était appelé QUE sur l'entrant, alors que
+           * `onConnectionOpen` l'est dans les DEUX sens (`setUpConnectionListeners` est
+           * appelé par `usePeerConnections` au sortant ET par `usePeerTransport` à
+           * l'entrant). En mesh chaque paire a deux connexions : sans ce garde, chaque
+           * pair renverrait sa scène deux fois par arrivant.
+           *
+           * Le sens se lit sur la metadata, construite par l'émetteur de la connexion :
+           * sur une SORTANTE `from` est mon slug, sur une ENTRANTE c'est celui du pair.
+           *
+           * @param {Object} conn  DataConnection PeerJS
+           * @returns {void}
+           */
+          handleConnectionOpen(conn) {
+            if(this.isSavable) {
+              return
+            }
 
-                        switch(data.action) {
-                            case 'update_scene':
-                              this.updateScene(data.details)
-                              break
+            if(!this.me?.slug || conn?.metadata?.from === this.me.slug) {
+              return
+            }
 
-                            case 'pointer_move':
-                              this.pointers[data.from] = data.details;
-                              break
-                        }
-                    });
+            setTimeout(() => {
+              const elements = this.$refs.excalidrawElement.getSceneElements()
 
-                    // envoyer le contenu actuel du tableau blanc lors de la connexion
-                    if(!this.isSavable) {
-                      setTimeout(() => {
-                        const elements = this.$refs.excalidrawElement.getSceneElements()
+              if(elements.length > 0) {
+                const current = {
+                    elements,
+                    appState: this.$refs.excalidrawElement.getAppState(),
+                    files: this.$refs.excalidrawElement.getFiles(),
+                }
 
-                        if(elements.length > 0) {
-                          const current = {
-                              elements,
-                              appState: this.$refs.excalidrawElement.getAppState(),
-                              files: this.$refs.excalidrawElement.getFiles(),
-                          }
-
-                          this.handleExcalidrawMouseUp({ detail: current });
-                        }
-                      }, 1000); // attendre que excalidraw soit prêt
-                    }
-                });
-
-                conn.on("close", () => {
-                    console.log('connection data board fermée')
-                });
+                this.handleExcalidrawMouseUp({ detail: current });
+              }
+            }, 1000); // attendre que excalidraw soit prêt
           },
           // handleExcalidrawChange(event) {
           //   const data = event.detail;
@@ -178,16 +231,25 @@
           //         details: data,
           //     }, this.room.id)
           // },
+          /**
+           * ⚠️ Le plus gros payload du paquet, et le seul dont la taille est pilotée par
+           * l'utilisateur : au-delà de MAX_PAYLOAD_BYTES (64 Ko) l'envoi est entièrement
+           * abandonné, sans un mot de plus qu'un console.warn. Une image collée dans le
+           * tableau y suffit. Borne assumée à la migration du canal data v1 → v2 (le
+           * sendData du store v1 n'en avait aucune) — voir work/webrtc-data-v1-v2.md.
+           */
           handleExcalidrawMouseUp(event) {
             const data = event.detail
 
-            this.sendData({
-              data: {
-                    action: 'update_scene',
-                    from: this.me.name,
-                    details: data,
-                }
-              }, this.whiteBoardId)
+            // `?.` : le provider est sous v-if alors que les deux listeners DOM sont
+            // posés inconditionnellement en mounted(). L'ancien sendData était une action
+            // de store, donc toujours appelable ; ce ref-ci vaut undefined si le v-if est
+            // faux. Pas d'argument de room : elle est figée dans le contexte du provider.
+            this.$refs.dataBroadcast?.api.sendData({
+                action: 'update_scene',
+                from: this.me.name,
+                details: data,
+            })
 
               if(this.isSavable) {
                 this.saveScene(data)
@@ -195,13 +257,11 @@
           },
           handlePointerMove(event) {
             const data = event.detail;
-            this.sendData({
-              data:{
-                action: 'pointer_move',
-                from: this.me.name,
-                details: data,
-              }
-            }, this.whiteBoardId)
+            this.$refs.dataBroadcast?.api.sendData({
+              action: 'pointer_move',
+              from: this.me.name,
+              details: data,
+            })
           },
           async handleFileUpload(event) {
             const file = event.target.files[0];

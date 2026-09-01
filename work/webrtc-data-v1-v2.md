@@ -1,7 +1,12 @@
 # Canal data — la traduction v1 → v2, écrite une fois
 
 > **Recette de chantier, lot D de [doc-rustines.md](doc-rustines.md).** Elle s'ouvre en migrant
-> **D1** (Whiteboard), **D2** (Application) et **D3** (ClassRoom), et rien d'autre.
+> **D1** (Whiteboard, **fait le 01/09/2026**), **D2** (Application) et **D3** (ClassRoom), et rien
+> d'autre.
+>
+> **D1 a corrigé la recette sur deux points, tous deux valables pour D2 et D3** : `onConnectionOpen`
+> tire dans les **deux sens** (§B), et le plafond de 64 Ko est une **régression** de la v2 sur la v1
+> (§C, écart 5). Une recette écrite par lecture se vérifie au premier lot qui l'exécute.
 >
 > **Condition de suppression : ce fichier part avec `components/WebRTC/`, au lot F/G.** Une fois la
 > v1 supprimée, sa colonne de gauche ne décrit plus rien — le précédent est `work/webrtc-v1-notes.md`,
@@ -77,6 +82,14 @@ et les quatre cas où `onDataReceived` n'arrive pas ou arrive en arité 1, sont 
 [`api.md`](../docs/modules/webrtc2/api.md#le-canal-data--les-callbacks-et-senddata). **Chaque appelant
 se réécrit** : il n'y a pas de substitution mécanique.
 
+⚠️ **Le « seulement pour les connexions entrantes » de la v1 est le piège du lot, et il n'était pas
+écrit ici avant D1.** `onConnectionOpen` est appelé dans les **deux sens** (détail et test de sens
+dans [`api.md`](../docs/modules/webrtc2/api.md#le-canal-data--les-callbacks-et-senddata)) : tout effet
+de bord porté par l'ancien `callbackConnection` s'exécute donc **deux fois par pair** après
+substitution, et une fois sur une connexion dont `metadata.from` est **mon propre slug**. Les deux
+appelants qui ont un tel effet de bord sont **D1** (renvoi de la scène — traité) et **D2** (annonce
+`connectionEnabled` à l'iframe, **pas encore traité**, voir §D). D3 n'a qu'un `console.log`.
+
 Pour ces trois modules, la voie est **`:callbacks` sur le provider** — ils sont en Options API et
 gèrent la réception eux-mêmes. L'objet se déclare en `computed` ou en `data` ; le provider ne le lit
 qu'une fois, en `onMounted`.
@@ -90,7 +103,11 @@ d'infra.
 
 ---
 
-## C. La bascule d'émission — quatre écarts, tous silencieux
+## C. La bascule d'émission — cinq écarts, tous silencieux
+
+*(Quatre à l'écriture de la recette ; le cinquième — le plafond de 64 Ko — a été trouvé en exécutant
+D1, et il n'est pas dans la table ci-dessous parce qu'il n'oppose pas deux formes mais deux
+comportements.)*
 
 `mapActions(usePeerStore, ['sendData'])` puis `this.sendData({ data: … }, roomId)` →
 **`this.$refs.<ref>.api.sendData(payload, destUserSlugs)`**.
@@ -102,16 +119,27 @@ d'infra.
 | 3 | **room** : 2ᵉ argument, explicite chez les trois | **aucune** — figée à la construction du contexte |
 | 4 | **destinataires** : `{ include: [...] }` / `{ exclude: [...] }` dans le message, honorés par le store | `destUserSlugs` en 2ᵉ argument — l'équivalent d'`include` seul |
 
-**Écart 2 — les trois sites, et un piège de grep.** `WhiteboardComponent.vue:138`,
-`ClassRoomComponent.vue:140`, `ApplicationComponent.vue:248`. ⚠️ **Application a quatre `JSON.parse`
-et un seul est celui du canal data** : `:153` (dépendances du composant), `:217` (message venant de
-l'iframe, gardé par `isStringifiedJSon`) et `:241` (clone avant `postMessage`) **restent**.
+**Écart 2 — les sites, et un piège de grep.** Trois au départ ; **celui du Whiteboard est retiré
+depuis D1**, restent `ClassRoomComponent.vue:140` (D3) et `ApplicationComponent.vue:~247` (D2).
+⚠️ **Application a quatre `JSON.parse` et un seul est celui du canal data** : `:153` (dépendances du
+composant), `:217` (message venant de l'iframe, gardé par `isStringifiedJSon`) et `:241` (clone avant
+`postMessage`) **restent**.
 
 > Cet écart contredit le cadrage du lot 1, qui annonçait « les `JSON.parse` des trois appelants
 > restent valables tels quels ». Ils ne le sont pas : laissés en place, ils reçoivent un objet et
 > lèvent. C'est la seule affirmation structurante de ce fichier que **aucun test ne tient** —
 > `usePeerTransport.mesh.test.js` épingle bien l'absence de transformation à l'émission, mais tous ses
 > cas passent une chaîne ou un `ArrayBuffer`, jamais un objet.
+
+**Écart 5 — le plafond de 64 Ko, découvert à D1 : c'est une RÉGRESSION, pas une borne native.** Le
+`sendData` du store v1 n'avait **aucune** limite de taille (`stores/peers/actions.js:343-372` :
+`safeStringify` puis `conn.send`, PeerJS chunkant lui-même) ; celui de la v2 abandonne l'envoi
+au-delà de `MAX_PAYLOAD_BYTES`, **sans un mot**, à l'émission comme en réception. La substitution
+introduit donc un mode de panne que la v1 n'avait pas. La borne elle-même et le consommateur qui la
+frôle — la scène Excalidraw du Whiteboard — sont écrits dans
+[`api.md`](../docs/modules/webrtc2/api.md#apisenddatadata-destuserslugs--null), qui les possède ;
+**seul le « c'était mieux avant » est ici**, et il part avec la v1. Assumé à D1, tâche de découpe ou
+de delta ouverte dans [doc-rustines.md](doc-rustines.md).
 
 **Écart 3.** Un composant qui émet vers deux rooms a besoin de deux contextes, donc de deux
 providers. C'est déjà la situation de ClassRoom (le sien, plus celui du Whiteboard imbriqué) : rien à
@@ -138,18 +166,37 @@ qui rend le lot F possible.
 
 ## D. Ce que chaque lot a en propre — mesuré, pas supposé
 
-**D1 · Whiteboard** — `Whiteboard/WhiteboardComponent.vue`
+**D1 · Whiteboard** — `Whiteboard/WhiteboardComponent.vue` — ✅ **MIGRÉ le 01/09/2026**
 
-- **Le seul des trois qui imbrique `conn.on('data')` DANS `conn.on('open')`** : à aplatir en deux
-  callbacks indépendants.
+- **Le seul des trois qui imbriquait `conn.on('data')` DANS `conn.on('open')`** : aplati en deux
+  callbacks indépendants (`handleDataReceived`, `handleConnectionOpen`), passés par `:callbacks` via
+  un `computed` `dataCallbacks` de deux lignes qui ne fait que pointer les deux méthodes — le code du
+  canal data reste ainsi dans `methods`, sous la bannière qu'il avait déjà.
 - **L'effet de bord du `on('open')` est réel et doit être préservé** : un `setTimeout(…, 1000)` relit
   la scène Excalidraw (`getSceneElements` / `getAppState` / `getFiles`) et la renvoie à l'arrivant,
   sous condition `!isSavable`. C'est ce qui fait qu'un nouveau venu voit le tableau déjà tracé.
+  ⚠️ **Le préserver a demandé un garde que cette recette n'annonçait pas** : le test de sens de la
+  connexion (§B). Sans lui, chaque pair renvoyait sa scène **deux fois** par arrivant.
 - **Sa room n'est pas `room.id`** mais `whiteBoardId` = `room.content[0].id ?? room.id` — l'id du
   vertex de contenu.
 - Deux émissions : `update_scene` (mouseup) et `pointer_move`.
+- ℹ️ **Un nouveau mode de panne, propre au changement d'accès** : `sendData` était une action de
+  store, donc toujours appelable ; `this.$refs.dataBroadcast` vaut `undefined` quand le `v-if` du
+  provider est faux, alors que les deux listeners DOM sont posés inconditionnellement en `mounted()`.
+  D'où le `?.` aux deux émissions. **Vrai pour les trois modules** — chacun met son provider sous
+  `v-if`.
+- ℹ️ Laissé tel quel, et signalé : le `handleExcalidrawChange` **commenté** cite encore
+  `this.sendData(…, this.room.id)`. Il était déjà périmé avant D1 (la méthode vivante utilise
+  `whiteBoardId`) ; il relève de « vider les poches mortes », pas de ce lot.
 
 **D2 · Application** — `Application/ApplicationComponent.vue`
+
+- ⚠️ **Son `on('open')` est un effet de bord, et le test de sens de §B lui est OBLIGATOIRE** :
+  il poste `connectionEnabled` à l'iframe avec `slug: conn.metadata.from`. Substitué tel quel, il
+  s'exécuterait aussi sur la connexion **sortante**, où `from` est **mon propre slug** — l'iframe
+  recevrait donc une annonce de pair qui me désigne moi, sans erreur ni trace. Le second site
+  (`connectionDisabled`, sur `close`) est indemne : `onConnectionClose` ne tire qu'une fois par
+  connexion, mais il tire sur les deux, donc le même test s'y applique.
 
 - **Dépend de `conn.metadata.from`** (deux sites : `connectionEnabled` et `connectionDisabled` vers
   l'iframe). v2 fournit le **même champ**, en 3ᵉ argument d'`onDataReceived` — mais il est **absent en

@@ -113,8 +113,8 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
       projet hôte* — parce que deux arbres coexistent avec des fichiers homonymes
       (`MediaBroadcastProvider.vue`) et qu'un symbole trouvé au grep peut venir de la v1.
 
-      **Vérifié : cinq appelants vivants au cadrage, quatre depuis le lot C**, plus un fichier
-      désactivé. L'archive de lecture
+      **Vérifié : cinq appelants vivants au cadrage, quatre depuis le lot C, trois depuis D1**, plus
+      un fichier désactivé. L'archive de lecture
       `work/webrtc-v1-notes.md` a été supprimée : sa condition de conservation — « le temps de
       vérifier qu'aucun appelant ne subsiste » — était remplie, et le recensement vit désormais
       dans la doc du module, avec la commande qui le recompte.
@@ -124,8 +124,8 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
       | ~~`System/widgets/AlertComponent.vue`~~ | ✅ **migré le 31/08/2026 (lot C)** — les deux alertes vivent dans `WebRTC2/Widgets/UI/Alerts/` |
       | `AudioRoom/AudioComponent.vue` | `WebRTC/widgets/MediaBroadcastProvider.vue`, `ui/AudioDefaultUserButtonUI.vue` |
       | `Application/ApplicationComponent.vue` | `WebRTC/widgets/DataUserPeerConnection.vue` |
-      | `Whiteboard/WhiteboardComponent.vue` | idem |
-      | `ClassRoom/ClassRoomComponent.vue` | idem |
+      | ~~`Whiteboard/WhiteboardComponent.vue`~~ | ✅ **migré le 01/09/2026 (lot D1)** — `WebRTC2/Widgets/Mediaplayer/MediaBroadcastProvider.vue`, store v1 débranché |
+      | `ClassRoom/ClassRoomComponent.vue` | `WebRTC/widgets/DataUserPeerConnection.vue` |
       | `AudioRoom/__AudioComponent copy.vue` | `WebRTC/composables/usePeers.js` — fichier déjà désactivé (`__`) |
       | **`Server/Server.vue`** | **`stores/peers.js` seul — jamais `WebRTC/`** · relevé le 31/08/2026 |
 
@@ -139,10 +139,11 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
 
       Corollaire sur les trois appelants data : ils prennent aussi `sendData` du store v1 par
       `mapActions(usePeerStore, ['sendData'])`. Leur migration n'est donc pas une substitution de
-      balise — elle débranche aussi le store.
+      balise — elle débranche aussi le store. ✅ **Fait pour le Whiteboard (D1, 01/09)** ; restent
+      Application (D2) et ClassRoom (D3).
 
-      La v1 n'est donc pas « morte en attente de confirmation » : elle est **vivante sous cinq
-      composants**, dont un en `defineAsyncComponent`, invisible à une recherche d'`import`
+      La v1 n'est donc pas « morte en attente de confirmation » : elle était **vivante sous cinq
+      composants** au cadrage, dont un en `defineAsyncComponent`, invisible à une recherche d'`import`
       statique. C'est écrit dans
       [`docs/modules/webrtc2/INDEX.md`](../docs/modules/webrtc2/INDEX.md) — l'annotation qui la
       donnait pour simplement morte sous-estimait le problème, ce qui est pire que de l'ignorer.
@@ -159,8 +160,9 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
       d'`AudioContext`).
 
       Périmètre : **11** fichiers `WebRTC/` (13 au cadrage — le lot C en a sorti deux), le store
-      `stores/peers.js` (+ son dossier `stores/peers/`) et ses **six** consommateurs, la migration
-      des **quatre** appelants restants vers `WebRTC2/`, et le sort de `SpectrumAnalyzer`.
+      `stores/peers.js` (+ son dossier `stores/peers/`) et ses **cinq** consommateurs restants (six
+      au cadrage, D1 en a débranché un), la migration des **trois** appelants restants vers
+      `WebRTC2/`, et le sort de `SpectrumAnalyzer`.
       Annotation (7 fichiers) : `CLAUDE.md` · `docs/INDEX.md` ·
       `docs/modules/webrtc2/INDEX.md` · `docs/modules/autres-modules.md` ·
       `docs/architecture/package.md` · `docs/modules/chat.md` ·
@@ -482,9 +484,68 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
                   - [x] Tests — **aucun**, volet code vide. Ce qui remplace le rouge de naissance :
                         chaque affirmation du contrat v2 nomme le test qui l'épingle, ou dit qu'aucun
                         ne le tient (le cas de la sérialisation, ci-dessus)
-            - [ ] D1 — **Whiteboard**, le plus facile à prouver. Vérif : deux navigateurs, un trait
-                  tracé chez A apparaît chez B, le pointeur distant bouge
-            - [ ] D2 — **Application**. Vérif : l'iframe reçoit `connectionEnabled` puis les messages
+            - [x] D1 — **Whiteboard** — **fait le 01/09/2026.** Un seul fichier de code, exactement
+                  ce que la recette annonçait : balise, callbacks, deux émissions, débranchement du
+                  store v1. Le décompte des appelants v1 vivants passe de **quatre à trois**, vérifié
+                  aux deux greps du recompte. Suite JS **85 fichiers / 1501 cas, 0 échec** —
+                  identique à la baseline d'A3, mesurée avant l'édition — et `npm run build` vert.
+                  **La recette de D0 s'est trompée deux fois, et les deux corrections servent D2 et
+                  D3 :**
+                  · ⚠️ **`onConnectionOpen` tire dans les DEUX SENS** — `setUpConnectionListeners`
+                  est appelé par `usePeerConnections` sur la sortante **et** par `usePeerTransport`
+                  sur l'entrante — là où le `callbackConnection` de la v1 ne tirait que sur
+                  l'entrante. La recette disait bien « seulement pour les connexions entrantes » de
+                  la v1, mais n'en tirait pas la conséquence : **« préserver l'effet de bord » ne
+                  peut pas se faire par substitution**. Sans garde, chaque pair renvoyait sa scène
+                  **deux fois** par arrivant. Le sens se lit sur `conn.metadata.from` — mon slug sur
+                  une sortante, celui du pair sur une entrante — parce que la metadata est construite
+                  par l'émetteur de la connexion. **Et ce n'est pas cosmétique chez D2** : son
+                  `on('open')` poste `connectionEnabled { slug: conn.metadata.from }` à l'iframe, qui
+                  recevrait donc une annonce de pair **me désignant moi**, sans erreur ni trace ;
+                  · ⚠️ **le plafond de 64 Ko est une RÉGRESSION, pas une borne native** : le
+                  `sendData` du store v1 n'avait **aucune** limite (`safeStringify` puis `conn.send`,
+                  PeerJS chunkant lui-même), celui de la v2 abandonne l'envoi **sans un mot**. Or
+                  `update_scene` transporte la scène Excalidraw entière — le plus gros payload du
+                  paquet et le seul dont la taille est pilotée par l'utilisateur : une image collée
+                  suffit. **Assumé ici** (relever `MAX_PAYLOAD_BYTES` ou découper la scène touche la
+                  surface anti-DoS de `securite.md`, ce n'est pas un détail de migration) et ouvert
+                  en tâche propre, ci-dessous.
+                  ℹ️ **Un mode de panne neuf, propre au changement d'accès et vrai pour les trois
+                  modules** : `sendData` était une action de store, toujours appelable, alors que
+                  `$refs.dataBroadcast` vaut `undefined` quand le `v-if` du provider est faux — et
+                  les listeners DOM, eux, sont posés inconditionnellement en `mounted()`. D'où le
+                  `?.` aux deux émissions.
+                  - [x] Code — `WhiteboardComponent.vue`, **le seul fichier**. `mapActions` reste
+                        importé : `useServerStore` s'en sert encore, seul le `mapActions(usePeerStore,
+                        …)` part
+                  - [x] Doc — **quatre couches.** `docs/modules/webrtc2/INDEX.md` (le décompte,
+                        quatre → trois) · `docs/modules/webrtc2/api.md` (**les deux faits durables
+                        que D1 a mis au jour** : le double sens d'`onConnectionOpen` avec son test,
+                        et la scène Excalidraw comme payload qui frôle le plafond) ·
+                        `work/webrtc-data-v1-v2.md` (le périssable : le « c'était mieux avant » de
+                        l'écart 5, le piège de D2, et l'en-tête qui dit que la recette s'est trompée)
+                        · cet item, le `work/README.md` du paquet et celui de l'hôte.
+                        **Aucun `boost:update` requis**, vérifié : `Whiteboard`,
+                        `DataUserPeerConnection`, `onConnectionOpen` et `sendData` rendent **zéro**
+                        sur `core.blade.php` **et** sur le `CLAUDE.md` du paquet. ⚠️ `quatre` y rend
+                        **un** hit, et il fallait le lire au lieu de le compter : c'est le titre
+                        « Les quatre pièges qui coûtent cher », sans rapport avec le décompte des
+                        appelants — et le piège n°1, « `WebRTC/` est mort », ne porte aucun nombre et
+                        reste vrai jusqu'au lot F. **Septième tâche d'affilée** dans cette
+                        configuration
+                  - [x] Tests — **aucun**, et c'est le contrat du lot D : composant métier hors du
+                        filet, aucun test ne l'importe (d'où la suite strictement inchangée).
+                        `npm run build` est le seul contrôle qui voie la résolution de l'import neuf
+                  - [ ] **Vérif manuelle — RESTE À FAIRE, par David.** Deux navigateurs, deux
+                        comptes, même room whiteboard : (1) un trait tracé chez A apparaît chez B au
+                        mouseup ; (2) le pointeur de A bouge chez B ; (3) **B arrive après que A a
+                        tracé** ⇒ B voit le tableau déjà tracé, et **une seule fois** — un double
+                        `update_scene` en console dirait que le test de sens est faux ; (4) aucun
+                        `[Mesh] Payload ignoré` sur un tracé nominal. ⚠️ Rechargement dur des deux
+                        côtés avant de mesurer, et **aucune écriture dans `.env`** pendant
+                        (`.ai/rules/web-r-t-c2.md` de l'hôte : Vite redémarre et périme les peerId)
+            - [ ] D2 — **Application**. Vérif : l'iframe reçoit `connectionEnabled` puis les messages.
+                  ⚠️ **Le test de sens de D1 y est obligatoire**, voir ci-dessus
             - [ ] D3 — **ClassRoom**, en dernier : il imbrique Whiteboard, donc deux providers, donc
                   deux contextes sur le Peer singleton (couvert par `scenarios/multiContext.test.js`).
                   Vérif : bascules whiteboard / chat propagées entre deux navigateurs, **avec** D1
@@ -521,15 +582,18 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
       **Chemin critique** : A → B → C sont livrables tout de suite et indépendants du reste ; F ne
       part pas avant que D et E soient prouvés à la main.
       **État au 01/09/2026** : **le lot A est CLOS** (A1, A2, A3), **B1, B2 et C sont faits**, et
-      **D0 est fait** — la table de traduction existe, elle est dans
-      [webrtc-data-v1-v2.md](webrtc-data-v1-v2.md) et le contrat v2 qu'elle a mis au jour est dans
-      `docs/modules/webrtc2/api.md`. A2 avait levé la dernière inconnue du canal data — la liste de
-      présence est **réaffectée**, donc **ni l'appelant ni le provider n'ont à s'adapter en D**.
-      **La suite est D1**, Whiteboard, le plus facile à prouver à deux navigateurs — et le seul des
-      trois à imbriquer `on("data")` dans `on("open")`. B5 reste ouvert en parallèle, sans
-      dépendance : il ferme un 🟠 qui mord aujourd'hui, mais demande de trancher une question produit
-      avant d'écrire la `key`.
-      ⚠️ **Ce que A2, A3 et D0 ajoutent au gabarit** : une tâche **sans volet code** peut avoir le
+      **D0 puis D1 sont faits** — la table de traduction existe
+      ([webrtc-data-v1-v2.md](webrtc-data-v1-v2.md), le contrat v2 dans
+      `docs/modules/webrtc2/api.md`), et **le Whiteboard est migré** : les appelants v1 vivants
+      passent de **quatre à trois**, suite JS inchangée (85 fichiers / 1501 cas) et `npm run build`
+      vert. **Sa vérification manuelle à deux navigateurs reste ouverte** — c'est la seule case
+      décochée de D1.
+      **La suite est D2**, Application, le plus dense des trois : il est le seul consommateur
+      d'`include`/`exclude` (point ouvert de D0) **et** le seul dont l'effet de bord de connexion
+      parle à une iframe — donc celui où le test de sens de D1 est obligatoire, pas facultatif. B5
+      reste ouvert en parallèle, sans dépendance : il ferme un 🟠 qui mord aujourd'hui, mais demande
+      de trancher une question produit avant d'écrire la `key`.
+      ⚠️ **Ce que A2, A3, D0 et D1 ajoutent au gabarit** : une tâche **sans volet code** peut avoir le
       volet doc le plus lourd du lot. A2 n'a touché aucun fichier de code et a réécrit quatre
       endroits ; A3 n'a écrit que du test et a **périmé deux mesures** — dont une dans `docs/` ;
       **D0 n'a écrit que de la prose et a retourné deux affirmations fausses**, une dans ce fichier et
@@ -537,6 +601,14 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
       **mesure de contrôle à 0** ; D0 y ajoute la **« bonne nouvelle »** — une phrase qui dit qu'il
       n'y a rien à faire est la plus coûteuse des annotations fausses, parce qu'elle est écrite pour
       être crue sans être revérifiée. Les chercher dès qu'un lot lit du code.
+      ⚠️ **Et ce que D1 ajoute, en propre : une recette écrite par LECTURE n'est vérifiée que par le
+      premier lot qui l'exécute.** D0 avait lu tout le code du canal data et écrit une table juste
+      sur presque tout ; il a fallu *écrire* D1 pour découvrir ses deux trous — un fait qu'elle
+      énonçait sans en tirer la conséquence (`onConnectionOpen` dans les deux sens : « préserver
+      l'effet de bord » n'est pas une substitution), et un fait qu'elle n'avait pas cherché parce
+      qu'elle comparait deux **contrats** et non deux **implémentations** (le plafond de 64 Ko, que la
+      v1 n'avait pas). Corollaire pour D2, D3 et E : **la recette n'est pas une autorité, c'est un
+      point de départ** — chaque lot la corrige, et sa correction est un livrable du lot.
 
 - [x] **Supprimer `WebRTC2/EventBus/webrtc2Events.js`** · effort [S] — **fermé le 31/08/2026,
   sortie B.**
@@ -629,6 +701,15 @@ plusieurs de ces noms ont **déjà coûté des régressions**.
       distant « demanderait un champ `fromUserName` dans les événements de `UserController` ».
       Le nom du champ ment sur son contenu selon le sens de la connexion — c'est-à-dire la moitié du
       temps. Renommer (`localFrom`) ou ajouter le champ manquant côté backend.
+      ⚠️ **Cette entrée a gagné un consommateur le 01/09, et c'est ce qui la rend délicate à traiter
+      maintenant** : D1 se sert de ce défaut **comme d'un contrat** — `conn.metadata.from === mon
+      slug` est le seul discriminant disponible pour savoir si une connexion est sortante, et
+      `WhiteboardComponent#handleConnectionOpen` en dépend pour ne pas renvoyer sa scène deux fois
+      (D2 en dépendra aussi, cf. lot 1 · D). Un renommage en `localFrom` **casserait ce garde en
+      silence** : le champ absent rend `undefined`, jamais égal à mon slug, donc la comparaison
+      redevient vraie partout et le double envoi revient sans une erreur. Préalable à cette entrée :
+      exposer le sens de la connexion **explicitement** (un champ, ou un argument de callback) et y
+      brancher les consommateurs, AVANT de toucher au nom.
       Annotation : `docs/modules/webrtc2/api.md` · `docs/modules/webrtc2/architecture.md`
       - [ ] Code · - [ ] Doc · - [ ] Tests
 
@@ -780,6 +861,27 @@ chemin (a) et l'usurpation intra-room sont des **bornes assumées** inscrites da
 [« Bornes non fermées »](../docs/modules/webrtc2/securite.md#bornes-non-fermées-connues) ; les
 écritures muettes du graphe sont devenues les trois régimes de la couture, avec leurs deux
 arbitrages datés.
+
+- [ ] **La scène du Whiteboard n'a aucune découpe et le plafond de 64 Ko l'abandonne en silence** ·
+      effort [M] — **ouvert le 01/09/2026 par D1**, et **assumé en l'état à cette date**.
+      `update_scene` transporte `getSceneElements()` + `getAppState()` + `getFiles()` : le plus gros
+      payload du paquet, et **le seul dont la taille est pilotée par l'utilisateur**. Une image collée
+      dans le tableau, encodée en base64 dans `files`, franchit `MAX_PAYLOAD_BYTES` (64 Ko) — et
+      l'émission est alors **entièrement annulée**, avec pour seule trace un `console.warn` chez
+      l'émetteur. Symptôme produit : « le tableau ne se synchronise plus », sans erreur.
+      ⚠️ **C'est une régression de la migration v1 → v2, pas une limite historique** : le `sendData`
+      du store v1 n'avait aucun plafond (`safeStringify` puis `conn.send`, PeerJS chunkant lui-même).
+      **Trois sorties, à arbitrer :** relever `MAX_PAYLOAD_BYTES` pour le mode data (⚠️ c'est la
+      surface anti-DoS de [`securite.md`](../docs/modules/webrtc2/securite.md), appliquée aux **deux**
+      bouts — un plafond d'émission relevé sans le pendant en réception ne change rien) · découper la
+      scène en frames applicatives · synchroniser par **delta** plutôt que par scène entière (la
+      seule qui fasse aussi baisser le débit de `pointer_move` + `update_scene` en régime nominal).
+      **Mesurer d'abord** : la taille réelle d'un `update_scene` sur quelques tracés, puis avec une
+      image — l'arbitrage n'a pas de sens sans ce chiffre, et personne ne l'a.
+      Annotation : `docs/modules/webrtc2/api.md` (sous `api.sendData`, le ⚠️ qui nomme la scène
+      Excalidraw) · `WhiteboardComponent.vue` (docblock de `handleExcalidrawMouseUp`) ·
+      `work/webrtc-data-v1-v2.md` (écart 5, qui part avec la v1)
+      - [ ] Code · - [ ] Doc · - [ ] Tests
 
 - [ ] **`destroy()` de PeerJS émet `disconnected` avant de poser `_destroyed`** — bug de dépendance
       tierce, vérifié dans `peerjs@1.5.4` (l.1810 avant l.1781). Trois gardes empilées le
