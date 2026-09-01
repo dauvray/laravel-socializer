@@ -113,8 +113,8 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
       projet hôte* — parce que deux arbres coexistent avec des fichiers homonymes
       (`MediaBroadcastProvider.vue`) et qu'un symbole trouvé au grep peut venir de la v1.
 
-      **Vérifié : cinq appelants vivants au cadrage, quatre depuis le lot C, trois depuis D1**, plus
-      un fichier désactivé. L'archive de lecture
+      **Vérifié : cinq appelants vivants au cadrage, quatre depuis le lot C, trois depuis D1, deux
+      depuis D2** — AudioRoom (lot E) et ClassRoom (D3) —, plus un fichier désactivé. L'archive de lecture
       `work/webrtc-v1-notes.md` a été supprimée : sa condition de conservation — « le temps de
       vérifier qu'aucun appelant ne subsiste » — était remplie, et le recensement vit désormais
       dans la doc du module, avec la commande qui le recompte.
@@ -123,7 +123,7 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
       |---|---|
       | ~~`System/widgets/AlertComponent.vue`~~ | ✅ **migré le 31/08/2026 (lot C)** — les deux alertes vivent dans `WebRTC2/Widgets/UI/Alerts/` |
       | `AudioRoom/AudioComponent.vue` | `WebRTC/widgets/MediaBroadcastProvider.vue`, `ui/AudioDefaultUserButtonUI.vue` |
-      | `Application/ApplicationComponent.vue` | `WebRTC/widgets/DataUserPeerConnection.vue` |
+      | ~~`Application/ApplicationComponent.vue`~~ | ✅ **migré le 01/09/2026 (lot D2)** — `WebRTC2/Widgets/Mediaplayer/MediaBroadcastProvider.vue`, store v1 débranché |
       | ~~`Whiteboard/WhiteboardComponent.vue`~~ | ✅ **migré le 01/09/2026 (lot D1)** — `WebRTC2/Widgets/Mediaplayer/MediaBroadcastProvider.vue`, store v1 débranché |
       | `ClassRoom/ClassRoomComponent.vue` | `WebRTC/widgets/DataUserPeerConnection.vue` |
       | `AudioRoom/__AudioComponent copy.vue` | `WebRTC/composables/usePeers.js` — fichier déjà désactivé (`__`) |
@@ -139,8 +139,9 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
 
       Corollaire sur les trois appelants data : ils prennent aussi `sendData` du store v1 par
       `mapActions(usePeerStore, ['sendData'])`. Leur migration n'est donc pas une substitution de
-      balise — elle débranche aussi le store. ✅ **Fait pour le Whiteboard (D1, 01/09)** ; restent
-      Application (D2) et ClassRoom (D3).
+      balise — elle débranche aussi le store. ✅ **Fait pour le Whiteboard (D1, 01/09) et pour
+      Application (D2, 01/09)** ; reste ClassRoom (D3), seul appelant data encore branché sur le
+      store v1.
 
       La v1 n'est donc pas « morte en attente de confirmation » : elle était **vivante sous cinq
       composants** au cadrage, dont un en `defineAsyncComponent`, invisible à une recherche d'`import`
@@ -160,9 +161,10 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
       d'`AudioContext`).
 
       Périmètre : **11** fichiers `WebRTC/` (13 au cadrage — le lot C en a sorti deux), le store
-      `stores/peers.js` (+ son dossier `stores/peers/`) et ses **cinq** consommateurs restants (six
-      au cadrage, D1 en a débranché un), la migration des **trois** appelants restants vers
-      `WebRTC2/`, et le sort de `SpectrumAnalyzer`.
+      `stores/peers.js` (+ son dossier `stores/peers/`) et ses **quatre** consommateurs restants (six
+      au cadrage, D1 en a débranché un et D2 un autre — restent `ClassRoomComponent.vue`,
+      `WebRTC/composables/usePeers.js`, `WebRTC/widgets/VideoComponent.vue` et `Server/Server.vue`),
+      la migration des **deux** appelants restants vers `WebRTC2/`, et le sort de `SpectrumAnalyzer`.
       Annotation (7 fichiers) : `CLAUDE.md` · `docs/INDEX.md` ·
       `docs/modules/webrtc2/INDEX.md` · `docs/modules/autres-modules.md` ·
       `docs/architecture/package.md` · `docs/modules/chat.md` ·
@@ -605,12 +607,95 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
                               tranché n'était pas une relecture mais **un test discriminant demandé
                               à l'utilisateur** : tracer un trait après le collage sépare « rien
                               n'est émis » de « l'émission est refusée ».
-            - [ ] D2 — **Application**. Vérif : l'iframe reçoit `connectionEnabled` puis les messages.
-                  ⚠️ **Le test de sens de D1 y est obligatoire**, voir ci-dessus
+            - [x] D2 — **Application** — **fait le 01/09/2026.** Un seul fichier de code, comme D1.
+                  Le décompte des appelants v1 vivants passe de **trois à deux**, et les
+                  consommateurs de `stores/peers.js` de **cinq à quatre** — vérifié aux deux greps du
+                  recompte. `npm run build` vert (exit 0, chunk `ApplicationComponent` reconstruit),
+                  suite JS **0 échec**.
+                  ⚠️ **Le chiffre de suite n'est PAS une preuve utilisable ce jour-là, et il faut le
+                  dire** : un second agent travaillait en parallèle sur le même arbre (le verbe
+                  `sendDataOnConnection` et le suivi du Whiteboard). La baseline mesurée avant
+                  édition était 85 fichiers / 1503 cas ; après, 87 / 1518 — **tout le delta est le
+                  sien**. Ce que D2 peut prouver n'est donc pas « suite inchangée » mais « aucun
+                  échec imputable à ce fichier », et c'est vérifiable plutôt que déclaratif : aucun
+                  test du paquet n'importe `ApplicationComponent`. Le vrai contrôle reste
+                  `npm run build`.
+                  **Ce que D2 a corrigé dans la recette de D0 — un mot de trop, et un fait neuf :**
+                  · ⚠️ **`onConnectionClose` était donné pour « indemne » du problème de sens. Il ne
+                  l'est pas.** Le garde `customCloseEmitted` ne promet qu'une notification **par
+                  connexion** — or la paire en a deux. Sans garde, la fermeture de ma sortante retire
+                  de l'iframe un pair désigné par **mon propre** slug. Un seul prédicat sert les deux
+                  sites, `isIncomingConnection`. **Vrai pour D3.**
+                  · 🔴 **Et le fait que ni D0 ni D1 ne pouvaient voir** : sur une entrante,
+                  `connectionEnabled` signifie « ce pair m'a joint », **pas** « je peux lui
+                  répondre ». `sendData` résout par slug dans une map qui ne contient que mes
+                  sortantes, et le mapping `slug → peerId` est écrit par ma **propre**
+                  `connectToPeer` : sur le chemin présence, l'entrante de l'autre arrive la première,
+                  avec des **secondes** d'avance (`scenarios/incomingMappingInvariant.test.js`). Le
+                  ✅ de l'iframe est donc un indicateur d'**affichage** — s'en servir pour décider
+                  d'émettre serait un faux vert. Rien n'est cassé aujourd'hui : le protocole
+                  documenté ne l'utilise que pour afficher. **C'est le piège qui est écrit, pas un
+                  défaut.** ℹ️ Ce fait vient du travail de l'autre agent, pas de D2 — vérifié dans
+                  le test avant d'être repris, et non cru sur parole.
+                  ✅ **L'écart 4 est fermé et le ciblage survit en entier** : `include` → `destUserSlugs`,
+                  complément d'`exclude` depuis `api.remotePeers.value`, les deux filtres cumulés
+                  comme le store v1. Deux fidélités qui ne se devinent pas — un tableau **vide** vaut
+                  **personne** (`destUserSlugs || remotePeers` voit `[]` comme *truthy*), et la base
+                  de calcul passe des connexions **ouvertes** aux membres **présents** (écart assumé,
+                  même livraison, un `console.warn` de plus). L'alternative — descendre `exclude` dans
+                  `sendData` — est **écartée et argumentée** dans la recette : un lot de migration ne
+                  s'élargit pas à l'API du transport.
+                  ✅ **La régression de sérialisation est REFERMÉE ici, là où D1 l'avait assumée**, et
+                  c'est le seul des trois modules où le choix se posait : le payload ne vient pas du
+                  paquet mais d'une **app d'iframe**, écrite hors de tout contrôle. `toTransportable`
+                  normalise en données plates avant émission — ce qui part reste un **objet**,
+                  conforme au contrat v2. ℹ️ **Et ça ne retire rien à personne** : le récepteur
+                  JSON-round-trip **déjà** le message dans `sendMessageToIframe`. Rien de non-JSON n'a
+                  jamais pu être lu en face. **C'est la méthode de D1 appliquée une seconde fois** —
+                  lire le récepteur avant de choisir quoi émettre — et elle répond une seconde fois.
+                  - [x] Code — `ApplicationComponent.vue`, **le seul fichier**. `mapActions` reste
+                        importé (`useApplicationAIStore` s'en sert), seul le `mapActions(usePeerStore,
+                        …)` part avec son import. Le `<div>` du provider est placé en **fin** de
+                        wrapper, après le `div.error` : la v1 ne rendait aucun nœud, la v2 en rend un,
+                        et le voisin est un iframe en `height: 100%`
+                  - [x] Doc — **quatre couches.** `work/webrtc-data-v1-v2.md` (§D2 rempli, l'en-tête
+                        qui dit le troisième point où la recette s'est trompée, §B le double sens
+                        étendu à `onConnectionClose` et l'avertissement neuf sur la sortante absente,
+                        §C écarts 2 et 4) · cet item · le `work/README.md` du paquet et celui de
+                        l'hôte · **`docs/modules/webrtc2/INDEX.md`** (les décomptes) et
+                        **`docs/modules/webrtc2/api.md`** (les faits durables) — ces deux-là **en
+                        dernier et en coordination** : l'autre agent édite le même encadré
+                        `onConnectionOpen` d'`api.md`, il passe en premier.
+                        **Aucun `boost:update` requis**, à re-vérifier avant de cocher :
+                        `Application`, `DataUserPeerConnection`, `sendData` et `exclude` rendent
+                        **zéro** sur `core.blade.php` et sur le `CLAUDE.md` du paquet — le seul hit
+                        sur `Application` étant `ConfigApplicationProvider`, **lu et non compté** (la
+                        leçon du `quatre` de D1). **Huitième tâche d'affilée** dans cette
+                        configuration
+                  - [x] Tests — **aucun**, et c'est le contrat du lot D : composant métier hors du
+                        filet, aucun test ne l'importe. `npm run build` est le seul contrôle
+                        automatique
+                  - [ ] **Vérif manuelle à deux navigateurs — DUE, elle appartient à David.** Le
+                        scénario est écrit pour être discriminant, pas pour être coché : ✅ en face de
+                        l'**autre** et jamais de soi (le garde de sens sur `open`) · « Envoyer à
+                        tous » reçu par l'autre seul · « uniquement à » l'autre reçu, « uniquement à »
+                        **personne** ⇒ personne · « sauf à » l'autre ⇒ personne, « sauf à » personne
+                        ⇒ l'autre reçoit (le complément ne dégénère pas) · fermer un onglet ⇒ le ✅
+                        disparaît **une seule fois** (le garde de sens sur `close`). Console des deux
+                        côtés : aucun `Type "function Map()…"`, aucune erreur de `JSON.parse`.
+                        ⚠️ **Ne pas cocher sur la foi du vert** — D1 a livré suite verte, build vert
+                        et trois relectures sur une fonctionnalité qui ne marchait pas
             - [ ] D3 — **ClassRoom**, en dernier : il imbrique Whiteboard, donc deux providers, donc
                   deux contextes sur le Peer singleton (couvert par `scenarios/multiContext.test.js`).
                   Vérif : bascules whiteboard / chat propagées entre deux navigateurs, **avec** D1
-                  déjà migré dessous
+                  déjà migré dessous.
+                  ⚠️ **Deux choses à savoir avant de l'ouvrir, et aucune n'est dans son code** :
+                  le garde de sens vaut aussi pour `onConnectionClose` (mesuré à D2), et le
+                  comportement du tableau imbriqué a **déjà changé** sans qu'une ligne de
+                  `ClassRoomComponent.vue` soit touchée — le travail parallèle sur le Whiteboard lui
+                  fait renvoyer sa scène sur la connexion reçue au lieu de diffuser par slug. Un lot
+                  qui hérite d'un changement qu'il n'a pas fait doit le savoir **avant** d'ouvrir un
+                  navigateur
       - [ ] **E. AudioRoom** `[M]`
             - [ ] E1 — `AudioComponent` importe le `MediaBroadcastProvider` **v1** : l'homonyme en
                   action. Comparer les deux contrats de slot avant de substituer (v2 :
@@ -643,17 +728,29 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
       **Chemin critique** : A → B → C sont livrables tout de suite et indépendants du reste ; F ne
       part pas avant que D et E soient prouvés à la main.
       **État au 01/09/2026** : **le lot A est CLOS** (A1, A2, A3), **B1, B2 et C sont faits**, et
-      **D0 puis D1 sont faits** — la table de traduction existe
+      **D0, D1 puis D2 sont faits** — la table de traduction existe
       ([webrtc-data-v1-v2.md](webrtc-data-v1-v2.md), le contrat v2 dans
-      `docs/modules/webrtc2/api.md`), et **le Whiteboard est migré** : les appelants v1 vivants
-      passent de **quatre à trois**, suite JS inchangée (85 fichiers / 1501 cas) et `npm run build`
-      vert. **Sa vérification manuelle à deux navigateurs reste ouverte** — c'est la seule case
-      décochée de D1.
-      **La suite est D2**, Application, le plus dense des trois : il est le seul consommateur
-      d'`include`/`exclude` (point ouvert de D0) **et** le seul dont l'effet de bord de connexion
-      parle à une iframe — donc celui où le test de sens de D1 est obligatoire, pas facultatif. B5
-      reste ouvert en parallèle, sans dépendance : il ferme un 🟠 qui mord aujourd'hui, mais demande
-      de trancher une question produit avant d'écrire la `key`.
+      `docs/modules/webrtc2/api.md`), **le Whiteboard et Application sont migrés**, et les appelants
+      v1 vivants passent de **quatre à deux**. D1 est **clos** (sa vérif à deux navigateurs a passé,
+      après avoir trouvé un 🔴 réel) ; **la vérif de D2 est la seule case décochée du lot D**.
+      ⚠️ **Le chiffre de suite de D1 écrit ici — « 85 fichiers / 1501 cas » — était un décompte
+      périmé à l'intérieur de son propre lot** : le correctif de D1 a ajouté deux cas après que la
+      phrase a été écrite, donc D1 s'est clos à **1503**. Neuvième espèce d'annotation fausse du
+      chantier, et la plus retorse : un décompte qui vieillit **entre deux étapes d'une même tâche**.
+      **La suite est D3**, ClassRoom, le dernier des trois — et le seul qui hérite d'un changement
+      qu'il n'a pas fait (son tableau imbriqué, voir son item). B5 reste ouvert en parallèle, sans
+      dépendance : il ferme un 🟠 qui mord aujourd'hui, mais demande de trancher une question produit
+      avant d'écrire la `key`.
+      ⚠️ **Ce que D2 ajoute à la méthode du chantier, et qui n'était pas dans le gabarit : deux
+      agents sur un seul arbre de travail.** Le paquet est développé en place dans `vendor/`, donc
+      une branche par lot n'isole **rien** — les fichiers sur le disque restent partagés, et un
+      `git checkout` écraserait le travail non committé de l'autre. Un `git worktree` isolerait
+      vraiment mais serait **intestable** : l'hôte résout `~socializer` sur `vendor/`, donc ni la
+      suite ni `npm run build` ne verraient le code du worktree — le remède est pire. Ce qui protège
+      réellement : **jeux de fichiers disjoints, commit par chemins explicites, jamais `git commit -a`**.
+      Corollaire sur les mesures : un décompte de suite mesuré à deux n'est **pas** une preuve de
+      non-régression. Ce qui reste prouvable est « aucun échec imputable à ce fichier », et il faut
+      pouvoir le justifier autrement que par un chiffre.
       ⚠️ **Ce que A2, A3, D0 et D1 ajoutent au gabarit** : une tâche **sans volet code** peut avoir le
       volet doc le plus lourd du lot. A2 n'a touché aucun fichier de code et a réécrit quatre
       endroits ; A3 n'a écrit que du test et a **périmé deux mesures** — dont une dans `docs/` ;
@@ -922,6 +1019,29 @@ chemin (a) et l'usurpation intra-room sont des **bornes assumées** inscrites da
 [« Bornes non fermées »](../docs/modules/webrtc2/securite.md#bornes-non-fermées-connues) ; les
 écritures muettes du graphe sont devenues les trois régimes de la couture, avec leurs deux
 arbitrages datés.
+
+- [ ] **`updateScene` applique une charge vide sans le dire** · effort [S] — **relevé le 01/09/2026**
+      en corrigeant le renvoi de scène du Whiteboard. `loadWhiteBoard` rend `$page->content ?? null`
+      quand aucun document n'existe ; côté client, `updateScene` finit par appeler
+      `excalidrawAPI.updateScene({ elements: undefined })` — **no-op muet**. « Tableau vide » et
+      « chargement raté » sont donc indistinguables à l'écran.
+      ℹ️ **Reproduit, pas supposé** : en écrivant
+      `Whiteboard/__tests__/WhiteboardComponent.connectionOpen.test.js`, un mock résolvant `null` a
+      fait lever `data.hasOwnProperty` — le mock a donc dû résoudre une scène valide, et le fichier
+      le dit.
+
+- [ ] **`loadScene()` n'a aucun `.catch`, et il est appelé avant l'existence de son `$refs`** ·
+      effort [S] — **relevé le 01/09/2026.** Tout échec HTTP y est un **rejet non traité**, sans
+      trace. Et l'appel est dans `created()`, donc avant que `$refs.excalidrawElement` existe : il ne
+      tient que par la latence réseau.
+
+- [ ] **La fenêtre où `excalidrawAPI` n'est pas prêt à l'arrivée d'une scène** · effort [M] —
+      **relevé le 01/09/2026.** `updateScene` abandonne sur un `console.error`, sans réessai — même
+      classe de défaut que celui qui vient d'être corrigé. Mesuré **peu probable** (le renvoi arrive
+      ~1 s après une connexion elle-même établie 1-3 s après le montage), et **c'est pour ça que le
+      délai d'une seconde du renvoi doit rester** : il protège le **récepteur**, pas l'émetteur — ne
+      pas l'« optimiser ». Sortie possible : signal `excalidraw-ready` + application différée de la
+      dernière scène.
 
 - [ ] **`getPayloadSizeBytes` accepte ce que BinaryPack refuse** · effort [M] — **ouvert le
       01/09/2026 par la vérification de D1**, qui l'a payé : voir le 🔴 du lot D1.

@@ -1,12 +1,19 @@
 # Canal data — la traduction v1 → v2, écrite une fois
 
 > **Recette de chantier, lot D de [doc-rustines.md](doc-rustines.md).** Elle s'ouvre en migrant
-> **D1** (Whiteboard, **fait le 01/09/2026**), **D2** (Application) et **D3** (ClassRoom), et rien
-> d'autre.
+> **D1** (Whiteboard, **fait le 01/09/2026**), **D2** (Application, **fait le 01/09/2026**) et
+> **D3** (ClassRoom), et rien d'autre. **Il ne reste donc que D3** — après quoi ce fichier n'a plus
+> d'usage.
 >
 > **D1 a corrigé la recette sur deux points, tous deux valables pour D2 et D3** : `onConnectionOpen`
 > tire dans les **deux sens** (§B), et le plafond de 64 Ko est une **régression** de la v2 sur la v1
 > (§C, écart 5). Une recette écrite par lecture se vérifie au premier lot qui l'exécute.
+>
+> **D2 l'a corrigée sur un troisième, et c'est un mot qui était de trop** : elle donnait
+> `onConnectionClose` pour **« indemne »** du problème de sens. Il ne l'est pas — il tire une fois par
+> connexion, donc sur les **deux** connexions de la paire. **Vrai pour D3 aussi.** Et D2 a ajouté un
+> fait que ni D0 ni D1 ne pouvaient voir : sur une entrante, un effet de bord de connexion ne peut
+> **pas** supposer qu'un canal sortant vers ce pair existe (§D2, le 🔴).
 >
 > **Condition de suppression : ce fichier part avec `components/WebRTC/`, au lot F/G.** Une fois la
 > v1 supprimée, sa colonne de gauche ne décrit plus rien — le précédent est `work/webrtc-v1-notes.md`,
@@ -88,7 +95,20 @@ dans [`api.md`](../docs/modules/webrtc2/api.md#le-canal-data--les-callbacks-et-s
 de bord porté par l'ancien `callbackConnection` s'exécute donc **deux fois par pair** après
 substitution, et une fois sur une connexion dont `metadata.from` est **mon propre slug**. Les deux
 appelants qui ont un tel effet de bord sont **D1** (renvoi de la scène — traité) et **D2** (annonce
-`connectionEnabled` à l'iframe, **pas encore traité**, voir §D). D3 n'a qu'un `console.log`.
+`connectionEnabled` à l'iframe — **traité**, voir §D2). D3 n'a qu'un `console.log`.
+
+⚠️ **Et `onConnectionClose` n'en est PAS exempt** — cette recette l'a écrit « indemne », et D2 a
+mesuré le contraire. Le garde `customCloseEmitted` ne promet qu'une chose : une fermeture n'est
+notifiée **qu'une fois par connexion**. Or la paire en a **deux**. Un effet de bord posé là s'exécute
+donc lui aussi deux fois, dont une sur une connexion qui me désigne moi. **Le même prédicat sert les
+deux callbacks** — modèle : `ApplicationComponent#isIncomingConnection`.
+
+⚠️ **Ce qu'un effet de bord d'`onConnectionOpen` ne peut PAS supposer, et c'est D2 qui l'a établi :
+qu'un canal SORTANT vers ce pair existe.** `sendData` résout par slug dans une map qui ne contient
+que mes sortantes, et le mapping `slug → peerId` est écrit par ma propre `connectToPeer` : sur le
+chemin présence, l'entrante de l'autre arrive **la première**, avec des secondes d'avance sur ma
+sortante inverse (`scenarios/incomingMappingInvariant.test.js`). Un lot qui veut **répondre** à un
+arrivant doit répondre **sur la connexion reçue**, pas diffuser par slug. Détail en §D2.
 
 Pour ces trois modules, la voie est **`:callbacks` sur le provider** — ils sont en Options API et
 gèrent la réception eux-mêmes. L'objet se déclare en `computed` ou en `data` ; le provider ne le lit
@@ -120,10 +140,13 @@ comportements.)*
 | 4 | **destinataires** : `{ include: [...] }` / `{ exclude: [...] }` dans le message, honorés par le store | `destUserSlugs` en 2ᵉ argument — l'équivalent d'`include` seul |
 
 **Écart 2 — les sites, et un piège de grep.** Trois au départ ; **celui du Whiteboard est retiré
-depuis D1**, restent `ClassRoomComponent.vue:140` (D3) et `ApplicationComponent.vue:~247` (D2).
-⚠️ **Application a quatre `JSON.parse` et un seul est celui du canal data** : `:153` (dépendances du
-composant), `:217` (message venant de l'iframe, gardé par `isStringifiedJSon`) et `:241` (clone avant
-`postMessage`) **restent**.
+depuis D1, celui d'Application depuis D2** — il ne reste que `ClassRoomComponent.vue:140` (D3).
+⚠️ **Le piège s'est vérifié à D2 : Application avait quatre `JSON.parse` et un seul était celui du
+canal data.** Les trois autres sont restés, et devaient rester : les dépendances du composant, le
+message venant de l'iframe (gardé par `isStringifiedJSon`) et le clone avant `postMessage`. Ce
+dernier est d'ailleurs devenu **load-bearing** au sens de D2 : c'est parce que le récepteur
+JSON-round-trip déjà le message que normaliser le payload à l'émission ne retire rien à personne
+(§D2).
 
 > Cet écart contredit le cadrage du lot 1, qui annonçait « les `JSON.parse` des trois appelants
 > restent valables tels quels ». Ils ne le sont pas : laissés en place, ils reçoivent un objet et
@@ -165,10 +188,28 @@ de delta ouverte dans [doc-rustines.md](doc-rustines.md).
 providers. C'est déjà la situation de ClassRoom (le sien, plus celui du Whiteboard imbriqué) : rien à
 changer, mais rien à fusionner non plus.
 
-**Écart 4 — le point ouvert, à trancher au lot D2.** `exclude` **n'a aucun équivalent** : le
-complément se calcule depuis `api.remotePeers.value`, qui exclut déjà mon slug. ⚠️ Un message v1
-portant `include` passerait en v2 comme un simple champ de payload — **sans filtrer personne**, et
-sans erreur. Application est le seul consommateur des deux.
+**Écart 4 — ✅ TRANCHÉ au lot D2 : le ciblage est conservé, en entier.** `exclude` **n'a aucun
+équivalent** v2, et son complément se calcule chez l'appelant depuis `api.remotePeers.value`, qui
+exclut déjà mon slug ; `include` passe tel quel en `destUserSlugs`, et les deux filtres se cumulent
+comme le faisait le store v1. Six lignes, `ApplicationComponent#resolveDestinations`, seul
+consommateur des deux. Le protocole iframe n'a **pas** changé d'une ligne.
+
+⚠️ **Le piège que ce code ferme, et il était bien réel** : un message portant `include` laissé dans
+le payload y passerait comme un simple champ — **sans filtrer personne**, et sans erreur.
+
+⚠️ **Deux fidélités qui ne se devinent pas.** `null` ⇒ tous les pairs, mais un tableau **vide** ⇒
+**personne** : côté `sendData`, `destUserSlugs || remotePeers` voit un `[]` comme *truthy*. C'est ce
+qui rend « exclure tout le monde » et « n'inclure personne » fidèles à la v1. Et la base de calcul a
+changé — v1 : les connexions **ouvertes**, v2 : les membres **présents**. Écart **assumé** : un
+membre sans connexion data produit un `console.warn` par slug au lieu d'être ignoré, la livraison est
+la même.
+
+ℹ️ **L'alternative écartée, et pourquoi.** On pourrait descendre `exclude` dans `sendData` — le
+transport résout déjà `destUserSlugs || remotePeers`, une option y tiendrait naturellement, et les
+trois modules en profiteraient. Écartée à D2 : ça élargit un lot de **migration** à l'API du
+transport, qui a ses tests, sa forme d'enveloppe étoile et une surface décrite dans `securite.md` —
+et la règle du chantier veut qu'un lot ne change pas un comportement *et* ne déplace pas du code en
+même temps. Si le besoin réapparaît, c'est une tâche propre avec son test rouge d'abord.
 
 **L'accès à l'api** : `defineExpose({ api })` ⇒ `this.$refs.<ref>.api`. Aucun des trois n'a de `ref`
 sur le provider aujourd'hui — c'est une **addition nette**, pas un remplacement. Les deux autres voies
@@ -208,6 +249,35 @@ même jour après la vérification à deux navigateurs
   sous condition `!isSavable`. C'est ce qui fait qu'un nouveau venu voit le tableau déjà tracé.
   ⚠️ **Le préserver a demandé un garde que cette recette n'annonçait pas** : le test de sens de la
   connexion (§B). Sans lui, chaque pair renvoyait sa scène **deux fois** par arrivant.
+  ⚠️ **Le préserver a coûté un VERBE DE TRANSPORT, pas seulement un garde de sens — trouvé le
+  01/09/2026, en production, sur le symptôme « le tableau de l'arrivant est vide ».** Le renvoi
+  émettait par `sendData`, qui résout sa connexion PAR SLUG dans la map `connections` du store des
+  pairs — laquelle ne contient que les connexions SORTANTES (`storePeerConnection` n'a qu'un appelant,
+  `_saveRoomConnection`, tous ses sites dans `connectToPeer` ; le dispatcher entrant appelle
+  `setUpConnectionListeners(conn)` et rien d'autre). La connexion qui déclenche `onConnectionOpen`
+  chez le pair déjà présent étant l'ENTRANTE — c'est la condition du garde de sens —, elle n'y figure
+  jamais : le renvoi dépendait de la sortante inverse, qui exige un aller-retour de signalisation
+  complet sur le chemin présence (le mapping du récepteur est écrit par sa PROPRE `connectToPeer`,
+  `scenarios/incomingMappingInvariant.test.js`). Une seconde n'y suffisait pas et rien ne réessayait.
+  D'où `api.sendDataOnConnection(conn, data)`, contrat dans `docs/modules/webrtc2/api.md`.
+  **Leçon pour D2 et D3 : « préserver l'effet de bord » ne veut pas dire « garder le même
+  émetteur ». Tout ce qui RÉPOND sur une entrante doit passer par ce verbe.** Effet secondaire
+  acquis : le renvoi n'est plus un broadcast — il l'était par emprunt à `handleExcalidrawMouseUp`, et
+  comme `updateScene` REMPLACE la scène, à N pairs le dernier écrasait les autres.
+  ⚠️ **CE DÉFAUT EST ANTÉRIEUR À D1 — véhicule broadcast ET inatteignabilité de l'arrivant.** Ce
+  n'est **pas** une régression de la migration, et il faut le dire ici parce que la forme du
+  paragraphe ci-dessus invite à le croire. **La preuve n'est pas recopiée** : elle vit dans
+  [whiteboard-todo.md](whiteboard-todo.md) § « Ailleurs, et volontairement pas ici », avec les deux
+  pièges de grep qui la rendent recontrôlable — dont un nom de fichier qui **inverse** la conclusion
+  si on le lit sans vérifier son appelant.
+  *(Rappel de méthode, et c'est la seule chose que ce fichier a besoin de porter : le cas de l'image
+  collée, à D1, était lui aussi antérieur à la migration et a failli lui être imputé. **Un défaut
+  trouvé PENDANT un lot n'est pas un défaut CAUSÉ par le lot** — la seule façon de le savoir est
+  d'aller lire la v1, et une datation qu'on ne peut pas recontrôler sans retomber dans le piège qui
+  l'a produite n'est pas une datation.)*
+  ℹ️ **D2 n'avait pas à s'en servir, et c'est en soi une information** : son effet de bord ne répond
+  pas au pair, il poste vers une iframe **locale**. Le verbe est donc pour D3 et pour tout lot qui
+  répond sur une entrante.
 - **Sa room n'est pas `room.id`** mais `whiteBoardId` = `room.content[0].id ?? room.id` — l'id du
   vertex de contenu.
 - Deux émissions : `update_scene` (mouseup) et `pointer_move`.
@@ -220,27 +290,59 @@ même jour après la vérification à deux navigateurs
   `this.sendData(…, this.room.id)`. Il était déjà périmé avant D1 (la méthode vivante utilise
   `whiteBoardId`) ; il relève de « vider les poches mortes », pas de ce lot.
 
-**D2 · Application** — `Application/ApplicationComponent.vue`
+**D2 · Application** — `Application/ApplicationComponent.vue` — ✅ **MIGRÉ le 01/09/2026** (code,
+build et recompte ; la vérification à deux navigateurs reste due)
 
-- ⚠️ **Son `on('open')` est un effet de bord, et le test de sens de §B lui est OBLIGATOIRE** :
-  il poste `connectionEnabled` à l'iframe avec `slug: conn.metadata.from`. Substitué tel quel, il
-  s'exécuterait aussi sur la connexion **sortante**, où `from` est **mon propre slug** — l'iframe
-  recevrait donc une annonce de pair qui me désigne moi, sans erreur ni trace. Le second site
-  (`connectionDisabled`, sur `close`) est indemne : `onConnectionClose` ne tire qu'une fois par
-  connexion, mais il tire sur les deux, donc le même test s'y applique.
-
+- ✅ **Le test de sens a été posé aux DEUX sites, et le second n'était pas « indemne »** — la recette
+  le disait, et c'était le mot de trop. `onConnectionClose` ne tire qu'une fois **par connexion**,
+  mais il tire sur les **deux** connexions de la paire : sans garde, la fermeture de ma sortante
+  retire de l'iframe un pair désigné par **mon propre** slug. Un seul prédicat sert les deux sites,
+  `isIncomingConnection(conn)`.
+- 🔴 **Ce que D2 a appris et que ni D0 ni D1 ne pouvaient dire : `connectionEnabled` n'annonce pas ce
+  qu'on croit.** Sur une entrante, elle signifie « ce pair m'a joint », **pas** « je peux lui
+  répondre ». `sendData` résout sa connexion **par slug** dans une map qui ne contient que **mes
+  sortantes** ; le mapping `slug → peerId` est écrit par ma **propre** `connectToPeer`. Sur le chemin
+  présence, où le premier contact est l'entrante de l'autre, ma sortante inverse exige donc un
+  aller-retour de signalisation **complet** — l'écart se compte en **secondes**, pas en
+  microsecondes (mesuré : `scenarios/incomingMappingInvariant.test.js` et sa table des trois chemins
+  d'admission). **Le ✅ de l'iframe est un indicateur d'AFFICHAGE** ; s'en servir pour décider
+  d'émettre serait un faux vert. Le protocole documenté ne le fait pas — son ciblage vient des cases
+  cochées, pas d'`enabledConnections` — donc rien n'est cassé aujourd'hui : c'est le piège qui est
+  écrit, pas un défaut.
+- ✅ **L'écart 4 est fermé, et `exclude` survit** : `include` passe tel quel en `destUserSlugs`, le
+  complément d'`exclude` se calcule depuis `api.remotePeers.value`, et les deux filtres se cumulent
+  comme le faisait le store v1 (`resolveDestinations`). Deux fidélités qui ne se devinent pas :
+  `null` ⇒ tous les pairs, mais un tableau **vide** ⇒ **personne**, parce que
+  `destUserSlugs || remotePeers` voit un `[]` comme *truthy* — « exclure tout le monde » et
+  « n'inclure personne » restent donc fidèles à la v1. Écart de périmètre **assumé** : la v1 partait
+  des connexions **ouvertes**, la v2 part des membres **présents** ; un membre sans connexion data
+  produit un `console.warn` par slug au lieu d'être ignoré, la livraison est la même.
+- ✅ **La régression de sérialisation a été REFERMÉE ici, pas assumée comme à D1** — et c'est le seul
+  endroit du lot D où ce choix se posait. La v1 émettait via `safeStringify`, qui rendait `null` sur
+  un payload non sérialisable : l'envoi était **sauté**. La v2 émet l'objet tel quel, donc BinaryPack
+  **lève**. Or ici le payload ne vient pas du paquet mais d'une **app d'iframe**, écrite hors de tout
+  contrôle : une `Map` postMessage-ée ferait lever `conn.send` dans la boucle de diffusion.
+  `toTransportable` normalise en données plates avant émission — ce qui part reste un **objet**,
+  conforme au contrat v2. ℹ️ **Et ça ne retire rien à personne** : le récepteur passe le message à
+  `sendMessageToIframe`, qui fait **déjà** un aller-retour JSON. Rien de non-JSON n'a jamais pu être
+  lu en face. C'est la méthode de D1 — lire le récepteur avant de choisir quoi émettre — appliquée
+  une seconde fois, et elle répond une seconde fois.
 - **Dépend de `conn.metadata.from`** (deux sites : `connectionEnabled` et `connectionDisabled` vers
   l'iframe). v2 fournit le **même champ**, en 3ᵉ argument d'`onDataReceived` — mais il est **absent en
   arité 1** (hub star). Sur une connexion entrante, `from` est le slug du pair distant et `slug` le
   mien.
-- **Porte le seul usage d'`include`/`exclude`**, via le protocole iframe documenté par
-  `Application/Exemples/WebrtcDataConnection.txt`. Voir l'écart 4.
 - ⚠️ Sa prop `room` a un `default: () => {}` dont le corps est vide : elle rend **`undefined`**, donc
-  sans prop `room` le `v-if` est faux et le provider ne monte pas.
+  sans prop `room` le `v-if` est faux et le provider ne monte pas. `v-if` gardé tel quel.
 - **L'enveloppe d'émission est différente des deux autres** : le module passe le message de l'iframe
   tel quel (`{ action: 'broadcast', data: {…} }`), et `action` est **perdu en route** — le store
   n'émet que `message.data`. Le récepteur reçoit donc `{ event, payload }`, pas `{ action, data }` :
-  il n'a pas de `switch(data.action)`, contrairement aux deux autres.
+  il n'a pas de `switch(data.action)`, contrairement aux deux autres. **Préservé** :
+  `broadcastToPeers` émet `message.data`, l'enveloppe reste de la mécanique locale.
+- ℹ️ **Le `<div>` du provider est placé en FIN de wrapper**, après le `div.error`, et non à la place
+  de l'ancien tag : la v1 ne rendait aucun nœud, la v2 en rend un, et le voisin est un iframe en
+  `height: 100%`. Même geste qu'au Whiteboard, autre emplacement.
+- ℹ️ Les deux `console.log('… data chat')` de `connectionDataCallback` ne sont pas reportés : ils
+  disaient « chat » dans le module Application.
 
 **D3 · ClassRoom** — `ClassRoom/ClassRoomComponent.vue`, **en dernier**
 

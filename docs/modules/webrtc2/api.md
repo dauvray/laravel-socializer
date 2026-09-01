@@ -157,6 +157,21 @@ l'arrivée d'autrui doit poser ce test lui-même (modèle :
 `Whiteboard/WhiteboardComponent.vue#handleConnectionOpen`, qui renvoie la scène courante à
 l'arrivant).
 
+⚠️ **`onConnectionClose` n'est PAS exempt du même problème, et le garde `customCloseEmitted` ne dit
+pas ce qu'on lui prête.** Il ne promet qu'une chose : une fermeture n'est notifiée **qu'une fois par
+connexion**. Or la paire en a **deux** — un effet de bord posé là s'exécute donc lui aussi deux fois,
+dont une sur une connexion dont `metadata.from` est **mon** slug. **Le même prédicat sert les deux
+callbacks** : modèle `Application/ApplicationComponent.vue#isIncomingConnection`, qui garde à la fois
+son `connectionEnabled` (sur `open`) et son `connectionDisabled` (sur `close`) vers une iframe.
+
+⚠️ **Ce qu'un effet de bord d'`onConnectionOpen` peut annoncer, et ce qu'il NE peut pas.** Recevoir
+une connexion entrante prouve que ce pair m'a joint — **pas** que je peux lui répondre par `sendData`
+(cf. l'avertissement précédent). Un consommateur qui publie un état de connexion vers l'extérieur —
+une iframe, une UI — publie donc un indicateur d'**affichage**, pas une autorisation d'émettre. Le
+cas nommé est `ApplicationComponent`, dont l'annonce alimente une case « ✅ connecté » côté iframe :
+s'en servir pour décider d'émettre serait un faux vert, l'écart se comptant en **secondes** sur le
+chemin présence.
+
 ⚠️ **Et le garde de sens ne suffit pas : la connexion reçue ici est INTROUVABLE par `sendData`.**
 Pour lui répondre, il faut `api.sendDataOnConnection(conn, data)` — la raison est structurelle et
 elle est écrite plus bas. Le modèle nommé ci-dessus est précisément celui qui s'est fait mordre : il
@@ -173,6 +188,10 @@ répondait par `sendData`, et l'arrivant voyait un tableau **vide** (corrigé le
   transformation (la valeur ressort identique, chaîne comme `ArrayBuffer`) ;
 - `destUserSlugs = null` ⇒ tous les `remotePeers` (mon slug n'y est jamais). En topologie star côté
   client, la liste est portée par l'enveloppe et c'est le hub qui la respecte ;
+- **un tableau VIDE ne vaut pas `null`** : `destUserSlugs || remotePeers` voit un `[]` comme *truthy*,
+  donc `sendData(data, [])` n'émet **vers personne**. C'est utile — c'est ce qui permet à un
+  consommateur d'exprimer « vers personne » sans cas particulier — mais un `.filter()` qui rend vide
+  par accident diffuse alors à zéro pair, silencieusement, au lieu de diffuser à tous ;
 - au-delà de `MAX_PAYLOAD_BYTES` (64 Ko, `webrtc2.config.js:106`), ou si le payload n'est pas
   mesurable, **l'envoi est entièrement annulé sans un mot**. Un destinataire injoignable ne produit
   qu'un `console.warn` par slug.
@@ -183,6 +202,20 @@ payload du paquet, et le seul dont la taille est pilotée par l'utilisateur — 
 le tableau, encodée en base64 dans `files`, suffit à le franchir. L'abandon étant muet des deux
 côtés, le symptôme produit est « le tableau ne se synchronise plus », sans erreur. Aucune découpe ni
 synchronisation par delta n'existe aujourd'hui : c'est une **borne assumée**, pas un cas traité.
+
+ℹ️ **`destUserSlugs` est un `include`, et il n'existe AUCUN `exclude`.** Pour émettre « vers tous sauf
+X », le complément se calcule chez l'appelant, depuis `api.remotePeers.value` — qui exclut déjà mon
+slug, donc aucune soustraction de soi-même à écrire. Deux choses à savoir avant de le faire :
+
+- la base de calcul est la liste des membres **présents**, pas celle des connexions **ouvertes**. Un
+  membre présent sans connexion data entre donc dans la liste et produit un `console.warn` par slug
+  au lieu d'être ignoré. La livraison est la même ;
+- `remotePeers` vide ne dit pas « personne », il dit « je ne sais pas encore » (`presenceSynced` est
+  là pour ça). Un complément calculé trop tôt rend `[]`, donc **personne** — comme le ferait une
+  diffusion à tous au même instant, mais pour une autre raison.
+
+Modèle : `Application/ApplicationComponent.vue#resolveDestinations`, qui traduit le ciblage
+`include` / `exclude` du protocole de son iframe et **cumule** les deux filtres.
 
 ### ⚠️ `sendData` peut LEVER, et le garde de taille ne l'en protège pas
 
@@ -211,6 +244,22 @@ Le geste, côté consommateur : **n'émettre que des données plates**. Le cas v
 dont l'`appState` Excalidraw porte `collaborators: Map` ; il l'exclut de son émission — domicile
 unique de cette règle chez lui, `WhiteboardComponent#toTransportableScene`, une liste **blanche** de
 deux clés (`elements`, `files`) plutôt qu'un retrait de l'`appState`.
+
+⚠️ **Et quand le payload ne vient PAS du paquet, une liste blanche est impossible : il faut
+normaliser.** Un consommateur qui relaie des données venues de l'extérieur — le cas nommé est
+`Application/ApplicationComponent.vue`, qui diffuse ce qu'une app d'iframe lui `postMessage` — ne
+connaît pas la forme de ce qu'il émet. Or `postMessage` transporte un *structured clone*, qui accepte
+`Map` et `Set` : le payload peut donc être légal à l'entrée et **fatal** à l'émission. Le geste est
+alors `JSON.parse(JSON.stringify(payload))` dans un `try`/`catch`, en abandonnant l'envoi sur échec
+(`ApplicationComponent#toTransportable`).
+
+ℹ️ **Ce n'est pas une re-sérialisation, et la distinction est load-bearing** : ce qui part sur le fil
+reste un **objet** — le contrat de `sendData` est respecté. Ce que la normalisation retire est
+exactement ce que BinaryPack refuse. Et elle ne coûte rien **à condition de le vérifier chez le
+récepteur** : c'est la méthode qui a produit les deux correctifs de ce module, et elle vaut mieux que
+l'intuition. Ici le récepteur JSON-round-trip déjà le message avant de le passer à son iframe, donc
+rien de non-JSON n'a jamais pu être lu en face. Un consommateur dont le récepteur *utiliserait*
+réellement une `Map` n'aurait pas cette sortie et devrait changer de format.
 
 ### `api.sendDataOnConnection(conn, data)`
 

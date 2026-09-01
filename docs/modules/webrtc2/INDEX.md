@@ -15,15 +15,17 @@ Code : `src/resources/js/socializer/components/WebRTC2/`
 l'arbre, avec des fichiers **homonymes** de ceux de WebRTC2 (`MediaBroadcastProvider.vue`) : un
 symbole trouvé au grep peut venir de là. Rien ne doit y être ajouté.
 
-**Elle n'est pas orpheline, et c'est ce qui empêche de la supprimer** : trois composants vivants
-l'importent encore, chacun dans un autre module — `Application/ApplicationComponent.vue`,
-`AudioRoom/AudioComponent.vue` et `ClassRoom/ClassRoomComponent.vue`. Les symboles concernés sont
-`usePeers`, `DataUserPeerConnection` et `MediaBroadcastProvider`. Les fichiers préfixés `__` sont
-déjà désactivés. La supprimer suppose donc de migrer ces appelants, pas seulement d'effacer un
-dossier.
+**Elle n'est pas orpheline, et c'est ce qui empêche de la supprimer** : **deux** composants vivants
+l'importent encore, chacun dans un autre module — `AudioRoom/AudioComponent.vue` et
+`ClassRoom/ClassRoomComponent.vue`. Les symboles concernés sont `usePeers`, `DataUserPeerConnection`
+et `MediaBroadcastProvider`. Les fichiers préfixés `__` sont déjà désactivés. La supprimer suppose
+donc de migrer ces appelants, pas seulement d'effacer un dossier.
 
-⚠️ **Un cinquième consommateur n'apparaît dans AUCUN grep de `WebRTC/`, et c'est un défaut de la
-commande de recompte, pas du recensement.** `Server/Server.vue` n'importe aucun fichier du dossier :
+⚠️ **Un consommateur de plus n'apparaît dans AUCUN grep de `WebRTC/`, et c'est un défaut de la
+commande de recompte, pas du recensement.** *(Sans ordinal, volontairement : cette phrase en portait
+un, et il a vieilli en silence à chaque migration — le nombre juste est celui que rendent les deux
+commandes ci-dessous, jamais celui qui est écrit ici.)* `Server/Server.vue` n'importe aucun fichier
+du dossier :
 il importe le **store v1** `stores/peers.js`, dont il lit deux getters — et ce store fait partie de
 ce qui doit disparaître avec la v1. Le recompte demande donc **deux** greps :
 

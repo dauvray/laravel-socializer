@@ -18,7 +18,8 @@ Aucun chantier ne passe devant les autres. L'ordre par défaut, tant que rien n'
 explicitement :
 
 1. **Le module WebRTC2 au fil de l'eau — [webrtc2-todo.md](webrtc2-todo.md).**
-   **Aucun 🔴 ouvert depuis le 31/08** : « accepter un appel vocal entrant ne fait rien » est fermé
+   **Aucun 🔴 ouvert DANS CE FICHIER depuis le 31/08** — la portée est le module, pas le paquet : un
+   🔴 est ouvert ailleurs, cf. le point 3 ci-dessous. « accepter un appel vocal entrant ne fait rien » est fermé
    (lot B1), et le second défaut des alertes — le timer d'auto-refus qui survivait au démontage —
    l'est aussi (lot B2, le même jour). Le 🟠 qui les remplace vient du cadrage de B2 et est d'une
    autre nature : **une seconde invitation PATCHE l'alerte vivante au lieu de la remonter**, donc le
@@ -83,7 +84,7 @@ explicitement :
    pair **me désignant moi**) — et le plafond de 64 Ko de `sendData` est une **régression** de la v2
    sur la v1, qui n'avait aucune limite. La scène Excalidraw est le seul payload du paquet dont la
    taille est pilotée par l'utilisateur : borne **assumée** à D1, avec sa tâche ouverte au lot 5.
-   **La tâche suivante est D2**, Application — le plus dense des trois.
+   **La tâche suivante est D3**, ClassRoom — D2 est fait le 01/09, voir plus bas.
    **B5 reste ouvert en parallèle**,
    sans dépendance, mais demande de trancher une question produit avant d'écrire la `key`. Le reste de la migration des appelants de WebRTC v1 est la tâche la plus
    rentable du paquet en volume de doc — **sept lots A→G**. Le cadrage a trouvé un **sixième**
@@ -108,6 +109,29 @@ explicitement :
    pour D2, D3 et E : **la recette est un point de départ, pas une autorité** — sa correction est un
    livrable de chaque lot qui s'en sert.
 
+   **Puis D2 le 01/09** : Application est migré, un seul fichier de code, appelants v1 vivants de
+   trois à **deux** et consommateurs du store v1 de cinq à **quatre**. Build vert, suite sans échec,
+   **vérif à deux navigateurs due — elle appartient à David**. Il a confirmé la règle de D1 en
+   trouvant la **troisième** erreur de la recette : `onConnectionClose` y était donné pour
+   « indemne » du problème de sens, et il ne l'est pas — le garde `customCloseEmitted` ne promet
+   qu'une notification **par connexion**, or la paire en a deux. Il a fermé le point produit d'`exclude`
+   (le ciblage survit en entier, complément calculé chez l'appelant) et **refermé** la régression de
+   sérialisation que D1 avait assumée, parce qu'ici le payload vient d'une **app d'iframe** écrite
+   hors du paquet — et sans rien coûter, le récepteur JSON-round-trip déjà le message.
+   🔴 **Le fait le plus utile de D2 ne vient pas de D2** : `connectionEnabled` sur une entrante
+   signifie « ce pair m'a joint », **pas** « je peux lui répondre » — `sendData` résout par slug dans
+   une map qui ne contient que mes sortantes. L'écart se compte en **secondes**
+   (`scenarios/incomingMappingInvariant.test.js`). Le ✅ de l'iframe est un indicateur d'affichage.
+
+   ⚠️ **Ce que D2 ajoute à la méthode, et qui n'était pas dans le gabarit : deux agents sur un seul
+   arbre.** Le paquet vivant dans `vendor/`, une branche par lot n'isole **rien** (fichiers partagés,
+   un `git checkout` écrase le non-committé de l'autre) et un `git worktree` serait **intestable**
+   (l'hôte résout `~socializer` sur `vendor/`, donc ni la suite ni `npm run build` ne verraient le
+   worktree). Ce qui protège : **fichiers disjoints, commit par chemins explicites, jamais
+   `git commit -a`**. Corollaire sur les mesures : **un décompte de suite mesuré à deux n'est pas une
+   preuve de non-régression** — ce qui reste prouvable est « aucun échec imputable à ce fichier », et
+   il faut savoir le justifier autrement que par un chiffre.
+
    ⚠️ **Et le 🔴 de D1 ajoute le degré au-dessus : sur ce module, la vérification manuelle n'est pas
    une formalité de fin de lot, c'est le seul contrôle qui exerce le transport réel.** Suite verte,
    build vert, trois relectures — et le tableau ne propageait rien. **Aucun test de la suite ne
@@ -121,6 +145,27 @@ explicitement :
    au composant — `defineAsyncComponent` arme un `setTimeout` de 200 ms **même sans option** (son
    `delay` par défaut, jamais annulé), et le renderer de Vue en arme un de 3 s à sa création, une
    fois par fichier. Un comptage absolu est donc faux ; le détail est dans le docblock du fichier.
+
+3. 🔴 **[whiteboard-todo.md](whiteboard-todo.md) — les deux routes du tableau blanc n'ont aucune
+   garde d'autorisation.** Ouvert le 01/09/2026, et c'est le seul 🔴 du paquet. `server_id`,
+   `room_id` et `vertex_id` viennent du client et ne sont confrontés à rien
+   (`app/Services/WhiteBoard.php`, deux fois `// todo a protéger`) : **tout utilisateur connecté peut
+   lire ou écraser le tableau de n'importe quelle room.** Périmètre borné par le groupe de routes
+   `private` — donc pas un anonyme —, et `save_board` n'y change rien, il ne décide que si le
+   *client* appelle.
+
+   ⚠️ **Ce n'est pas un oubli de garde, c'est une politique absente**, d'où sa place en tête de son
+   fichier plutôt que dans un lot : qui a le droit d'écrire, qui a le droit de lire, et sur quoi
+   porte le contrôle — le triplet d'ids n'est recoupé nulle part. La réponse n'est pas déductible du
+   code, elle appartient à David.
+
+   ⚠️ **Le correctif naïf est faux DEUX fois** et le fichier le développe : `canJoinRoom` n'est PAS
+   un prédicat d'appartenance (vrai pour n'importe quel couple sur `privacy == 0`, et une room
+   publique vide refuse jusqu'à son propriétaire). Ne pas non plus généraliser depuis ses sœurs, qui
+   le sont, elles.
+
+   ℹ️ **Indépendant du correctif du renvoi de scène** livré le même jour (`512afca`), qui n'a ni
+   ouvert ni refermé quoi que ce soit ici.
 
 > ⏸️ **[projection-graphe-todo.md](projection-graphe-todo.md) est suspendu — au besoin seulement.**
 > Ses items restants sont 🟢/🟠 et ne bloquent rien. **Ne pas le rouvrir parce qu'une lecture de code
@@ -156,8 +201,9 @@ explicitement :
 | Fichier | État | En une phrase |
 |---|---|---|
 | [webrtc2-todo.md](webrtc2-todo.md) | ouvert, **aucun 🔴** | Le suivi vivant du module. **Un 🟠 sur les alertes d'appel** : une seconde invitation reçue sans avoir répondu à la première PATCHE l'alerte vivante au lieu de la remonter, donc le second appelant hérite du reliquat de minuteur du premier et se fait refuser à sa place — il se traite dans le lot B5 de [doc-rustines.md](doc-rustines.md), pas ici. **Un 🟠 de couverture** — aucun scénario n'exerce la topologie star, donc « hub absent → hub présent » n'est épinglé à aucun étage — et **un 🟠 de déploiement**, la bascule `SOCIALIZER_PEER_ATTESTATION_ENFORCE`, dont la procédure impose de lire **deux** indicateurs et jamais un seul. Le reste est de la pérennisation 🟢/🟠 : fidélité du mock PeerJS, observabilité, robustesse, et ce que la couverture des boutons d'appel a ouvert. Les items terminés y sont élagués — leur rationale vit dans [`docs/`](../docs/modules/webrtc2/INDEX.md), leur récit dans `git log`. |
-| [doc-rustines.md](doc-rustines.md) | 🟠 démarré — **lot 0 terminé, lot 1 entamé** | rendre la doc exempte d'annotations qui compensent un défaut du code. `webrtc2Events.js` est supprimé (31/08, sortie B), le filet du lot A1 est posé, **B1, B2 et C sont fermés (31/08)** — B2 en sortie A + sortie B, avec le troisième harnais (faux timers, 9 cas dont 5 rouges) et **deux bornes de durée retirées des docblocks de A1 avec leur cause** ; C a sorti les deux alertes d'appel de l'arbre v1 sans toucher une ligne de test. Le cadrage de B2 a ouvert **B5**, la face vive de la même famille. **Le lot A est clos (01/09)** : A2 a établi que la liste de présence est *réaffectée* et non mutée en place — donc rien à adapter au lot D —, et A3 a posé le filet qui manquait sur ce contrat, jusque-là épinglé à aucun bout. **Puis D0 (01/09)** : la traduction v1 → v2 est écrite une fois — [webrtc-data-v1-v2.md](webrtc-data-v1-v2.md) pour le delta, `docs/modules/webrtc2/api.md` pour le contrat v2 qui n'y était pas — et elle a retourné **deux** affirmations fausses, dont la « bonne nouvelle » qui promettait que les `JSON.parse` des trois appelants survivaient. **Puis D1 (01/09)** : le Whiteboard est migré en un seul fichier de code, la suite JS est inchangée (85 fichiers / 1501 cas) et le build vert — **sa vérif à deux navigateurs reste ouverte**. Il a corrigé la recette de D0 sur **deux** points valables pour D2 et D3 : `onConnectionOpen` tire dans les **deux sens** (donc « préserver l'effet de bord » n'est pas une substitution — chez D2, l'iframe recevrait une annonce de pair **me désignant moi**), et le plafond de 64 Ko de `sendData` est une **régression** sur la v1 qui n'en avait aucun, assumée avec sa tâche ouverte au lot 5. **La suite est D2.** **Reste au lot 1** : migrer les **trois** composants vivants qui importent encore la v1 WebRTC — ce qui retire l'annotation de **sept** fichiers de doc, dont le piège n°1 du `CLAUDE.md` et une ligne du `CLAUDE.md` de tout projet hôte — puis vider les cinq poches mortes. **Découpé en sept lots A→G le 31/08** : le filet d'abord, le correctif vocal ensuite, le déplacement des alertes, les trois modules data un par un, AudioRoom, la suppression, la doc. Trois faits du cadrage : le provider data v2 existe déjà (rien à écrire), le contrat de callback n'est pas mappable 1 pour 1 (chaque appelant se réécrit), et il y a un **sixième** consommateur hors du recompte — d'où les **deux** greps de la commande corrigée au lot C. |
-| [webrtc-data-v1-v2.md](webrtc-data-v1-v2.md) | **recette, éprouvée une fois (D1)** | la traduction du canal data v1 → v2, écrite une fois (lot D0). On l'ouvre en migrant Application ou ClassRoom, et pour rien d'autre — Whiteboard est fait. Elle **pointe** `docs/modules/webrtc2/api.md` pour tout ce qui concerne la v2 et ne porte que le delta : la bascule de balise, les **cinq** écarts d'émission — dont **la sérialisation, que le cadrage donnait à tort pour un non-sujet**, et le plafond de 64 Ko, cinquième écart trouvé en exécutant D1 — et ce que chaque module a en propre. **D1 l'a corrigée sur deux points** : le double sens d'`onConnectionOpen` et ce cinquième écart ; son en-tête le dit. Un point produit reste ouvert et appartient à D2 : `exclude` n'a aucun équivalent v2. **Ce fichier part avec `components/WebRTC/`**, au lot F/G. |
+| [doc-rustines.md](doc-rustines.md) | 🟠 démarré — **lot 0 terminé, lot 1 entamé** | rendre la doc exempte d'annotations qui compensent un défaut du code. `webrtc2Events.js` est supprimé (31/08, sortie B), le filet du lot A1 est posé, **B1, B2 et C sont fermés (31/08)** — B2 en sortie A + sortie B, avec le troisième harnais (faux timers, 9 cas dont 5 rouges) et **deux bornes de durée retirées des docblocks de A1 avec leur cause** ; C a sorti les deux alertes d'appel de l'arbre v1 sans toucher une ligne de test. Le cadrage de B2 a ouvert **B5**, la face vive de la même famille. **Le lot A est clos (01/09)** : A2 a établi que la liste de présence est *réaffectée* et non mutée en place — donc rien à adapter au lot D —, et A3 a posé le filet qui manquait sur ce contrat, jusque-là épinglé à aucun bout. **Puis D0 (01/09)** : la traduction v1 → v2 est écrite une fois — [webrtc-data-v1-v2.md](webrtc-data-v1-v2.md) pour le delta, `docs/modules/webrtc2/api.md` pour le contrat v2 qui n'y était pas — et elle a retourné **deux** affirmations fausses, dont la « bonne nouvelle » qui promettait que les `JSON.parse` des trois appelants survivaient. **Puis D1 (01/09)** : le Whiteboard est migré en un seul fichier de code, la suite JS est inchangée (85 fichiers / 1501 cas) et le build vert — **sa vérif à deux navigateurs reste ouverte**. Il a corrigé la recette de D0 sur **deux** points valables pour D2 et D3 : `onConnectionOpen` tire dans les **deux sens** (donc « préserver l'effet de bord » n'est pas une substitution — chez D2, l'iframe recevrait une annonce de pair **me désignant moi**), et le plafond de 64 Ko de `sendData` est une **régression** sur la v1 qui n'en avait aucun, assumée avec sa tâche ouverte au lot 5. ⚠️ Son chiffre de clôture n'est pas 1501 mais **1503** : son propre correctif a ajouté deux cas après que la phrase ci-dessus a été écrite — un décompte périmé **à l'intérieur de sa propre tâche**. **Puis D2 (01/09)** : Application est migré, un seul fichier de code, appelants v1 vivants de trois à **deux** et consommateurs du store v1 de cinq à **quatre** ; build vert, **vérif à deux navigateurs due**. Il a trouvé la **troisième** erreur de la recette (`onConnectionClose` n'est PAS « indemne » du problème de sens : une notification par connexion, mais deux connexions par paire), **fermé** le point produit d'`exclude` — le ciblage survit en entier, complément calculé chez l'appelant — et **refermé** la régression de sérialisation que D1 avait assumée, parce qu'ici le payload vient d'une app d'iframe écrite hors du paquet. 🔴 Son fait le plus utile ne vient pas de lui : `connectionEnabled` sur une entrante dit « ce pair m'a joint », **pas** « je peux lui répondre » — l'écart se compte en secondes. **La suite est D3.** **Reste au lot 1** : migrer les **deux** composants vivants qui importent encore la v1 WebRTC — ce qui retire l'annotation de **sept** fichiers de doc, dont le piège n°1 du `CLAUDE.md` et une ligne du `CLAUDE.md` de tout projet hôte — puis vider les cinq poches mortes. **Découpé en sept lots A→G le 31/08** : le filet d'abord, le correctif vocal ensuite, le déplacement des alertes, les trois modules data un par un, AudioRoom, la suppression, la doc. Trois faits du cadrage : le provider data v2 existe déjà (rien à écrire), le contrat de callback n'est pas mappable 1 pour 1 (chaque appelant se réécrit), et il y a un **sixième** consommateur hors du recompte — d'où les **deux** greps de la commande corrigée au lot C. |
+| [webrtc-data-v1-v2.md](webrtc-data-v1-v2.md) | **recette, éprouvée deux fois (D1, D2)** | la traduction du canal data v1 → v2, écrite une fois (lot D0). **On ne l'ouvre plus que pour D3 (ClassRoom)** — Whiteboard et Application sont faits. Elle **pointe** `docs/modules/webrtc2/api.md` pour tout ce qui concerne la v2 et ne porte que le delta : la bascule de balise, les **cinq** écarts d'émission — dont **la sérialisation, que le cadrage donnait à tort pour un non-sujet**, et le plafond de 64 Ko, cinquième écart trouvé en exécutant D1 — et ce que chaque module a en propre. **Elle s'est trompée trois fois, et chaque lot qui l'a exécutée en a trouvé une** : le double sens d'`onConnectionOpen` et le cinquième écart (D1), puis le mot « indemne » accolé à `onConnectionClose` (D2, qui ne l'est pas). Son point produit ouvert est **fermé** : `exclude` n'a aucun équivalent v2, et le complément se calcule chez l'appelant. **Ce fichier part avec `components/WebRTC/`**, au lot F/G. |
+| [whiteboard-todo.md](whiteboard-todo.md) | **ouvert — un 🔴, le seul du paquet** | le tableau blanc côté SERVEUR : son service PHP, ses deux routes, sa persistance. **Ne parle pas de WebRTC.** Un seul item, et c'est une politique à trancher avant d'écrire une ligne : `saveWhiteBoard` / `loadWhiteBoard` n'ont aucune garde d'autorisation, leurs trois ids viennent du client, donc tout connecté lit ou écrase le tableau de n'importe quelle room — et l'écriture réattribue `model_id` au passage, ce qui efface la trace de la victime. Le fichier nomme les **deux** façons dont le correctif naïf (`canJoinRoom`) serait faux, et l'usage modèle à imiter (`Services/Chat.php:119`, apparié à `isCreator`). Les trois défauts du chemin de CHARGEMENT ne sont pas ici : lot 5 de [doc-rustines.md](doc-rustines.md), et non recopiés. |
 | [projection-graphe-todo.md](projection-graphe-todo.md) | ⏸️ **suspendu — au besoin seulement** | suites du correctif « un utilisateur = un mur + un feed ». Rien n'y bloque ; deux items portent une exigence d'exploitation (sauvegarder le space NebulaGraph, que rien ne reconstruira). |
 | [chat-tests-plan.md](chat-tests-plan.md) | **non démarré** | plan de tests du Chat en 5 couches ; un seul fichier de test existe. Décision en attente sur les helpers (`mockEcho`, `mockRoute`, `seedChatStore`) : dédiés à Chat, ou promotion des helpers WebRTC2 — le fichier nomme le candidat existant et les deux fidélités qu'un partage naïf effacerait. |
 | [front-todo.md](front-todo.md) | **non démarré** | deux items. Le ping d'ouverture de session part avant que pusher n'ait confirmé l'abonnement, et Reverb le rejette — l'utilisateur peut rester hors ligne deux minutes ; le correctif naïf (`subscribed(cb)`) ne part jamais sur un canal déjà confirmé. Et `isEmpty(element.store)` lève sur un commentaire de post chargé par la liste, **dans un listener Reverb donc en silence** — quatre appelants, deux étages possibles pour le correctif. |
