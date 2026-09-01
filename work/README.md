@@ -209,7 +209,46 @@ explicitement :
 
 ---
 
-## Hors chantier — la seule garantie qui manque au paquet
+## Hors chantier
+
+- [ ] 🟠 **`$result[0]` non gardé sur un retour NebulaGraph — une FAMILLE, pas un incident** `[M]`
+  — ouvert le 01/09/2026, en réparant la création d'une room ClassRoom. L'item vit ici : il ne
+  relève d'aucun chantier existant, et surtout **pas** de
+  [projection-graphe-todo.md](projection-graphe-todo.md), qui est suspendu.
+
+  `$this->nebula->execute()` rend **un tableau vide** quand la requête ne matche rien — ce qui n'est
+  pas une anomalie mais un cas nominal : un id qui ne porte pas le tag attendu, un vertex supprimé,
+  une arête absente. Tout `$result[0]` écrit sans garde lève alors **« Undefined array key 0 »**.
+
+  ⚠️ **Ce n'est pas théorique, c'est le bug vécu du 01/09** : `createClassroomVertice` passait l'id
+  d'un vertex `classroom` à `getOrcreateChatVertice`, dont la requête ne matche que `(r:room)`. La
+  création de la room s'interrompait au milieu, laissant un salon **inouvrable**. Corrigé aux deux
+  bouts (`92cefa9`), mais **seulement à ces deux bouts**.
+
+  **Quatre autres sites, vérifiés un par un — ce sont les seuls dont la portée est établie :**
+
+  | Site | Se déclenche quand | Effet |
+  |---|---|---|
+  | `Services/Server.php:929` — `$result['content'][0]['content_type']` | une room **sans contenu** est ouverte | casse `getRoom`, donc **toute** vue de salon |
+  | `Services/Server.php:994-998` — `$content[0]['type']`, `$content[0]['content']['id']` | on **modifie** une room sans contenu publié | casse `updateRoomServer` |
+  | `Services/Chat.php:516` — `$result[0]['messages']` | le vertex chat n'existe plus (id périmé) | casse `getConversation` |
+  | `Services/Chat.php:610` — `$owner_id[0]` | le chat n'a pas d'arête `has_creator` | casse `deleteConversation` |
+
+  ⚠️ **Le `try/catch` de `updateRoomServer` ne protège PAS**, et c'est le piège à ne pas reproduire :
+  il n'attrape que `NebulaGraphException`. Une « Undefined array key » est une `ErrorException` —
+  elle passe **à travers**. Un site entouré d'un `try` n'est donc pas un site gardé.
+
+  ℹ️ **Un chiffre à ne PAS croire tel quel** : `grep '\$result\[0\]\|\$content\[0\]\|\[0\]\['` sur
+  `src/app/Services/*.php` rend **48** occurrences réparties sur six services (Server 31, Chat 10,
+  Comments 6, Users 4, Feed 2, ApplicationIA 2). C'est une **borne d'instruction, pas un décompte de
+  défauts** : ces 48 sites n'ont pas été triés, et certains sont légitimement précédés d'une garde.
+  Le travail de ce lot est précisément ce tri — et le chiffre juste sera celui qu'il produira.
+
+  **La question à trancher avant d'écrire une ligne**, parce qu'elle décide de tout le reste :
+  garder **site par site**, ou faire rendre à la couche d'accès un objet qui ne peut pas être
+  indexé à vide ? Le second referme la famille entière et ne se refera jamais ; il touche en
+  revanche tous les services d'un coup, donc il se prépare avec son filet — et la suite PHP
+  (286 tests) ne couvre aujourd'hui que la signalisation WebRTC et les gardes de `Socializable`.
 
 - [ ] 🟠 **Aucune CI : le seul filet est un hook local** `[S]` — relevé le 29/08/2026 au point
   d'étape QA. Il n'y a pas de fichier de chantier pour ça et il n'en faut pas ; l'item vit ici.
