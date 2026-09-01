@@ -127,9 +127,29 @@ composant), `:217` (message venant de l'iframe, gardé par `isStringifiedJSon`) 
 
 > Cet écart contredit le cadrage du lot 1, qui annonçait « les `JSON.parse` des trois appelants
 > restent valables tels quels ». Ils ne le sont pas : laissés en place, ils reçoivent un objet et
-> lèvent. C'est la seule affirmation structurante de ce fichier que **aucun test ne tient** —
-> `usePeerTransport.mesh.test.js` épingle bien l'absence de transformation à l'émission, mais tous ses
-> cas passent une chaîne ou un `ArrayBuffer`, jamais un objet.
+> lèvent. ~~C'est la seule affirmation structurante de ce fichier que **aucun test ne tient**~~ —
+> **corrigé à D1** : `usePeerTransport.mesh.test.js` porte désormais le cas de l'objet imbriqué, avec
+> l'identité **référentielle** (`toBe`), là où tous ses cas passaient une chaîne ou un `ArrayBuffer`.
+
+🔴 **Cet écart a MORDU, et pas là où on l'attendait — D1, vérification à deux navigateurs.** La
+suppression de la sérialisation ne casse pas que les `JSON.parse` du récepteur : elle expose
+l'émission à la sérialisation **réelle** du transport. PeerJS sérialise en **BinaryPack**, qui
+**lève** sur une `Map` — et l'`appState` d'Excalidraw en porte une (`collaborators`). La v1 ne le
+voyait pas : `safeStringify` aplatissait tout en chaîne, et la `Map` y devenait `{}` **par
+accident**, jamais par intention.
+
+Trois leçons pour D2 et D3, dont deux dépassent le Whiteboard :
+
+- ⚠️ **Le garde de taille ne protège pas de ça** : il mesure via `JSON.stringify`, qui accepte une
+  `Map`. Il rejette une **fonction nue**, ce qui donne l'illusion d'être couvert.
+- ⚠️ **Le throw est synchrone dans la boucle de diffusion** : les pairs suivants ne reçoivent rien,
+  et il remonte à l'appelant — chez D1, il sautait le `saveScene` placé après, donc il cassait aussi
+  la **persistance** du tableau, pas seulement sa propagation.
+- ⚠️ **Aucun test ne peut voir ce throw** (`conn.send` est un `vi.fn()`). **La vérification manuelle
+  n'est pas une formalité de fin de lot : c'est le seul contrôle qui exerce le transport réel.**
+
+Le contrat durable est dans [`api.md`](../docs/modules/webrtc2/api.md#-senddata-peut-lever-et-le-garde-de-taille-ne-len-protège-pas) ;
+seule la comparaison avec la v1 est ici, et elle part avec elle.
 
 **Écart 5 — le plafond de 64 Ko, découvert à D1 : c'est une RÉGRESSION, pas une borne native.** Le
 `sendData` du store v1 n'avait **aucune** limite de taille (`stores/peers/actions.js:343-372` :
@@ -166,7 +186,18 @@ qui rend le lot F possible.
 
 ## D. Ce que chaque lot a en propre — mesuré, pas supposé
 
-**D1 · Whiteboard** — `Whiteboard/WhiteboardComponent.vue` — ✅ **MIGRÉ le 01/09/2026**
+**D1 · Whiteboard** — `Whiteboard/WhiteboardComponent.vue` — ✅ **MIGRÉ le 01/09/2026**, corrigé le
+même jour après la vérification à deux navigateurs
+
+- 🔴 **Ce que la vérification a trouvé, et que trois relectures n'avaient pas vu** : `update_scene`
+  levait à chaque `mouseup` (§C, écart 5 — la `Map` de l'`appState`). Le correctif est de **ne plus
+  émettre l'`appState` du tout**, et il ne coûte rien : `ExcalidrawElement.updateScene` lit
+  **`data.state`**, une clé que **personne n'émet** — ni ce composant, ni le serveur. L'`appState`
+  transmis n'a donc **jamais** été appliqué, en v1 comme en v2. Le retirer enlève une `Map`, la plus
+  grosse part inutile du payload, et **rien** à personne.
+- ℹ️ **La méthode de D1 est ce qui a rendu le correctif sûr, pas la chance** : avant de choisir
+  comment sérialiser (round-trip JSON ? retirer `collaborators` ?), on a lu le **récepteur**. La
+  question « quoi émettre » n'avait pas de réponse tant qu'on ignorait ce qui était lu en face.
 
 - **Le seul des trois qui imbriquait `conn.on('data')` DANS `conn.on('open')`** : aplati en deux
   callbacks indépendants (`handleDataReceived`, `handleConnectionOpen`), passés par `:callbacks` via

@@ -62,8 +62,16 @@ explicitement :
    « bonne nouvelle » qui promettait qu'il n'y avait rien à faire.
    **Puis D1 le 01/09** : le Whiteboard est migré, **un seul fichier de code**, et les appelants v1
    vivants passent de quatre à **trois**. Suite JS inchangée (85 fichiers / 1501 cas) et
-   `npm run build` vert ; **la vérification à deux navigateurs reste ouverte**, seule case décochée du
-   lot. **Le lot a corrigé la recette de D0 sur deux points, et les deux servent D2 et D3** :
+   `npm run build` vert. 🔴 **Puis la vérification à deux navigateurs a trouvé un défaut réel, et
+   c'est le résultat le plus utile de la journée** : les curseurs passaient, aucun dessin ne se
+   propageait — PeerJS sérialise en **BinaryPack**, qui **lève** sur la `Map` `collaborators` de
+   l'`appState` d'Excalidraw. La v1 ne le voyait pas : `safeStringify` aplatissait tout en chaîne et
+   la `Map` y devenait `{}` **par accident**. Le throw étant synchrone dans la boucle de diffusion,
+   il sautait aussi le `saveScene` placé après — donc **la persistance était cassée elle aussi**.
+   **Correctif gratuit, trouvé en lisant le récepteur avant de choisir comment sérialiser** :
+   `ExcalidrawElement.updateScene` lit `data.state`, une clé que **personne n'émet** — l'`appState`
+   transmis n'a jamais été appliqué. On ne l'émet plus : la `Map` disparaît, le payload maigrit, et
+   rien ne change pour personne. **Re-vérification à deux navigateurs ouverte**, seule case décochée. **Le lot a corrigé la recette de D0 sur deux points, et les deux servent D2 et D3** :
    `onConnectionOpen` tire dans les **deux sens** en v2 alors que le `callbackConnection` de la v1 ne
    tirait que sur l'entrant — donc « préserver l'effet de bord » ne peut pas se faire par substitution
    (sans garde, chaque pair renvoyait sa scène deux fois ; chez D2, l'iframe recevrait une annonce de
@@ -94,6 +102,14 @@ explicitement :
    pas cherché parce qu'elle comparait deux **contrats** et non deux **implémentations**. Corollaire
    pour D2, D3 et E : **la recette est un point de départ, pas une autorité** — sa correction est un
    livrable de chaque lot qui s'en sert.
+
+   ⚠️ **Et le 🔴 de D1 ajoute le degré au-dessus : sur ce module, la vérification manuelle n'est pas
+   une formalité de fin de lot, c'est le seul contrôle qui exerce le transport réel.** Suite verte,
+   build vert, trois relectures — et le tableau ne propageait rien. **Aucun test de la suite ne
+   pouvait le voir, ni ne le pourra** : `conn.send` y est un `vi.fn()`, le harnais n'a pas de
+   BinaryPack. Ce qui reste épinglable est la moitié amont (le garde de taille laisse passer une
+   `Map`), et c'est écrit comme telle, avec l'avertissement de ne pas la lire comme une garantie.
+   Corollaire pour D2, D3 et E : **ne pas cocher un lot data sur la seule foi du vert.**
 
    Ce que le troisième harnais a coûté, et qui vaut pour le prochain composant testé sous horloge
    factice : **deux minuteurs parasites** que `vi.getTimerCount()` compte sans qu'ils appartiennent

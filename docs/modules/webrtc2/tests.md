@@ -145,6 +145,15 @@ verbe demanderait de monter `Notifications.vue`, et le scénario ne parlerait pl
 
 ## Pièges de mock
 
+- **`conn.send` est un `vi.fn()` : la suite ne verra JAMAIS un refus de sérialisation.** En
+  production PeerJS sérialise en **BinaryPack**, qui **lève** sur une `Map`, un `Set` ou une instance
+  de classe. Le double, lui, accepte tout — et le garde de taille ne comble pas l'écart, puisqu'il
+  mesure via `JSON.stringify`, qui accepte une `Map`. Un payload qui casse tous les navigateurs
+  passe donc **vert** ici. C'est le défaut qui a cassé le Whiteboard au lot D1 : l'`appState`
+  d'Excalidraw porte `collaborators: Map`. Ce qui reste épinglable est la moitié amont — « le garde
+  laisse passer » —, et `usePeerTransport.mesh.test.js` porte ce cas **avec l'avertissement de ne pas
+  le lire comme « les `Map` sont supportées »**. La seule vérification réelle est manuelle, à deux
+  navigateurs. Détail du mode de panne : [api.md](api.md#-senddata-peut-lever-et-le-garde-de-taille-ne-len-protège-pas).
 - **Les `vi.fn()` globaux de `setup.js` ne sont pas réinitialisés entre les tests** (pas de
   `clearMocks` dans `vitest.config.js`) : faire `navigator.mediaDevices.getUserMedia.mockReset()` en
   `beforeEach`, sinon les compteurs d'appels s'accumulent.

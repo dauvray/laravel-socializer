@@ -100,6 +100,52 @@ describe('usePeerTransport — sendData mesh (limite de taille payload)', () => 
         expect(sendSpies.carol).not.toHaveBeenCalled()
     })
 
+    /**
+     * ⭐ L'affirmation structurante du contrat v2 — « le payload part tel quel, aucune
+     * sérialisation, aucune enveloppe » — que RIEN ne tenait jusqu'ici : tous les cas
+     * ci-dessus passent une chaîne, un ArrayBuffer ou une fonction, jamais un OBJET.
+     * Le trou avait été signalé en écrivant la table de traduction v1 → v2 (lot D0) ;
+     * il est fermé ici.
+     *
+     * Ce que ce cas épingle : l'identité RÉFÉRENTIELLE, pas seulement structurelle
+     * (`toBe`, pas `toEqual`) — c'est la différence exacte avec la v1, qui sérialisait
+     * en JSON avant d'émettre et obligeait chaque récepteur à un `JSON.parse`.
+     */
+    it('transmet un objet imbriqué SANS transformation ni enveloppe (identité référentielle)', () => {
+        const payload = { action: 'update_scene', details: { elements: [{ id: 'a' }], files: {} } }
+
+        transport.sendData(payload)
+
+        expect(sendSpies.bob).toHaveBeenCalledWith(payload)
+        expect(sendSpies.bob.mock.calls[0][0]).toBe(payload)
+        expect(sendSpies.carol.mock.calls[0][0]).toBe(payload)
+    })
+
+    /**
+     * ⚠️ CONTRE-ÉPREUVE, et elle documente une LIMITE DU HARNAIS plutôt qu'un
+     * comportement souhaitable.
+     *
+     * Une `Map` passe le garde de taille : `getPayloadSizeBytes` mesure via
+     * `JSON.stringify`, qui la rend `{}` sans broncher. Elle atteint donc `conn.send`
+     * — et EN PRODUCTION, la sérialisation par défaut de PeerJS (BinaryPack) y LÈVE :
+     * « Type "function Map() { [native code] }" not yet supported ». Le throw est
+     * synchrone dans le `forEach` ci-dessus, donc il abandonne aussi les pairs suivants
+     * et remonte jusqu'à l'appelant. C'est le défaut qui a cassé le Whiteboard au lot D1.
+     *
+     * **Aucun test de cette suite ne peut voir ce throw** : `conn.send` est un `vi.fn()`,
+     * il accepte n'importe quoi. Ce cas ne prouve donc PAS que l'envoi est correct — il
+     * épingle que le garde laisse passer, ce qui est la moitié vérifiable du défaut, et
+     * il rougira le jour où un garde de transportabilité sera posé (tâche ouverte,
+     * work/doc-rustines.md lot 5). Ne pas le lire comme « les Map sont supportées ».
+     */
+    it('⚠️ laisse passer une Map — le garde de taille ne voit pas ce que BinaryPack refuse', () => {
+        const payload = { collaborators: new Map([['sock-1', { username: 'alice' }]]) }
+
+        transport.sendData(payload)
+
+        expect(sendSpies.bob).toHaveBeenCalledWith(payload)
+    })
+
     it('applique la limite aussi avec une cible explicite (destUserSlugs)', () => {
         const huge = 'x'.repeat(MAX_PAYLOAD_BYTES + 1)
 

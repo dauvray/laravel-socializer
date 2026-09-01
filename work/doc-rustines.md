@@ -536,14 +536,71 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
                   - [x] Tests — **aucun**, et c'est le contrat du lot D : composant métier hors du
                         filet, aucun test ne l'importe (d'où la suite strictement inchangée).
                         `npm run build` est le seul contrôle qui voie la résolution de l'import neuf
-                  - [ ] **Vérif manuelle — RESTE À FAIRE, par David.** Deux navigateurs, deux
-                        comptes, même room whiteboard : (1) un trait tracé chez A apparaît chez B au
-                        mouseup ; (2) le pointeur de A bouge chez B ; (3) **B arrive après que A a
-                        tracé** ⇒ B voit le tableau déjà tracé, et **une seule fois** — un double
-                        `update_scene` en console dirait que le test de sens est faux ; (4) aucun
-                        `[Mesh] Payload ignoré` sur un tracé nominal. ⚠️ Rechargement dur des deux
-                        côtés avant de mesurer, et **aucune écriture dans `.env`** pendant
-                        (`.ai/rules/web-r-t-c2.md` de l'hôte : Vite redémarre et périme les peerId)
+                  - [x] **Vérif manuelle — PASSÉE le 01/09, et elle a trouvé un 🔴.** Curseurs
+                        distants OK avec leur pseudo (`pointer_move`), mais **aucun élément dessiné
+                        ne se propageait** : `Uncaught Error: Type "function Map() { [native code] }"
+                        not yet supported`, à chaque `mouseup`, depuis `conn.send`.
+                        **Cause** : PeerJS sérialise en **BinaryPack**, qui LÈVE sur une `Map` — et
+                        `getAppState()` d'Excalidraw 0.18 en porte une, `collaborators`. La v1 ne le
+                        voyait pas : `safeStringify` aplatissait tout en chaîne et la `Map` y devenait
+                        `{}` **par accident**. La v2 émet l'objet tel quel, c'est le contrat, donc
+                        BinaryPack la rencontre.
+                        ⚠️ **Le throw coûtait deux choses de plus que le symptôme visible** : il est
+                        synchrone dans le `forEach` de diffusion, donc les pairs suivants ne
+                        recevaient rien — et il remontait à l'appelant, sautant le `saveScene` placé
+                        après, donc **D1 avait aussi cassé la persistance du dessin** sur un tableau
+                        `isSavable`.
+                        ⚠️ **Le garde de taille ne pouvait pas l'attraper** : il mesure via
+                        `JSON.stringify`, qui accepte une `Map`. Il rejette une **fonction nue**, ce
+                        qui donnait l'illusion d'une couverture. Le trou est précis — **un conteneur
+                        que JSON accepte et que BinaryPack refuse**.
+                        ✅ **Correctif, et il ne coûte rien** : ne plus émettre l'`appState`.
+                        `ExcalidrawElement.updateScene` lit **`data.state`**, une clé que **personne
+                        n'émet** — ni ce composant, ni le serveur. L'`appState` transmis n'a donc
+                        **jamais** été appliqué, en v1 comme en v2. Le retirer enlève la `Map`, la
+                        plus grosse part inutile du payload, et **rien** à personne. `saveScene`
+                        reçoit toujours l'objet entier : le format stocké ne change pas.
+                        ℹ️ **Ce qui a rendu le correctif sûr est une méthode, pas la chance** : avant
+                        de choisir comment sérialiser (round-trip JSON ? retirer `collaborators` ?),
+                        on a lu le **récepteur**. « Quoi émettre » n'avait pas de réponse tant qu'on
+                        ignorait ce qui était lu en face. Les deux correctifs « évidents » étaient
+                        tous deux moins bons, et le round-trip aurait livré `collaborators: {}` à un
+                        Excalidraw qui appelle `.get()`, `.forEach()` et `.size` dessus.
+                        - [x] Tests — **un cas neuf, plus une contre-épreuve annotée**, dans
+                              `usePeerTransport.mesh.test.js`. Le premier ferme le trou que **D0
+                              avait lui-même signalé** : l'objet imbriqué ressort **identique**
+                              (`toBe`, identité référentielle — la différence exacte avec la v1),
+                              alors que tous les cas existants passaient une chaîne, un `ArrayBuffer`
+                              ou une fonction. La seconde épingle que le garde **laisse passer** une
+                              `Map`, avec l'avertissement de ne pas la lire comme « les `Map` sont
+                              supportées » : elle rougira le jour où le garde de transportabilité
+                              sera posé.
+                              ⚠️ **Et le fait le plus utile du correctif : AUCUN test de la suite ne
+                              pouvait voir ce bug, ni ne le pourra** — `conn.send` est un `vi.fn()`,
+                              le harnais n'a pas de BinaryPack. Écrit dans
+                              `docs/modules/webrtc2/tests.md`, en tête des pièges de mock. **La
+                              vérification manuelle n'est donc pas une formalité de fin de lot : sur
+                              ce module, c'est le seul contrôle qui exerce le transport réel.**
+                        - [x] Doc — `api.md` (**section neuve** : `sendData` peut LEVER, le garde ne
+                              l'attrape pas, le throw abandonne les pairs suivants ; plus la
+                              correction du ⚠️ de D1, la scène n'est plus `elements + appState +
+                              files`) · `docs/modules/webrtc2/tests.md` (le piège de mock) ·
+                              `work/webrtc-data-v1-v2.md` (§C écart 5 et §D1) · cet item · les deux
+                              `work/README.md`. **Deux tâches ouvertes**, ci-dessous et au lot 5
+                        - [ ] **Re-vérif à deux navigateurs — RESTE À FAIRE.** Mêmes points qu'avant,
+                              plus deux que le 🔴 a rendus discriminants : (1) un trait tracé chez A
+                              apparaît chez B, **sans aucune erreur en console** ; (2) le pointeur de
+                              A bouge chez B (non-régression) ; (3) **B arrive après que A a tracé**
+                              ⇒ B voit le tableau déjà tracé, **une seule fois** — un double
+                              `update_scene` dirait que le test de sens est faux ; (4) sur un tableau
+                              `isSavable`, le dessin est **persisté** après rechargement — c'était
+                              cassé par le throw ; (5) **coller une image** : si la propagation
+                              échoue, elle doit le faire avec un `[Mesh] Payload ignoré` explicite,
+                              **pas un throw** — les deux cas sont désormais distinguables, et c'est
+                              ce qui alimentera la tâche des 64 Ko. ⚠️ Rechargement dur des deux
+                              côtés avant de mesurer, et **aucune écriture dans `.env`** pendant
+                              (`.ai/rules/web-r-t-c2.md` de l'hôte : Vite redémarre et périme les
+                              peerId)
             - [ ] D2 — **Application**. Vérif : l'iframe reçoit `connectionEnabled` puis les messages.
                   ⚠️ **Le test de sens de D1 y est obligatoire**, voir ci-dessus
             - [ ] D3 — **ClassRoom**, en dernier : il imbrique Whiteboard, donc deux providers, donc
@@ -862,11 +919,49 @@ chemin (a) et l'usurpation intra-room sont des **bornes assumées** inscrites da
 écritures muettes du graphe sont devenues les trois régimes de la couture, avec leurs deux
 arbitrages datés.
 
+- [ ] **`getPayloadSizeBytes` accepte ce que BinaryPack refuse** · effort [M] — **ouvert le
+      01/09/2026 par la vérification de D1**, qui l'a payé : voir le 🔴 du lot D1.
+      Le garde anti-DoS mesure via `JSON.stringify`, qui accepte une `Map` (elle rend `{}`). Elle
+      atteint donc `conn.send`, où **BinaryPack LÈVE** — de façon synchrone, dans le `forEach` de
+      diffusion : les pairs suivants ne reçoivent rien et l'exception remonte à l'appelant. Le garde
+      rejette bien une **fonction nue**, ce qui donne l'illusion d'être couvert.
+      **Détectable à coût nul** : le `JSON.stringify` du garde est déjà fait, un `replacer` qui
+      refuse `Map`/`Set`/instance de classe suffirait à transformer un throw en refus journalisé —
+      exactement le traitement déjà réservé au dépassement de taille. Et **testable**, contrairement
+      au bug lui-même : `usePeerTransport.mesh.test.js` porte déjà le cas « laisse passer une `Map` »,
+      qui rougira le jour où le garde sera posé.
+      ⚠️ **Alternative écartée, à ne pas re-proposer sans lire ceci** : `serialization: 'json'` sur la
+      connexion data reproduirait la v1 pour tous les consommateurs — et **aucun n'envoie de binaire
+      en production**, vérifié. Mais c'est une propriété de **transport**, avec une falaise de
+      compatibilité entre deux onglets sur des bundles différents (le paquet a déjà ce risque
+      documenté), et elle périmerait le cas `ArrayBuffer` épinglé.
+      Annotation : `docs/modules/webrtc2/api.md` (la section « `sendData` peut LEVER ») ·
+      `docs/modules/webrtc2/tests.md` (le piège de mock) · `docs/modules/webrtc2/securite.md` (même
+      mécanique que le garde de taille)
+      - [ ] Code · - [ ] Doc · - [ ] Tests
+
+- [ ] **`ExcalidrawElement.updateScene` lit `data.state`, que personne n'émet** · effort [S] —
+      **relevé le 01/09/2026 en corrigeant D1.**
+      `this.excalidrawAPI.updateScene({ elements: data.elements, appState: data.state, files: data.files })`
+      — or l'émetteur envoie `{ elements, appState, files }`, et le serveur stocke la même forme.
+      `data.state` vaut donc **toujours `undefined`** : l'`appState` transmis et **stocké** est mort
+      depuis toujours, en v1 comme en v2. C'est ce fait qui a rendu le correctif de D1 gratuit.
+      ⚠️ **Ce n'est PAS une faute de frappe à réparer.** Lire `data.appState` allumerait la
+      réplication de l'appState : le scroll, le zoom et la sélection de l'émetteur seraient copiés
+      chez le récepteur à chaque `mouseup` — et la `Map` `collaborators` reviendrait sur le fil.
+      **Décision produit d'abord** : veut-on répliquer une vue, ou seulement un dessin ? Si non, le
+      correctif est l'inverse — retirer `appState` de ce qui est **stocké** aussi, et la ligne
+      devient `appState: undefined` explicite ou disparaît.
+      Annotation : aucune aujourd'hui — le fait n'est écrit que dans `work/`, et c'est correct tant
+      que la décision n'est pas prise
+      - [ ] Code · - [ ] Doc · - [ ] Tests
+
 - [ ] **La scène du Whiteboard n'a aucune découpe et le plafond de 64 Ko l'abandonne en silence** ·
       effort [M] — **ouvert le 01/09/2026 par D1**, et **assumé en l'état à cette date**.
-      `update_scene` transporte `getSceneElements()` + `getAppState()` + `getFiles()` : le plus gros
-      payload du paquet, et **le seul dont la taille est pilotée par l'utilisateur**. Une image collée
-      dans le tableau, encodée en base64 dans `files`, franchit `MAX_PAYLOAD_BYTES` (64 Ko) — et
+      `update_scene` transporte `getSceneElements()` + `getFiles()` : le plus gros payload du paquet,
+      et **le seul dont la taille est pilotée par l'utilisateur**. *(L'`appState` en faisait partie
+      jusqu'au correctif de D1, qui l'a retiré — le terme dominant est désormais `files`.)* Une image
+      collée dans le tableau, encodée en base64 dans `files`, franchit `MAX_PAYLOAD_BYTES` (64 Ko) — et
       l'émission est alors **entièrement annulée**, avec pour seule trace un `console.warn` chez
       l'émetteur. Symptôme produit : « le tableau ne se synchronise plus », sans erreur.
       ⚠️ **C'est une régression de la migration v1 → v2, pas une limite historique** : le `sendData`

@@ -232,14 +232,33 @@
           //     }, this.room.id)
           // },
           /**
-           * ⚠️ Le plus gros payload du paquet, et le seul dont la taille est pilotée par
-           * l'utilisateur : au-delà de MAX_PAYLOAD_BYTES (64 Ko) l'envoi est entièrement
-           * abandonné, sans un mot de plus qu'un console.warn. Une image collée dans le
-           * tableau y suffit. Borne assumée à la migration du canal data v1 → v2 (le
-           * sendData du store v1 n'en avait aucune) — voir work/webrtc-data-v1-v2.md.
+           * ⚠️ L'`appState` est RETIRÉ de l'émission, et ce n'est pas une optimisation :
+           * sans ce retrait, rien ne se propage du tout.
+           *
+           * 1. `getAppState()` rend un `appState` dont `collaborators` est une **Map**
+           *    (Excalidraw 0.18). La sérialisation par défaut de PeerJS est BinaryPack,
+           *    qui **lève** dessus — et le throw est synchrone dans le `forEach` de
+           *    `sendData` : il abandonne les pairs suivants ET le `saveScene` ci-dessous,
+           *    donc il cassait aussi la persistance sur un tableau `isSavable`. La v1 ne
+           *    le voyait pas : elle passait par `safeStringify`, donc une chaîne partait
+           *    sur le fil et la Map y devenait `{}` en silence.
+           * 2. ⚠️ Le garde de taille de `sendData` ne peut PAS l'attraper : il mesure via
+           *    `JSON.stringify`, qui accepte une Map. Le trou est précis — un conteneur
+           *    que JSON accepte et que BinaryPack refuse.
+           * 3. Et surtout : **le récepteur ne l'a jamais lu.** `ExcalidrawElement.updateScene`
+           *    lit `data.state`, une clé que personne n'émet (ni ici, ni le serveur) —
+           *    l'`appState` transmis était mort avant même la v2. Le retirer n'enlève donc
+           *    rien à personne.
+           *
+           * ℹ️ Le payload restant, `elements` + `files`, est sûr par construction (objets
+           * plats du format .excalidraw, et un Record de dataURL). Reste la borne de
+           * MAX_PAYLOAD_BYTES (64 Ko) : au-delà l'envoi est abandonné, avec un
+           * `console.warn` pour seule trace. Le terme dominant est désormais `files` —
+           * une image collée y suffit. Borne assumée, voir work/webrtc-data-v1-v2.md.
            */
           handleExcalidrawMouseUp(event) {
             const data = event.detail
+            const { appState, ...transportable } = data
 
             // `?.` : le provider est sous v-if alors que les deux listeners DOM sont
             // posés inconditionnellement en mounted(). L'ancien sendData était une action
@@ -248,10 +267,12 @@
             this.$refs.dataBroadcast?.api.sendData({
                 action: 'update_scene',
                 from: this.me.name,
-                details: data,
+                details: transportable,
             })
 
               if(this.isSavable) {
+                // `data` entier, appState compris : le format stocké côté serveur est
+                // relu par loadScene() et ne relève pas de ce qui part sur le fil.
                 this.saveScene(data)
               }
           },

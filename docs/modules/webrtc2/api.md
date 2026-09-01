@@ -172,12 +172,38 @@ l'arrivant).
   qu'un `console.warn` par slug.
 
 ⚠️ **Ce plafond de 64 Ko n'est pas théorique : un consommateur du paquet le frôle.** La scène
-Excalidraw du Whiteboard (`update_scene` : `getSceneElements()` + `getAppState()` + `getFiles()`)
-est le plus gros payload du paquet, et le seul dont la taille est pilotée par l'utilisateur — une
-image collée dans le tableau, encodée en base64 dans `files`, suffit à le franchir. L'abandon étant
-muet des deux côtés, le symptôme produit est « le tableau ne se synchronise plus », sans erreur.
-Aucune découpe ni synchronisation par delta n'existe aujourd'hui : c'est une **borne assumée**, pas
-un cas traité.
+Excalidraw du Whiteboard (`update_scene` : `getSceneElements()` + `getFiles()`) est le plus gros
+payload du paquet, et le seul dont la taille est pilotée par l'utilisateur — une image collée dans
+le tableau, encodée en base64 dans `files`, suffit à le franchir. L'abandon étant muet des deux
+côtés, le symptôme produit est « le tableau ne se synchronise plus », sans erreur. Aucune découpe ni
+synchronisation par delta n'existe aujourd'hui : c'est une **borne assumée**, pas un cas traité.
+
+### ⚠️ `sendData` peut LEVER, et le garde de taille ne l'en protège pas
+
+Les quatre cas ci-dessous et la limite de taille échouent **en silence**. Il existe un cinquième
+mode, et il est bruyant : **la sérialisation elle-même peut jeter**, de façon **synchrone**, depuis
+`conn.send`.
+
+La sérialisation par défaut de PeerJS est **BinaryPack**, qui refuse tout ce qu'il ne connaît pas —
+`Map`, `Set`, une instance de classe — avec
+`Error: Type "function Map() { [native code] }" not yet supported`.
+
+**Le garde de taille ne peut pas l'attraper**, et c'est le piège : `getPayloadSizeBytes` mesure via
+`JSON.stringify`, qui accepte une `Map` (elle rend `{}`). Il rejette bien une **fonction nue**, ce
+qui donne l'illusion d'une couverture. Le trou est précis — **un conteneur que JSON accepte et que
+BinaryPack refuse**.
+
+Trois conséquences, parce que le throw part du `forEach` de diffusion :
+
+- les **pairs suivants** de la boucle ne reçoivent rien ;
+- l'exception **remonte à l'appelant** — tout ce qu'il faisait après son `sendData` est sauté ;
+- **aucun test de la suite ne peut le voir** : `conn.send` y est un `vi.fn()`, sans BinaryPack.
+  `usePeerTransport.mesh.test.js` épingle la moitié vérifiable — le garde laisse passer une `Map` —
+  et le dit dans son cas.
+
+Le geste, côté consommateur : **n'émettre que des données plates**. Le cas vécu est le Whiteboard,
+dont l'`appState` Excalidraw porte `collaborators: Map` ; il l'exclut de son émission
+(`WhiteboardComponent#handleExcalidrawMouseUp`).
 
 ### Les quatre cas où `onDataReceived` n'est pas appelé, ou l'est amputé
 
