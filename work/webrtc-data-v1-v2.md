@@ -1,9 +1,14 @@
 # Canal data — la traduction v1 → v2, écrite une fois
 
 > **Recette de chantier, lot D de [doc-rustines.md](doc-rustines.md).** Elle s'ouvre en migrant
-> **D1** (Whiteboard, **fait le 01/09/2026**), **D2** (Application, **fait le 01/09/2026**) et
-> **D3** (ClassRoom), et rien d'autre. **Il ne reste donc que D3** — après quoi ce fichier n'a plus
-> d'usage.
+> **D1** (Whiteboard), **D2** (Application) et **D3** (ClassRoom), et rien d'autre. ✅ **Les trois
+> sont faits, le 01/09/2026. Cette recette n'a plus d'usage** : elle ne survit que le temps de la
+> v1, dont elle décrit la colonne de gauche — condition de suppression ci-dessous.
+>
+> **D3 l'a corrigée sur un quatrième point, et c'est une espèce nouvelle : un fait exact mais SANS
+> OBJET.** Elle instruisait « lit `conn.connectionId` (journalisation) : inchangé en v2 » — vrai, et
+> portant sur une ligne que le lot allait **supprimer**. Une recette peut donc être juste et faire
+> perdre du temps, en décrivant ce qui ne survit pas à la migration qu'elle décrit.
 >
 > **D1 a corrigé la recette sur deux points, tous deux valables pour D2 et D3** : `onConnectionOpen`
 > tire dans les **deux sens** (§B), et le plafond de 64 Ko est une **régression** de la v2 sur la v1
@@ -11,7 +16,8 @@
 >
 > **D2 l'a corrigée sur un troisième, et c'est un mot qui était de trop** : elle donnait
 > `onConnectionClose` pour **« indemne »** du problème de sens. Il ne l'est pas — il tire une fois par
-> connexion, donc sur les **deux** connexions de la paire. **Vrai pour D3 aussi.** Et D2 a ajouté un
+> connexion, donc sur les **deux** connexions de la paire. *(Sans objet à D3, qui n'a aucun effet de
+> bord de connexion — mais le fait reste vrai du contrat, et il vit dans `api.md`.)* Et D2 a ajouté un
 > fait que ni D0 ni D1 ne pouvaient voir : sur une entrante, un effet de bord de connexion ne peut
 > **pas** supposer qu'un canal sortant vers ce pair existe (§D2, le 🔴).
 >
@@ -95,7 +101,8 @@ dans [`api.md`](../docs/modules/webrtc2/api.md#le-canal-data--les-callbacks-et-s
 de bord porté par l'ancien `callbackConnection` s'exécute donc **deux fois par pair** après
 substitution, et une fois sur une connexion dont `metadata.from` est **mon propre slug**. Les deux
 appelants qui ont un tel effet de bord sont **D1** (renvoi de la scène — traité) et **D2** (annonce
-`connectionEnabled` à l'iframe — **traité**, voir §D2). D3 n'a qu'un `console.log`.
+`connectionEnabled` à l'iframe — **traité**, voir §D2). ✅ **D3 n'en a aucun** : sa v1 ne portait que
+trois `console.log`, non reportés — c'est le seul des trois qui n'écrit pas de garde de sens.
 
 ⚠️ **Et `onConnectionClose` n'en est PAS exempt** — cette recette l'a écrit « indemne », et D2 a
 mesuré le contraire. Le garde `customCloseEmitted` ne promet qu'une chose : une fermeture n'est
@@ -139,10 +146,12 @@ comportements.)*
 | 3 | **room** : 2ᵉ argument, explicite chez les trois | **aucune** — figée à la construction du contexte |
 | 4 | **destinataires** : `{ include: [...] }` / `{ exclude: [...] }` dans le message, honorés par le store | `destUserSlugs` en 2ᵉ argument — l'équivalent d'`include` seul |
 
-**Écart 2 — les sites, et un piège de grep.** Trois au départ ; **celui du Whiteboard est retiré
-depuis D1, celui d'Application depuis D2** — il ne reste que `ClassRoomComponent.vue:140` (D3).
+**Écart 2 — les sites, et un piège de grep.** Trois au départ ; ✅ **les trois sont retirés** —
+Whiteboard à D1, Application à D2, ClassRoom à D3.
 ⚠️ **Le piège s'est vérifié à D2 : Application avait quatre `JSON.parse` et un seul était celui du
-canal data.** Les trois autres sont restés, et devaient rester : les dépendances du composant, le
+canal data.** ℹ️ Il ne s'est **pas** reproduit à D3 — un seul site dans tout `ClassRoom/`, et c'était
+le bon. Mais c'est une chose qui se **vérifie**, pas qui se suppose : un lot qui aurait fait
+confiance au décompte de trois aurait eu raison ici et tort à D2. Les trois autres sont restés, et devaient rester : les dépendances du composant, le
 message venant de l'iframe (gardé par `isStringifiedJSon`) et le clone avant `postMessage`. Ce
 dernier est d'ailleurs devenu **load-bearing** au sens de D2 : c'est parce que le récepteur
 JSON-round-trip déjà le message que normaliser le payload à l'émission ne retire rien à personne
@@ -276,8 +285,10 @@ même jour après la vérification à deux navigateurs
   d'aller lire la v1, et une datation qu'on ne peut pas recontrôler sans retomber dans le piège qui
   l'a produite n'est pas une datation.)*
   ℹ️ **D2 n'avait pas à s'en servir, et c'est en soi une information** : son effet de bord ne répond
-  pas au pair, il poste vers une iframe **locale**. Le verbe est donc pour D3 et pour tout lot qui
-  répond sur une entrante.
+  pas au pair, il poste vers une iframe **locale**. ✅ **D3 non plus, et pour une raison encore
+  différente : il n'a aucun effet de bord de connexion.** Sur les trois appelants data, ce verbe n'a
+  donc **qu'un seul** consommateur, D1 — mais il est un contrat du transport, pas une commodité de
+  D1 : il vit dans `api.md` et sert tout lot futur qui répond sur une entrante.
 - **Sa room n'est pas `room.id`** mais `whiteBoardId` = `room.content[0].id ?? room.id` — l'id du
   vertex de contenu.
 - Deux émissions : `update_scene` (mouseup) et `pointer_move`.
@@ -344,14 +355,41 @@ build et recompte ; la vérification à deux navigateurs reste due)
 - ℹ️ Les deux `console.log('… data chat')` de `connectionDataCallback` ne sont pas reportés : ils
   disaient « chat » dans le module Application.
 
-**D3 · ClassRoom** — `ClassRoom/ClassRoomComponent.vue`, **en dernier**
+**D3 · ClassRoom** — `ClassRoom/ClassRoomComponent.vue` — ✅ **MIGRÉ le 01/09/2026** (code, build et
+recompte ; la vérification à deux navigateurs reste due)
 
+- ✅ **Le plus petit des trois, et pour une raison qui se mesure : sa v1 ne portait AUCUN effet de
+  bord de connexion.** `connectionDataCallback` n'avait que trois `console.log` — non reportés,
+  comme les deux d'Application. Conséquence directe : **`onDataReceived` est la seule clé du jeu**,
+  et **le garde de sens `isIncomingConnection` ne s'écrit pas ici**. Le piège qui a coûté un
+  correctif à D1 et un à D2 ne le concerne pas — c'est le seul des trois dans ce cas.
+- ⚠️ **Corollaire sur cette recette : « Lit `conn.connectionId` (journalisation) : inchangé en v2 »
+  était un fait sans objet.** Il décrivait une ligne que le lot allait supprimer. Vrai, vérifiable,
+  et inutile — une recette peut donc être exacte et quand même faire perdre du temps, en instruisant
+  ce qui ne survivra pas à la migration qu'elle décrit.
+- ✅ **`JSON.parse` : un seul site dans tout `ClassRoom/`, et c'est bien celui du canal data.** Le
+  piège de grep de D2 (quatre `JSON.parse` dont un seul à retirer) **ne s'est pas reproduit** — mais
+  il fallait le vérifier pour le savoir, et `ConfigPanel.vue` a été lu au passage : aucune attache au
+  store v1.
+- ✅ **`mapActions` part entièrement**, à l'inverse de D2 où il devait rester importé pour
+  `useApplicationAIStore` : ici son unique site était le `mapActions(usePeerStore, ['sendData'])`.
+  Reste `mapState` pour `useMeStore`.
+- **Deux émissions** : `whiteboard-toggle` et `chat-toggle`, toutes deux déclenchées par
+  `ConfigPanel` depuis un `<Teleport>` sous `v-if="editable"`. D'où le `?.` : le provider est sous
+  son propre `v-if`, l'ancien `sendData` était une action de store toujours appelable.
 - **Deux providers vivants** : le sien (`room.id`) et celui du Whiteboard qu'il imbrique
-  (`subcontent.id`), donc **deux `contextId` distincts** sur le `Peer` singleton. Le cas est couvert
-  par `scenarios/multiContext.test.js` — le citer plutôt que le re-vérifier.
-- Nécessite **D1 déjà migré dessous**.
-- Lit `conn.connectionId` (journalisation) : inchangé en v2.
-- Deux émissions : `whiteboard-toggle` et `chat-toggle`.
+  (`subcontent.id`), donc **deux `contextId` distincts** sur le `Peer` singleton. Ils sont
+  **frères** dans le template, pas imbriqués l'un dans l'autre : le `provide(WEBRTC_API_KEY)` de
+  chacun ne porte que sur son propre slot, vide dans les deux cas.
+- **Placement du `<div>`** : en **fin de `.classroom-wrapper`**, pas au niveau racine. C'est le
+  troisième emplacement différent des trois lots, et la raison est propre à celui-ci — le composant
+  est **multi-racine** (`.classroom-wrapper` + `<Teleport>`), et la v1 y ajoutait un troisième nœud
+  qui ne rendait **rien**. Le mettre à la racine ferait passer le composant de **un** à **deux**
+  nœuds racine *rendus*, dans un `.room-content-main` qui est lui-même item flex de
+  `.room-content-layout`. ℹ️ Mesuré au passage, et rassurant pour la suite : le `<router-view>` de
+  `Server/Room.vue:23-28` ne passe que `editable`, `users`, `room` — **trois props déclarées, aucun
+  attribut de fallthrough**, donc aucun avertissement Vue lié au multi-racine, ni avant ni après.
+- Nécessitait **D1 déjà migré dessous** — c'était le cas.
 
 **Vérification, pour les trois** : aucun de ces composants n'a de test et aucun n'en recevra — ce sont
 des composants métier hors du filet. La vérification est **manuelle, à deux navigateurs**, et elle est

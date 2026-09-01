@@ -15,11 +15,13 @@ Code : `src/resources/js/socializer/components/WebRTC2/`
 l'arbre, avec des fichiers **homonymes** de ceux de WebRTC2 (`MediaBroadcastProvider.vue`) : un
 symbole trouvé au grep peut venir de là. Rien ne doit y être ajouté.
 
-**Elle n'est pas orpheline, et c'est ce qui empêche de la supprimer** : **deux** composants vivants
-l'importent encore, chacun dans un autre module — `AudioRoom/AudioComponent.vue` et
-`ClassRoom/ClassRoomComponent.vue`. Les symboles concernés sont `usePeers`, `DataUserPeerConnection`
-et `MediaBroadcastProvider`. Les fichiers préfixés `__` sont déjà désactivés. La supprimer suppose
-donc de migrer ces appelants, pas seulement d'effacer un dossier.
+**Elle n'est pas orpheline, et c'est ce qui empêche de la supprimer** : `AudioRoom/AudioComponent.vue`
+l'importe encore, pour `usePeers` et pour l'homonyme `MediaBroadcastProvider` — un provider **media**,
+dont la migration est un autre travail que celle du canal data. Les fichiers préfixés `__` sont déjà
+désactivés. La supprimer suppose donc de migrer cet appelant, pas seulement d'effacer un dossier.
+*(Sans ordinal, pour la même raison que le paragraphe suivant : ce nombre a valu cinq, puis quatre,
+puis deux — le nombre juste est celui que rendent les deux commandes ci-dessous. Les trois appelants
+du **canal data** sont migrés : Whiteboard et Application le 01/09/2026, ClassRoom le même jour.)*
 
 ⚠️ **Un consommateur de plus n'apparaît dans AUCUN grep de `WebRTC/`, et c'est un défaut de la
 commande de recompte, pas du recensement.** *(Sans ordinal, volontairement : cette phrase en portait

@@ -125,7 +125,7 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
       | `AudioRoom/AudioComponent.vue` | `WebRTC/widgets/MediaBroadcastProvider.vue`, `ui/AudioDefaultUserButtonUI.vue` |
       | ~~`Application/ApplicationComponent.vue`~~ | ✅ **migré le 01/09/2026 (lot D2)** — `WebRTC2/Widgets/Mediaplayer/MediaBroadcastProvider.vue`, store v1 débranché |
       | ~~`Whiteboard/WhiteboardComponent.vue`~~ | ✅ **migré le 01/09/2026 (lot D1)** — `WebRTC2/Widgets/Mediaplayer/MediaBroadcastProvider.vue`, store v1 débranché |
-      | `ClassRoom/ClassRoomComponent.vue` | `WebRTC/widgets/DataUserPeerConnection.vue` |
+      | ~~`ClassRoom/ClassRoomComponent.vue`~~ | ✅ **migré le 01/09/2026 (lot D3)** — `WebRTC2/Widgets/Mediaplayer/MediaBroadcastProvider.vue`, store v1 débranché. **Dernier appelant du canal data** ; `DataUserPeerConnection.vue` n'a donc plus aucun importateur vivant |
       | `AudioRoom/__AudioComponent copy.vue` | `WebRTC/composables/usePeers.js` — fichier déjà désactivé (`__`) |
       | **`Server/Server.vue`** | **`stores/peers.js` seul — jamais `WebRTC/`** · relevé le 31/08/2026 |
 
@@ -139,9 +139,10 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
 
       Corollaire sur les trois appelants data : ils prennent aussi `sendData` du store v1 par
       `mapActions(usePeerStore, ['sendData'])`. Leur migration n'est donc pas une substitution de
-      balise — elle débranche aussi le store. ✅ **Fait pour le Whiteboard (D1, 01/09) et pour
-      Application (D2, 01/09)** ; reste ClassRoom (D3), seul appelant data encore branché sur le
-      store v1.
+      balise — elle débranche aussi le store. ✅ **Les trois sont faits le 01/09/2026** : Whiteboard
+      (D1), Application (D2), ClassRoom (D3). **Plus aucun appelant du canal data n'est branché sur
+      le store v1** — ce qui reste de `stores/peers.js` est lu par `Server/Server.vue` (deux getters,
+      lot F1) et par deux fichiers de `WebRTC/` qui partent avec le dossier.
 
       La v1 n'est donc pas « morte en attente de confirmation » : elle était **vivante sous cinq
       composants** au cadrage, dont un en `defineAsyncComponent`, invisible à une recherche d'`import`
@@ -161,10 +162,12 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
       d'`AudioContext`).
 
       Périmètre : **11** fichiers `WebRTC/` (13 au cadrage — le lot C en a sorti deux), le store
-      `stores/peers.js` (+ son dossier `stores/peers/`) et ses **quatre** consommateurs restants (six
-      au cadrage, D1 en a débranché un et D2 un autre — restent `ClassRoomComponent.vue`,
-      `WebRTC/composables/usePeers.js`, `WebRTC/widgets/VideoComponent.vue` et `Server/Server.vue`),
-      la migration des **deux** appelants restants vers `WebRTC2/`, et le sort de `SpectrumAnalyzer`.
+      `stores/peers.js` (+ son dossier `stores/peers/`) et ses **trois** consommateurs restants (six
+      au cadrage ; D1, D2 et D3 en ont débranché un chacun — restent
+      `WebRTC/composables/usePeers.js`, `WebRTC/widgets/VideoComponent.vue` et `Server/Server.vue`,
+      dont **les deux premiers partent avec le dossier** : le seul à migrer est `Server.vue`, c'est
+      F1), la migration de **l'appelant restant** vers `WebRTC2/` — `AudioRoom`, un provider
+      **media**, c'est le lot E — et le sort de `SpectrumAnalyzer`.
       Annotation (7 fichiers) : `CLAUDE.md` · `docs/INDEX.md` ·
       `docs/modules/webrtc2/INDEX.md` · `docs/modules/autres-modules.md` ·
       `docs/architecture/package.md` · `docs/modules/chat.md` ·
@@ -685,17 +688,92 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
                         côtés : aucun `Type "function Map()…"`, aucune erreur de `JSON.parse`.
                         ⚠️ **Ne pas cocher sur la foi du vert** — D1 a livré suite verte, build vert
                         et trois relectures sur une fonctionnalité qui ne marchait pas
-            - [ ] D3 — **ClassRoom**, en dernier : il imbrique Whiteboard, donc deux providers, donc
-                  deux contextes sur le Peer singleton (couvert par `scenarios/multiContext.test.js`).
-                  Vérif : bascules whiteboard / chat propagées entre deux navigateurs, **avec** D1
-                  déjà migré dessous.
-                  ⚠️ **Deux choses à savoir avant de l'ouvrir, et aucune n'est dans son code** :
-                  le garde de sens vaut aussi pour `onConnectionClose` (mesuré à D2), et le
-                  comportement du tableau imbriqué a **déjà changé** sans qu'une ligne de
-                  `ClassRoomComponent.vue` soit touchée — le travail parallèle sur le Whiteboard lui
-                  fait renvoyer sa scène sur la connexion reçue au lieu de diffuser par slug. Un lot
-                  qui hérite d'un changement qu'il n'a pas fait doit le savoir **avant** d'ouvrir un
-                  navigateur
+            - [x] D3 — **ClassRoom** — **fait le 01/09/2026.** Un seul fichier de code, comme D1 et
+                  D2. Le décompte des appelants v1 vivants passe de **deux à un** (`AudioRoom`, plus
+                  un fichier désactivé), et les consommateurs de `stores/peers.js` de **quatre à
+                  trois** — vérifié aux deux greps du recompte. `npm run build` vert (exit 0, chunk
+                  `ClassRoomComponent` reconstruit), suite JS **87 fichiers / 1518 cas, 0 échec**,
+                  identique à la baseline post-D2 — cohérent avec le fait qu'aucun test n'importe ce
+                  composant, **vérifié** : le seul fichier de la suite qui le nomme est un
+                  *commentaire* de `directives/__tests__/resizableNaming.test.js`.
+                  **✅ Le plus petit des trois, et ça se mesure : sa v1 ne portait AUCUN effet de bord
+                  de connexion.** Trois `console.log`, non reportés. Donc `onDataReceived` seule clé
+                  du jeu, et **aucun garde `isIncomingConnection` à écrire** — le piège qui a coûté un
+                  correctif à D1 et un à D2 ne le concernait pas. C'est le seul des trois dans ce cas.
+                  **Ce que D3 a corrigé dans la recette — une quatrième erreur, et une espèce
+                  nouvelle :**
+                  · ⚠️ **Un fait EXACT mais SANS OBJET.** La recette instruisait « lit
+                  `conn.connectionId` (journalisation) : inchangé en v2 ». Vérifiable, vrai — et
+                  portant sur une ligne que le lot allait **supprimer**. Après le *décompte*, la
+                  *mesure à 0*, la *bonne nouvelle* et la *caractérisation fausse*, voici l'annotation
+                  qui n'est pas fausse du tout : elle est **hors sujet**, et elle coûte quand même,
+                  parce qu'on l'instruit avant de découvrir qu'elle ne survit pas.
+                  · ✅ **Le piège de grep de D2 ne s'est PAS reproduit** : un seul `JSON.parse` dans
+                  tout `ClassRoom/`, et c'était le bon. Mais ça se vérifie et ne se suppose pas — un
+                  lot qui aurait fait confiance au décompte aurait eu raison ici et tort à D2.
+                  · ✅ **`mapActions` part en entier**, à l'inverse de D2 où il devait rester importé :
+                  ici son unique site était le `mapActions(usePeerStore, …)` lui-même.
+                  🔴 **Et la trouvaille qui ne vient pas du code du lot** : `docs/modules/autres-modules.md`
+                  affirmait que ClassRoom est « le cas d'usage type de la topologie **star** ». C'est
+                  faux, et ça l'a toujours été — la v1 qu'il utilisait (`DataUserPeerConnection` →
+                  `usePeers`) n'a **aucune notion de topologie**. Une ligne qui aurait poussé celui
+                  qui fait cette migration à passer `:options="{ topology: 'star' }"`, ce que la
+                  recette signale comme **effaçant le défaut EN BLOC**. Corrigée.
+                  ⚠️ **Et le grep qui l'instruit a un piège qui vaut d'être écrit** :
+                  `grep -rn "star" src/config/` rend trois hits, **tous faux** — ils sont dans
+                  `Dauvray\E`**`star`**`ter`. Le nom du paquet socle contient le mot cherché. Une
+                  vérification à un seul grep aurait conclu « c'est configuré quelque part » et
+                  laissé la ligne en place. Le contrôle qui tranche est `topology`, pas `star` :
+                  il rend **zéro** hors `WebRTC2/`, à l'exception des trois commentaires de
+                  migration écrits par D1, D2 et D3 eux-mêmes.
+                  - [x] Code — `ClassRoomComponent.vue`, **le seul fichier**. Le `<div>` du provider
+                        est placé en **fin de `.classroom-wrapper`** : le composant est multi-racine
+                        (`.classroom-wrapper` + `<Teleport>`) et la v1 y ajoutait un troisième nœud
+                        qui ne rendait **rien** — le mettre à la racine ferait passer le composant de
+                        **un** à **deux** nœuds racine *rendus*. Troisième emplacement différent des
+                        trois lots. ℹ️ Mesuré au passage : le `<router-view>` de `Server/Room.vue`
+                        ne passe que trois props **déclarées**, aucun attribut de fallthrough
+                  - [x] Doc — `work/webrtc-data-v1-v2.md` (§D3 rempli, l'en-tête qui dit la quatrième
+                        erreur, §B et §C fermés sur leurs renvois à D3) · cet item ·
+                        `docs/modules/webrtc2/INDEX.md` (le décompte — **l'ordinal a été retiré**, pas
+                        mis à jour : le paragraphe voisin avait déjà appris cette leçon) ·
+                        `docs/modules/autres-modules.md` (la ligne star fausse) · le `work/README.md`
+                        du paquet et celui de l'hôte.
+                        **Aucun `boost:update` requis, et c'est mesuré sur CINQ couches** :
+                        `ClassRoom`, `DataUserPeerConnection`, `appelant`, `consommateur` et
+                        `peers.js` rendent **zéro** sur `core.blade.php`, le `CLAUDE.md` du paquet,
+                        `docs/INDEX.md`, `docs/architecture/package.md` et `docs/modules/chat.md`.
+                        **Neuvième tâche d'affilée** dans cette configuration
+                  - [x] Tests — **aucun**, et c'est le contrat du lot D : composant métier hors du
+                        filet. `npm run build` est le seul contrôle automatique
+                  - [ ] **Vérif manuelle à deux navigateurs — DUE, elle appartient à David.**
+                        Scénario discriminant : bascule **whiteboard** propagée à l'autre onglet ·
+                        bascule **chat** propagée · **puis la bascule whiteboard off→on**, et le
+                        tableau imbriqué doit refonctionner (traits propagés) — c'est le seul geste
+                        qui exerce pour de vrai le cycle démonter/remonter d'un contexte data, et
+                        **ni D1 ni D2 ne l'ont jamais parcouru**. Console des deux côtés : aucune
+                        erreur de `JSON.parse`, aucun `Type "function Map()…"`.
+                        ⚠️ **Ne pas cocher sur la foi du vert** — D1 a livré suite verte, build vert
+                        et trois relectures sur une fonctionnalité qui ne marchait pas
+                        🔴 **Cette vérif était BLOQUÉE par deux défauts antérieurs, trouvés en
+                        essayant de la faire, et corrigés le 01/09/2026** : créer une room ClassRoom
+                        levait « Undefined array key 0 » (`createClassroomVertice` passait l'id de
+                        son vertex `classroom` à `getOrcreateChatVertice`, dont la requête ne matche
+                        que `(r:room)`), et le salon né sans sous-contenu était **inouvrable** —
+                        `getRoom` rend `subcontent: null` par conception, et les deux computed du
+                        front testaient `hasOwnProperty`, **vrai pour une clé valant `null`**.
+                        **Dixième enseignement du chantier, et il porte sur le gabarit lui-même :
+                        une case « vérif manuelle » peut être infaisable pour une raison qui n'a
+                        rien à voir avec le lot.** Les trois volets Code/Doc/Tests ne prévoient pas
+                        ça — ici la fonctionnalité à vérifier ne pouvait pas seulement *exister*.
+                        Corollaire pour le lot E : **ouvrir la vérif tôt**, pas à la fin, parce
+                        qu'elle peut révéler qu'il faut d'abord réparer autre chose.
+                        ℹ️ Contre-épreuve de méthode : les deux défauts sont **antérieurs**
+                        (`git show e4acd4a:` rend le même code fautif), donc D3 les a *croisés*, pas
+                        *causés* — la règle de D1 sur l'image collée, appliquée une troisième fois.
+                        Le second défaut du site d'appel PHP (la confidentialité passée en entier au
+                        lieu d'un tableau, donc **ignorée**) n'aurait pas été vu en corrigeant le
+                        seul crash
       - [ ] **E. AudioRoom** `[M]`
             - [ ] E1 — `AudioComponent` importe le `MediaBroadcastProvider` **v1** : l'homonyme en
                   action. Comparer les deux contrats de slot avant de substituer (v2 :
@@ -728,19 +806,38 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
       **Chemin critique** : A → B → C sont livrables tout de suite et indépendants du reste ; F ne
       part pas avant que D et E soient prouvés à la main.
       **État au 01/09/2026** : **le lot A est CLOS** (A1, A2, A3), **B1, B2 et C sont faits**, et
-      **D0, D1 puis D2 sont faits** — la table de traduction existe
+      **le lot D est fait EN ENTIER** — D0, D1, D2, D3. La table de traduction existe
       ([webrtc-data-v1-v2.md](webrtc-data-v1-v2.md), le contrat v2 dans
-      `docs/modules/webrtc2/api.md`), **le Whiteboard et Application sont migrés**, et les appelants
-      v1 vivants passent de **quatre à deux**. D1 est **clos** (sa vérif à deux navigateurs a passé,
-      après avoir trouvé un 🔴 réel) ; **la vérif de D2 est la seule case décochée du lot D**.
+      `docs/modules/webrtc2/api.md`), **les trois appelants du canal data sont migrés**, et les
+      appelants v1 vivants passent de **quatre à un** — `AudioRoom`, qui est un provider **media**
+      et relève du lot E. D1 est **clos** (sa vérif à deux navigateurs a passé, après avoir trouvé un
+      🔴 réel) ; **les vérifs de D2 et de D3 sont les deux seules cases décochées du lot D**, et
+      elles appartiennent à David.
       ⚠️ **Le chiffre de suite de D1 écrit ici — « 85 fichiers / 1501 cas » — était un décompte
       périmé à l'intérieur de son propre lot** : le correctif de D1 a ajouté deux cas après que la
       phrase a été écrite, donc D1 s'est clos à **1503**. Neuvième espèce d'annotation fausse du
       chantier, et la plus retorse : un décompte qui vieillit **entre deux étapes d'une même tâche**.
-      **La suite est D3**, ClassRoom, le dernier des trois — et le seul qui hérite d'un changement
-      qu'il n'a pas fait (son tableau imbriqué, voir son item). B5 reste ouvert en parallèle, sans
-      dépendance : il ferme un 🟠 qui mord aujourd'hui, mais demande de trancher une question produit
-      avant d'écrire la `key`.
+      **La suite est le lot E** (AudioRoom), qui migre un provider **media** et dont le delta n'est
+      pas écrit : il l'écrira avec le code sous les yeux. F ne part pas avant que D et E soient
+      prouvés **à la main** — et deux vérifs manuelles du lot D sont encore dues. B5 reste ouvert en
+      parallèle, sans dépendance : il ferme un 🟠 qui mord aujourd'hui, mais demande de trancher une
+      question produit avant d'écrire la `key`.
+      ⚠️ **Ce que D3 ajoute à la doctrine, et c'est une espèce d'annotation qu'aucun lot n'avait
+      rencontrée : le fait EXACT mais SANS OBJET.** La recette instruisait « ClassRoom lit
+      `conn.connectionId` (journalisation) : inchangé en v2 ». Vérifiable, vrai — et portant sur une
+      ligne que le lot allait **supprimer**. Après le *décompte* (lot C), la *mesure de contrôle à 0*
+      (A3), la *bonne nouvelle* (D0) et la *caractérisation fausse* (la ligne « topologie star » de
+      `autres-modules.md`, trouvée ici), voici l'annotation qui n'est fausse en rien : elle est
+      **hors sujet**, et elle coûte quand même — on l'instruit avant de découvrir qu'elle ne survit
+      pas à la migration qu'elle décrit. **Le test qui la repère : « cette phrase parle-t-elle d'un
+      code qui existera encore après le lot ? »**
+      ⚠️ **Et la trouvaille la plus utile de D3 ne vient pas de son code.** `docs/modules/autres-modules.md`
+      donnait ClassRoom pour « le cas d'usage type de la topologie **star** ». Faux depuis toujours :
+      la v1 qu'il utilisait n'a **aucune notion de topologie**. Le coût potentiel était réel et daté —
+      cette ligne poussait celui qui fait *cette* migration à écrire `:options="{ topology: 'star' }"`,
+      or passer un objet `options` **efface le défaut EN BLOC** et fait disparaître `topology`. Une
+      caractérisation fausse est plus dangereuse qu'un décompte faux : **elle ne se périme pas, elle
+      n'a jamais été vraie**, donc aucune relecture de décomptes ne la rattrape.
       ⚠️ **Ce que D2 ajoute à la méthode du chantier, et qui n'était pas dans le gabarit : deux
       agents sur un seul arbre de travail.** Le paquet est développé en place dans `vendor/`, donc
       une branche par lot n'isole **rien** — les fichiers sur le disque restent partagés, et un
