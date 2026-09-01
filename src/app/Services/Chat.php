@@ -576,7 +576,15 @@ class Chat
                 ";
         $result =  $this->nebula->execute($query);
 
-        if(!count($result[0])) {
+        // ⚠️ `$result` peut être VIDE, et pas seulement `$result[0]` : le `MATCH (r:room)` ci-dessus
+        // ne rend aucune ligne dès que `$room_id` ne désigne pas un vertex portant le tag `room`.
+        // Sans ce `?? []`, l'accès à `$result[0]` levait « Undefined array key 0 » — c'est ce qui
+        // cassait la création d'une room ClassRoom, dont `createClassroomVertice` passait ici l'id
+        // de son vertex `classroom` (corrigé le 01/09/2026 côté appelant).
+        //
+        // La branche prise dans ce cas est la BONNE : aucune ligne ⇒ aucun chat rattaché ⇒ il faut
+        // le créer. Le garde ne change donc pas l'intention, il la rend atteignable.
+        if(!count($result[0] ?? [])) {
             $result = $this->createConversation($values, $room_id);
             $chat_vid = $result['general']['chat']['id'];
 

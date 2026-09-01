@@ -1119,7 +1119,29 @@ class Server
         // classroom / creator relation
         setHasCreatorRelation( $new_vid, $this->user->vertexid);
 
-        $this->serviceChat->getOrcreateChatVertice($new_vid, $new_content['privacy']);
+        // Création DIRECTE du chat, et non `getOrcreateChatVertice` : le vertex classroom vient
+        // d'être inséré six lignes plus haut, donc « get or create » y est définitionnellement
+        // « create » — et c'est la moitié « get » qui plantait.
+        //
+        // ⚠️ Elle interroge `MATCH (r:room) WHERE id(r) == '$room_id'`. On lui passait `$new_vid`,
+        // l'id du vertex **classroom** : la requête ne matchait RIEN, et son `count($result[0])`
+        // levait « Undefined array key 0 ». L'exception coupait cette méthode AVANT
+        // `createBoardVertice`, si bien que la room naissait avec son vertex classroom mais sans
+        // aucun sous-contenu — `getRoom` rendait alors `subcontent: null` et le front cassait.
+        //
+        // ⚠️ Second défaut, silencieux, sur la même ligne : le 2ᵉ argument était
+        // `$new_content['privacy']`, un ENTIER, là où `createConversation` attend le TABLEAU des
+        // valeurs. Ses `isset($values['privacy'])` rendaient donc `false` sur un int, et le chat
+        // naissait avec les défauts (`privacy = 1`, `name = null`) au lieu de la confidentialité
+        // demandée. Corriger le seul crash aurait laissé celui-ci en place.
+        $chat = $this->serviceChat->createConversation($new_content, $new_vid);
+
+        if($chat) {
+            // `createConversation` pose déjà les relations registered_in et has_creator ; seule
+            // l'appartenance au classroom lui manque.
+            setPublishedInRelation($chat['general']['chat']['id'], $new_vid);
+        }
+
         $this->createBoardVertice($new_vid, $new_content);
 
         return $new_vid;
