@@ -77,6 +77,7 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}, dep
         cleanupPeerConnection, // Nettoyage des connexions et ressources associées
         syncUsersConnections, // Synchronisation des connexions lorsque de nouveaux utilisateurs rejoignent la room
         sendDataToPeer, // fonction pour envoyer des données via une connexion data
+        sendDataToConnection, // fonction pour répondre SUR une connexion reçue (introuvable par slug)
 
         startWebcamStream, // fonction pour démarrer un stream webcam
         stopWebcamStream, // fonction pour arrêter le stream webcam et les appels associés
@@ -169,6 +170,12 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}, dep
     function sendData(data, destUserSlugs = null) {
         sendDataToPeer(data, destUserSlugs)
     }
+    // Envoi de données SUR une connexion précise — typiquement celle reçue en
+    // `onConnectionOpen`, que `sendData` ne peut PAS retrouver : la résolution par slug ne
+    // voit que les connexions sortantes. Le « pourquoi » entier est au transport.
+    function sendDataOnConnection(conn, data) {
+        sendDataToConnection(conn, data)
+    }
     // Démarrage d’un stream webcam
     //
     // ⚠️ Le `return` des trois démarrages n'est pas cosmétique : les verbes amont sont
@@ -251,6 +258,7 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}, dep
 
         // data
         sendData,
+        sendDataOnConnection,
 
         /*------------------------
         | CONTEXTE

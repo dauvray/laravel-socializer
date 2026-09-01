@@ -246,6 +246,12 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}, 
         transport.sendData(data, destUserSlugs)
     }
 
+    // Répondre SUR une connexion reçue, sans passer par la résolution par slug — qui ne
+    // connaît que les connexions sortantes. Le « pourquoi » est au transport.
+    const sendDataToConnection = (conn, data) => {
+        transport.sendDataOnConnection(conn, data)
+    }
+
     const startWebcamStream = async () => {
         await media.startCurrentStream()
         context.remotePeers.value.forEach(userSlug => {
@@ -365,6 +371,7 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}, 
         initializePeerConnection,
         cleanupPeerConnection,
         sendDataToPeer,
+        sendDataToConnection,
 
         // connexions (useConnectionPool)
         syncUsersConnections: pool.syncUsersConnections,

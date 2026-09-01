@@ -72,7 +72,8 @@ const api = useMediaBroadcast(type, room, options)
 api.initialize({ onDataReceived, onConnectionOpen, onConnectionClose, onStreamReceived })
 ```
 
-Verbes : `initialize` · `cleanup` · `watchUsers` · `sendData` · `getWebcamStream` / `stopStream` ·
+Verbes : `initialize` · `cleanup` · `watchUsers` · `sendData` / `sendDataOnConnection` ·
+`getWebcamStream` / `stopStream` ·
 `getAudioStream` / `stopAudio` · `startCapture` / `stopCapture` · `toggleAudioMute` /
 `toggleVideoVisibility` · `startCallWithPeer` / `acceptCallFromPeer` / `openCallBetweenPeer` /
 `stopCallWithPeers` / `remoteStopCall` · `handleStreamReceived` / `handleStreamRemoved` ·
@@ -156,6 +157,11 @@ l'arrivée d'autrui doit poser ce test lui-même (modèle :
 `Whiteboard/WhiteboardComponent.vue#handleConnectionOpen`, qui renvoie la scène courante à
 l'arrivant).
 
+⚠️ **Et le garde de sens ne suffit pas : la connexion reçue ici est INTROUVABLE par `sendData`.**
+Pour lui répondre, il faut `api.sendDataOnConnection(conn, data)` — la raison est structurelle et
+elle est écrite plus bas. Le modèle nommé ci-dessus est précisément celui qui s'est fait mordre : il
+répondait par `sendData`, et l'arrivant voyait un tableau **vide** (corrigé le 01/09/2026).
+
 ### `api.sendData(data, destUserSlugs = null)`
 
 `useMediaBroadcast.js:169`, sur la façade. Quatre propriétés qui ne se devinent pas :
@@ -202,8 +208,50 @@ Trois conséquences, parce que le throw part du `forEach` de diffusion :
   et le dit dans son cas.
 
 Le geste, côté consommateur : **n'émettre que des données plates**. Le cas vécu est le Whiteboard,
-dont l'`appState` Excalidraw porte `collaborators: Map` ; il l'exclut de son émission
-(`WhiteboardComponent#handleExcalidrawMouseUp`).
+dont l'`appState` Excalidraw porte `collaborators: Map` ; il l'exclut de son émission — domicile
+unique de cette règle chez lui, `WhiteboardComponent#toTransportableScene`, une liste **blanche** de
+deux clés (`elements`, `files`) plutôt qu'un retrait de l'`appState`.
+
+### `api.sendDataOnConnection(conn, data)`
+
+`useMediaBroadcast.js`, sur la façade. **Émet sur la connexion passée en argument, et sur elle
+seule.** C'est le verbe des réponses à un pair qui vient de se connecter.
+
+⚠️ **Pourquoi il existe, et pourquoi `sendData` ne peut pas en tenir lieu.** `sendData` résout sa
+connexion **par slug** dans la map `connections` du store des pairs. Or cette map ne contient que les
+connexions **que j'ai ouvertes** : `storePeerConnection` n'a qu'un appelant, `_saveRoomConnection`, et
+tous ses sites sont dans `connectToPeer` ; le dispatcher entrant, lui, appelle
+`setUpConnectionListeners(conn)` et **rien d'autre**. Une connexion reçue en `onConnectionOpen` n'y
+figure donc **jamais**.
+
+Conséquence, et c'est elle qui coûte : un consommateur qui répond à un arrivant par `sendData` ne
+dépend pas de la connexion qu'il vient de recevoir, mais de **sa propre sortante inverse** — dont le
+cycle de vie est indépendant et plus lent. Sur le chemin présence, le mapping `slug → peerId` du
+récepteur est **structurellement absent** quand l'entrante arrive la première (mesuré par
+`scenarios/incomingMappingInvariant.test.js` : « le mapping du récepteur est écrit par sa propre
+`connectToPeer` »), donc la sortante exige un aller-retour de signalisation complet. La réponse tombe
+alors dans un `[Mesh] Envoi ignoré: connexion indisponible pour <slug>` — **et rien ne réessaie**.
+
+Quatre propriétés qui ne se devinent pas :
+
+- **point à point** : ni `onAirRoom`, ni `remotePeers`, ni le store ne sont lus. Aucun autre pair ne
+  reçoit quoi que ce soit — ce qui en fait aussi le bon verbe quand une réponse ne concerne qu'un
+  seul destinataire, là où `sendData` diffuserait ;
+- **le garde de `MAX_PAYLOAD_BYTES` est conservé** : c'est toute la raison de passer par le transport
+  au lieu d'appeler `conn.send` depuis un composant. Même plafond, même abandon muet ;
+- **tout ce qui précède sur la levée de BinaryPack vaut ici aussi** — `conn.send` est le même. Un
+  `Map` dans le payload lève, de façon synchrone, et remonte à l'appelant ;
+- **une connexion absente ou fermée est refusée sans lever**, avec un `console.warn`. Ce n'est pas
+  défensif par excès : un renvoi différé (le Whiteboard attend une seconde) peut trouver l'arrivant
+  déjà parti, et une levée dans un `setTimeout` n'aurait aucune trace exploitable.
+
+⚠️ **Borne assumée en topologie star** : ce verbe n'emprunte pas l'enveloppe `__starRoute`. La seule
+entrante d'un client star étant celle du hub, il ne porte pas au-delà de lui. Il répond au pair qui
+vient de se connecter — ce qui, en **mesh**, est bien ce pair.
+
+Épinglé par `usePeerTransport.sendDataOnConnection.test.js`, dont le premier cas est le cas de
+régression : le store de connexions est laissé **vide**, `sendData` n'émet rien et
+`sendDataOnConnection` émet.
 
 ### Les quatre cas où `onDataReceived` n'est pas appelé, ou l'est amputé
 

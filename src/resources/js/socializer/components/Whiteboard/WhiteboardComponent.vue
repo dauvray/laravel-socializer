@@ -197,6 +197,24 @@
            * Le sens se lit sur la metadata, construite par l'émetteur de la connexion :
            * sur une SORTANTE `from` est mon slug, sur une ENTRANTE c'est celui du pair.
            *
+           * ⚠️ `sendDataOnConnection`, JAMAIS `sendData` : c'est le correctif du 01/09/2026,
+           * et il n'est pas une préférence de style. `sendData` résout sa connexion PAR SLUG
+           * dans `peerStore.connections`, une map qui ne contient que les connexions
+           * SORTANTES — la connexion reçue ici est entrante, donc introuvable. Le renvoi
+           * dépendait alors de ma propre sortante inverse, plus lente (le mapping
+           * `slug → peerId` du récepteur est structurellement absent quand l'entrante arrive
+           * la première), et il tombait dans un `[Mesh] Envoi ignoré: connexion indisponible`
+           * sans réessai : le tableau de l'arrivant restait VIDE. Détail au transport.
+           *
+           * ℹ️ Ciblé, donc plus un broadcast — deuxième effet, voulu : `updateScene` REMPLACE
+           * la scène chez le récepteur, et à N pairs présents la diffusion de N scènes
+           * entières à tout le monde faisait gagner le dernier arrivé.
+           *
+           * ⚠️ Le délai d'une seconde reste, mais sa raison a changé : il protège désormais
+           * le RÉCEPTEUR, qui vient de monter et dont `updateScene` abandonne la scène sur un
+           * `console.error` si `excalidrawAPI` n'est pas encore prêt. Ne pas le lire comme une
+           * survivance de l'attente de connexion, et ne pas le retirer à ce titre.
+           *
            * @param {Object} conn  DataConnection PeerJS
            * @returns {void}
            */
@@ -210,18 +228,16 @@
             }
 
             setTimeout(() => {
-              const elements = this.$refs.excalidrawElement.getSceneElements()
+              const scene = this.buildTransportableScene()
 
-              if(elements.length > 0) {
-                const current = {
-                    elements,
-                    appState: this.$refs.excalidrawElement.getAppState(),
-                    files: this.$refs.excalidrawElement.getFiles(),
-                }
-
-                this.handleExcalidrawMouseUp({ detail: current });
+              if(scene.elements.length > 0) {
+                this.$refs.dataBroadcast?.api.sendDataOnConnection(conn, {
+                    action: 'update_scene',
+                    from: this.me.name,
+                    details: scene,
+                })
               }
-            }, 1000); // attendre que excalidraw soit prêt
+            }, 1000);
           },
           // handleExcalidrawChange(event) {
           //   const data = event.detail;
@@ -232,17 +248,24 @@
           //     }, this.room.id)
           // },
           /**
-           * ⚠️ L'`appState` est RETIRÉ de l'émission, et ce n'est pas une optimisation :
-           * sans ce retrait, rien ne se propage du tout.
+           * La forme TRANSPORTABLE d'une scène : `elements` + `files`, et RIEN d'autre.
+           *
+           * Domicile unique de cette règle, pour les deux émetteurs (le `mouseup` et le
+           * renvoi à un arrivant). Liste BLANCHE, jamais liste noire : les deux clés sont
+           * nommées une par une, donc une clé neuve qu'Excalidraw ajouterait à sa scène ne
+           * partirait pas sur le fil par accident.
+           *
+           * ⚠️ L'`appState` est RETIRÉ, et ce n'est pas une optimisation : sans ce retrait,
+           * rien ne se propage du tout.
            *
            * 1. `getAppState()` rend un `appState` dont `collaborators` est une **Map**
            *    (Excalidraw 0.18). La sérialisation par défaut de PeerJS est BinaryPack,
            *    qui **lève** dessus — et le throw est synchrone dans le `forEach` de
-           *    `sendData` : il abandonne les pairs suivants ET le `saveScene` ci-dessous,
-           *    donc il cassait aussi la persistance sur un tableau `isSavable`. La v1 ne
-           *    le voyait pas : elle passait par `safeStringify`, donc une chaîne partait
-           *    sur le fil et la Map y devenait `{}` en silence.
-           * 2. ⚠️ Le garde de taille de `sendData` ne peut PAS l'attraper : il mesure via
+           *    `sendData` : il abandonnait les pairs suivants ET tout ce que l'appelant
+           *    faisait après, donc il cassait aussi le `saveScene` d'un tableau `isSavable`.
+           *    La v1 ne le voyait pas : elle passait par `safeStringify`, donc une chaîne
+           *    partait sur le fil et la Map y devenait `{}` en silence.
+           * 2. ⚠️ Le garde de taille ne peut PAS l'attraper : il mesure via
            *    `JSON.stringify`, qui accepte une Map. Le trou est précis — un conteneur
            *    que JSON accepte et que BinaryPack refuse.
            * 3. Et surtout : **le récepteur ne l'a jamais lu.** `ExcalidrawElement.updateScene`
@@ -255,19 +278,53 @@
            * MAX_PAYLOAD_BYTES (64 Ko) : au-delà l'envoi est abandonné, avec un
            * `console.warn` pour seule trace. Le terme dominant est désormais `files` —
            * une image collée y suffit. Borne assumée, voir work/webrtc-data-v1-v2.md.
+           *
+           * @param {{ elements: Array, files: Object }} scene
+           * @returns {{ elements: Array, files: Object }}
+           */
+          toTransportableScene({ elements, files }) {
+            return { elements, files }
+          },
+          /**
+           * La scène COURANTE, relue depuis Excalidraw, sous forme transportable.
+           *
+           * Les deux replis ne sont pas décoratifs : `getSceneElements` / `getFiles` rendent
+           * déjà `[]` et `{}` en journalisant quand `excalidrawAPI` n'est pas prêt, et le ref
+           * lui-même peut manquer. L'appelant a le droit de tester `.elements.length` sans
+           * se demander lequel des deux a échoué.
+           *
+           * @returns {{ elements: Array, files: Object }}
+           */
+          buildTransportableScene() {
+            const element = this.$refs.excalidrawElement
+
+            return this.toTransportableScene({
+              elements: element?.getSceneElements() ?? [],
+              files: element?.getFiles() ?? {},
+            })
+          },
+          /**
+           * Propagation d'un tracé : diffusion à tous les pairs, plus la persistance si le
+           * tableau est enregistrable.
+           *
+           * `?.` : le provider est sous v-if alors que les deux listeners DOM sont posés
+           * inconditionnellement en mounted(). L'ancien sendData était une action de store,
+           * donc toujours appelable ; ce ref-ci vaut undefined si le v-if est faux. Pas
+           * d'argument de room : elle est figée dans le contexte du provider.
+           *
+           * ⚠️ La scène émise vient de l'ÉVÉNEMENT, pas d'une relecture du ref : c'est celle
+           * du `mouseup`, et `toTransportableScene` ne fait que la mettre en forme.
+           *
+           * @param {{ detail: { elements: Array, appState: Object, files: Object } }} event
+           * @returns {void}
            */
           handleExcalidrawMouseUp(event) {
             const data = event.detail
-            const { appState, ...transportable } = data
 
-            // `?.` : le provider est sous v-if alors que les deux listeners DOM sont
-            // posés inconditionnellement en mounted(). L'ancien sendData était une action
-            // de store, donc toujours appelable ; ce ref-ci vaut undefined si le v-if est
-            // faux. Pas d'argument de room : elle est figée dans le contexte du provider.
             this.$refs.dataBroadcast?.api.sendData({
                 action: 'update_scene',
                 from: this.me.name,
-                details: transportable,
+                details: this.toTransportableScene(data),
             })
 
               if(this.isSavable) {

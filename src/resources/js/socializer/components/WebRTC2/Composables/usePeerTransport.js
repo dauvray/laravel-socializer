@@ -1938,6 +1938,43 @@ export function usePeerTransport(ctx) {
         }
     }
 
+    // ─────────────────────────────────────────────────────────────────────────────
+    // 📮 sendDataOnConnection — répondre SUR la connexion qu'on vient de recevoir
+    //
+    // Point à point, et rien d'autre : aucune lecture d'`onAirRoom`, de `remotePeers` ni
+    // du store, aucune enveloppe `__starRoute`.
+    //
+    // ⚠️ Pourquoi ce verbe existe, et pourquoi `sendData` ne peut PAS en tenir lieu :
+    // `sendData` résout sa connexion PAR SLUG dans la map `connections` du store des pairs,
+    // et cette map ne contient QUE les connexions que j'ai ouvertes — `storePeerConnection`
+    // n'a qu'un appelant, `_saveRoomConnection`, tous ses sites dans `connectToPeer`. Le
+    // dispatcher entrant, lui, appelle `setUpConnectionListeners(conn)` et RIEN d'autre.
+    // Une connexion reçue en `onConnectionOpen` est donc INTROUVABLE par slug, et un
+    // consommateur qui répond à un arrivant par `sendData` dépend en réalité de sa propre
+    // sortante inverse — dont le cycle de vie est indépendant et plus lent : sur le chemin
+    // présence, le mapping `slug → peerId` du récepteur est structurellement absent quand
+    // l'entrante arrive la première (mesuré par `scenarios/incomingMappingInvariant.test.js`).
+    // Sa réponse tombe alors dans le `console.warn` de `sendData`, et rien ne réessaie.
+    // C'est le défaut qui vidait le tableau d'un arrivant du Whiteboard.
+    //
+    // ⚠️ Borne assumée, en STAR : la seule entrante d'un client est celle du hub, donc ce
+    // verbe ne porte pas au-delà de lui — il n'emprunte pas l'enveloppe de retransmission.
+    // Il répond au pair qui vient de se connecter, ce qui en MESH est bien ce pair.
+    //
+    // Le garde de taille est conservé, et c'est toute la raison de passer par le transport
+    // plutôt que d'appeler `conn.send` depuis un composant.
+    // ─────────────────────────────────────────────────────────────────────────────
+    const sendDataOnConnection = (conn, data) => {
+        if (!conn?.open || typeof conn.send !== 'function') {
+            console.warn('[Conn] Envoi ignoré: connexion absente ou fermée')
+            return
+        }
+
+        if (!isPayloadWithinLimit(data, '[Conn]')) return
+
+        conn.send(data)
+    }
+
     // `forwardStarMessage` n'est PAS exposé : la retransmission n'est atteignable
     // que par `routeIncomingData`, qui porte le prédicat de topologie. L'exposer
     // rouvrirait un chemin de retransmission sans garde de topologie.
@@ -1945,6 +1982,7 @@ export function usePeerTransport(ctx) {
         setLocalPeer,
         unregisterLocalContext,
         sendData,
+        sendDataOnConnection,
         routeIncomingData,
         getDataReachablePeers,
     }
