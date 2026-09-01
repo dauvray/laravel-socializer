@@ -94,29 +94,46 @@
             ...mapState(useMeStore, {
                 me: 'getMe',
             }),
+            /**
+             * Sous-contenus du salon, ou tableau vide s'il n'y en a aucun.
+             *
+             * ⚠️ `hasOwnProperty('subcontent')` ne suffit PAS, et c'est ce qui cassait la page :
+             * il teste la PRÉSENCE de la clé, pas sa valeur. Or `Services/Server#getRoom` pose
+             * délibérément `subcontent` à **`null`** quand il n'y en a pas
+             * (`count($result['subcontent']) ? … : null`) — la clé est donc bien là, et
+             * `.forEach` levait dessus.
+             *
+             * Le cas se produit pour tout salon dont les sous-contenus manquent : une création
+             * interrompue (le bug de `createClassroomVertice`, corrigé le 01/09/2026), mais
+             * aussi, légitimement, un salon dont le chat a été supprimé. Le garde reste donc
+             * nécessaire après ce correctif-là.
+             *
+             * @returns {Array<{ id: string, content_type: string }>}
+             */
+            subcontents: function() {
+                return Array.isArray(this.room?.subcontent) ? this.room.subcontent : []
+            },
             chatId: function() {
                 let chat_id = null
-                if(this.room.hasOwnProperty('subcontent')) {
-                    this.room.subcontent.forEach(subcontent => {
-                        if(subcontent.content_type === 'chat') {
-                            chat_id = subcontent.id
-                        }
-                    })
-                }
+
+                this.subcontents.forEach(subcontent => {
+                    if(subcontent.content_type === 'chat') {
+                        chat_id = subcontent.id
+                    }
+                })
 
                 return chat_id
             },
             whiteboardRoom: function() {
                 let whiteboard_room = null
-               
-                if(this.room.hasOwnProperty('subcontent')) {
-                    this.room.subcontent.forEach(subcontent => {
-                        if(subcontent.content_type === 'whiteboard') {
-                            whiteboard_room = subcontent
-                        }
-                    })
-                }
-                return whiteboard_room 
+
+                this.subcontents.forEach(subcontent => {
+                    if(subcontent.content_type === 'whiteboard') {
+                        whiteboard_room = subcontent
+                    }
+                })
+
+                return whiteboard_room
             },
         },
         watch: {
