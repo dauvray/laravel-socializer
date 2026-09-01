@@ -49,22 +49,29 @@ explicitement :
    fichiers. La preuve annoncée a tenu à la ligne près — deux renommages, une paire d'imports, **zéro
    fichier de test touché**.
 
-   **Le chemin court est épuisé : tout ce qui restait indépendant du canal data est livré.** La
-   tâche suivante est **A2**, et c'est une lecture, pas du code : établir pour Application /
-   Whiteboard / ClassRoom si `users` est *remplacé* ou *muté en place*, parce que la réponse décide
-   qui s'adapte au lot D — le watch du provider v2 n'est pas profond et c'est un contrat épinglé.
-   **B5 reste ouvert en parallèle**, sans dépendance, mais demande de trancher une question produit
-   avant d'écrire la `key`. Le reste de la migration des appelants de WebRTC v1 est la tâche la plus
+   **Puis le lot A clos le 01/09** par A2 et A3. A2 était une lecture : la liste de présence est
+   **réaffectée** par `useReverbChannel`, jamais mutée en place — et la question ne se posait pas
+   appelant par appelant, les trois modules data ne possèdent pas leur liste, ils la reçoivent en
+   prop d'un `<router-view>` unique. **Donc rien à adapter au lot D**, ni chez l'appelant ni chez le
+   provider. A3 en a tiré le filet qui manquait : le contrat « le fournisseur réaffecte » n'était
+   épinglé à **aucun** bout, et un `push` dans le composable arrêtait la présence de tous les
+   providers en rougissant 0 cas. Il est désormais tenu aux deux bouts.
+   **La tâche suivante est D0** — la correspondance des callbacks v1 → v2, à écrire une fois — puis
+   **D1**, Whiteboard, le plus facile à prouver à deux navigateurs. **B5 reste ouvert en parallèle**,
+   sans dépendance, mais demande de trancher une question produit avant d'écrire la `key`. Le reste de la migration des appelants de WebRTC v1 est la tâche la plus
    rentable du paquet en volume de doc — **sept lots A→G**. Le cadrage a trouvé un **sixième**
    consommateur du code v1 que le recompte ratait, `Server/Server.vue` (par le store
    `stores/peers.js`, jamais par `WebRTC/`) : la commande de recompte de la doc du module demande
    désormais **deux** greps, corrigée au lot C. L'ordre des lots est fixé par
    [le `work/` du projet hôte](../../../../work/README.md).
 
-   ⚠️ **Ce que le lot C a appris, et que le gabarit des trois volets n'annonçait pas** : un lot qui
-   ne change **aucun** comportement peut quand même avoir un volet doc. Celui-ci a périmé trois
-   *décomptes* au moment même où il devenait vert — cinq appelants → quatre, treize fichiers → onze,
-   un sous-dossier de plus sous `Widgets/UI/`. Un décompte est une annotation comme une autre.
+   ⚠️ **Ce que les lots C, A2 et A3 ont appris, et que le gabarit des trois volets n'annonçait
+   pas** : une tâche qui ne change **aucun** comportement — voire qui n'écrit **aucun** code — peut
+   avoir le volet doc le plus lourd. C a périmé trois *décomptes* au moment même où il devenait vert
+   (cinq appelants → quatre, treize fichiers → onze, un sous-dossier de plus) ; A3 a périmé deux
+   *mesures de contrôle à 0*, dont une dans `docs/`, à la seconde où le filet qu'elles réclamaient a
+   été posé. Un décompte, une mesure : ce sont des annotations comme les autres. À chercher dès
+   qu'un lot pose un test ou déplace un fichier.
 
    Ce que le troisième harnais a coûté, et qui vaut pour le prochain composant testé sous horloge
    factice : **deux minuteurs parasites** que `vi.getTimerCount()` compte sans qu'ils appartiennent
@@ -106,7 +113,7 @@ explicitement :
 | Fichier | État | En une phrase |
 |---|---|---|
 | [webrtc2-todo.md](webrtc2-todo.md) | ouvert, **aucun 🔴** | Le suivi vivant du module. **Un 🟠 sur les alertes d'appel** : une seconde invitation reçue sans avoir répondu à la première PATCHE l'alerte vivante au lieu de la remonter, donc le second appelant hérite du reliquat de minuteur du premier et se fait refuser à sa place — il se traite dans le lot B5 de [doc-rustines.md](doc-rustines.md), pas ici. **Un 🟠 de couverture** — aucun scénario n'exerce la topologie star, donc « hub absent → hub présent » n'est épinglé à aucun étage — et **un 🟠 de déploiement**, la bascule `SOCIALIZER_PEER_ATTESTATION_ENFORCE`, dont la procédure impose de lire **deux** indicateurs et jamais un seul. Le reste est de la pérennisation 🟢/🟠 : fidélité du mock PeerJS, observabilité, robustesse, et ce que la couverture des boutons d'appel a ouvert. Les items terminés y sont élagués — leur rationale vit dans [`docs/`](../docs/modules/webrtc2/INDEX.md), leur récit dans `git log`. |
-| [doc-rustines.md](doc-rustines.md) | 🟠 démarré — **lot 0 terminé, lot 1 entamé** | rendre la doc exempte d'annotations qui compensent un défaut du code. `webrtc2Events.js` est supprimé (31/08, sortie B), le filet du lot A1 est posé, **B1, B2 et C sont fermés (31/08)** — B2 en sortie A + sortie B, avec le troisième harnais (faux timers, 9 cas dont 5 rouges) et **deux bornes de durée retirées des docblocks de A1 avec leur cause** ; C a sorti les deux alertes d'appel de l'arbre v1 sans toucher une ligne de test. Le cadrage de B2 a ouvert **B5**, la face vive de la même famille. **Le chemin court est épuisé** : la suite est **A2**, une lecture qui conditionne le lot D (`users` remplacé ou muté en place chez les trois appelants data). **Reste au lot 1** : migrer les **quatre** composants vivants qui importent encore la v1 WebRTC — ce qui retire l'annotation de **sept** fichiers de doc, dont le piège n°1 du `CLAUDE.md` et une ligne du `CLAUDE.md` de tout projet hôte — puis vider les cinq poches mortes. **Découpé en sept lots A→G le 31/08** : le filet d'abord, le correctif vocal ensuite, le déplacement des alertes, les trois modules data un par un, AudioRoom, la suppression, la doc. Trois faits du cadrage : le provider data v2 existe déjà (rien à écrire), le contrat de callback n'est pas mappable 1 pour 1 (chaque appelant se réécrit), et il y a un **sixième** consommateur hors du recompte — d'où les **deux** greps de la commande corrigée au lot C. |
+| [doc-rustines.md](doc-rustines.md) | 🟠 démarré — **lot 0 terminé, lot 1 entamé** | rendre la doc exempte d'annotations qui compensent un défaut du code. `webrtc2Events.js` est supprimé (31/08, sortie B), le filet du lot A1 est posé, **B1, B2 et C sont fermés (31/08)** — B2 en sortie A + sortie B, avec le troisième harnais (faux timers, 9 cas dont 5 rouges) et **deux bornes de durée retirées des docblocks de A1 avec leur cause** ; C a sorti les deux alertes d'appel de l'arbre v1 sans toucher une ligne de test. Le cadrage de B2 a ouvert **B5**, la face vive de la même famille. **Le lot A est clos (01/09)** : A2 a établi que la liste de présence est *réaffectée* et non mutée en place — donc rien à adapter au lot D —, et A3 a posé le filet qui manquait sur ce contrat, jusque-là épinglé à aucun bout. **La suite est D0 puis D1.** **Reste au lot 1** : migrer les **quatre** composants vivants qui importent encore la v1 WebRTC — ce qui retire l'annotation de **sept** fichiers de doc, dont le piège n°1 du `CLAUDE.md` et une ligne du `CLAUDE.md` de tout projet hôte — puis vider les cinq poches mortes. **Découpé en sept lots A→G le 31/08** : le filet d'abord, le correctif vocal ensuite, le déplacement des alertes, les trois modules data un par un, AudioRoom, la suppression, la doc. Trois faits du cadrage : le provider data v2 existe déjà (rien à écrire), le contrat de callback n'est pas mappable 1 pour 1 (chaque appelant se réécrit), et il y a un **sixième** consommateur hors du recompte — d'où les **deux** greps de la commande corrigée au lot C. |
 | [projection-graphe-todo.md](projection-graphe-todo.md) | ⏸️ **suspendu — au besoin seulement** | suites du correctif « un utilisateur = un mur + un feed ». Rien n'y bloque ; deux items portent une exigence d'exploitation (sauvegarder le space NebulaGraph, que rien ne reconstruira). |
 | [chat-tests-plan.md](chat-tests-plan.md) | **non démarré** | plan de tests du Chat en 5 couches ; un seul fichier de test existe. Décision en attente sur les helpers (`mockEcho`, `mockRoute`, `seedChatStore`) : dédiés à Chat, ou promotion des helpers WebRTC2 — le fichier nomme le candidat existant et les deux fidélités qu'un partage naïf effacerait. |
 | [front-todo.md](front-todo.md) | **non démarré** | deux items. Le ping d'ouverture de session part avant que pusher n'ait confirmé l'abonnement, et Reverb le rejette — l'utilisateur peut rester hors ligne deux minutes ; le correctif naïf (`subscribed(cb)`) ne part jamais sur un canal déjà confirmé. Et `isEmpty(element.store)` lève sur un commentaire de post chargé par la liste, **dans un listener Reverb donc en silence** — quatre appelants, deux étages possibles pour le correctif. |

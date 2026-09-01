@@ -590,8 +590,11 @@ c'est ce proxy-là qu'un watcher profond observerait (`useReverbChannel` expose 
 
 Corollaire de production, mesuré au même endroit : le `watch(() => props.users)` de
 `MediaBroadcastProvider` **n'est pas profond**, donc toute la chaîne de présence dépend du fait que
-le fournisseur **réaffecte** son tableau. Y écrire un `push` rougit **0 cas sur 1417** et arrête
-silencieusement la synchronisation de tous les providers.
+le fournisseur **réaffecte** son tableau — un `push` écrit chez lui arrête silencieusement la
+synchronisation de tous les providers. Ce contrat a vécu sans filet jusqu'au 01/09/2026, où un tel
+`push` rougissait **0 cas** ; il est désormais épinglé **aux deux bouts** : « le watch n'est PAS
+profond » (`MediaBroadcastProvider.test.js`) côté consommateur, et les trois cas « réaffecte
+`users` … » d'`useReverbChannel.test.js`, un par chemin d'écriture, côté fournisseur.
 
 ### ⚠️ Un composant asynchrone ne se résout PAS avec `flushPromises`
 

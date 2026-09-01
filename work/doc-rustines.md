@@ -185,6 +185,8 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
       ℹ️ Le watch de `users` du provider v2 **n'est pas profond, et c'est un contrat épinglé**
       (`MediaBroadcastProvider.test.js`, « une composition mutée en place n'est pas vue »). Si un
       appelant mute sa liste en place, c'est **l'appelant** qui s'adapte — jamais le provider.
+      **A2 a tranché le 01/09/2026 : aucun ne mute, la liste est réaffectée** ⇒ rien à adapter en D,
+      ni chez les appelants ni chez le provider. Le détail est dans A2 ci-dessous.
 
       **Découpage — sept lots, chacun committable et vérifiable seul.**
 
@@ -196,7 +198,10 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
       - **la suppression est le dernier lot, jamais un effet de bord** — et sa preuve n'est pas
         Vitest : un fichier que plus rien n'importe n'entre dans aucune suite. C'est `npm run build`.
 
-      - [ ] **A. Poser le filet — zéro changement de comportement** `[S]`
+      - [x] **A. Poser le filet — zéro changement de comportement** `[S]` — **lot clos le
+            01/09/2026** : A1 (21 cas), A2 (la lecture qui débloque D) et A3 (le filet à la source
+            de la présence, 3 cas). Le filet promis est en place aux deux bouts du contrat de
+            présence.
             - [x] A1 — **fait le 31/08/2026. Deux fichiers, 21 cas, dont 4 ROUGES refermés par B1
                   sans qu'une ASSERTION change** :
                   `System/__tests__/AlertComponent.test.js` (12 cas, 3 rouges — la branche vocale
@@ -223,9 +228,73 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
                   profondeur de la chaîne de modules décide** : au fichier unitaire (un niveau
                   d'asynchrone) il passe, au fichier de couture (deux niveaux) il laisse 2 cas
                   rouges. Mesuré des deux côtés, écrit dans les deux docblocks — ne pas re-mesurer.
-            - [ ] A2 — établir pour Application / Whiteboard / ClassRoom si `users` est **remplacé**
-                  ou **muté en place**, et l'écrire ici. Conditionne D : muté en place ⇒ l'appelant
-                  passe une copie, le provider ne bouge pas
+            - [x] A2 — **fait le 01/09/2026. Réponse : `users` est REMPLACÉ, jamais muté en
+                  place** ⇒ c'est la branche « rien à faire » — **l'appelant ne passe pas de copie et
+                  le provider ne bouge pas**. D0 peut s'écrire tel qu'il est cadré.
+                  **La question ne se pose pas appelant par appelant, et c'est le vrai résultat de
+                  la lecture** : les trois ne possèdent pas leur liste, ils la reçoivent en **prop**.
+                  Source unique, et unique par construction — le `<router-view :users="users">` de
+                  `Server/Room.vue:23-28`, seul endroit où les trois sont montés (arbre de routes :
+                  `Server.vue` → `room/:roomId` = `Room.vue` → `whiteboard` / `classroom` /
+                  `application`). `ClassRoom` repasse la **même** référence à `Whiteboard`. Le `grep`
+                  des trois noms de composants dans le projet hôte et les autres paquets maison rend
+                  **zéro** : aucun montage hors de ce chemin.
+                  La liste vient donc d'`useReverbChannel(channelName, { type: 'presence' })`, qui
+                  **réaffecte sur ses quatre chemins d'écriture** — `here` (l.128,
+                  `users.value = presentUsers`), `joining` (l.148, spread), `leaving` (l.153,
+                  `filter`), `leave()` (l.119, `[]`). Aucun `push`/`splice` sur une liste
+                  d'utilisateurs dans tout le paquet, hors tests.
+                  **Trois faits adjacents, à consommer dans les lots qui les concernent :**
+                  · **le `deep: true // keep this` de `DataUserPeerConnection.vue:65` ne garde rien
+                  de plus que le superficiel** — rien ne mute un objet `user` en place
+                  (`useStatusUsersObserver` écrit dans `applicationStore` par slug, pas dans la
+                  liste) : sortie **B** à consommer au lot F, quand le widget disparaît. Ne pas le
+                  recopier en v2.
+                  · **le garde `if (newVal.length === 0) return` de v1 n'a pas d'équivalent à écrire
+                  en v2** : le premier tour à vide est traité par conception et déjà documenté
+                  (`useMediaBroadcast.js:143-151` — `getRoomUsersDiff` ne passe `presenceSynced` à
+                  `true` que sur un tour qui a OBSERVÉ un membre). Rien à porter en D.
+                  · **le contrat « le fournisseur réaffecte » n'était épinglé à AUCUN bout** — d'où
+                  A3. Le cas provider (`MediaBroadcastProvider.test.js`, « le watch n'est PAS
+                  profond ») tient la moitié consommateur et **son commentaire annonçait déjà
+                  l'autre : « l'autre moitié est un item de `work/` »**.
+                  Annotation : **aucune couche injectée**, vérifié — les deux occurrences de
+                  `core.blade.php` sur `users`/`watch` parlent d'autre chose (`Users::visibleUsers`,
+                  le fil d'Ariane) et le `CLAUDE.md` du paquet rend zéro. **Aucun `boost:update`** ;
+                  cinquième tâche d'affilée dans cette configuration, après `sfu`, `webrtc2Events`,
+                  B1 et B2.
+                  - [x] Code — **aucun, par définition** : A2 est une lecture · - [x] Doc — le `ℹ️`
+                        du cadrage ci-dessus (la question qu'il posait est tranchée), cet item, et
+                        les deux `work/README.md` · - [x] Tests — **aucun dans la lecture**. Ce
+                        qu'elle a trouvé à épingler est A3, une tâche à part entière et non un effet
+                        de bord
+            - [x] A3 — **fait le 01/09/2026, sortie C.** Épingler la réaffectation **à la source**,
+                  la moitié que le cas provider ne peut pas tenir. Trois cas dans le `describe`
+                  « liste de présence » d'`useReverbChannel.test.js`, un par chemin d'écriture
+                  réactif, chacun assérant une **nouvelle référence** — le harnais existait, rien à
+                  écrire pour l'accueillir.
+                  ⚠️ **Les trois naissent VERTS, et c'est le cas prévu** : ce sont des gardes de
+                  non-régression, pas la contre-épreuve d'un défaut. **La règle du paquet ne tombe
+                  pas pour autant** — ce qui remplace le rouge de naissance est le **contrôle de
+                  harnais**, sans lequel ces trois cas ne valent rien : `here` → `push(...présents)`,
+                  `joining` → `push(user)`, `leaving` → `findIndex` + `splice` rougissent **chacune
+                  le cas correspondant et lui seul**, et aucune ne fait bouger les six cas de valeur
+                  du `describe` — ils assèrent en `toEqual`, qui ne voit pas l'identité. C'est
+                  exactement ce qui laissait passer la panne. Référence relue à 24/24 entre chaque
+                  mutation, et `git status` contrôlé après restauration.
+                  Hors périmètre assumé, écrit dans le docblock : la remise à `[]` de `leave()` —
+                  son seul consommateur est le démontage, où le provider part avec le canal.
+                  - [x] Code — **aucun** : le composable était déjà correct, c'est un filet
+                        · - [x] Doc — **deux mesures devenues fausses à la seconde où les cas sont
+                        passés au vert**, toutes deux corrigées en sortie C (l'avertissement
+                        remplacé par un nom de test) : le commentaire de
+                        `MediaBroadcastProvider.test.js` (« rougit 0 cas sur 1416 », « l'autre moitié
+                        est un item de `work/` ») et `docs/modules/webrtc2/tests.md` § « Pousser dans
+                        un tableau NU » (« rougit 0 cas sur 1417 »). ⚠️ **Une prose de test est une
+                        couche du volet doc** — la leçon de B1, et c'est la deuxième fois qu'elle
+                        mord. Le reste de `docs/` attend le lot G, décidé · - [x] Tests — 3 cas,
+                        3 mutations mesurées. Suite JS **85 fichiers / 1501 cas, 0 échec**
+                        (85 / 1498 avant) ; PHP non rejouée, aucun `.php` touché
       - [ ] **B. Les défauts propres aux deux alertes — indépendants de la migration, livrables
             seuls** `[S]` — B1 et B2 fermés, restent deux 🟢 et un 🟠 (B5) ouvert par le cadrage de B2
             - [x] B1 — **fait le 31/08/2026, sortie A.** `AudioCallAlert` émettait `response-call`
@@ -411,12 +480,18 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
       périme au passage** — le lot C l'a montré, et le gabarit ne l'annonçait pas.
       **Chemin critique** : A → B → C sont livrables tout de suite et indépendants du reste ; F ne
       part pas avant que D et E soient prouvés à la main.
-      **État au 31/08/2026** : **A1, B1, B2 et C sont faits.** Le chemin court est épuisé — tout ce
-      qui restait indépendant du canal data est livré. La suite est donc **A2**, une lecture qui ne
-      touche aucun code : établir pour Application / Whiteboard / ClassRoom si `users` est *remplacé*
-      ou *muté en place*, parce que la réponse décide de qui s'adapte en D (l'appelant passe une
-      copie, ou rien à faire). B5 reste ouvert en parallèle, sans dépendance : il ferme un 🟠 qui
+      **État au 01/09/2026** : **le lot A est CLOS** (A1, A2, A3), et **B1, B2 et C sont faits**.
+      A2 a levé la dernière inconnue du canal data — la liste de présence est **réaffectée**, donc
+      **ni l'appelant ni le provider n'ont à s'adapter en D**. La suite est **D0** (la
+      correspondance des callbacks, à écrire une fois) puis **D1**, Whiteboard, le plus facile à
+      prouver à deux navigateurs. B5 reste ouvert en parallèle, sans dépendance : il ferme un 🟠 qui
       mord aujourd'hui, mais demande de trancher une question produit avant d'écrire la `key`.
+      ⚠️ **Ce que A2 et A3 ajoutent au gabarit, et qui vaut pour D** : une tâche **sans volet code**
+      peut avoir le volet doc le plus lourd du lot. A2 n'a touché aucun fichier de code et a
+      réécrit quatre endroits ; A3 n'a écrit que du test et a **périmé deux mesures** — dont une
+      dans `docs/`. Le lot C avait montré qu'un décompte est une annotation ; ici c'est **une
+      mesure de contrôle à 0** qui en est une, et elle devient fausse à la seconde où le filet
+      qu'elle réclamait est posé. Les chercher dès qu'un lot pose un test.
 
 - [x] **Supprimer `WebRTC2/EventBus/webrtc2Events.js`** · effort [S] — **fermé le 31/08/2026,
   sortie B.**

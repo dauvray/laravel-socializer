@@ -197,11 +197,12 @@ describe('MediaBroadcastProvider — le cycle de vie', () => {
         // déclenche une synchronisation.
         //
         // `useReverbChannel` le respecte partout (`users.value = [...users.value, user]`,
-        // l. 148, et deux autres réaffectations) — mais rien ne l'y oblige. Mesuré : y écrire
-        // un `push` à la place rougit **0 cas sur 1416**, alors que la présence de TOUS les
-        // providers cesserait de se synchroniser. Panne fail-closed (les arrivants ne sont
-        // jamais admis) et parfaitement muette. Ce cas est la moitié qu'on peut tenir ici ;
-        // l'autre moitié est un item de `work/`.
+        // l. 148, et deux autres réaffectations), et **rien ne l'y obligeait jusqu'au
+        // 01/09/2026** : y écrire un `push` rougissait alors 0 cas sur 1416, alors que la
+        // présence de TOUS les providers cesserait de se synchroniser. Panne fail-closed (les
+        // arrivants ne sont jamais admis) et parfaitement muette. Ce cas est la moitié qu'on
+        // peut tenir ici ; l'autre moitié est désormais épinglée à la source — les trois cas
+        // « réaffecte `users` … » d'`useReverbChannel.test.js`, un par chemin d'écriture.
         //
         // ⚠️ **La composition doit passer par un `ref`, et c'est une mesure.** Écrit avec un
         // tableau nu, ce cas rendait **0 à sa propre contre-épreuve** (`deep: true` ajouté) :

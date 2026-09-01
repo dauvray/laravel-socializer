@@ -142,6 +142,66 @@ describe('useReverbChannel — liste de présence', () => {
 
         expect(users.value).toEqual([BOB])
     })
+
+    /**
+     * Les trois cas suivants tiennent un seul fait : `users` est **réaffecté** à chaque écriture,
+     * jamais muté en place.
+     *
+     * C'est un contrat load-bearing, et il ne se voit pas d'ici : tout le chemin de présence de
+     * WebRTC2 en dépend, parce que `MediaBroadcastProvider` pose
+     * `watch(() => props.users, api.watchUsers)` **sans `deep`**. Un `push()` écrit ici
+     * n'éveillerait donc personne et arrêterait la synchronisation des pairs des trois modules
+     * data sans une ligne de journal. `docs/modules/webrtc2/tests.md` § « Pousser dans un tableau
+     * NU » porte la moitié provider du fait — y écrire un `push` rougit 0 cas sur 1417 ; côté
+     * source c'était pareil avant ces trois-là, les cinq cas ci-dessus assérant en `toEqual`, qui
+     * ne voit pas l'identité.
+     *
+     * ⚠️ **Ils naissent VERTS, et c'est le cas prévu** : ce sont des gardes de non-régression, pas
+     * la contre-épreuve d'un défaut. Ce qui leur donne leur valeur n'est pas leur couleur de
+     * naissance mais le contrôle de harnais ci-dessous.
+     *
+     * Contrôle de harnais — trois mutations du composable, une à la fois, référence relue à 24/24
+     * entre chacune. Chacune rougit **le cas correspondant et lui seul**, et **aucune** ne fait
+     * bouger les six cas de valeur de ce `describe` : ils assèrent en `toEqual`, donc restent verts
+     * des deux côtés. C'est là toute la raison d'être de ces trois-là.
+     *
+     * | Mutation du chemin | Cas rougi |
+     * |---|---|
+     * | `here` → `users.value.push(...presentUsers)` | `here` |
+     * | `joining` → `users.value.push(user)` | membre qui rejoint |
+     * | `leaving` → `findIndex` + `users.value.splice(index, 1)` | membre qui part |
+     *
+     * Hors périmètre, assumé : la remise à `[]` de `leave()`. Son seul consommateur est le
+     * démontage, où le provider part avec le canal — plus personne ne watche.
+     */
+    it('réaffecte `users` sur `here`, jamais ne le mute en place', () => {
+        const { users } = mountPresence()
+        const before = users.value
+
+        channel.emitHere([ALICE])
+
+        expect(users.value).not.toBe(before)
+    })
+
+    it('réaffecte `users` quand un membre rejoint', () => {
+        const { users } = mountPresence()
+        channel.emitHere([ALICE])
+        const before = users.value
+
+        channel.emitJoining(BOB)
+
+        expect(users.value).not.toBe(before)
+    })
+
+    it('réaffecte `users` quand un membre part', () => {
+        const { users } = mountPresence()
+        channel.emitHere([ALICE, BOB])
+        const before = users.value
+
+        channel.emitLeaving(ALICE)
+
+        expect(users.value).not.toBe(before)
+    })
 })
 
 /**
