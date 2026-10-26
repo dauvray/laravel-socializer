@@ -64,7 +64,7 @@ WebRTC2/
 │   ├── usePeerTransport.js        singleton Peer, dispatchers entrants, sendData, routage star
 │   ├── useConnectionPool.js       retry, requestOrConnectPeer, syncUsersConnections
 │   ├── useCallManager.js          FSM d'appel, handleRemoteDeparture
-│   ├── useStreamManager.js        registre des flux distants (TTL + éviction LRU)
+│   ├── useStreamManager.js        registre des flux distants (TTL des flux morts + éviction FIFO)
 │   ├── useBroadcastPresence.js    annonce BROADCAST_STATE sur data channel
 │   ├── useSignalingQueue.js       routage des signaux serveur entrants
 │   ├── usePeerOrchestrator.js     composition + façade

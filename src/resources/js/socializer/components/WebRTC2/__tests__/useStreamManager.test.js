@@ -307,6 +307,56 @@ describe('useStreamManager', () => {
             expect(ctx.media.remoteStreamsMap.has('alice-visio')).toBe(true)
         })
 
+        it('⭐ n\'évince PAS par TTL un flux ancien encore vivant', async () => {
+            // `createdAt` date la RÉCEPTION et n'est jamais rafraîchi. Sans le garde de
+            // vivacité, un salon audio où A entend B depuis plus de STREAM_STALE_MS perdait
+            // B à l'arrivée de C : flux vivant, connexion ouverte, et aucun second `stream`
+            // pour le rattraper. Le cas ci-dessus ne le voyait pas — `stream: {}` est mort.
+            const vivant = Object.create(MediaStream.prototype)
+            vivant.getTracks = () => [{ readyState: 'live' }]
+            ctx.media.remoteStreamsMap.set('old-stream', {
+                stream: vivant, remoteSlug: 'old', remoteType: 'stream',
+                createdAt: Date.now() - (STREAM_STALE_MS + 1000),
+            })
+
+            await sm.handleStreamReceived(fakeStream(), fakeConn())
+
+            expect(ctx.media.remoteStreamsMap.get('old-stream')?.stream).toBe(vivant)
+            expect(media.removeVideoElement).not.toHaveBeenCalledWith('remote-old-stream')
+        })
+
+        it('n\'évince pas par TTL un flux ancien dont UNE piste au moins est vivante', async () => {
+            // Le contrat est « au moins une piste », pas « toutes » : un flux audio + vidéo dont
+            // le pair a coupé la caméra porte encore sa voix. Un `.every` passerait les deux cas
+            // voisins — mesuré par la relecture du 26/10/2026.
+            const mixte = Object.create(MediaStream.prototype)
+            mixte.getTracks = () => [{ readyState: 'ended' }, { readyState: 'live' }]
+            ctx.media.remoteStreamsMap.set('old-stream', {
+                stream: mixte, remoteSlug: 'old', remoteType: 'stream',
+                createdAt: Date.now() - (STREAM_STALE_MS + 1000),
+            })
+
+            await sm.handleStreamReceived(fakeStream(), fakeConn())
+
+            expect(ctx.media.remoteStreamsMap.get('old-stream')?.stream).toBe(mixte)
+        })
+
+        it('évince par TTL un flux ancien dont toutes les pistes sont terminées', async () => {
+            // Contre-épreuve du cas précédent : le garde lit l'état des pistes, il ne
+            // protège pas tout flux qui expose `getTracks`.
+            const mort = Object.create(MediaStream.prototype)
+            mort.getTracks = () => [{ readyState: 'ended' }]
+            ctx.media.remoteStreamsMap.set('old-stream', {
+                stream: mort, remoteSlug: 'old', remoteType: 'stream',
+                createdAt: Date.now() - (STREAM_STALE_MS + 1000),
+            })
+
+            await sm.handleStreamReceived(fakeStream(), fakeConn())
+
+            expect(ctx.media.remoteStreamsMap.has('old-stream')).toBe(false)
+            expect(media.removeVideoElement).toHaveBeenCalledWith('remote-old-stream')
+        })
+
         it('évince les plus anciennes entrées (FIFO) quand la map est pleine', async () => {
             for (let i = 0; i < MAX_REMOTE_STREAMS; i++) {
                 ctx.media.remoteStreamsMap.set(`user${i}-visio`, {

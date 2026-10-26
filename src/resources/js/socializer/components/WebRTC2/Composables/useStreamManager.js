@@ -59,15 +59,34 @@ export function useStreamManager(ctx, { media, callManager }) {
             : remoteSlug
 
     /**
-     * Supprime les entrées stales (trop anciennes ou map trop grande) de remoteStreamsMap.
+     * Le flux porte-t-il encore au moins une piste vivante ?
+     *
+     * `getTracks` est vérifié à part, pour la même raison que dans `_bindRemoteStreamCleanup`.
+     * Un flux qu'on ne peut pas interroger compte pour mort : c'est exactement l'entrée que le
+     * TTL existe pour purger, celle dont plus rien ne dit qu'elle vit.
+     */
+    const _hasLiveTrack = (stream) =>
+        stream instanceof MediaStream
+        && typeof stream.getTracks === 'function'
+        && stream.getTracks().some((track) => track.readyState === 'live')
+
+    /**
+     * Supprime les entrées stales (anciennes ET mortes, ou map trop grande) de remoteStreamsMap.
      * Appelé avant chaque ajout pour garantir une taille bornée.
      */
     const _cleanupStaleRemoteStreams = () => {
         const now = Date.now()
 
-        // 1. Supprimer les entrées expirées (TTL)
+        // 1. Supprimer les entrées expirées (TTL) — seulement si leur flux est mort.
+        //
+        // ⚠️ `createdAt` date la RÉCEPTION et n'est jamais rafraîchi : l'âge seul ne dit rien
+        // de l'activité. Sans le garde de vivacité, l'arrivée de tout flux de clé NOUVELLE
+        // évinçait tout flux vivant reçu depuis plus de STREAM_STALE_MS — dans un salon audio,
+        // A cessait d'entendre B pour de bon quand C arrivait, aucun second `stream` ne venant
+        // le rattraper. Un flux vivant sort par la fin de ses pistes (`_bindRemoteStreamCleanup`)
+        // ou par le départ de son pair (`useCallManager._purgePeerStreams`), jamais par ce TTL.
         for (const [key, entry] of ctx.media.remoteStreamsMap.entries()) {
-            if (now - (entry.createdAt ?? 0) > STREAM_STALE_MS) {
+            if (now - (entry.createdAt ?? 0) > STREAM_STALE_MS && !_hasLiveTrack(entry.stream)) {
                 media.removeVideoElement(`remote-${entry.remoteSlug}-${entry.remoteType}`)
                 ctx.media.remoteStreamsMap.delete(key)
             }

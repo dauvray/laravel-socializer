@@ -114,8 +114,10 @@ export const MAX_PAYLOAD_BYTES = 64 * 1024
 export const MAX_REMOTE_STREAMS = 12
 
 /**
- * Durée (ms) après laquelle un stream distant sans activité est considéré stale
- * et éligible à l'éviction dans _cleanupStaleRemoteStreams().
+ * Âge (ms, compté depuis la RÉCEPTION) au-delà duquel une entrée de remoteStreamsMap est
+ * éligible à l'éviction dans _cleanupStaleRemoteStreams() — à condition que son flux n'ait
+ * plus aucune piste vivante. Un flux vivant n'est jamais évincé par ce TTL — seulement par
+ * le FIFO de MAX_REMOTE_STREAMS, qui est une borne de capacité.
  * Défaut : 5 minutes.
  */
 export const STREAM_STALE_MS = 300_000

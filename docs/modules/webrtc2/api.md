@@ -500,7 +500,7 @@ elles bougent, le fichier fait foi.
 | `RECONNECT_BASE_DELAY_MS` · `RECONNECT_MAX_DELAY_MS` | backoff de reconnexion PeerJS |
 | `PEER_DESTROY_DELAY_MS` | délai de grâce avant destruction du Peer singleton |
 | `PEER_OPEN_TIMEOUT_MS` | abandon **et destruction** d'un Peer qui n'a jamais reçu son `'open'` (sous `ME_READY_TIMEOUT_MS`) |
-| `MAX_REMOTE_STREAMS` · `STREAM_STALE_MS` | éviction LRU de `remoteStreamsMap` (anti-leak) |
+| `MAX_REMOTE_STREAMS` · `STREAM_STALE_MS` | bornes de `remoteStreamsMap` (anti-leak) : éviction **FIFO** au-delà de `MAX_REMOTE_STREAMS`, et TTL réservé aux flux **sans piste vivante** — un flux vivant n'expire jamais par son âge (épinglé : « ⭐ n'évince PAS par TTL un flux ancien encore vivant », `useStreamManager.test.js`) |
 | `MAX_PAYLOAD_BYTES` | anti-DoS : émission mesh, retransmission hub **et** réception |
 | `HUB_MAX_MESSAGES_PER_WINDOW` · `HUB_RATE_WINDOW_MS` | rate-limit `forwardStarMessage` |
 | `HUB_MAX_BYTES_PER_WINDOW` | anti-amplification : octets **retransmis** par le hub (`payload × destinataires`), **par émetteur** |
