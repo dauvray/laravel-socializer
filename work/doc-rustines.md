@@ -678,7 +678,12 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
                   - [x] Tests — **aucun**, et c'est le contrat du lot D : composant métier hors du
                         filet, aucun test ne l'importe. `npm run build` est le seul contrôle
                         automatique
-                  - [ ] **Vérif manuelle à deux navigateurs — DUE, elle appartient à David.** Le
+                  - [x] **Vérif manuelle à deux navigateurs — PASSÉE le 26/10/2026** (David),
+                        console propre des deux côtés. ℹ️ **Elle exige une app qui émet** : l'app de
+                        la room était le squelette « Bonjour », il a fallu y coller l'exemple du
+                        paquet `Application/Exemples/WebrtcDataConnection.txt` (onglet Code,
+                        Template + Script). Dans cette app, la case n'est **pas** un indicateur : elle
+                        choisit les destinataires, seul le ✅ dit « connecté ». Le
                         scénario est écrit pour être discriminant, pas pour être coché : ✅ en face de
                         l'**autre** et jamais de soi (le garde de sens sur `open`) · « Envoyer à
                         tous » reçu par l'autre seul · « uniquement à » l'autre reçu, « uniquement à »
@@ -746,7 +751,7 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
                         **Neuvième tâche d'affilée** dans cette configuration
                   - [x] Tests — **aucun**, et c'est le contrat du lot D : composant métier hors du
                         filet. `npm run build` est le seul contrôle automatique
-                  - [ ] **Vérif manuelle à deux navigateurs — DUE, elle appartient à David.**
+                  - [x] **Vérif manuelle à deux navigateurs — PASSÉE le 26/10/2026** (David).
                         Scénario discriminant : bascule **whiteboard** propagée à l'autre onglet ·
                         bascule **chat** propagée · **puis la bascule whiteboard off→on**, et le
                         tableau imbriqué doit refonctionner (traits propagés) — c'est le seul geste
@@ -811,15 +816,15 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
       `docs/modules/webrtc2/api.md`), **les trois appelants du canal data sont migrés**, et les
       appelants v1 vivants passent de **quatre à un** — `AudioRoom`, qui est un provider **media**
       et relève du lot E. D1 est **clos** (sa vérif à deux navigateurs a passé, après avoir trouvé un
-      🔴 réel) ; **les vérifs de D2 et de D3 sont les deux seules cases décochées du lot D**, et
-      elles appartiennent à David.
+      🔴 réel) ; **les vérifs de D2 et de D3 ont passé le 26/10 : le lot D est prouvé à la main en
+      entier**.
       ⚠️ **Le chiffre de suite de D1 écrit ici — « 85 fichiers / 1501 cas » — était un décompte
       périmé à l'intérieur de son propre lot** : le correctif de D1 a ajouté deux cas après que la
       phrase a été écrite, donc D1 s'est clos à **1503**. Neuvième espèce d'annotation fausse du
       chantier, et la plus retorse : un décompte qui vieillit **entre deux étapes d'une même tâche**.
       **La suite est le lot E** (AudioRoom), qui migre un provider **media** et dont le delta n'est
       pas écrit : il l'écrira avec le code sous les yeux. F ne part pas avant que D et E soient
-      prouvés **à la main** — et deux vérifs manuelles du lot D sont encore dues. B5 reste ouvert en
+      prouvés **à la main** — D l'est depuis le 26/10, reste E. B5 reste ouvert en
       parallèle, sans dépendance : il ferme un 🟠 qui mord aujourd'hui, mais demande de trancher une
       question produit avant d'écrire la `key`.
       ⚠️ **Ce que D3 ajoute à la doctrine, et c'est une espèce d'annotation qu'aucun lot n'avait

@@ -302,7 +302,7 @@ même jour après la vérification à deux navigateurs
   `whiteBoardId`) ; il relève de « vider les poches mortes », pas de ce lot.
 
 **D2 · Application** — `Application/ApplicationComponent.vue` — ✅ **MIGRÉ le 01/09/2026** (code,
-build et recompte ; la vérification à deux navigateurs reste due)
+build et recompte), vérification à deux navigateurs **passée le 26/10/2026**
 
 - ✅ **Le test de sens a été posé aux DEUX sites, et le second n'était pas « indemne »** — la recette
   le disait, et c'était le mot de trop. `onConnectionClose` ne tire qu'une fois **par connexion**,
@@ -356,7 +356,7 @@ build et recompte ; la vérification à deux navigateurs reste due)
   disaient « chat » dans le module Application.
 
 **D3 · ClassRoom** — `ClassRoom/ClassRoomComponent.vue` — ✅ **MIGRÉ le 01/09/2026** (code, build et
-recompte ; la vérification à deux navigateurs reste due)
+recompte), vérification à deux navigateurs **passée le 26/10/2026**
 
 - ✅ **Le plus petit des trois, et pour une raison qui se mesure : sa v1 ne portait AUCUN effet de
   bord de connexion.** `connectionDataCallback` n'avait que trois `console.log` — non reportés,
