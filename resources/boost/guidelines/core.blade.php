@@ -7,9 +7,6 @@ Réseau social + temps réel (murs, chat, visio/diffusion WebRTC, tableau blanc,
 Le paquet **porte sa propre documentation** : lire `vendor/dauvray/laravel-socializer/CLAUDE.md`,
 puis suivre sa table de routage vers `docs/INDEX.md`. Ne pas explorer le code au grep avant ça.
 
-- **`components/WebRTC/` (sans le 2) est mort.** L'implémentation vivante est `components/WebRTC2/`.
-  Les deux coexistent dans l'arbre avec des fichiers homonymes (`MediaBroadcastProvider.vue`) : un
-  symbole trouvé au grep peut venir de la v1.
 - **Imports front par alias dès qu'on franchit une frontière de module** (`~socializer`, `~estarter`,
   …), jamais de relatif qui remonte au-dessus du module. Les alias sont définis côté hôte dans
   `vite.config.js` **et** `vitest.config.js` ; un relatif profond casserait l'un des deux. Le relatif

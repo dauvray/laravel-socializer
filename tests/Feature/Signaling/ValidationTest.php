@@ -25,8 +25,9 @@ use PHPUnit\Framework\Attributes\Test;
  * `usePeerCore` envoie réellement, jamais sur une intuition de forme.
  *
  * Les deux nullables qui ne sont pas des oublis :
- *  - `connectionType` — le module WebRTC v1 (mort mais encore présent) ne l'envoie pas, et
- *    le repli `connectionType || type` est un choix documenté de rétrocompatibilité ;
+ *  - `connectionType` — tous les émetteurs vivants l'envoient depuis que la v1 n'a plus
+ *    d'appelant (26/10/2026), mais le repli `connectionType || type` est un choix documenté de
+ *    rétrocompatibilité, et un onglet sur un bundle antérieur doit passer ;
  *  - `options.action` sur la route de RÉPONSE — un refus d'appel n'envoie que `{ type }`.
  */
 class ValidationTest extends TestCase
@@ -105,8 +106,9 @@ class ValidationTest extends TestCase
     #[Test]
     public function connection_type_absent_reste_accepte(): void
     {
-        // Le module v1 ne l'envoie pas et le client se replie sur `type`. Le rendre requis
-        // couperait la signalisation de ces appelants-là.
+        // Un onglet resté sur un bundle antérieur au 26/10/2026 ne l'envoie pas (le module
+        // v1 l'omettait), et le client se replie sur `type`. Le rendre requis couperait la
+        // signalisation de ces onglets-là.
         $alice = $this->makeUser('alice');
         $bob = $this->makeUser('bob');
 

@@ -60,7 +60,7 @@ docs/
 
 ## Ce qui coûte le plus cher à réapprendre
 
-Les pièges d'arrivée — v1 morte, où lancer les tests, l'alias `~socializer`, la casse des
+Les pièges d'arrivée — où lancer les tests, l'alias `~socializer`, la casse des
 namespaces — sont dans [`CLAUDE.md`](../CLAUDE.md), qui mène ici. Ce qui suit ne s'y trouve pas :
 
 - **`type` ≠ `connectionType`** dans la signalisation. Le premier est une clé de routage ; les

@@ -38,6 +38,27 @@ provide(REVERB_CHANNEL, reverb)
 | `callbacks` | `Object` | `null` | `{ onDataReceived, onConnectionOpen, onConnectionClose, onStreamReceived }` |
 | `options` | `Object` | `{ topology: 'mesh', hubSlug: null, videoContainer: '#videoContainer' }` | topologie et cible DOM |
 
+⚠️ **`users` se RÉAFFECTE, il ne se mute jamais en place** : le provider suit la **référence** du
+tableau (`watch(() => props.users)`, non profond). Un `push` n'est pas vu, et la présence de **tous**
+les providers cesse de se synchroniser — panne muette, en refus (les arrivants ne sont jamais admis).
+Épinglé aux deux bouts : `MediaBroadcastProvider.test.js`, « le watch n'est PAS profond », et
+`useReverbChannel.test.js` côté fournisseur, qui réaffecte sur tous ses chemins d'écriture.
+
+⚠️ **Un objet `options` passé REMPLACE le défaut en bloc, il ne le complète pas** :
+`:options="{ hubSlug: 'x' }"` fait disparaître `topology`, qui retombe sur mesh **sans un mot**.
+Passer l'objet entier, ou rien. Épinglé par `MediaBroadcastProvider.test.js`, « un objet `options`
+partiel arrive AMPUTÉ ».
+
+⚠️ **En mode `data`, toujours passer `room`.** Sans elle, le `contextId` devient `data-app` — celui
+que `System/Notifications.vue` occupe **en permanence, sur toute page** (`useMediaBroadcast()` sans
+argument). Le registre de contextes est last-write-wins, volontairement
+(`peers2Store.contextRegistry.test.js`, « le dernier inscrit prend la place du précédent ») : le
+dernier monté capte tout le routage entrant, l'autre reste vivant et **sourd**, sans avertissement.
+
+ℹ️ **Le provider rend un `<div>`** autour de son slot, qui reçoit aussi les attributs non déclarés
+(pas d'`inheritAttrs: false`). Dans une mise en page flex ou un composant multi-racine, son
+emplacement compte.
+
 L'API est exposée de **trois** façons : slot scopé (`v-slot="webrtc"`),
 `provide(WEBRTC_API_KEY, api)` pour tous les descendants, et `defineExpose({ api })` pour un
 `ref` parent. Le provider appelle `api.cleanup()` en `onBeforeUnmount`, qui ferme les connexions
@@ -90,6 +111,8 @@ Verbes : `initialize` · `cleanup` · `watchUsers` · `sendData` / `sendDataOnCo
 `isMuted` ·
 `isVideoEnabled` · `streamStates` · `topology` / `hubSlug` / `isHub` / `isHubConnected` ·
 `localPeerId` · `mySlug` / `myName`.
+Ce sont des `ref`, et l'objet `api` n'est pas déballé par le template : on y écrit
+`api.remoteStreams.value` (`AudioRoom/AudioComponent.vue`), comme dans le script.
 
 ⚠️ **`stopAudio` n'a plus aucun site d'appel dans le paquet.** Il reste sur la surface publique —
 c'est un export inutilisé mais **juste** (un alias de `stopStream` en aval), pas un export faux, et

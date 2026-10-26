@@ -213,7 +213,5 @@ Les contrôleurs sont eux aussi substituables : les routes les référencent **p
 - `routes/socializer/admin.php` est **entièrement commenté** ; `console.php` est vide
 - `config/socializer.php > table_names` est vide
 - `SocializerUpgrade` (`socializer:upgrade`) a son corps quasi entièrement commenté
-- `components/WebRTC/` est l'implémentation WebRTC **v1**, morte — voir
-  [modules/webrtc2/INDEX.md](../modules/webrtc2/INDEX.md)
-- les fichiers front préfixés `__` sont désactivés (`__StreamUserButton.vue`,
-  `__AudioComponent copy.vue`)
+- `resources/js/socializer/callbacks/` n'a plus aucun importeur depuis la suppression de la v1
+  (26/10/2026)

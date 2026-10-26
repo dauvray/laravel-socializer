@@ -279,8 +279,8 @@ Route::post('/get-user-list',
     config('socializer.controllers_front.user').'@getUsersList')
     ->name('users.load');
 
-// `/send-alert-to-user` était ici : c'est une route d'invitation d'appel WebRTC (ses seuls
-// appelants sont usePeerCore et le module v1 mort), elle vit désormais dans la section WEBRTC
+// `/send-alert-to-user` était ici : c'est une route d'invitation d'appel WebRTC (son seul
+// appelant est usePeerCore, la v1 étant supprimée), elle vit désormais dans la section WEBRTC
 // avec les autres routes de signalisation et leur plafond.
 
 /*----------------------------------------------------------------------

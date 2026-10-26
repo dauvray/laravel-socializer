@@ -31,10 +31,7 @@ a été retirée une fois terminée — c'est le modèle à suivre, cf. [ecrire-
 
 ## La visio n'appartient pas au chat
 
-**`ChatComponent.vue` n'embarque ni visio ni audio.** Les imports v1
-(`MediaBroadcastProvider`, `StreamDefaultUserButtonUI`, `CaptureDefaultUserButtonUI`) y ont été
-retirés : ils étaient importés mais **jamais montés** dans le `<template>` — résidu de copier-coller,
-et venus du `WebRTC/` v1 mort, monté nulle part dans le paquet.
+**`ChatComponent.vue` n'embarque ni visio ni audio.**
 
 Le paquet suit un patron **« provider + slot, monté au besoin »** : `MediaBroadcastProvider` porte la
 logique de connexion et de flux, le **parent** fournit l'UI en slot selon le cas (voir

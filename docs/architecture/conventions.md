@@ -90,7 +90,6 @@ components/<Domaine>/
 
 - **PascalCase** pour les `.vue`, **camelCase** pour les `.js`
 - composables préfixés `use*`
-- fichiers préfixés `__` = **désactivés / mis de côté** (`__StreamUserButton.vue`)
 - indentation à **4 espaces** dans les blocs `<script>`
 
 ### Vue 3

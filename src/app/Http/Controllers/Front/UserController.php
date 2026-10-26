@@ -237,8 +237,9 @@ class UserController extends Controller
             'toUserSlug' => $this->slugRules(),
             'room' => $this->roomRules(),
             'type' => $this->typeRules(),
-            // Nullable : le module WebRTC v1 ne l'envoie pas, et le repli `connectionType
-            // || type` est un choix documenté de rétrocompatibilité côté client.
+            // Nullable : tous les émetteurs vivants l'envoient depuis que la v1 n'a plus
+            // d'appelant (26/10/2026), mais le repli `connectionType || type` est un choix documenté de
+            // rétrocompatibilité côté client, et un onglet sur un bundle antérieur doit passer.
             'connectionType' => $this->typeRules(false),
             // Nullable pour la même raison, et elle est ici encore plus dure : un 422 sur
             // cette route reproduit « A diffuse, B arrive, B ne voit rien ». Tout bundle

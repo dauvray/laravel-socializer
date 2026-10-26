@@ -14,15 +14,6 @@ Documentés à part : **[WebRTC2](webrtc2/INDEX.md)** · **[Chat](chat.md)**
 
 ---
 
-## ⚠️ La v1 WebRTC est morte, et elle est encore dans l'arbre
-
-`components/WebRTC/` (sans le 2) coexiste avec `components/WebRTC2/`, avec des fichiers homonymes :
-rien ne doit y être ajouté, et un symbole trouvé au grep peut venir de là. Le détail — ce qui y vit
-encore, ce qui l'appelle encore — est dans
-[modules/webrtc2/INDEX.md](webrtc2/INDEX.md).
-
----
-
 ## Fiches
 
 | Module | Chemin | Rôle · points d'entrée |

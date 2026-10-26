@@ -332,7 +332,9 @@ ferait que le join d'un collègue casse celui du voisin. Valeurs dans `config/so
 > **Sur ce chemin, la sévérité est le risque — pas la permissivité.** Un 422 sur `/ask-to-peer-id`
 > reproduit « A diffuse, B arrive, B ne voit rien ». Chaque règle est donc calquée sur une émission
 > relue **dans le client**, jamais sur une intuition de forme, et trois `nullable` qui ressemblent à
-> des oublis n'en sont pas : `connectionType` (la v1 morte mais encore appelée ne l'envoie pas),
+> des oublis n'en sont pas : `connectionType` (tous les émetteurs vivants l'envoient depuis que la
+> v1 n'a plus d'appelant, le 26/10/2026 — mais le client le traite par repli, `connectionType || type`,
+> et un onglet resté sur un bundle antérieur doit continuer à passer),
 > `options.action` **sur la route de réponse seulement** (un refus d'appel n'envoie que `{ type }`,
 > d'où le paramètre `actionRequired`), et `options.peerId` (l'invitation peut partir avant
 > l'ouverture du peer local). `room` est bornée en longueur **sans motif** : elle vaut tantôt un

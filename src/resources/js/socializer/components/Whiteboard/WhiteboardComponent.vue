@@ -277,7 +277,8 @@
            * plats du format .excalidraw, et un Record de dataURL). Reste la borne de
            * MAX_PAYLOAD_BYTES (64 Ko) : au-delà l'envoi est abandonné, avec un
            * `console.warn` pour seule trace. Le terme dominant est désormais `files` —
-           * une image collée y suffit. Borne assumée, voir work/webrtc-data-v1-v2.md.
+           * une image collée y suffit. Borne assumée, voir docs/modules/webrtc2/api.md,
+           * § `api.sendData(data, destUserSlugs = null)`.
            *
            * @param {{ elements: Array, files: Object }} scene
            * @returns {{ elements: Array, files: Object }}

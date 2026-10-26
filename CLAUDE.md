@@ -8,18 +8,15 @@ rooms, chat, visio/diffusion WebRTC, tableau blanc, applications IA.
 
 ---
 
-## Les quatre pièges qui coûtent cher
+## Les trois pièges qui coûtent cher
 
-1. **`components/WebRTC/` (sans le 2) est mort.** L'implémentation vivante est
-   `components/WebRTC2/`. Les deux coexistent dans l'arbre et ont des fichiers homonymes
-   (`MediaBroadcastProvider.vue`) — un symbole trouvé au grep peut venir de la v1.
-2. **Les tests JS se lancent depuis la racine du projet hôte**, jamais depuis le package : il n'a ni
+1. **Les tests JS se lancent depuis la racine du projet hôte**, jamais depuis le package : il n'a ni
    `package.json` ni `node_modules`, tout l'outillage front vit côté hôte. Depuis ce dossier,
    `cd ../../..`. Le package a en revanche son **propre dépôt git** et sa propre suite PHP.
-3. **Imports front toujours via l'alias `~socializer`**, jamais en relatif profond. L'alias est
+2. **Imports front toujours via l'alias `~socializer`**, jamais en relatif profond. L'alias est
    défini côté hôte dans `vite.config.js` **et** `vitest.config.js` ; un relatif casserait l'un des
    deux.
-4. **Namespaces PHP en casse mixte, assumée** : `Dauvray\Socializer\app\Models\Post`,
+3. **Namespaces PHP en casse mixte, assumée** : `Dauvray\Socializer\app\Models\Post`,
    `Dauvray\Socializer\app\console\Commands\…`. Non-idiomatique mais systématique — le reproduire.
 
 ---
@@ -88,6 +85,5 @@ tous les projets qui installeront ce tag, et il ne doit jamais grossir — la su
   d'autorisation de `Socializable`. Ses décisions de harnais sont contraintes par l'état réel du
   paquet et les défaire sans les lire coûte une demi-journée —
   [tests.md](docs/architecture/tests.md#suite-php--dans-le-package-via-orchestra-testbench).
-- **Zones mortes ou vides** (`admin.php` commenté, `console.php` vide, `table_names` vide,
-  `socializer:upgrade` quasi entièrement commenté) :
+- **Zones mortes ou vides** — ne pas y chercher quelque chose :
   [liste](docs/architecture/package.md#zones-mortes-connues).

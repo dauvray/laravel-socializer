@@ -60,7 +60,8 @@
         api.cleanup()
     })
 
-    // Watcher pour mettre à jour la liste des utilisateurs dans l'api à chaque changement de props.users
+    // Met à jour la liste des utilisateurs dans l'api à chaque REMPLACEMENT de props.users : le
+    // watch suit la référence, une mutation en place n'est pas vue (contrat : api.md, `users`)
     watch(
         () => props.users,
         (newVal) => {
