@@ -77,3 +77,21 @@ lever `commentStore.commentables["__NULL__"].data.forEach`.
 - [ ] Épingler par un test **les quatre appelants**, pas seulement celui du feed : le motif est
       copié à l'identique dans `stores/comments/actions.js`, et corriger un seul étage y laisserait
       la même panne.
+
+## La prop `room` d'Application a un défaut qui rend `undefined` — et le corriger naïvement casse (26/10/2026)
+
+Relevé par la relecture du lot G (`doc-rustines.md`), en vérifiant ce que la recette data emportait
+avec elle. `Application/ApplicationComponent.vue` déclare `room: { type: Object, default: () => {} }` :
+un **corps de fonction vide**, qui rend `undefined`, alors que l'intention était sans doute
+`() => ({})`. Aujourd'hui c'est sans effet, **et c'est ce défaut qui protège** : le provider data est
+sous `v-if="users && room"` et reçoit `:room="room.id"`, donc sans prop `room` il ne monte pas.
+
+⚠️ **Le correctif évident est le piège.** `() => ({})` rend `room` vrai et `room.id` indéfini : le
+provider monterait avec `room` absent et retomberait sur le contexte `data-app`, celui que
+`System/Notifications.vue` occupe en permanence — registre last-write-wins, l'un des deux devient
+sourd sans un mot (`docs/modules/webrtc2/api.md`, « En mode `data`, toujours passer `room` »).
+
+- [ ] Code — `default: null`, qui dit l'intention (pas de room ⇒ pas de provider) sans changer le
+      comportement ; relire les autres lectures de `this.room` du composant avant.
+- [ ] Tests — le composant n'a pas de test ; vérification à la main : une page Application sans
+      room ne monte aucun provider.

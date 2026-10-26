@@ -105,8 +105,8 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
 
 ## Lot 1 — Code mort · sortie B
 
-- [ ] **Migrer les appelants de WebRTC v1 — tous migrés au 26/10/2026 —, puis supprimer `components/WebRTC/`** ·
-      effort [L] — **code fait le 26/10/2026 (lot F) : la v1 n'est plus dans l'arbre. Reste G, la doc.**
+- [x] **Migrer les appelants de WebRTC v1 — tous migrés au 26/10/2026 —, puis supprimer `components/WebRTC/`** ·
+      effort [L] — **CLOSE le 26/10/2026 : la v1 n'est plus ni dans l'arbre (lot F) ni dans la doc (lot G).**
       **Découpé en sept lots le 31/08/2026 — le plan est plus bas, après le recensement.**
       **La tâche la plus rentable du paquet en volume de doc.** La v1 morte est annoncée dans
       **7 fichiers de doc**, dont le piège n°1 du `CLAUDE.md` et une ligne du `CLAUDE.md` de *tout
@@ -201,7 +201,7 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
       v2 émet l'**objet** brut (`usePeerTransport.sendData` → `conn.send(data)`) et qu'aucun
       consommateur v2 ne parse quoi que ce soit. Les trois `JSON.parse` doivent donc **disparaître** :
       laissés en place, ils reçoivent un objet et lèvent. La table complète est dans
-      [webrtc-data-v1-v2.md](webrtc-data-v1-v2.md).
+      `webrtc-data-v1-v2.md`.
 
       ℹ️ Le watch de `users` du provider v2 **n'est pas profond, et c'est un contrat épinglé**
       (`MediaBroadcastProvider.test.js`, « une composition mutée en place n'est pas vue »). Si un
@@ -465,7 +465,7 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
                   `sendData(data, destUserSlugs)`, les quatre cas où `onDataReceived` n'arrive pas ou
                   arrive en **arité 1** — est allé dans `docs/modules/webrtc2/api.md`, qui n'en
                   listait que les **clés** ; le delta v1→v2 et les spécificités des trois modules dans
-                  [webrtc-data-v1-v2.md](webrtc-data-v1-v2.md), qui **pointe** `api.md` au lieu de le
+                  `webrtc-data-v1-v2.md`, qui **pointe** `api.md` au lieu de le
                   recopier et porte sa condition de suppression en tête (il part avec la v1, au lot
                   F/G — précédent : `webrtc-v1-notes.md`).
                   **La lecture a rapporté plus que la table**, et c'est le résultat du lot :
@@ -926,7 +926,7 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
                   deux imports à gabarit : la leçon `defineAsyncComponent` du cadrage, refaite. Ce qui
                   les a vus est le **diff de la liste des chunks** entre le build d'avant et celui
                   d'après (19 fichiers disparus, tous de `callbacks/`, aucun apparu)
-      - [ ] **G. La doc, en dernier** `[M]` — les 7 fichiers listés plus haut **+ un huitième,
+      - [x] **G. La doc, en dernier** `[M]` — les 7 fichiers listés plus haut **+ un huitième,
             `docs/architecture/conventions.md` (cf. « Ce que F transmet à G » ci-dessous)**, dans l'ordre imposé
             par [le `work/` du projet hôte](../../../../work/README.md), puis `boost:update`, puis
             `grep 'laravel-socializer/core rules ===' CLAUDE.md`. **Une** correction à y porter au
@@ -954,11 +954,61 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
             · la correction « un homonyme → deux » ci-dessus est devenue **sans objet** : le
               `composables/useMediaBroadcast.js` v1 est supprimé, il ne reste **aucun** homonyme. G
               retire l'avertissement au lieu de le corriger ;
-            · [webrtc-data-v1-v2.md](webrtc-data-v1-v2.md) a rempli sa condition de suppression
+            · `webrtc-data-v1-v2.md` a rempli sa condition de suppression
               (« part avec `components/WebRTC/` »). Avant de le supprimer, reloger ce qui pointe vers
               lui — dont `WhiteboardComponent.vue`, dont un commentaire y renvoie pour la borne de
               64 Ko **assumée** : une décision a besoin d'un foyer qui survive à la recette ; puis
               `whiteboard-todo.md` (section à date de fin), `work/README.md` et ce fichier.
+            **✅ Fait le 26/10/2026, `76c6909`** — sortie B partout : la v1 n'existe plus, rien ne reste
+            à sa place. Dans l'ordre de la doctrine : `docs/` (webrtc2/`INDEX.md`, `autres-modules.md`,
+            `package.md`, `conventions.md`, `INDEX.md`, `chat.md`, `signalisation.md`, plus `api.md`
+            en remontée), `CLAUDE.md` (trois pièges au lieu de quatre — aucun renvoi numéroté ne visait
+            leur numéro), `core.blade.php`, puis `boost:update`, puis le contrôle :
+            `grep 'laravel-socializer/core rules ==='` présent, 11 sections avant et après, le diff du
+            `CLAUDE.md` hôte se réduit aux **trois** lignes v1, et `.ai/` est identique à l'octet.
+            Point par point de la passation :
+            · `conventions.md` : la ligne `__` est **retirée**, la convention ne survit pas — zéro
+              fichier, et ce chantier **supprime** le code mort au lieu de le mettre de côté (git garde
+              l'historique) ;
+            · la commande de recompte n'est **pas gardée** : il n'y a plus rien à compter, et un import
+              **statique** réintroduit vers un chemin supprimé casse `npm run build` — un `import()` à
+              gabarit, lui, se développe en vide sans rien dire (la leçon de F) ;
+            · l'avertissement d'homonymes est **retiré**, il n'en reste aucun ;
+            · la recette est **supprimée** ; le commentaire de `WhiteboardComponent.vue` renvoie à
+              `api.md` (§ `api.sendData`), qui possède la borne de 64 Ko et la dit assumée ; le bloc
+              ⚓ de `whiteboard-todo.md` est levé — rien d'autre ne pointait sa section ; les liens
+              d'ici et de `README.md` sont devenus du texte.
+            🔴 **La recette se disait vide de contrat v2 — « tout ce qui concerne la v2 est dans
+            `api.md` et n'est pas recopié ici » — et c'était faux.** Vérifié fait par fait avant de la
+            supprimer : **quatre** contrats v2 n'existaient qu'en elle — un `options` partiel remplace
+            le défaut en bloc (épinglé par `MediaBroadcastProvider.test.js`, jamais écrit dans
+            `api.md`), sans `room` le contexte tombe sur le `data-app` permanent de
+            `Notifications.vue` sous un registre last-write-wins, le provider rend un `<div>`, et
+            `users` se **réaffecte**, jamais ne se mute — le watch suit la référence, épinglé aux deux
+            bouts depuis A3 mais écrit nulle part, et le commentaire du provider disait « à chaque
+            changement ». **Ce quatrième, c'est la relecture qui l'a trouvé** : l'auteur en avait vu
+            trois. Plus un fait à préciser : les états de l'api sont des `ref`, `.value` y compris en
+            template. Tous remontés dans `api.md`. **C'est la « bonne nouvelle » de D0, au moment de la
+            suppression** : la phrase par laquelle un fichier se déclare sans substance est celle
+            qui autorise à le supprimer sans le relire.
+            ⚠️ **Un neuvième fichier, hors de toutes les listes** : `docs/architecture/signalisation.md`
+            justifiait le `nullable` de `connectionType` par « la v1 morte mais encore appelée ne
+            l'envoie pas » — faux depuis F. Même justification dans le commentaire de
+            `UserController.php` et le docblock de `ValidationTest.php`. Les trois sont réécrits ; **la
+            règle reste `nullable`** : tous les émetteurs vivants envoient le champ, mais le client
+            garde son repli `connectionType || type`, un onglet sur un bundle antérieur doit passer,
+            et sur ce chemin la doc pose que la sévérité est le risque.
+            ⚠️ **La relecture a trouvé deux commentaires au PRÉSENT que l'inventaire de l'auteur ne
+            pouvait pas voir** — `routes.private.php` (« ses seuls appelants sont usePeerCore et le
+            module v1 mort ») et le corps de `connection_type_absent_reste_accepte`, quatrième site de
+            la justification `nullable`. L'inventaire grepait `docs/`, les `CLAUDE.md` et la guideline ;
+            la relecture, **tous les fichiers suivis**. Une annotation ne vit pas que dans la doc : un
+            commentaire de code en est une, et l'inventaire d'un lot doc se fait sur `git ls-files`.
+            Laissés exprès : `securite.md` (la v1 y est l'histoire, au passé, d'un secret présent deux
+            fois dans le bundle — la leçon tient). `callbacks/` n'est pas supprimé (poches mortes),
+            mais nommé dans les « Zones mortes connues » de `package.md` : l'arborescence le
+            présentait comme vivant (relevé par la relecture). Mesuré : suite JS 87 fichiers / 1525 cas ; `npm run build` vert ; suite PHP 286 tests / 678
+            assertions (un docblock de test et un commentaire de contrôleur touchés, Pint non lancé)
 
       **Les trois volets du gabarit, répartis** : *code* = B → F · *tests* = A et B, plus les
       vérifications manuelles nommées de D et E (aucun des appelants restants n'a de test, et aucun
@@ -969,7 +1019,7 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
       part pas avant que D et E soient prouvés à la main.
       **État au 01/09/2026** : **le lot A est CLOS** (A1, A2, A3), **B1, B2 et C sont faits**, et
       **le lot D est fait EN ENTIER** — D0, D1, D2, D3. La table de traduction existe
-      ([webrtc-data-v1-v2.md](webrtc-data-v1-v2.md), le contrat v2 dans
+      (`webrtc-data-v1-v2.md`, le contrat v2 dans
       `docs/modules/webrtc2/api.md`), **les trois appelants du canal data sont migrés**, et les
       appelants v1 vivants passent de **quatre à un** — `AudioRoom`, qui est un provider **media**
       et relève du lot E. D1 est **clos** (sa vérif à deux navigateurs a passé, après avoir trouvé un
@@ -1003,6 +1053,9 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
       seconde), mais seul le build dit ce qu'il atteint** — Vite développe le gabarit en glob. D'où
       le **diff de la liste des chunks** entre le build d'avant et celui d'après : il a trouvé
       `callbacks/` orphelin en entier là où l'extraction de l'auteur n'en voyait que trois sur huit.
+      **Puis G le même jour : la doc ne parle plus de la v1 — la tâche est CLOSE.** Neuf fichiers de
+      doc et la guideline livrée, la recette supprimée après en avoir remonté quatre contrats v2 qu'elle
+      seule portait — détail et leçon dans l'item G.
       ⚠️ **Ce que E ajoute à la doctrine : la migration est le premier USAGE RÉEL d'un chemin
       que seul un exemple exerçait.** AudioRoom est le premier consommateur de production du mode
       `stream` ; ses deux 🔴 (E0a, E0b) ne sont pas des défauts de la migration mais du **cœur v2**,
@@ -1097,7 +1150,7 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
       | `src/config/socializer.php` | `table_names` vide |
       | `SocializerUpgrade` | 27 lignes non commentées sur 67 — commande enregistrée, inerte |
       | ~~`__StreamUserButton.vue`, `__CaptureUserButton.vue`, `__AudioComponent copy.vue`~~ | ✅ **supprimés le 26/10/2026 (lot F2)** — les deux premiers avec `components/WebRTC/`, le troisième parce qu'il importait la v1. Plus aucun fichier `__` dans le paquet hors `__tests__` / `__mocks__` |
-      | `src/resources/js/socializer/callbacks/` (8 fichiers) | **ajouté le 26/10/2026 (lot F)** — aucun importeur depuis F, qui a supprimé les deux `import()` à gabarit du store v1 qui les atteignaient tous. Depuis F, le seul import à gabarit du paquet (`socializer_custom_elements/routes/application.js`) vise `rooms/components/` ; le build n'émet plus aucun chunk `callbacks/` — c'est la preuve à rejouer avant de supprimer. `docs/architecture/package.md` le décrit encore comme vivant |
+      | `src/resources/js/socializer/callbacks/` (8 fichiers) | **ajouté le 26/10/2026 (lot F)** — aucun importeur depuis F, qui a supprimé les deux `import()` à gabarit du store v1 qui les atteignaient tous. Depuis F, le seul import à gabarit du paquet (`socializer_custom_elements/routes/application.js`) vise `rooms/components/` ; le build n'émet plus aucun chunk `callbacks/` — c'est la preuve à rejouer avant de supprimer. nommé dans les « Zones mortes connues » de `docs/architecture/package.md` depuis le lot G (relevé par sa relecture : l'arborescence l'y présentait comme vivant) |
       - [ ] Code — supprimer ou implémenter, poche par poche
       - [ ] Doc — la section « Zones mortes connues » disparaît à mesure ; la supprimer quand elle
             est vide

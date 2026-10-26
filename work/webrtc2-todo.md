@@ -1337,7 +1337,7 @@ extractions : c'est 18 lignes, sous un filet cinq fois plus dense.
   ⚠️ La dissymétrie avec `AWN` — qui, lui, dégrade — n'est pas une incohérence : c'est la différence
   entre une dépendance et un ornement. Écrite dans l'en-tête de `CallRemotePeerBtn.vue`.
 
-  Reste hors périmètre : `ChatComponent.vue` (pas WebRTC2), et la v1 qui mourra avec `components/WebRTC/`.
+  Reste hors périmètre : `ChatComponent.vue` (pas WebRTC2). La v1 est supprimée depuis le 26/10/2026.
 - [ ] **Cleanup `AbortController`** : annuler les opérations longues à la destruction du contexte.
 
 ---
