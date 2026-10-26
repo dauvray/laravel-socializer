@@ -782,8 +782,8 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
                         Le second défaut du site d'appel PHP (la confidentialité passée en entier au
                         lieu d'un tableau, donc **ignorée**) n'aurait pas été vu en corrigeant le
                         seul crash
-      - [ ] **E. AudioRoom** `[M]` — **code fait le 26/10/2026, quatre commits ; reste la vérif
-            manuelle**, qui appartient à David. **AudioRoom est le premier consommateur de
+      - [x] **E. AudioRoom** `[M]` — **CLOS le 26/10/2026** : quatre commits, et la vérif à deux
+            navigateurs passée le même jour (David), cinq étapes sur cinq. **AudioRoom est le premier consommateur de
             production du mode `stream`** — jusqu'ici seul `Exemples/Home.vue` l'employait —, et c'est
             ce qui a décidé du lot : la méthode de D1 (lire le chemin de RÉCEPTION avant de choisir
             quoi émettre) a trouvé **deux défauts du cœur v2** qu'AudioRoom aurait rencontrés le
@@ -856,7 +856,14 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
                   `StreamSimpleUI` le `defineAsyncComponent` mort et les deux usages commentés — faux,
                   ils passaient `{streamData}` à une prop `streams: Array`. Un indicateur « qui parle »,
                   s'il revient, se fera **par participant**
-            - [ ] **Vérif manuelle à deux navigateurs** (David) — rechargement dur des deux côtés,
+            - [x] **Vérif manuelle à deux navigateurs — PASSÉE le 26/10/2026** (David), **cinq
+                  étapes sur cinq**. Son retour, tel quel : « vérification faite : 1 à 5 : ok » — c'est
+                  le grain de la preuve : aucun détail par étape, ni console, ni réseau. L'étape 5
+                  demandait un troisième participant ; comment il a été obtenu n'est pas rapporté. L'étape 5 est le premier exercice d'E0a en transport réel : un
+                  flux de plus de 5 min a survécu à l'arrivée d'un troisième membre. ⚠️ **Le délai de
+                  l'étape 2 n'a pas été rapporté** — « le player disparaît » est vérifié, sa durée non ;
+                  l'item 🟠 du `leaving` de présence ([webrtc2-todo.md](webrtc2-todo.md)) reste donc
+                  sans chiffre. Le protocole suivi : rechargement dur des deux côtés,
                   aucune écriture dans `.env` pendant la mesure (`.ai/rules/web-r-t-c2.md`). Créer un
                   contenu « Audio » dans un salon dont A et B sont membres.
                   1. A puis B entrent : invite micro des deux côtés ; chacun voit un player au **nom de
@@ -908,13 +915,14 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
       chantier, et la plus retorse : un décompte qui vieillit **entre deux étapes d'une même tâche**.
       **La suite est le lot E** (AudioRoom), qui migre un provider **media** et dont le delta n'est
       pas écrit : il l'écrira avec le code sous les yeux. F ne part pas avant que D et E soient
-      prouvés **à la main** — D l'est depuis le 26/10, reste E. B5 reste ouvert en
+      prouvés **à la main** — D et E le sont depuis le 26/10. B5 reste ouvert en
       parallèle, sans dépendance : il ferme un 🟠 qui mord aujourd'hui, mais demande de trancher une
       question produit avant d'écrire la `key`.
       **État au 26/10/2026** : **le code du lot E est fait** — E0a, E0b, E1, E2, quatre commits —
-      et **aucun composant n'importe plus `components/WebRTC/`** ; seul `Server.vue` importe encore le store v1, sans le lire (F1). Reste sa vérif manuelle (David) ; **F ne part
-      qu'après**. F1 rétrécit : `Server.vue` ne lit pas les getters qu'il importe, c'est une
-      suppression de deux lignes.
+      et **aucun composant n'importe plus `components/WebRTC/`** ; seul `Server.vue` importe encore
+      le store v1, sans le lire (F1). **Vérif à deux navigateurs passée le même jour : le lot E est
+      CLOS, et F peut partir.** F1 rétrécit : `Server.vue` ne lit pas les getters qu'il importe,
+      c'est une suppression de deux lignes.
       ⚠️ **Ce que E ajoute à la doctrine : la migration est le premier USAGE RÉEL d'un chemin
       que seul un exemple exerçait.** AudioRoom est le premier consommateur de production du mode
       `stream` ; ses deux 🔴 (E0a, E0b) ne sont pas des défauts de la migration mais du **cœur v2**,

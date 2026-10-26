@@ -1260,7 +1260,9 @@ extractions : c'est 18 lignes, sous un filet cinq fois plus dense.
   existe », au-dessus d'un `clearConnectionsRoom`. Même espèce que l'« arrêt des flux, etc. » d'E0b —
   une phrase d'intention sur une ligne qui ne la tient pas.
   Correctif candidat : fermer — le `closePeerConnection` du store ferme les instances du type — au
-  lieu d'effacer seulement ; ce qu'il fait ensuite du store est à lire avant d'écrire le correctif. À mesurer d'abord : la vérif manuelle d'E note le délai de disparition du player.
+  lieu d'effacer seulement ; ce qu'il fait ensuite du store est à lire avant d'écrire le
+  correctif. À mesurer d'abord : le délai de disparition du player chez A quand B quitte — la vérif
+  d'E (26/10/2026) a constaté la disparition ; **sa durée n'a pas été rapportée**.
 
 - [x] 🟠 **Un refus de permission caméra ne produit RIEN à l'écran** `[S]` — relevé le 29/08/2026 en
   fermant la tâche 7 des tests, **fermé le 30/08/2026** (lot B de la tâche 8).
