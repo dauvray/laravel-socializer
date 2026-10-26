@@ -102,7 +102,6 @@
 
     // STORES
     import { useServerStore } from '~socializer/stores/server.js'
-    import { usePeerStore } from '~socializer/stores/peers.js'
     import { useMeStore } from '~estarter/stores/me.js'
 
     // COMPOSABLES
@@ -141,10 +140,8 @@
     const breakpoints = useBreakpoints()
 
     const serverStore = useServerStore()
-    const peerStore = usePeerStore()
     const meStore = useMeStore()
 
-    const { getIsStreaming: isStreaming, getIsCapturing: isCapturing } = storeToRefs(peerStore)
     const { getMe } = storeToRefs(meStore)
     const {
         getCurrentServer: currentServer,

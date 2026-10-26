@@ -7,7 +7,7 @@
  * du conteneur coturn — le credential était présent DEUX fois dans le bundle, parce que deux
  * fichiers le lisaient (`WebRTC2/Composables/usePeerTransport.js`, vivant, et
  * `stores/peers/actions.js`, mort mais compilé quand même : Vite ne se soucie pas de savoir si le
- * code est atteignable).
+ * code est atteignable — supprimé depuis avec la v1, le 26/10/2026).
  *
  * Ce test est un balai, pas une vérification de comportement. Il existe parce que la panne est
  * INVISIBLE : rien dans la suite, rien dans l'application, rien dans un `git diff` ne signale
