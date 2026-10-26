@@ -106,7 +106,7 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
 ## Lot 1 — Code mort · sortie B
 
 - [ ] **Migrer les appelants de WebRTC v1 — tous migrés au 26/10/2026 —, puis supprimer `components/WebRTC/`** ·
-      effort [L]
+      effort [L] — **code fait le 26/10/2026 (lot F) : la v1 n'est plus dans l'arbre. Reste G, la doc.**
       **Découpé en sept lots le 31/08/2026 — le plan est plus bas, après le recensement.**
       **La tâche la plus rentable du paquet en volume de doc.** La v1 morte est annoncée dans
       **7 fichiers de doc**, dont le piège n°1 du `CLAUDE.md` et une ligne du `CLAUDE.md` de *tout
@@ -115,7 +115,8 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
 
       **Vérifié : cinq appelants vivants au cadrage, quatre depuis le lot C, trois depuis D1, deux
       depuis D2, un depuis D3, ZÉRO depuis E1 (26/10/2026)** — reste un fichier désactivé, et `Server.vue`
-      qui n'importe que le store v1, sans le lire (F1). L'archive de lecture
+      qui n'importe que le store v1, sans le lire (F1). **Plus rien depuis F (26/10/2026) : les deux
+      greps rendent zéro.** L'archive de lecture
       `work/webrtc-v1-notes.md` a été supprimée : sa condition de conservation — « le temps de
       vérifier qu'aucun appelant ne subsiste » — était remplie, et le recensement vit désormais
       dans la doc du module, avec la commande qui le recompte.
@@ -127,8 +128,8 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
       | ~~`Application/ApplicationComponent.vue`~~ | ✅ **migré le 01/09/2026 (lot D2)** — `WebRTC2/Widgets/Mediaplayer/MediaBroadcastProvider.vue`, store v1 débranché |
       | ~~`Whiteboard/WhiteboardComponent.vue`~~ | ✅ **migré le 01/09/2026 (lot D1)** — `WebRTC2/Widgets/Mediaplayer/MediaBroadcastProvider.vue`, store v1 débranché |
       | ~~`ClassRoom/ClassRoomComponent.vue`~~ | ✅ **migré le 01/09/2026 (lot D3)** — `WebRTC2/Widgets/Mediaplayer/MediaBroadcastProvider.vue`, store v1 débranché. **Dernier appelant du canal data** ; `DataUserPeerConnection.vue` n'a donc plus aucun importateur vivant |
-      | `AudioRoom/__AudioComponent copy.vue` | `WebRTC/composables/usePeers.js` — fichier déjà désactivé (`__`) |
-      | **`Server/Server.vue`** | **`stores/peers.js` seul — jamais `WebRTC/`** · relevé le 31/08/2026 |
+      | ~~`AudioRoom/__AudioComponent copy.vue`~~ | ✅ **supprimé le 26/10/2026 (lot F2)** — il importait `WebRTC/composables/usePeers.js` |
+      | ~~**`Server/Server.vue`**~~ | ✅ **débranché le 26/10/2026 (lot F1)** — il importait `stores/peers.js` seul, jamais `WebRTC/` |
 
       ⚠️ **Le recensement par `grep -rn "WebRTC/"` rate un consommateur, et c'est un défaut de la
       commande, pas du recensement.** `Server/Server.vue` n'importe aucun fichier de `WebRTC/` : il
@@ -143,7 +144,8 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
       balise — elle débranche aussi le store. ✅ **Les trois sont faits le 01/09/2026** : Whiteboard
       (D1), Application (D2), ClassRoom (D3). **Plus aucun appelant du canal data n'est branché sur
       le store v1** — ce qui reste de `stores/peers.js` est lu par `Server/Server.vue` (deux getters,
-      lot F1) et par deux fichiers de `WebRTC/` qui partent avec le dossier.
+      lot F1) et par deux fichiers de `WebRTC/` qui partent avec le dossier. ✅ *Store supprimé le
+      26/10/2026 (lot F2).*
 
       La v1 n'est donc pas « morte en attente de confirmation » : elle était **vivante sous cinq
       composants** au cadrage, dont un en `defineAsyncComponent`, invisible à une recherche d'`import`
@@ -171,6 +173,8 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
       dont **les deux premiers partent avec le dossier** : le seul à toucher est `Server.vue`, c'est
       F1 — une suppression, ses getters ne sont jamais lus). ~~La migration de l'appelant restant
       (`AudioRoom`, lot E) et le sort de `SpectrumAnalyzer`~~ : **faits le 26/10/2026** (E1, E2).
+      ✅ **Périmètre supprimé le 26/10/2026 (lot F)** — les 10 fichiers, le store, `Server.vue`
+      débranché, plus un fichier que ce périmètre omettait (F2).
       Annotation (7 fichiers) : `CLAUDE.md` · `docs/INDEX.md` ·
       `docs/modules/webrtc2/INDEX.md` · `docs/modules/autres-modules.md` ·
       `docs/architecture/package.md` · `docs/modules/chat.md` ·
@@ -885,21 +889,76 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
                      entre — A entend toujours B.
                   ⚠️ **Ne pas cocher sur la foi du vert** — la leçon de D1 vaut double ici : c'est le
                   premier usage réel du mode `stream`, et le transport n'est exercé par aucun test
-      - [ ] **F. La suppression** `[M]`
-            - [ ] F1 — `Server/Server.vue` : **retirer** l'import du store v1 et la ligne 147.
+      - [x] **F. La suppression** `[M]` — **fait le 26/10/2026**, un commit, `8f85d00`
+            - [x] F1 — `Server/Server.vue` : **retirer** l'import du store v1 et la ligne 147.
                   Relevé le 26/10/2026 : les deux getters y sont **destructurés et jamais lus** — ni dans
                   le script ni dans le template. Ce n'est donc pas une migration vers `peers2` : il n'y a
-                  rien à exposer
-            - [ ] F2 — supprimer `components/WebRTC/`, `stores/peers.js` et `stores/peers/`.
+                  rien à exposer.
+                  **Trois lignes, pas deux** : l'instance `const peerStore = usePeerStore()` n'était lue
+                  que par la destructuration — la laisser gardait un appel à un store supprimé.
+            - [x] F2 — supprimer `components/WebRTC/`, `stores/peers.js` et `stores/peers/`.
                   Preuve : les **deux** greps rendent zéro · suite JS verte · **`npm run build`**,
-                  seul contrôle qui voie un import cassé dans un fichier qu'aucun test n'importe
-      - [ ] **G. La doc, en dernier** `[M]` — les 7 fichiers listés plus haut, dans l'ordre imposé
+                  seul contrôle qui voie un import cassé dans un fichier qu'aucun test n'importe.
+                  🔴 **Le périmètre écrit ne pouvait pas tenir sa propre preuve** :
+                  `AudioRoom/__AudioComponent copy.vue` importait `WebRTC/composables/usePeers.js`, donc
+                  le grep n°1 rendait encore une ligne une fois le périmètre supprimé. Le fichier était
+                  recensé (table plus haut, et « Vider les poches mortes ») mais **aucun lot ne le
+                  supprimait**. Supprimé ici : aucun importeur, aucun glob de production ne l'atteint, et il importait
+                  déjà un `./widgets/SpectrumAnalyzer.vue` absent de l'arbre. Mesuré : les deux greps
+                  rendent zéro ; suite JS **87 fichiers / 1525 cas, identique avant et après** ;
+                  `npm run build` vert — **pas inchangé** : le chunk `Server` passe de 30 217 à
+                  19 185 octets (il embarquait le store v1, faute de chunk v1 à part) et les 8 chunks de
+                  `callbacks/` disparaissent. La preuve que la v1 a quitté le bundle est un **témoin** :
+                  `remoteOpenedConnections`, `isStreamingWebcam`… — chaînes propres au store v1 —
+                  présentes avant, absentes de tout le build après. Le docblock de
+                  `noInlinedTurnSecret.test.js` cite `stores/peers/actions.js` comme cas historique :
+                  daté supprimé, la leçon reste.
+                  ℹ️ **Ce que la suppression laisse orphelin hors du périmètre** : `callbacks/`
+                  **entier** (8 fichiers). **Les 8 ont perdu leur importeur avec F** — le store v1 les
+                  atteignait tous par deux `import()` à gabarit (`actions.js:327` et `:404`,
+                  `` `~socializer/callbacks/${…}.js` ``, dont Vite fait un glob), et
+                  `vocalPlayerCallback` en plus par `__AudioComponent copy.vue`. Non supprimé ici,
+                  consigné dans « Vider les poches mortes ». Le reste (directives, `RoomUsersList`,
+                  helpers, stores, `peerjs`) garde des importeurs vivants.
+                  🔴 **La première version de ce paragraphe était fausse, et c'est la relecture qui l'a
+                  vu** : « cinq n'en avaient déjà aucun avant F ». Elle venait d'une liste des imports
+                  sortants extraite par un motif **entre guillemets** — aveugle aux backticks, donc aux
+                  deux imports à gabarit : la leçon `defineAsyncComponent` du cadrage, refaite. Ce qui
+                  les a vus est le **diff de la liste des chunks** entre le build d'avant et celui
+                  d'après (19 fichiers disparus, tous de `callbacks/`, aucun apparu)
+      - [ ] **G. La doc, en dernier** `[M]` — les 7 fichiers listés plus haut **+ un huitième,
+            `docs/architecture/conventions.md` (cf. « Ce que F transmet à G » ci-dessous)**, dans l'ordre imposé
             par [le `work/` du projet hôte](../../../../work/README.md), puis `boost:update`, puis
             `grep 'laravel-socializer/core rules ===' CLAUDE.md`. **Une** correction à y porter au
             passage : la doc annonce **un** homonyme alors qu'il y en a deux —
             `composables/useMediaBroadcast.js` (v1) / `Composables/useMediaBroadcast.js` (v2), qui ne
             diffèrent que par la casse du dossier. *(La seconde — la commande de recompte à deux
             greps — a été faite au lot C, dans le paragraphe qu'il réécrivait de toute façon.)*
+            **Ce que F transmet à G (26/10/2026)** :
+            · depuis F, l'annotation n'est plus seulement à retirer, elle est **fausse** — les trois
+              paragraphes v1 de `docs/modules/webrtc2/INDEX.md` (« toujours dans l'arbre »,
+              `Server.vue` qui importe le store, la commande de recompte), les deux puces v1 / `__`
+              des « Zones mortes connues » de `docs/architecture/package.md`, et « les deux
+              coexistent » dans `CLAUDE.md`, `resources/boost/guidelines/core.blade.php` et
+              `docs/modules/autres-modules.md`. Le plus coûteux est `core.blade.php` : il part dans le
+              `CLAUDE.md` de chaque hôte au `boost:update`. G ne doit pas traîner, et
+              ⚠️ **aucun tag entre F et G** — la guideline livrée affirmerait dans chaque hôte une v1
+              qui n'existe plus ;
+            · **un huitième fichier, HORS de la liste des sept** : `docs/architecture/conventions.md`
+              donne `__StreamUserButton.vue` pour exemple de la convention `__`. F supprime l'exemple,
+              et il ne reste **aucun** fichier `__` dans le paquet : retirer l'exemple, ou trancher si
+              la convention survit sans fichier ;
+            · si G garde une commande de recompte, l'élargir (relevé par la relecture de F) : dans
+              `INDEX.md`, le grep n°1 ne couvre que `components/`, le n°2 couvre `socializer/` mais ne
+              cherche que `stores/peers.js`, et aucun ne couvre `socializer_custom_elements/` ;
+            · la correction « un homonyme → deux » ci-dessus est devenue **sans objet** : le
+              `composables/useMediaBroadcast.js` v1 est supprimé, il ne reste **aucun** homonyme. G
+              retire l'avertissement au lieu de le corriger ;
+            · [webrtc-data-v1-v2.md](webrtc-data-v1-v2.md) a rempli sa condition de suppression
+              (« part avec `components/WebRTC/` »). Avant de le supprimer, reloger ce qui pointe vers
+              lui — dont `WhiteboardComponent.vue`, dont un commentaire y renvoie pour la borne de
+              64 Ko **assumée** : une décision a besoin d'un foyer qui survive à la recette ; puis
+              `whiteboard-todo.md` (section à date de fin), `work/README.md` et ce fichier.
 
       **Les trois volets du gabarit, répartis** : *code* = B → F · *tests* = A et B, plus les
       vérifications manuelles nommées de D et E (aucun des appelants restants n'a de test, et aucun
@@ -929,7 +988,21 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
       et **aucun composant n'importe plus `components/WebRTC/`** ; seul `Server.vue` importe encore
       le store v1, sans le lire (F1). **Vérif à deux navigateurs passée le même jour : le lot E est
       CLOS, et F peut partir.** F1 rétrécit : `Server.vue` ne lit pas les getters qu'il importe,
-      c'est une suppression de deux lignes.
+      c'est une suppression de deux lignes *(trois, mesuré par F)*.
+      **Puis F le même jour : la v1 n'est plus dans l'arbre** — les deux greps rendent zéro, suite
+      inchangée, build vert (le chunk `Server` perd le store v1, 30 → 19 Ko, et les 8 chunks
+      `callbacks/` disparaissent). **Reste G**, et il presse : la doc qui annonçait la v1 « toujours
+      là » est fausse depuis ce commit.
+      ⚠️ **Ce que F ajoute à la doctrine : une recette de suppression se vérifie par sa PREUVE, pas
+      par sa liste.** Le périmètre de F2 était écrit, sa preuve aussi (« les deux greps rendent
+      zéro ») — et les deux ne concordaient pas : un fichier recensé dans la table, qu'aucun lot ne
+      supprimait, gardait le grep n°1 non vide. Exécuter la preuve **avant** de croire la liste l'a
+      montré en une commande. Corollaire, et c'est la relecture qui l'a établi : une suppression ne
+      se borne pas à ce qu'elle supprime. **Une extraction des chemins importés entre guillemets ne
+      voit pas un `import()` à gabarit ; un grep des backticks le trouve (`` import\(\s*\` ``, une
+      seconde), mais seul le build dit ce qu'il atteint** — Vite développe le gabarit en glob. D'où
+      le **diff de la liste des chunks** entre le build d'avant et celui d'après : il a trouvé
+      `callbacks/` orphelin en entier là où l'extraction de l'auteur n'en voyait que trois sur huit.
       ⚠️ **Ce que E ajoute à la doctrine : la migration est le premier USAGE RÉEL d'un chemin
       que seul un exemple exerçait.** AudioRoom est le premier consommateur de production du mode
       `stream` ; ses deux 🔴 (E0a, E0b) ne sont pas des défauts de la migration mais du **cœur v2**,
@@ -1023,10 +1096,8 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
       | `src/routes/socializer/console.php` | 16 lignes de docblock, zéro commande |
       | `src/config/socializer.php` | `table_names` vide |
       | `SocializerUpgrade` | 27 lignes non commentées sur 67 — commande enregistrée, inerte |
-      | `__StreamUserButton.vue`, `__CaptureUserButton.vue`, `__AudioComponent copy.vue` | désactivés par convention `__` |
-
-      ⚠️ `__AudioComponent copy.vue` porte « copy » dans son nom **et** un espace : à supprimer, pas
-      à renommer.
+      | ~~`__StreamUserButton.vue`, `__CaptureUserButton.vue`, `__AudioComponent copy.vue`~~ | ✅ **supprimés le 26/10/2026 (lot F2)** — les deux premiers avec `components/WebRTC/`, le troisième parce qu'il importait la v1. Plus aucun fichier `__` dans le paquet hors `__tests__` / `__mocks__` |
+      | `src/resources/js/socializer/callbacks/` (8 fichiers) | **ajouté le 26/10/2026 (lot F)** — aucun importeur depuis F, qui a supprimé les deux `import()` à gabarit du store v1 qui les atteignaient tous. Depuis F, le seul import à gabarit du paquet (`socializer_custom_elements/routes/application.js`) vise `rooms/components/` ; le build n'émet plus aucun chunk `callbacks/` — c'est la preuve à rejouer avant de supprimer. `docs/architecture/package.md` le décrit encore comme vivant |
       - [ ] Code — supprimer ou implémenter, poche par poche
       - [ ] Doc — la section « Zones mortes connues » disparaît à mesure ; la supprimer quand elle
             est vide

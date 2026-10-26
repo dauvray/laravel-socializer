@@ -1491,9 +1491,8 @@ prochaine passe ne repaie pas la mesure :
 - **`topology` lue à sept endroits dans quatre fichiers** — le compte tient, seules les lignes de
   `usePeerTransport` ont bougé ;
 - ~~**cinq composants vivants importent encore la v1 morte**~~ — exact le 29/08, **périmé depuis le
-  26/10/2026** : les cinq sont migrés (lots C, D, E), il n'en reste **aucun**. Seuls un fichier
-  désactivé (`__`) et le store v1 importé par `Server.vue` retiennent la v1 — `doc-rustines.md`,
-  lot F ;
+  26/10/2026** : les cinq sont migrés (lots C, D, E), il n'en reste **aucun** ; et la v1 elle-même
+  est **supprimée le même jour** (`doc-rustines.md`, lot F) ;
 - **`config/reverb.php` de l'hôte porte `accept_client_events_from` avec `'members'` par défaut** —
   la borne de déploiement du whisper de présence est tenue sur cette machine ;
 - **les deux suites sont vertes et n'ont ni `.skip` ni `.only`** — JS 61 fichiers / 1148 cas,
