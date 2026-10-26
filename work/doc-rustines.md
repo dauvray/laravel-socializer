@@ -859,11 +859,18 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
             - [x] **Vérif manuelle à deux navigateurs — PASSÉE le 26/10/2026** (David), **cinq
                   étapes sur cinq**. Son retour, tel quel : « vérification faite : 1 à 5 : ok » — c'est
                   le grain de la preuve : aucun détail par étape, ni console, ni réseau. L'étape 5
-                  demandait un troisième participant ; comment il a été obtenu n'est pas rapporté. L'étape 5 est le premier exercice d'E0a en transport réel : un
-                  flux de plus de 5 min a survécu à l'arrivée d'un troisième membre. ⚠️ **Le délai de
-                  l'étape 2 n'a pas été rapporté** — « le player disparaît » est vérifié, sa durée non ;
-                  l'item 🟠 du `leaving` de présence ([webrtc2-todo.md](webrtc2-todo.md)) reste donc
-                  sans chiffre. Le protocole suivi : rechargement dur des deux côtés,
+                  demandait un troisième participant ; comment il a été obtenu n'est pas rapporté.
+                  L'étape 5 est le premier exercice d'E0a en transport réel : un flux de plus de
+                  5 min a survécu à l'arrivée d'un troisième membre. **Délai de l'étape 2 : immédiat**
+                  (rapporté par David le 26/10, en complément) — en départ PROPRE, A apprend le
+                  départ de B par le TRANSPORT — fin de pistes ou fermeture PeerJS, rien n'a été
+                  instrumenté chez A pour dire laquelle ; la présence ne touche pas au registre. Un
+                  chemin immédiat existe d'après la source : peerjs 1.5.4 ouvre un canal de données
+                  interne pour toute MediaConnection, et `dataChannel.onclose = () => this.close()`
+                  (`dist/bundler.mjs`, l.1032) — le `close()` de B se propage sans attendre l'ICE.
+                  Ce que ça ne mesure pas : le départ BRUTAL — item « Non mesuré » de
+                  [webrtc2-todo.md](webrtc2-todo.md).
+                  Le protocole suivi : rechargement dur des deux côtés,
                   aucune écriture dans `.env` pendant la mesure (`.ai/rules/web-r-t-c2.md`). Créer un
                   contenu « Audio » dans un salon dont A et B sont membres.
                   1. A puis B entrent : invite micro des deux côtés ; chacun voit un player au **nom de

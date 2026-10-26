@@ -1249,11 +1249,13 @@ extractions : c'est 18 lignes, sous un filet cinq fois plus dense.
   couper le RÉSEAU de B sans fermer son onglet, attendre plus de `STREAM_STALE_MS`, faire entrer C,
   lire `Debug.vue` et la vignette de B. Coût borné par le FIFO (12).
 
-- [ ] 🟠 **Le `leaving` de présence OUBLIE les connexions du pair sans les FERMER** `[S]` — relevé le
+- [ ] 🟢 **Le `leaving` de présence OUBLIE les connexions du pair sans les FERMER — et son
+  commentaire dit « Fermer »** `[S]` — 🟠 à l'ouverture, ramené à 🟢 le 26/10/2026 (voir ✅). Relevé le
   26/10/2026 par la relecture du lot E, lu et énuméré, non exécuté ; **antérieur au lot**. La branche
   `removedUsers` de `useConnectionPool.syncUsersConnections` appelle `clearConnectionsRoom`, qui est un
   simple `delete` dans le store : aucun `close()`, aucune purge de `remoteStreamsMap`. La
-  MediaConnection vers le partant sort donc du store **ouverte**, orpheline jusqu'à l'échec ICE ; et
+  MediaConnection vers le partant sort donc du store sans que CE chemin la ferme — en départ
+  brutal, elle reste orpheline jusqu'à l'échec ICE (en départ propre, PeerJS la ferme : ✅ plus bas) ; et
   `handleRemoteDeparture` n'a que deux appelants, `remoteStopCall` (signal serveur) et
   `handleStreamRemoved` (fermeture PeerJS) — **aucun ne vient de la présence**.
   ⚠️ **Le commentaire du site le dit autrement** : « Fermer aussi la connexion 'screen' si elle
@@ -1261,8 +1263,15 @@ extractions : c'est 18 lignes, sous un filet cinq fois plus dense.
   une phrase d'intention sur une ligne qui ne la tient pas.
   Correctif candidat : fermer — le `closePeerConnection` du store ferme les instances du type — au
   lieu d'effacer seulement ; ce qu'il fait ensuite du store est à lire avant d'écrire le
-  correctif. À mesurer d'abord : le délai de disparition du player chez A quand B quitte — la vérif
-  d'E (26/10/2026) a constaté la disparition ; **sa durée n'a pas été rapportée**.
+  correctif.
+  ✅ **Mesuré par la vérif d'E (David, 26/10/2026) : en départ PROPRE, le player de B disparaît chez
+  A immédiatement**, et aucun symptôme n'a été constaté. B ferme ses connexions à son démontage
+  (`cleanupPeerConnection`, antérieur au lot E) ; A le voit par la fin de pistes ou la fermeture
+  PeerJS, sans instrumentation pour dire laquelle. Et les MediaConnection que le `leaving` retire du
+  store chez A sont **fermées par PeerJS lui-même d'après la source, non observé** : peerjs 1.5.4
+  ouvre un canal interne pour toute MediaConnection et fait `dataChannel.onclose = () =>
+  this.close()` (`dist/bundler.mjs`, l.1032). D'où le 🟢 : en départ propre, plus de défaut
+  constaté ; le départ brutal est l'item « Non mesuré » ci-dessus ; reste le commentaire faux.
 
 - [x] 🟠 **Un refus de permission caméra ne produit RIEN à l'écran** `[S]` — relevé le 29/08/2026 en
   fermant la tâche 7 des tests, **fermé le 30/08/2026** (lot B de la tâche 8).
