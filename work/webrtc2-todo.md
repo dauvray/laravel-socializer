@@ -1105,30 +1105,6 @@ extractions : c'est 18 lignes, sous un filet cinq fois plus dense.
   faire chercher quelle AUTRE ligne absorbe la mutation**, avant de conclure que le test est
   inutile.
 
-- [ ] 🟠 **La présence de TOUS les providers dépend d'une réaffectation chez un autre fichier —
-  0 cas sur 1417** `[S]` — relevé et **mesuré** le 31/08/2026 par le lot E.
-
-  `MediaBroadcastProvider` suit la composition par `watch(() => props.users, …)`, **non profond** :
-  seul un remplacement de tableau déclenche `api.watchUsers`. `useReverbChannel` le respecte
-  partout — `users.value = [...users.value, user]` (l. 148) et deux autres réaffectations — mais
-  **rien ne l'y oblige, et rien ne le garde**. Mesuré : y écrire `users.value.push(user)` rougit
-  **0 cas sur 1417** alors que la synchronisation de présence de tous les providers s'arrête.
-
-  Conséquence : `syncUsersConnections` n'est plus appelé, donc `remotePeers` — l'allowlist que
-  lisent les deux gardes d'autorisation — cesse d'être écrite. Panne **fail-closed** (les
-  arrivants ne sont jamais admis, aucune brèche) mais totalement muette.
-
-  La moitié testable côté provider **est faite** : `MediaBroadcastProvider.test.js` épingle que le
-  watch n'est pas profond, dans les deux sens. Ce qui reste est la moitié d'en face, et le paquet a
-  déjà la forme qui convient : un **filet mécanique au grep** sur les sources de production, comme
-  `roomMembersSourceOfTruth.test.js` en porte un pour interdire les setters de `roomMembers` —
-  ici, interdire `users.value.push` / `.splice` dans `useReverbChannel.js`. À poser dans
-  `components/System/composables/__tests__/useReverbChannel.test.js`, qui existe déjà.
-
-  ⚠️ Piège de harnais déjà payé, écrit pour ne pas le re-payer : **un cas qui distingue watch
-  superficiel et profond doit semer par un `ref`**. Écrit avec un tableau littéral, le cas est vert
-  des deux côtés — pousser dans un tableau non réactif n'est vu par aucun watcher.
-
 - [ ] 🟠 **Le bouton `Fullscreen` est un aller sans retour** `[S]` — relevé le 31/08/2026 par le lot
   D, qui a écarté pour ça la « moitié plein écran » de son propre énoncé.
 

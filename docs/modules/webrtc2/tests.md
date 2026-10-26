@@ -600,7 +600,10 @@ c'est ce proxy-là qu'un watcher profond observerait (`useReverbChannel` expose 
 Corollaire de production, mesuré au même endroit : le `watch(() => props.users)` de
 `MediaBroadcastProvider` **n'est pas profond**, donc toute la chaîne de présence dépend du fait que
 le fournisseur **réaffecte** son tableau — un `push` écrit chez lui arrête silencieusement la
-synchronisation de tous les providers. Ce contrat a vécu sans filet jusqu'au 01/09/2026, où un tel
+synchronisation de tous les providers. La panne est **fail-closed** : `syncUsersConnections` n'est
+plus appelé, donc `remotePeers` — l'allowlist des deux gardes d'autorisation — cesse d'être écrite,
+et les arrivants ne sont plus admis, sans brèche mais sans un mot. Ce contrat a vécu sans filet
+jusqu'au 01/09/2026, où un tel
 `push` rougissait **0 cas** ; il est désormais épinglé **aux deux bouts** : « le watch n'est PAS
 profond » (`MediaBroadcastProvider.test.js`) côté consommateur, et les trois cas « réaffecte
 `users` … » d'`useReverbChannel.test.js`, un par chemin d'écriture, côté fournisseur.
