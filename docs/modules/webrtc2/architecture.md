@@ -742,6 +742,13 @@ dans une couche.
 - `contextRegistry` ⇒ entrée supprimée dans `onUnmounted` **seulement si elle appartient toujours
   au contexte** — un contexte fraîchement monté doit pouvoir reprendre l'id d'un contexte en cours
   de démontage (`last-write-wins` volontaire, cf. [securite.md](securite.md))
+- **Flux locaux** ⇒ arrêtés par `cleanupPeerConnection`, donc par le démontage du provider :
+  `media.stopCurrentStream()` pour le flux principal, et le verbe `stopScreenCapture` **de
+  l'orchestrateur** pour l'écran — parce que la fermeture du type de session ne touche jamais les
+  connexions `screen`, et que celui de `media` arrêterait les pistes en laissant la connexion
+  ouverte. Ce n'était pas le cas avant le 26/10/2026 : quitter une page laissait micro, caméra ou
+  partage d'écran capturés, sur un contexte que plus rien ne pouvait atteindre. Épinglé par
+  `usePeerOrchestrator.teardown.test.js` § « flux locaux »
 - **Flux distants** ⇒ `handleStreamReceived` écoute `ended` / `inactive` sur les pistes du flux reçu.
   En mode `stream` aucun player n'est créé, donc `usePeerMedia._bindStreamCleanup` ne tourne pas et
   le registre ne dépendrait que des événements de fermeture PeerJS : un flux mort sans `close`

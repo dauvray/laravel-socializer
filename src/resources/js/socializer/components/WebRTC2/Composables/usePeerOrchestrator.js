@@ -235,6 +235,21 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}, 
             clearSignalQueue: true,
         })
 
+        // Les flux locaux meurent avec le contexte : passé ce point, plus rien ne peut les
+        // atteindre pour les arrêter. Sans ces deux lignes, démonter un provider laissait le
+        // micro, la caméra ou le partage d'écran capturés — voyant du navigateur allumé —
+        // alors que le provider annonce « arrêt des flux ».
+        //
+        // ⚠️ Deux verbes de deux couches, et ce n'est pas un oubli d'harmonisation :
+        // - le flux principal par `media` seul : ses connexions sont celles du type de session,
+        //   que `closePeerConnection` vient de fermer juste au-dessus. Le verbe de
+        //   l'orchestrateur rouvrirait un `beginShutdown`/`endShutdown` et refermerait pour rien ;
+        // - le partage d'écran par le verbe de l'ORCHESTRATEUR : ses connexions vivent sous le
+        //   type `screen`, que la fermeture du dessus ne touche jamais. `media` seul arrêtait les
+        //   pistes et laissait la MediaConnection ouverte — vignette figée chez le distant.
+        media.stopCurrentStream()
+        stopScreenCapture()
+
         // Teardown terminal : le pool de players garde ses instances montées entre
         // deux flux, c'est ici (et seulement ici) qu'on les démonte pour de bon.
         media.destroyPlayers()

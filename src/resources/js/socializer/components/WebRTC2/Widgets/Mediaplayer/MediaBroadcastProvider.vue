@@ -53,7 +53,9 @@
        }
     })
 
-    // Cleanup à la destruction du composant : fermeture des connexions, arrêt des flux, etc.
+    // Cleanup à la destruction du composant : fermeture des connexions et arrêt des flux
+    // LOCAUX (micro, caméra, écran) — un enfant n'a rien à arrêter lui-même au démontage.
+    // Épinglé par `usePeerOrchestrator.teardown.test.js` § « flux locaux ».
     onBeforeUnmount(() => {
         api.cleanup()
     })

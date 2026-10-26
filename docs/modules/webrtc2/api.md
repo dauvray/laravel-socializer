@@ -40,7 +40,10 @@ provide(REVERB_CHANNEL, reverb)
 
 L'API est exposée de **trois** façons : slot scopé (`v-slot="webrtc"`),
 `provide(WEBRTC_API_KEY, api)` pour tous les descendants, et `defineExpose({ api })` pour un
-`ref` parent. Le provider appelle `api.cleanup()` en `onBeforeUnmount`.
+`ref` parent. Le provider appelle `api.cleanup()` en `onBeforeUnmount`, qui ferme les connexions
+**et arrête les flux locaux** — micro, caméra, partage d'écran, connexion `screen` comprise : un
+enfant n'a rien à arrêter lui-même au démontage. Épinglé par
+`usePeerOrchestrator.teardown.test.js` § « flux locaux ».
 
 ⚠️ **`callbacks` est optionnel et son absence est significative** : sans lui, `api.initialize()`
 n'est **pas** appelé par le provider — c'est alors au composant enfant de le faire (modèle de

@@ -1,18 +1,21 @@
 /**
  * usePeerOrchestrator.teardown.test.js — `cleanupPeerConnection`
  *
- * Le teardown terminal d'un contexte. Sept verbes de six couches y sont enchaînés, et
+ * Le teardown terminal d'un contexte. Les verbes de toutes ses couches y sont enchaînés, et
  * l'orchestrateur est le seul endroit qui les connaît tous : chacun est couvert chez lui,
  * aucun test ne dit qu'ils sont ATTEINTS depuis ici.
  *
- * Trois propriétés portent ce fichier :
+ * Quatre propriétés portent ce fichier :
  *
  *   1. le garde de teardown est **permanent** — aucun `endShutdown`, contrairement à
  *      `stopWebcamStream` et `stopCallWithPeers` qui l'équilibrent dans un `finally` ;
  *   2. les demandes de peerId en vol sont purgées **par contexte**, hors de
  *      `closePeerConnection` — qui sort par un early-return quand la room n'a aucune
  *      connexion, cas normal d'un provider démonté avant que la signalisation aboutisse ;
- *   3. le contexte quitte le registre, sans quoi les dispatchers entrants continueraient
+ *   3. les flux locaux (micro/caméra, écran) sont **arrêtés**, connexion `screen` comprise —
+ *      le provider annonçait « arrêt des flux » à son démontage, et rien ne le faisait avant le
+ *      26/10/2026 ; les flux d'un autre contexte de l'onglet, eux, sont intacts ;
+ *   4. le contexte quitte le registre, sans quoi les dispatchers entrants continueraient
  *      de lui router des connexions après sa mort.
  *
  * ── Choix d'infra ─────────────────────────────────────────────────────────────
@@ -42,6 +45,25 @@
  *    8. `clearSignalQueue: true` passé à `false` ........................... 1 cas
  *    9. `media.destroyPlayers()` retiré .................................... 1 cas
  *   10. `transport.unregisterLocalContext()` retiré ........................ 1 cas
+ *
+ * Mesurés le 2026-10-26, à l'ajout des deux arrêts de flux (suite complète) :
+ *
+ *   11. `media.stopCurrentStream()` retiré .................................. 1 cas
+ *   12. `stopScreenCapture()` retiré ........................................ 2 cas
+ *   13. `stopScreenCapture()` ramené à `media.stopScreenCapture()` ........... 1 cas
+ *   14. (harnais) `installFakeMedia` dont `getUserMedia` rend UN flux partagé  2 cas — l'isolation,
+ *       et `scenarios/broadcastLifecycle.test.js` « A qui relance sa diffusion réapparaît chez B »
+ *
+ * ℹ️ Le point 14 a d'abord été écrit « 1 cas » : mesuré sur CE fichier seul, alors que la mutation
+ * porte sur un helper partagé. Une mutation de harnais se mesure sur la suite complète.
+ *
+ * ⚠️ Le point 13 est le défaut qu'une première version de ce correctif portait, trouvé par la
+ * relecture : le verbe de `media` arrête les pistes mais ne ferme pas la connexion `screen`.
+ *
+ * ⚠️ Retirer ces lignes PAR NUMÉRO, pas par motif : `media.stopScreenCapture()` existe dans le
+ * verbe `stopScreenCapture` de l'orchestrateur, à la même indentation. Une mutation par motif
+ * en a retiré deux et rougi 4 cas — dont 3 de `usePeerOrchestrator.media.test.js` qui ne
+ * parlent pas du teardown. Mesuré, c'est l'erreur qu'on a faite.
  *
  * ⚠️ **Le point 3 est le seul AUCUN, et il est attendu** : `beginShutdown()` est posé
  * quatre lignes plus haut et il est PERMANENT — les deux watchers du pool et
@@ -322,6 +344,78 @@ describe('usePeerOrchestrator — cleanupPeerConnection', () => {
         bob.whisper(BROADCAST_STATE_WHISPER, { roomId: api.onAirRoom.value, isBroadcasting: true })
 
         expect(api.announcedStreamPeers.value).toEqual([REMOTE_SLUG])
+    })
+
+    // ── Flux locaux ───────────────────────────────────────────────────────────
+
+    describe('flux locaux', () => {
+        it('⭐ arrête les pistes du flux local : un contexte mort ne garde pas le micro', async () => {
+            // Le provider appelle `cleanup()` à son démontage en promettant « arrêt des
+            // flux », et rien ici n'appelait `stopCurrentStream`. Quitter un salon audio
+            // laissait donc le micro capturé — voyant du navigateur allumé — sur un contexte
+            // que plus rien ne peut atteindre pour l'éteindre.
+            peerInstance = await initialize()
+            await api.startAudioStream()
+            const pistes = api.currentStream.value.getTracks()
+            expect(pistes.length).toBeGreaterThan(0)
+
+            api.cleanupPeerConnection()
+
+            pistes.forEach((piste) => expect(piste.stop).toHaveBeenCalledTimes(1))
+            expect(api.currentStream.value).toBeNull()
+            expect(api.isStreaming.value).toBe(false)
+        })
+
+        it('⭐ arrête aussi le partage d\'écran', async () => {
+            peerInstance = await initialize()
+            await api.startScreenCapture()
+            const pistes = api.screenStream.value.getTracks()
+            expect(pistes.length).toBeGreaterThan(0)
+
+            api.cleanupPeerConnection()
+
+            pistes.forEach((piste) => expect(piste.stop).toHaveBeenCalledTimes(1))
+            expect(api.screenStream.value).toBeNull()
+            expect(api.isCapturing.value).toBe(false)
+        })
+
+        it('⭐ ferme aussi la connexion `screen`, qui n\'est pas du type de la session', async () => {
+            // `closePeerConnection` plus haut ne ferme que `connections[room][slug][currentType]`.
+            // Le partage d'écran vit sous le type `screen` : arrêter ses pistes sans fermer sa
+            // MediaConnection la laissait ouverte, rangée dans le store d'un contexte mort, et
+            // figeait la vignette chez le distant (piste muette mais `live`, que le TTL ne
+            // ramasse plus). Trouvé par la relecture du 26/10/2026.
+            peerInstance = await initialize()
+            peerStore.setRoomMembers(api.contextId, [REMOTE_SLUG])
+            peerStore.addRemotePeerId(REMOTE_SLUG, REMOTE_PEER_ID)
+            await api.startScreenCapture()
+            await settleTasks()
+            const room = api.currentCallRoomId.value || api.currentRoom.value
+            // Le store range un TABLEAU de connexions par type.
+            const partages = [...(peerStore.getConnections[room]?.[REMOTE_SLUG]?.screen ?? [])]
+            expect(partages).toHaveLength(1)
+
+            api.cleanupPeerConnection()
+
+            partages.forEach((partage) => expect(partage.close).toHaveBeenCalled())
+            expect(peerStore.getConnections[room]?.[REMOTE_SLUG]?.screen).toBeUndefined()
+        })
+
+        it('n\'arrête pas les flux d\'un AUTRE contexte de l\'onglet', async () => {
+            // Chaque contexte possède son `ctx.media`, et chaque démarrage obtient ses propres
+            // pistes : le teardown d'un provider ne doit rien couper chez son voisin.
+            peerInstance = await initialize()
+            const voisin = mount('stream', 'autre-room')
+            await api.startAudioStream()
+            await voisin.startAudioStream()
+            const pistesVoisin = voisin.currentStream.value.getTracks()
+            expect(pistesVoisin.length).toBeGreaterThan(0)
+
+            api.cleanupPeerConnection()
+
+            pistesVoisin.forEach((piste) => expect(piste.stop).not.toHaveBeenCalled())
+            expect(voisin.isStreaming.value).toBe(true)
+        })
     })
 
     // ── Registre des contextes ────────────────────────────────────────────────
