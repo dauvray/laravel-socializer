@@ -15,21 +15,22 @@ Code : `src/resources/js/socializer/components/WebRTC2/`
 l'arbre, avec des fichiers **homonymes** de ceux de WebRTC2 (`MediaBroadcastProvider.vue`) : un
 symbole trouvé au grep peut venir de là. Rien ne doit y être ajouté.
 
-**Elle n'est pas orpheline, et c'est ce qui empêche de la supprimer** : `AudioRoom/AudioComponent.vue`
-l'importe encore, pour `usePeers` et pour l'homonyme `MediaBroadcastProvider` — un provider **media**,
-dont la migration est un autre travail que celle du canal data. Les fichiers préfixés `__` sont déjà
-désactivés. La supprimer suppose donc de migrer cet appelant, pas seulement d'effacer un dossier.
-*(Sans ordinal, pour la même raison que le paragraphe suivant : ce nombre a valu cinq, puis quatre,
-puis deux — le nombre juste est celui que rendent les deux commandes ci-dessous. Les trois appelants
-du **canal data** sont migrés : Whiteboard et Application le 01/09/2026, ClassRoom le même jour.)*
+**Elle n'a plus aucun appelant vivant depuis le 26/10/2026** : `AudioRoom/AudioComponent.vue`, le
+dernier, est passé sur le provider WebRTC2 en mode `stream` ; les trois appelants du **canal data**
+l'avaient fait le 01/09/2026. Ce qui la retient encore dans l'arbre n'est plus une migration, c'est la
+suppression elle-même : le store v1 qu'importe `Server/Server.vue` (paragraphe suivant), et
+`AudioRoom/__AudioComponent copy.vue`, déjà désactivé (`__`). *(Sans ordinal, pour la même raison que
+le paragraphe suivant : ce nombre a valu cinq, puis quatre, deux, un — la liste juste est celle que
+rendent les deux commandes ci-dessous.)*
 
 ⚠️ **Un consommateur de plus n'apparaît dans AUCUN grep de `WebRTC/`, et c'est un défaut de la
 commande de recompte, pas du recensement.** *(Sans ordinal, volontairement : cette phrase en portait
 un, et il a vieilli en silence à chaque migration — le nombre juste est celui que rendent les deux
 commandes ci-dessous, jamais celui qui est écrit ici.)* `Server/Server.vue` n'importe aucun fichier
 du dossier :
-il importe le **store v1** `stores/peers.js`, dont il lit deux getters — et ce store fait partie de
-ce qui doit disparaître avec la v1. Le recompte demande donc **deux** greps :
+il importe le **store v1** `stores/peers.js`, dont il **destructure** deux getters (`getIsStreaming`,
+`getIsCapturing`) **sans jamais les lire ensuite** — et ce store fait partie de ce qui doit disparaître
+avec la v1. Le recompte demande donc **deux** greps :
 
 ```bash
 grep -rn "WebRTC/" src/resources/js/socializer/components/ | grep -v WebRTC2
