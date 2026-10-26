@@ -431,7 +431,7 @@ types d'un appel, et normalise plutôt que de valider : le titre, l'icône et l'
 alors tous les trois la même chose. Il remplace le repli du chemin **sortant** ; les trois chemins
 entrants gardent `isValidCallType`, délibérément.
 
-`Widgets/UI/` — `Audio/SpectrumAnalyzer.vue`, `Report/Debug.vue`, et les deux alertes d'appel
+`Widgets/UI/` — `Report/Debug.vue` et les deux alertes d'appel
 entrant :
 
 - **`Alerts/AudioCallAlert.vue`** et **`Alerts/VideoCallAlert.vue`** — jumelles, qui ne diffèrent que

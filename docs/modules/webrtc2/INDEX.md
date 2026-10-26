@@ -74,7 +74,7 @@ WebRTC2/
 │                                  useCallStateMachine · usePeerRetry · createRateLimiter
 │                                  payloadSize · sanitizeMetadata · resolveRemoteSlug · validators
 ├── Widgets/                    Mediaplayer/ (provider, players, pool)
-│                               UI/ (boutons, audio, alertes d'appel entrant, debug)
+│                               UI/ (boutons, alertes d'appel entrant, debug)
 ├── Exemples/                   Home.vue + 3 UI de démonstration — documentation exécutable
 └── __tests__/                  unitaires · mockFidelity · scenarios/ + helpers/ et __mocks__/
 ```

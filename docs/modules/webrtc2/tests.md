@@ -431,15 +431,6 @@ scénarios. **Ne pas chercher ici un état d'avancement** — il se lit dans la 
 recensement par `find src/resources/js -path '*__tests__*' -name '*.test.js'`. Ce qui suit est ce
 qui reste délibérément dehors, avec la raison de chacun.
 
-- **`SpectrumAnalyzer.vue` — exclu, et ce n'est pas un oubli.** Trois raisons qui se cumulent :
-  `happy-dom` n'a pas d'`AudioContext`, donc tout collaborateur serait fabriqué à la main et le test
-  prouverait sa propre doublure ; ses deux consommateurs WebRTC2 sont **commentés**, et l'un des
-  deux usages commentés est *faux* (`v-bind="audioProps"` passe `{streamData}` à un composant dont
-  l'unique prop est `streams: Array required` — le décommenter lèverait au montage) ; et son **seul
-  consommateur vivant est la v1 morte** (`components/WebRTC/widgets/ui/AudioDefaultUserButtonUI.vue`).
-  C'est un fichier WebRTC2 maintenu en vie par le module déclaré mort : il meurt avec
-  `components/WebRTC/`, et c'est à ce moment-là que son sort se tranche —
-  [`work/doc-rustines.md`](../../../work/doc-rustines.md), lot 1.
 - **La topologie star n'est exercée par aucun scénario.** `grep topology __tests__/scenarios/` rend
   zéro : `lateJoiner` est intégralement mesh. La transition **« hub absent → hub présent »** n'est
   donc épinglée à aucun étage, ni en unitaire ni bout en bout — alors que `api.md` pose qu'un hub

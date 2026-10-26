@@ -19,11 +19,7 @@
             <div class="row g-3">
                 <div class="col overflow-hidden">
                     <h5>Local Stream</h5>
-                    <LocalMediaPlayer v-if="api.currentStream.value" :streamData="localStreamData">
-                        <template #audio="audioProps">
-                            <!-- <SpectrumAnalyzer v-bind="audioProps" /> -->
-                        </template>
-                    </LocalMediaPlayer>
+                    <LocalMediaPlayer v-if="api.currentStream.value" :streamData="localStreamData" />
                     
                     <LocalMediaPlayer v-if="api.screenStream.value" :streamData="screenStreamData" />
                 </div>
@@ -49,11 +45,7 @@
                     <RemoteMediaPlayer
                         v-for="(remoteStream, index) in remoteStreamsData"
                         :key="remoteStream.metadata.peerId ?? index"
-                        :streamData="remoteStream">
-                        <template #audio="audioProps">
-                            <!-- <SpectrumAnalyzer v-bind="audioProps" /> -->
-                        </template>
-                    </RemoteMediaPlayer>
+                        :streamData="remoteStream" />
                     
                     <RemoteMediaPlayer 
                         v-for="(remoteScreen, index) in remoteScreensData" 
@@ -66,7 +58,7 @@
 </template>
 
 <script setup>
-    import { ref, computed, watch, onMounted, defineAsyncComponent } from 'vue'
+    import { ref, computed, watch, onMounted } from 'vue'
     import { useMeStore } from '~estarter/stores/me.js'
     import { usePeer2Store } from '~socializer/stores/peers2.js'
     import LocalMediaPlayer from '~socializer/components/WebRTC2/Widgets/Mediaplayer/LocalMediaPlayer.vue'
@@ -85,18 +77,6 @@
 
     // Pairs présents sans flux : vignette d'attente, bornée dans le temps.
     const { awaitedPeers } = useAwaitedStreams(props.api)
-
-    const SpectrumAnalyzer = defineAsyncComponent({
-        // La fonction de chargement (le dynamic import)
-        loader: () => import('~socializer/components/WebRTC2/Widgets/UI/Audio/SpectrumAnalyzer.vue'),
-        // Un composant à afficher pendant le chargement
-        loadingComponent: Spinner,
-        // Délai avant d'afficher le composant de chargement (par défaut : 200ms)
-        delay: 200,
-        // Un composant à afficher si le chargement échoue (optionnel)
-        // errorComponent: ErrorComponent,
-        // Durée maximale avant d'abandonner le chargement et afficher le composant d'erreur (par défaut : Infinity)
-    })
 
     onMounted(() => {
         props.api.initialize({
