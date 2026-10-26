@@ -1,6 +1,6 @@
 <template>
     <div class="board-wrapper">
-      <ChatCreatorButton></ChatCreatorButton>
+      <!-- <ChatCreatorButton></ChatCreatorButton> -->
       <RoomUsersList v-if="displayCollaborators" :users="users"></RoomUsersList>
       <div class="whiteboard" v-show="loaded">
           <excalidraw-element ref="excalidrawElement"></excalidraw-element>
