@@ -123,24 +123,33 @@ comme « le transport sait, laisse-le router ».
 > autres sites n'ont pas bougé une seule fois. Ce qui se recopie sans risque, c'est **le fichier et
 > la décision** ; le numéro de ligne se re-grep, toujours.
 
-- [ ] 🟠 **Aucun scénario n'exerce la topologie star** `[M]` — relevé le 30/08/2026 en clôturant le
-  plan de tests, et c'est le seul trou de couverture ouvert du module.
+- [x] 🟠 **Aucun scénario n'exerce la topologie star** `[M]` — **fait le 26/10/2026** :
+  `scenarios/starTopology.test.js`, quatre cas sur la configuration de `Exemples/Home.vue` (data,
+  `hubSlug: 'admin'`) — contrôle hub présent, hub absent, la transition, et l'ordre de production
+  où les clients voient le hub avant qu'il ne voie sa room. La couture dit *où* un SFU se câblerait ;
+  ce fichier dit désormais que la branche star **fonctionne**, vue d'un autre client.
 
-  Mesuré : `grep -rn topology __tests__/scenarios/` rend **zéro**, et `lateJoiner` est intégralement
-  mesh. La transition **« hub absent → hub présent »** n'est donc épinglée **à aucun étage** — ni en
-  unitaire, ni bout en bout.
+  Nés verts, donc tenus par **sept contre-épreuves** consignées dans l'en-tête du fichier. Deux
+  disent plus que leur mutation : l'ancien appel inconditionnel au hub **retardait la transition** —
+  mesuré par la relecture en temps réel, **15,8 s et 32 envois jetés**, contre 46 ms et un envoi,
+  parce que sa demande vers le hub absent restait en attente et que seul le retry la reposait, passé
+  `SIGNALING_STALE_MS` (remonté dans `architecture.md`, sans le chiffre) ; et sous `mesh` forcé le
+  message arrive quand même, si bien que dans les cas de relais seule l'assertion « aucune demande
+  entre clients » distingue une étoile d'un maillage.
 
-  **Pourquoi c'est cet item qui tient la porte, et pas la couture ci-dessus.** La couture dit *où* un
-  SFU se câblerait ; elle ne dit pas que la branche star **fonctionne**. Or [`api.md`
-  § Topologies](../docs/modules/webrtc2/api.md#topologies) pose qu'un hub absent est un état
-  transitoire **légitime** : le client ne le compose pas, sans rien tenter ni journaliser, et le tour
-  de présence qui voit arriver le hub rétablit la connexion. C'est donc un chemin de production
-  **silencieux par conception** que rien ne surveille — exactement la forme des incendies de ce
-  module, vrais ou faux seulement vus du pair d'en face.
+  ⚠️ **Écrit d'abord « bloquait »**, sur une lecture de `_handleConnectionAttempt` arrêtée avant sa
+  quatrième branche, celle qui repose une demande périmée. La relecture l'a réfuté par la mesure
+  avant le commit : un mécanisme lu à moitié donne une conclusion entière et fausse.
 
-  Le harnais ne manque de rien : `createVirtualPeer` monte déjà plusieurs contextes par onglet et
-  `helpers/createFakePresenceChannel.js` livre la présence pair par pair, ce qui est précisément ce
-  qu'exige « le hub arrive après ». Ce qui manque est le scénario.
+  ⚠️ **L'énoncé se trompait sur le harnais** : `createFakePresenceChannel.js` ne livre pas la
+  présence — il porte les whispers, plus un `members()` que personne ne livre —, et le scénario n'en
+  a pas eu besoin. La présence se livre pair par pair en appelant `syncUsersConnections`, comme le
+  cas séquentiel de `lateJoiner`. Et `mountContext` était sans objet : une étoile, ce sont trois
+  onglets, pas trois contextes.
+
+  ℹ️ Hors périmètre, non ouvert en item : le hub qui **recharge** (départ non annoncé, nouveau
+  peerId). La réconciliation qui le rattrape est épinglée en mesh par `peerDeparture` et, côté
+  client star, en unitaire par `useConnectionPool.test.js`.
 
 - [x] 🟠 **`topology: 'sfu'` produisait un contexte MORT, en silence** `[S]` — **fait le
   30/08/2026**, avec un jumeau que l'énoncé ne nommait pas : `star` **sans** `hubSlug`, même
@@ -980,11 +989,18 @@ extractions : c'est 18 lignes, sous un filet cinq fois plus dense.
   POST, aucun jeton de cadence, aucun retry armé — épinglé par `useConnectionPool.test.js`), et le
   tour de présence qui voit arriver le hub rétablit tout. **C'est l'UI qui manque, pas la logique.**
 
-  Le prédicat exact existe déjà et remonte jusqu'à l'UI : `isHubConnected`
+  Un prédicat existe déjà et remonte jusqu'à l'UI : `isHubConnected`
   (`createPeerContext.js`, exposé par `usePeerOrchestrator` puis `useMediaBroadcast`). **Son seul
   lecteur est `Debug.vue`.** Pendant tout ce temps, chaque `sendData` du client jette son payload
   avec un `console.warn` — pas de file, pas de retry — et l'utilisateur voit une room d'apparence
   normale. Le geste est de câbler `isHubConnected` sur une UI d'attente, pas d'ajouter un état.
+
+  ⚠️ **Mais `isHubConnected` dit PRÉSENT, pas JOIGNABLE** — mesuré par la relecture du 26/10/2026.
+  C'est « hub === moi, ou hub ∈ `remotePeers` » : il passe à vrai au tour de présence, avant que
+  la sortante du client vers le hub soit ouverte, alors que le client n'émet que sur elle. Il vaut
+  donc vrai pendant que `sendData` jette, dans la fenêtre nominale avant ouverture, et pendant
+  15,8 s sous l'ancien appel inconditionnel. Une UI d'attente câblée dessus afficherait
+  « connecté » pendant que tout est jeté. **Le choix du prédicat est à trancher avant ce câblage.**
 
   ⚠️ Ne surtout pas transformer ça en refus : `hubSlug` fourni n'est pas hub présent, et un hub
   absent est un état transitoire légitime. La confusion entre les deux est écrite dans

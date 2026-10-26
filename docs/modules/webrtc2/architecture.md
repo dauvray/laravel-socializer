@@ -605,15 +605,21 @@ scénarios) et `_hubRateLimiter` (arbitrage « verbe `.reset()` plutôt que Pini
   `preserveRetry`. Cette branche client était longtemps **inconditionnelle**, ce qui coûtait à chaque
   tour de présence un POST `/ask-to-peer-id`, un jeton du plafond de cadence et un retry armé, même
   hub absent de la room — `isAuthorizedPeer` ne rattrapant qu'au tour suivant, dans
-  `_handleConnectionAttempt`. Elle n'a pu être resserrée qu'**après** la réconciliation, et l'ordre
-  était contraint : cet appel inconditionnel *était*, par accident, la seule réconciliation que le
-  module possédait — la seule à rattraper un hub ayant rechargé sans que son départ soit annoncé.
+  `_handleConnectionAttempt`. Et elle **retardait la transition** qu'elle croyait servir : la
+  demande partie vers le hub absent restait en attente, `requestOrConnectPeer` n'en repose pas tant
+  qu'elle l'est, donc le tour qui voit arriver le hub ne composait rien. Seul le retry la reposait,
+  passé `SIGNALING_STALE_MS`, et chaque `sendData` du client était jeté d'ici là (mesuré par
+  contre-épreuve, `scenarios/starTopology.test.js`). Elle n'a pu être resserrée qu'**après** la
+  réconciliation, et l'ordre était contraint : cet appel inconditionnel *était*, par accident, la
+  seule réconciliation que le module possédait — la seule à rattraper un hub ayant rechargé sans que
+  son départ soit annoncé.
   **Borne assumée** : `targets` se construit sur `remotePeers`, donc seul le chemin **(a)** de
   l'autorisation (présence) est couvert ; un hub admis par le seul chemin **(b)**
   (`authorizedCallPeers`, l'appel direct hors room) ne serait pas composé par un tour de présence —
   même borne que le mesh, et un hub de diffusion n'est pas un interlocuteur d'appel direct.
-  Épinglé par `scenarios/peerDeparture.test.js` (« A recharge sans que B voie son départ ») et
-  `useConnectionPool.test.js` (§ `syncUsersConnections`, dont les trois cas « star : un client… »)
+  Épinglé par `scenarios/peerDeparture.test.js` (« A recharge sans que B voie son départ »),
+  `scenarios/starTopology.test.js` (le hub qui arrive après ses clients) et
+  `useConnectionPool.test.js` (§ `syncUsersConnections`, dont les cas « star : un client… »)
 - **La PERTE d'une connexion est le SECOND déclencheur de composition**, et c'est ce qui ferme le
   cas **(b)** ci-dessus. La réconciliation le borne sans le fermer : sans aucun événement de
   présence, aucun tour n'a lieu, et rien de fondé sur la présence ne peut faire mieux — le fait qui

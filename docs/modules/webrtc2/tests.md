@@ -27,8 +27,9 @@ un flux n'en emporte pas un autre), `peerDeparture` (coupure brutale, peerId oub
 un nouveau peerId, et le bail qui évite l'appel mort), `multiContext` (plusieurs contextes dans le même onglet — la forme réelle
 d'une page, cf. [ci-dessous](#un-onglet-plusieurs-contextes), et l'ordre de montage réel :
 `data-app` d'abord, diffusion ensuite), `outgoingAuth` (un tiers ne peut pas se faire pousser un
-flux) et `incomingMappingInvariant` (à quel instant le mapping slug→peerId est posé, relativement à
-l'admission entrante).
+flux), `incomingMappingInvariant` (à quel instant le mapping slug→peerId est posé, relativement à
+l'admission entrante) et `starTopology` (la seule étoile : un hub qui arrive après ses clients, et
+un message de client à client qui n'est vrai que s'il arrive **déballé** et **par le hub**).
 
 ---
 
@@ -431,11 +432,6 @@ scénarios. **Ne pas chercher ici un état d'avancement** — il se lit dans la 
 recensement par `find src/resources/js -path '*__tests__*' -name '*.test.js'`. Ce qui suit est ce
 qui reste délibérément dehors, avec la raison de chacun.
 
-- **La topologie star n'est exercée par aucun scénario.** `grep topology __tests__/scenarios/` rend
-  zéro : `lateJoiner` est intégralement mesh. La transition **« hub absent → hub présent »** n'est
-  donc épinglée à aucun étage, ni en unitaire ni bout en bout — alors que `api.md` pose qu'un hub
-  absent est un état transitoire *légitime*, ce qui en fait un chemin de production non couvert.
-  Item ouvert : [`work/webrtc2-todo.md`](../../../work/webrtc2-todo.md), § « Routage star ».
 - **La géométrie et la mise en page**, par impossibilité du runner — voir
   [ci-dessous](#géométrie-et-mise-en-page--ce-que-la-suite-ne-verra-jamais).
 

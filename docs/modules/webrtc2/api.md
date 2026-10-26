@@ -570,7 +570,8 @@ topologie **réservée** (`sfu` — prévue, non implémentée) d'une valeur **i
 
 ⚠️ **`hubSlug` fourni n'est pas hub présent.** Un hub absent de la room est un état transitoire
 normal : le client ne le compose pas, sans rien tenter ni journaliser, et le tour de présence qui
-voit arriver le hub rétablit la connexion. Ce qui est refusé ci-dessus, c'est l'absence de la
+voit arriver le hub rétablit la connexion — ce tour-là, pas un retry. Épinglé de bout en bout par
+`scenarios/starTopology.test.js`. Ce qui est refusé ci-dessus, c'est l'absence de la
 *désignation* — sans elle, les prédicats de `useConnectionPool` et `usePeerTransport`, qui sont
 composés, sont faux pour toujours.
 
