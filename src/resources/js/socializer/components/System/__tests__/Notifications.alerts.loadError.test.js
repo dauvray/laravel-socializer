@@ -20,6 +20,9 @@
  * votre réponse » — alors qu'aucun appel n'était à l'écran. Vue relance l'import au montage suivant
  * (`pendingRequest` remis à `null` sur l'échec) : il fallait donc d'abord que le wrapper parte.
  *
+ * Depuis la décision de David du 2026-10-26, chaque refus de ce type prévient aussi l'appelé, par un
+ * toast persistant qui l'invite à recharger la page. Asserté dans les trois cas.
+ *
  * Le harnais est celui de `Notifications.alerts.test.js`, réduit à ce qu'exigent ces cas.
  *
  * ── CONTRÔLES, mesurés le 2026-10-26 sur les sept fichiers de `System/__tests__` ────
@@ -28,13 +31,14 @@
  *    M13. `AlertComponentUnavailable` émet `(false)` seul ........... 3
  *    M15. `timeout` retiré du wrapper d'`AlertComponent` ............ 1   (le cas « pendu »)
  *    H2.  le mock en mode « pendu » rejette au lieu de pendre ....... 1   (« pas avant »)
+ *    M17. toast « appel manqué » retiré d'`AlertComponentUnavailable` ... 3
  *    M3.  « occupé » lu sur les props (`Notifications.alerts.test.js`) ... 1 ici aussi
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { nextTick } from 'vue'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createCallPeersDouble } from './helpers/createCallPeersDouble.js'
-import { ALERT_LOAD_TIMEOUT_MS } from '~socializer/components/System/system.config.js'
+import { ALERT_LOAD_TIMEOUT_MS, missedCallMessage } from '~socializer/components/System/system.config.js'
 
 let reverbListeners = {}
 
@@ -110,6 +114,9 @@ const recevoirLInvitation = async (type, inviteId, fromUserSlug) => {
     await nextTick()
 }
 
+/** Le toast de l'appelé : persistant, puisque seul un rechargement le débloque. */
+const toastAppelManque = (fromUserSlug) => [missedCallMessage(fromUserSlug), { durations: { info: 0 } }]
+
 let wrapper
 let espionWarn
 
@@ -151,6 +158,7 @@ describe('Notifications — le chunk d\'AlertComponent ne se charge pas', () => 
         })
         expect(document.body.querySelector('#notification-component-wrapper')).toBeNull()
         expect(espionWarn).toHaveBeenCalled()
+        expect(window.AWN.info).toHaveBeenCalledWith(...toastAppelManque('bob'))
     })
 
     it('⭐ l\'appelant suivant n\'est pas refusé comme « occupé » : sa propre alerte est retentée', async () => {
@@ -169,7 +177,8 @@ describe('Notifications — le chunk d\'AlertComponent ne se charge pas', () => 
             options: invitationEntrante('vocal', 'invite-2', 'carole').options,
             status: false,
         })
-        expect(window.AWN.info).not.toHaveBeenCalledWith(expect.stringContaining('attend votre réponse'))
+        expect(window.AWN.info).not.toHaveBeenCalledWith(expect.stringContaining('arrivait déjà'))
+        expect(window.AWN.info).toHaveBeenCalledWith(...toastAppelManque('carole'))
     })
 
     it('⭐ un chunk qui PEND est refusé au bout d\'ALERT_LOAD_TIMEOUT_MS, et le créneau est rendu', async () => {
@@ -198,5 +207,6 @@ describe('Notifications — le chunk d\'AlertComponent ne se charge pas', () => 
             status: false,
         })
         expect(document.body.querySelector('#notification-component-wrapper')).toBeNull()
+        expect(window.AWN.info).toHaveBeenCalledWith(...toastAppelManque('bob'))
     })
 })

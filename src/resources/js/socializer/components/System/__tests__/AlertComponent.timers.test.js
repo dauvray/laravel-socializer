@@ -93,7 +93,7 @@
  *
  * ⚠️ **C'est aussi ce qui interdit d'écrire un seul de ces cas dans `Notifications.alerts.test.js`.**
  * `onResponseAlert` y met `notificationComponent.value = null` en PREMIÈRE ligne
- * (`Notifications.vue:265`), donc répondre démonte l'alerte avant l'échéance : le rouge annoncé par
+ * (`Notifications.vue:266`), donc répondre démonte l'alerte avant l'échéance : le rouge annoncé par
  * `work/doc-rustines.md` (« accepter à 5 s n'émet pas de refus à 10 s ») y serait né **VERT**, ce
  * que la règle n° 2 du paquet interdit. Il est ici, à l'étage `AlertComponent`, qui ne démonte
  * jamais l'alerte : il ne fait que ré-émettre.

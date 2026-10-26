@@ -21,6 +21,17 @@ export const REVERB_CHANNEL = Symbol('reverbChannel')
  * l'auto-refus de l'alerte vocale (20 s). Le tout doit tenir sous l'abandon du retry de l'appelant
  * (≈ 55 s : `usePeerRetry`, 8 tentatives à min(1000·2ⁿ, 10 000) ms), faute de quoi il ne lirait plus
  * le refus : 2T + 20 s < ≈ 55 s, soit **T < ≈ 17 s**. À 10 s, la chaîne fait 40 s.
- * Aligné sur l'auto-refus de l'alerte vidéo — personne n'attend une sonnerie plus longtemps.
+ * Aligné sur l'auto-refus de l'alerte vidéo — personne n'attend une sonnerie plus longtemps. Valeur
+ * gardée par décision de David le 2026-10-26.
  */
 export const ALERT_LOAD_TIMEOUT_MS = 10_000
+
+/**
+ * Le toast de l'appelé quand une alerte d'appel ne peut pas s'afficher, son chunk ne se chargeant
+ * pas. Partagé par les deux composants de repli de la chaîne (`Notifications`, `AlertComponent`) :
+ * deux copies d'un texte divergent toujours. Il dit « rechargez » parce que c'est le seul remède
+ * au cas réel — un onglet ouvert avant un déploiement, qui refuserait sinon tous ses appels en
+ * silence. Affiché sans durée (`durations: { info: 0 }`), comme l'invitation de conversation.
+ */
+export const missedCallMessage = (fromUserSlug) =>
+    `Appel de ${fromUserSlug} manqué : l'alerte n'a pas pu s'afficher. Rechargez la page.`

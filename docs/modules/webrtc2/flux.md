@@ -163,7 +163,8 @@ Reverb .AlertToUser → Notifications.vue
   ├─ une alerte attend un AUTRE appelant ?   ← occupé ⇒ refus d'office (toast + acceptCallFromPeer, status false)
   └─ affiche System/widgets/AlertComponent.vue
        ├─ aucune alerte pour (action, type) ?    ← refus d'office (console.warn) : le créneau est rendu
-       └─ chunk rejeté, ou pendu > 10 s ?        ← idem, par l'errorComponent des deux wrappers
+       └─ chunk rejeté, ou pendu > 10 s ?        ← idem, par l'errorComponent des deux wrappers,
+                                                   + toast persistant « rechargez la page »
 
   … l'utilisateur répond …
 
@@ -214,15 +215,24 @@ sans effet pour une relance identique.
 second onglet, autre appareil, ou rechargement : l'onglet qui appelle n'a aucun bouton en `calling` —
 hérite du type affiché et du reliquat de minuteur du premier, 20 s au plus. Et pendant qu'une alerte
 se **charge**, le créneau est tenu sans rien à l'écran : un appelant qui arrive dans cette fenêtre
-est refusé avec le toast « un autre appel attend » — 2 × `ALERT_LOAD_TIMEOUT_MS` au plus, les deux
-niveaux de chargement étant en série.
+est refusé — 2 × `ALERT_LOAD_TIMEOUT_MS` au plus, les deux niveaux de chargement étant en série. Le
+toast le dit sans mentir : « un autre appel arrivait déjà », vrai que l'alerte soit affichée ou
+encore en chargement.
 
 **Une alerte qui ne peut pas s'afficher se refuse elle-même** — invisible et muette, elle garderait
 le créneau pour toujours, et le garde ci-dessus refuserait tous les appelants suivants. Trois cas :
 un couple `(action, type)` sans alerte (`screen`, `data` et `stream` passent la validation du
 backend), et un chunk d'alerte **rejeté** — un onglet ouvert avant un déploiement — ou **pendu**
 au-delà d'`ALERT_LOAD_TIMEOUT_MS` (`System/system.config.js`, 10 s), aux deux niveaux de la chaîne.
-L'appelé n'en voit rien, l'appelant est fixé tout de suite. Épinglé par
+L'appelant est fixé tout de suite. Dans les deux cas de chunk, l'appelé est prévenu par un toast
+**persistant** qui l'invite à recharger la page (`missedCallMessage`) : c'est le seul remède au cas
+réel, et sans lui un onglet périmé refuserait tous ses appels en silence. Pas de toast pour un couple
+`(action, type)` inconnu : recharger n'y changerait rien.
+
+⚠️ **Ce repli suppose que l'`import()` REJETTE.** Un écouteur `vite:preloadError` qui appellerait
+`event.preventDefault()` le ferait se résoudre en `undefined` : ni `errorComponent` ni `timeout`, et le
+créneau tenu pour la vie de l'onglet, sans réponse à l'appelant ni toast — mesuré. Aucun écouteur
+n'existe aujourd'hui ; celui qu'on ajoutera, côté socle, doit observer et laisser l'erreur suivre. Épinglé par
 `System/__tests__/Notifications.alerts.test.js` et les deux `*.loadError.test.js`.
 
 ---

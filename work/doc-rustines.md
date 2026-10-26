@@ -449,7 +449,8 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
                   appareil, ou rechargement ; la première version disait « seulement en rechargeant »,
                   réfuté par la relecture) hérite du type affiché et du reliquat de minuteur, 20 s au
                   plus, mesuré par la relecture à 4 s du refus. Et pendant qu'une alerte se CHARGE, un
-                  autre appelant est refusé avec un toast qui parle d'un appel encore invisible,
+                  autre appelant est refusé avec un toast qui parlait d'un appel encore invisible
+                  (reformulé le même jour, voir plus bas),
                   2 × `ALERT_LOAD_TIMEOUT_MS` au plus — les deux niveaux sont en série (première
                   version : « au plus 1× », réfuté par la relecture, 20,5 s mesurés). Et
                   `CallAlertUnavailable` ne couvre que le chargement : une exception dans le `data()`
@@ -471,7 +472,14 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
             ici, une alerte qui ne monte jamais, donc dont aucun minuteur ne naît. Le repli de B3
             couvrait « ne sait pas afficher » ; il fallait aussi « ne peut pas charger », et deux
             pannes pour le dire : le rejet ET l'attente sans fin.
-            Clôture : 15 mutations et 2 contrôles de harnais mesurés sur une référence verte, aucun
+            **Puis, le même jour, les quatre décisions que la relecture avait laissées à David** :
+            le délai reste à 10 s ; l'appelé est prévenu par un toast PERSISTANT qui l'invite à
+            recharger (`missedCallMessage`, partagé par les deux composants de repli — rouge d'abord,
+            5 assertions) ; le toast « occupé » devient « un autre appel arrivait déjà », vrai même
+            pendant un chargement ; et `vite:preloadError`, la cause amont, part dans le `work/`
+            d'estarter — elle touche tous les chunks de tous les paquets, et le geste habituel, un
+            rechargement forcé, couperait un appel en cours. L'item 🟠 de `webrtc2-todo.md` est élagué.
+            Clôture : 18 mutations et 2 contrôles de harnais mesurés sur une référence verte, aucun
             à 0 sur le fichier qui porte son cas. Suites : JS **89 fichiers / 1537 cas, 0 échec**
             (87 / 1525 avant) ; PHP 286 OK ; build vert. **Aucun `boost:update`** : `grep` à zéro sur
             `core.blade.php` et le `CLAUDE.md` du paquet. Relevés en passant, non corrigés, périmés

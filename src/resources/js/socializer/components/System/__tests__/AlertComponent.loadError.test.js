@@ -17,6 +17,9 @@
  * voyait pas, `currentComponent` valant la CHAÎNE `'VideoCallAlert'`, vraie. Côté `Notifications`, le
  * créneau restait pris pour la vie de l'onglet, et le garde « occupé » de B5 refusait tous les
  * appelants suivants avec un toast qui parlait d'un appel que personne ne voyait.
+ * Depuis la décision de David du 2026-10-26, le repli **prévient aussi l'appelé** — un toast
+ * persistant qui l'invite à recharger la page, son seul remède : sans lui, un onglet périmé refusait
+ * tous ses appels en silence. Asserté dans les deux cas.
  * La couture — un `response-alert(…, false)` libère le créneau — est déjà épinglée dans
  * `Notifications.alerts.test.js` (describe B3) : ce fichier n'a à prouver que l'émission.
  *
@@ -31,6 +34,12 @@
  *    M12. `CallAlertUnavailable` monté sans émettre ............... 2
  *    M14. `timeout` retiré de `asyncCallAlert` .................... 1   (le cas « pendu »)
  *    H1.  le mock « pendu » d'`AudioCallAlert` rejette au lieu de pendre ... 1   (« pas avant »)
+ *    M16. toast « appel manqué » retiré de `CallAlertUnavailable` .. 2
+ *    M18. `fromUserSlug` non déclaré par `CallAlertUnavailable` ...... 2   (le toast nommerait `undefined`)
+ *
+ * ⚠️ **Ce fichier ne vaut qu'en build DEV**, comme toute la suite : `wrapper.emitted()` passe par le
+ * hook devtools `component:emit`, absent du build de production de Vue. Sous `NODE_ENV=production`,
+ * ses cas rougissent par l'instrument, pas par le code — n'y épingler aucune affirmation « prod ».
  *
  * ℹ️ Vue journalise l'échec du chargeur — un `console.warn` « Unhandled error during execution of async
  * component loader », puis l'erreur en `console.error` — et, avec un `errorComponent`, ne LÈVE plus en
@@ -40,7 +49,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { nextTick } from 'vue'
 import { mount, flushPromises } from '@vue/test-utils'
-import { ALERT_LOAD_TIMEOUT_MS } from '~socializer/components/System/system.config.js'
+import { ALERT_LOAD_TIMEOUT_MS, missedCallMessage } from '~socializer/components/System/system.config.js'
 
 vi.mock('~socializer/components/WebRTC2/Widgets/UI/Alerts/VideoCallAlert.vue', () => {
     throw new Error('chunk VideoCallAlert introuvable (simulé)')
@@ -70,7 +79,11 @@ const monter = async (type) => {
 let wrapper
 let espionWarn
 
+/** Le toast de l'appelé : persistant, puisque seul un rechargement le débloque. */
+const toastAppelManque = (fromUserSlug) => [missedCallMessage(fromUserSlug), { durations: { info: 0 } }]
+
 beforeEach(() => {
+    window.AWN = { info: vi.fn(), alert: vi.fn() }
     espionWarn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     vi.spyOn(console, 'error').mockImplementation(() => {})
 })
@@ -80,6 +93,7 @@ afterEach(() => {
     wrapper = undefined
     vi.restoreAllMocks()
     vi.useRealTimers()
+    delete window.AWN
 })
 
 describe('AlertComponent — une alerte dont le chunk ne se charge pas', () => {
@@ -93,6 +107,8 @@ describe('AlertComponent — une alerte dont le chunk ne se charge pas', () => {
         // aussi son propre « Unhandled error during execution of async component loader ».
         const avertissementsDuRepli = espionWarn.mock.calls.filter(([message]) => String(message).startsWith('[AlertComponent]'))
         expect(avertissementsDuRepli).toHaveLength(1)
+        // L'appelé est prévenu : sans ce toast, un onglet périmé refusait tous ses appels en silence.
+        expect(window.AWN.info).toHaveBeenCalledWith(...toastAppelManque('bob'))
     })
 
     it('⭐ un chunk qui PEND est refusé au bout d\'ALERT_LOAD_TIMEOUT_MS, et pas avant', async () => {
@@ -110,5 +126,6 @@ describe('AlertComponent — une alerte dont le chunk ne se charge pas', () => {
 
         expect(wrapper.findAll('button')).toHaveLength(0)
         expect(wrapper.emitted('response-alert')).toEqual([['bob', invitation('vocal'), false]])
+        expect(window.AWN.info).toHaveBeenCalledWith(...toastAppelManque('bob'))
     })
 })

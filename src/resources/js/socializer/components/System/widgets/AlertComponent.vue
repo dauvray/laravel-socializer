@@ -12,13 +12,13 @@
 <script>
     import { defineAsyncComponent } from 'vue'
     import Draggable from '~socializer/directives/draggable.js'
-    import { ALERT_LOAD_TIMEOUT_MS } from '~socializer/components/System/system.config.js'
+    import { ALERT_LOAD_TIMEOUT_MS, missedCallMessage } from '~socializer/components/System/system.config.js'
 
     /**
      * Ce que Vue rend à la place d'une alerte dont le chunk ne se charge pas — rejeté (un onglet
      * ouvert avant un déploiement, typiquement) ou pendu au-delà d'`ALERT_LOAD_TIMEOUT_MS` : elle se
-     * refuse dès son montage, par le `response-alert` d'un clic sur « Refuser ». L'écouteur lui
-     * arrive par les attributs transmis du wrapper asynchrone.
+     * refuse dès son montage, par le `response-alert` d'un clic sur « Refuser », et prévient l'appelé.
+     * L'écouteur et `fromUserSlug` lui arrivent par les attributs transmis du wrapper asynchrone.
      *
      * ⚠️ Sans elle, le wrapper en échec ne rendait rien et restait monté : ni sonnerie ni minuteur
      * d'auto-refus (ils naissent dans le `mounted()` de l'alerte), aucune réponse à l'appelant, et
@@ -31,10 +31,11 @@
      */
     const CallAlertUnavailable = {
         name: 'CallAlertUnavailable',
-        props: ['error'],
+        props: ['error', 'fromUserSlug'],
         emits: ['response-alert'],
         mounted() {
             console.warn('[AlertComponent] alerte d\'appel introuvable — invitation refusée d\'office', this.error)
+            window.AWN?.info(missedCallMessage(this.fromUserSlug), { durations: { info: 0 } })
             this.$emit('response-alert', false)
         },
         render: () => null,

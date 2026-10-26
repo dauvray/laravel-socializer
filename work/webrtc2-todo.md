@@ -1018,24 +1018,6 @@ extractions : c'est 18 lignes, sous un filet cinq fois plus dense.
 
 ## Robustesse
 
-- [ ] 🟠 **Une alerte d'appel qui ne se charge pas est refusée sans que l'appelé le sache** `[S]` —
-  ouvert le 26/10/2026 par la relecture du lot B (`doc-rustines.md`, B3), qui l'a fermé côté
-  **appelant** : le chunk d'alerte rejeté ou pendu au-delà d'`ALERT_LOAD_TIMEOUT_MS` se refuse
-  d'office, le créneau est rendu, l'appelant est fixé tout de suite.
-
-  Ce qui reste est côté **appelé**, et trois décisions reviennent à David :
-  1. **Le prévenir.** Un onglet ouvert avant un déploiement refuse désormais TOUS ses appels entrants,
-     avec la console pour seule trace (l'avertissement du repli, plus ceux de Vue). Un toast « appel de X manqué — rechargez la page »
-     coûte une ligne par `errorComponent`, mais c'est un texte d'interface à trancher.
-  2. **`vite:preloadError` n'est écouté nulle part** — ni l'hôte ni les paquets (grep vide, relecture).
-     C'est la cause amont, et elle dépasse ce module : tout chunk paresseux d'un onglet périmé tombe de
-     la même façon. Sa place est probablement dans le socle ou chez l'hôte, pas ici. Non mesuré :
-     qu'aucun volume ne conserve les anciens chunks de `public/build`.
-  3. **La durée d'`ALERT_LOAD_TIMEOUT_MS`** (10 s, alignée sur l'auto-refus vidéo) — contrainte
-     **T < ≈ 17 s**, pas 55 s : les deux niveaux sont en série, et 2T plus l'auto-refus vocal doivent
-     tenir sous l'abandon du retry de l'appelant — et le **toast « occupé »** pendant la fenêtre de
-     chargement (2T au plus), où il parle d'un appel encore invisible.
-
 - [x] ✅ **`useRemotePeerState` : le garde inatteignable et le signal perdu sont FERMÉS le
   31/08/2026** — avec le lot C, comme prévu. Les deux moitiés de l'item ont tenu, et une troisième
   correction est sortie en chemin.

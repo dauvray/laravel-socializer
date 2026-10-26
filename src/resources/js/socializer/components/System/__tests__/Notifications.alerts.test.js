@@ -63,12 +63,12 @@
  * LA COUTURE — mutations dans `Notifications.vue` :
  *    1. `@response-alert="onResponseAlert"` retiré (l. 9) ......... 4 · 3 · 0 · 0
  *    2. `v-bind="notificationComponentProps"` retiré (l. 8) ....... 7 · 3 · 0 · 0
- *    3. `notificationComponent.value = AlertComponent` (l. 133) ... 7 · 3 · 0 · 0
- *    4. garde `isInviteDuplicate` retirée (l. 121) ................ 2 · 3 · 0 · 0
- *    5. `notificationComponent.value = null` retiré (l. 265) ...... 2 · 3 · 0 · 0
- *    6. `case 'peer-access-permission'` renommé (l. 272) .......... 3 · 3 · 0 · 0
+ *    3. `notificationComponent.value = AlertComponent` (l. 134) ... 7 · 3 · 0 · 0
+ *    4. garde `isInviteDuplicate` retirée (l. 122) ................ 2 · 3 · 0 · 0
+ *    5. `notificationComponent.value = null` retiré (l. 266) ...... 2 · 3 · 0 · 0
+ *    6. `case 'peer-access-permission'` renommé (l. 273) .......... 3 · 3 · 0 · 0
  *    7. `props.value = event` → `event.options` seul .............. 7 · 3 · 0 · 0
- *    8. `options: { ...options }` → même référence (l. 275) ....... 1 · 3 · 0 · 0   ← 0 écart
+ *    8. `options: { ...options }` → même référence (l. 276) ....... 1 · 3 · 0 · 0   ← 0 écart
  *
  * LE HARNAIS — l'attente du double niveau d'asynchrone :
  *    9. l'attente réduite à ZÉRO tour (`nextTick` seul) .......... 7
@@ -442,7 +442,9 @@ describe('Notifications — .AlertToUser, l\'invitation d\'appel affichée', () 
                 options: invitationEntrante('vocal', 'invite-2', 'carole').options,
                 status: false,
             })
-            expect(window.AWN.info).toHaveBeenCalledWith(expect.stringContaining('carole'))
+            // Vrai que l'alerte de Bob soit affichée ou encore en chargement : « attend votre réponse »
+            // ne l'était pas pendant un chargement, où rien n'est à l'écran.
+            expect(window.AWN.info).toHaveBeenCalledWith('Appel de carole refusé : un autre appel arrivait déjà')
         })
 
         it('⭐ l\'alerte affichée répond toujours pour SON appelant', async () => {

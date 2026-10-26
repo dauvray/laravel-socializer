@@ -42,14 +42,14 @@ import { useMediaBroadcast } from '~socializer/components/WebRTC2/Composables/us
 import { useReverbChannel } from '~socializer/components/System/composables/useReverbChannel.js'
 
 // CONFIG
-import { ALERT_LOAD_TIMEOUT_MS } from '~socializer/components/System/system.config.js'
+import { ALERT_LOAD_TIMEOUT_MS, missedCallMessage } from '~socializer/components/System/system.config.js'
 
 // COMPOSANTS ASYNCHRONES
 
 /**
  * Ce que Vue rend à la place d'`AlertComponent` quand son chunk ne se charge pas — rejeté (un onglet
  * ouvert avant un déploiement, typiquement) ou pendu au-delà d'`ALERT_LOAD_TIMEOUT_MS` : un refus
- * immédiat, par le `response-alert` qu'émettrait l'alerte.
+ * immédiat, par le `response-alert` qu'émettrait l'alerte, et un toast qui prévient l'appelé.
  *
  * ⚠️ Sans lui, le wrapper en échec ne rendait rien et restait monté, `notificationComponent` restait
  * non nul, et le garde « occupé » refusait tous les appelants suivants pour la vie de l'onglet — avec
@@ -62,6 +62,7 @@ const AlertComponentUnavailable = {
     emits: ['response-alert'],
     mounted() {
         console.warn('[Notifications] alerte introuvable — invitation refusée d\'office', this.error)
+        window.AWN?.info(missedCallMessage(this.fromUserSlug), { durations: { info: 0 } })
         this.$emit('response-alert', this.fromUserSlug, this.options, false)
     },
     render: () => null,
@@ -124,7 +125,7 @@ const { whisper: whisperPing } = useReverbChannel(userChannel, {
             // l'alerte vivante, qui garderait son type et son minuteur d'auto-refus, et ce
             // minuteur refuserait le second appelant à la place du premier.
             if (isAwaitingAnotherCaller(event)) {
-                window.AWN?.info(`Appel de ${event.fromUserSlug} refusé : un autre appel attend votre réponse`)
+                window.AWN?.info(`Appel de ${event.fromUserSlug} refusé : un autre appel arrivait déjà`)
                 await respondToInvitation(event.fromUserSlug, event.options, false)
                 return
             }
