@@ -1207,28 +1207,60 @@ extractions : c'est 18 lignes, sous un filet cinq fois plus dense.
   muet. Le filet existe déjà : deux cas de `useMediaControls.test.js` asservissent la **cause** tracée
   à la fonctionnalité (`'Fullscreen'` / `'PIP'`), ils passeront au toast sans être réécrits.
 
-- [ ] 🟢 **`SpectrumAnalyzer` : deux défauts, et un fichier WebRTC2 que seule la v1 maintient en
-  vie** `[S]` — relevés le 30/08/2026 en cadrant la tâche 8, qui l'a **exclu** de son périmètre.
+- [x] 🟢 **`SpectrumAnalyzer` — SUPPRIMÉ le 26/10/2026, sortie B** (décision de David, lot E2 de
+  [doc-rustines.md](doc-rustines.md)). Il était un fichier WebRTC2 que seule la v1 maintenait en vie ;
+  ses deux défauts relevés ici le 30/08 (sources initiales hors de `sourceMap`, usages commentés faux
+  dans `StreamSimpleUI`) en cachaient deux autres trouvés en le tranchant : une boucle
+  `requestAnimationFrame` jamais annulée, et un mixer branché sur `audioContext.destination` qui
+  rejouait l'audio distant une seconde fois. Il mixait tous les flux : un indicateur « qui parle »,
+  s'il revient, se fera par participant.
 
-  Le fait structurel d'abord : `Widgets/UI/Audio/SpectrumAnalyzer.vue` est un fichier **WebRTC2**
-  dont les deux consommateurs WebRTC2 sont commentés, et dont **le seul consommateur vivant est la
-  v1** — `components/WebRTC/widgets/ui/AudioDefaultUserButtonUI.vue:13`, atteint par la route
-  `audio/:vertexId` via `AudioRoom/AudioComponent.vue`. C'est la direction inverse de celle que
-  [doc-rustines.md](doc-rustines.md) lot 1 enregistre (« la v1 est morte mais cinq composants
-  vivants l'importent ») : ici c'est **la v1 morte qui importe du v2 vivant**. À traiter avec la
-  suppression de `components/WebRTC/`, pas avant.
+- [ ] 🟠 **`startAudioStream` marque le micro MUET alors qu'il est ouvert** `[S]` — relevé le
+  26/10/2026 au lot E. `usePeerMedia.startAudioStream` capture `audio: true` (piste active) puis pose
+  `ctx.ui.streamStates.isMuted = true`. L'état affiché et l'état réel divergent dès le démarrage, et
+  **dans le mauvais sens** : on se croit muet, on est entendu. Observable dans
+  `Exemples/Home.vue` — *lu, non exécuté* : « Start audio », puis le bouton micro de `LocalStreamBtn` propose « activer le
+  son » ; le premier clic ne change rien à la piste (`track.enabled` déjà vrai), le second coupe. La
+  metadata sortante porte `isAudioMuted: true`.
+  ⚠️ **Le défaut est épinglé COMME VOULU** : `usePeerMedia.streams.test.js`, « marque le flux comme
+  audio et aligne l'UI (vidéo coupée, micro marqué muet) ». Le corriger fait donc rougir un test — c'est
+  attendu, pas une régression. Il vient de la v1, qui faisait déjà `updateVideoProps({ isMuted:
+  options.audio })`.
+  **Question produit avant le code** : un flux audio démarre-t-il ouvert (alors `isMuted = false`) ou
+  muet (alors `track.enabled = false` aussi) ? AudioRoom démarre ouvert et contourne le défaut en ne
+  rendant **aucun** player local — `LocalMediaPlayer` lit `api.isMuted` et afficherait « muet ».
 
-  Les deux défauts, à corriger à ce moment-là ou à emporter avec le fichier :
-  - `startVisualizer` (l. 111-114) connecte les sources initiales **sans les enregistrer dans
-    `sourceMap`** : seules les sources ajoutées ensuite par `updateStreams` sont déconnectables ;
-  - l'usage commenté de `StreamSimpleUI.vue:24,54` est **faux, pas seulement désactivé** :
-    `v-bind="audioProps"` passe `{ streamData }` à un composant dont l'unique prop est
-    `streams: { type: Array, required: true }`. Le décommenter lèverait à `mounted()` sur
-    `streams.forEach`.
+- [ ] 🟢 **`StreamSimpleUI` attribue mon nom au flux de réponse d'un pair** `[S]` — relevé le
+  26/10/2026 au lot E, lu dans le code, non reproduit. En mode `stream`, le flux de RÉPONSE de B arrive
+  sur la connexion sortante de A, dont la metadata est celle de A ; le registre gardant la première
+  entrée par clé, `rs.metadata.fromName` peut valoir **mon** nom. `StreamSimpleUI` le lit brut (la
+  règle `from === remoteSlug` vit dans `useStreamManager._resolveRemoteName`, qui ne sert que les
+  players du pool). Exemples seulement ; AudioRoom résout le nom par la présence et `remoteSlug`.
 
-  ℹ️ **Pourquoi il n'est pas testé** : `happy-dom` n'a pas d'`AudioContext` (ni `createAnalyser`,
-  ni `createMediaStreamSource`, ni `requestAnimationFrame` utilisable ici). Tout collaborateur
-  serait fabriqué à la main, et le test prouverait sa propre doublure.
+- [ ] 🟢 **Décision à acter : le FIFO de `MAX_REMOTE_STREAMS` ignore la vivacité** — relevé par la
+  relecture d'E0a le 26/10/2026. Plein, le registre évince le plus ancien inséré, vivant ou non ; il
+  pourrait évincer d'abord les entrées mortes. Borne de capacité (12), pas un défaut.
+
+- [ ] ℹ️ **Non mesuré, conséquence d'E0a** : le TTL ne ramasse plus un flux distant resté
+  `readyState: 'live'` après un départ brutal sans `close` PeerJS. **Le seul filet qui reste est la
+  fermeture ICE** — PeerJS 1.5.4 ferme la connexion sur `iceConnectionState === 'failed'`. La
+  présence n'en est pas un (item suivant). La question « une piste distante peut-elle rester `live`
+  après la disparition du pair ? » n'a pas de réponse sous happy-dom. Mesure : deux navigateurs,
+  couper le RÉSEAU de B sans fermer son onglet, attendre plus de `STREAM_STALE_MS`, faire entrer C,
+  lire `Debug.vue` et la vignette de B. Coût borné par le FIFO (12).
+
+- [ ] 🟠 **Le `leaving` de présence OUBLIE les connexions du pair sans les FERMER** `[S]` — relevé le
+  26/10/2026 par la relecture du lot E, lu et énuméré, non exécuté ; **antérieur au lot**. La branche
+  `removedUsers` de `useConnectionPool.syncUsersConnections` appelle `clearConnectionsRoom`, qui est un
+  simple `delete` dans le store : aucun `close()`, aucune purge de `remoteStreamsMap`. La
+  MediaConnection vers le partant sort donc du store **ouverte**, orpheline jusqu'à l'échec ICE ; et
+  `handleRemoteDeparture` n'a que deux appelants, `remoteStopCall` (signal serveur) et
+  `handleStreamRemoved` (fermeture PeerJS) — **aucun ne vient de la présence**.
+  ⚠️ **Le commentaire du site le dit autrement** : « Fermer aussi la connexion 'screen' si elle
+  existe », au-dessus d'un `clearConnectionsRoom`. Même espèce que l'« arrêt des flux, etc. » d'E0b —
+  une phrase d'intention sur une ligne qui ne la tient pas.
+  Correctif candidat : fermer — le `closePeerConnection` du store ferme les instances du type — au
+  lieu d'effacer seulement ; ce qu'il fait ensuite du store est à lire avant d'écrire le correctif. À mesurer d'abord : la vérif manuelle d'E note le délai de disparition du player.
 
 - [x] 🟠 **Un refus de permission caméra ne produit RIEN à l'écran** `[S]` — relevé le 29/08/2026 en
   fermant la tâche 7 des tests, **fermé le 30/08/2026** (lot B de la tâche 8).
@@ -1447,9 +1479,10 @@ prochaine passe ne repaie pas la mesure :
   instruction des deux dispatchers (`:1358`, `:1393`) ;
 - **`topology` lue à sept endroits dans quatre fichiers** — le compte tient, seules les lignes de
   `usePeerTransport` ont bougé ;
-- **cinq composants vivants importent encore la v1 morte** — `ClassRoom`, `AudioRoom`,
-  `Application`, `Whiteboard`, `System/widgets/AlertComponent` (ce dernier en
-  `defineAsyncComponent`). Le compte de `docs/modules/webrtc2/INDEX.md` est juste ;
+- ~~**cinq composants vivants importent encore la v1 morte**~~ — exact le 29/08, **périmé depuis le
+  26/10/2026** : les cinq sont migrés (lots C, D, E), il n'en reste **aucun**. Seuls un fichier
+  désactivé (`__`) et le store v1 importé par `Server.vue` retiennent la v1 — `doc-rustines.md`,
+  lot F ;
 - **`config/reverb.php` de l'hôte porte `accept_client_events_from` avec `'members'` par défaut** —
   la borne de déploiement du whisper de présence est tenue sur cette machine ;
 - **les deux suites sont vertes et n'ont ni `.skip` ni `.only`** — JS 61 fichiers / 1148 cas,

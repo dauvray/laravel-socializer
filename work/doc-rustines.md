@@ -105,7 +105,7 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
 
 ## Lot 1 — Code mort · sortie B
 
-- [ ] **Migrer les appelants de WebRTC v1 (4 + 1, un migré), puis supprimer `components/WebRTC/`** ·
+- [ ] **Migrer les appelants de WebRTC v1 — tous migrés au 26/10/2026 —, puis supprimer `components/WebRTC/`** ·
       effort [L]
       **Découpé en sept lots le 31/08/2026 — le plan est plus bas, après le recensement.**
       **La tâche la plus rentable du paquet en volume de doc.** La v1 morte est annoncée dans
@@ -114,7 +114,8 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
       (`MediaBroadcastProvider.vue`) et qu'un symbole trouvé au grep peut venir de la v1.
 
       **Vérifié : cinq appelants vivants au cadrage, quatre depuis le lot C, trois depuis D1, deux
-      depuis D2** — AudioRoom (lot E) et ClassRoom (D3) —, plus un fichier désactivé. L'archive de lecture
+      depuis D2, un depuis D3, ZÉRO depuis E1 (26/10/2026)** — reste un fichier désactivé, et `Server.vue`
+      qui n'importe que le store v1, sans le lire (F1). L'archive de lecture
       `work/webrtc-v1-notes.md` a été supprimée : sa condition de conservation — « le temps de
       vérifier qu'aucun appelant ne subsiste » — était remplie, et le recensement vit désormais
       dans la doc du module, avec la commande qui le recompte.
@@ -122,7 +123,7 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
       | Appelant | Ce qu'il importe |
       |---|---|
       | ~~`System/widgets/AlertComponent.vue`~~ | ✅ **migré le 31/08/2026 (lot C)** — les deux alertes vivent dans `WebRTC2/Widgets/UI/Alerts/` |
-      | `AudioRoom/AudioComponent.vue` | `WebRTC/widgets/MediaBroadcastProvider.vue`, `ui/AudioDefaultUserButtonUI.vue` |
+      | ~~`AudioRoom/AudioComponent.vue`~~ | ✅ **migré le 26/10/2026 (lot E1)** — `WebRTC2/Widgets/Mediaplayer/MediaBroadcastProvider.vue` en mode `stream`. **Dernier appelant de la v1** ; `ui/AudioDefaultUserButtonUI.vue` est parti avec `SpectrumAnalyzer` (E2) |
       | ~~`Application/ApplicationComponent.vue`~~ | ✅ **migré le 01/09/2026 (lot D2)** — `WebRTC2/Widgets/Mediaplayer/MediaBroadcastProvider.vue`, store v1 débranché |
       | ~~`Whiteboard/WhiteboardComponent.vue`~~ | ✅ **migré le 01/09/2026 (lot D1)** — `WebRTC2/Widgets/Mediaplayer/MediaBroadcastProvider.vue`, store v1 débranché |
       | ~~`ClassRoom/ClassRoomComponent.vue`~~ | ✅ **migré le 01/09/2026 (lot D3)** — `WebRTC2/Widgets/Mediaplayer/MediaBroadcastProvider.vue`, store v1 débranché. **Dernier appelant du canal data** ; `DataUserPeerConnection.vue` n'a donc plus aucun importateur vivant |
@@ -150,6 +151,8 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
       [`docs/modules/webrtc2/INDEX.md`](../docs/modules/webrtc2/INDEX.md) — l'annotation qui la
       donnait pour simplement morte sous-estimait le problème, ce qui est pire que de l'ignorer.
 
+      ✅ *Résolu le 26/10/2026 par E2 — `SpectrumAnalyzer` et son importeur v1 sont supprimés ; le
+      paragraphe reste comme trace du raisonnement qui a mis la décision dans ce lot.*
       ⚠️ **Le couplage va aussi dans l'AUTRE sens, et ce tableau ne le disait pas** — relevé le
       30/08/2026 en cadrant la tâche 8 des tests. `WebRTC/widgets/ui/AudioDefaultUserButtonUI.vue:13`
       importe `WebRTC2/Widgets/UI/Audio/SpectrumAnalyzer.vue` : un fichier **v2** dont le seul
@@ -161,13 +164,13 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
       [webrtc2-todo.md](webrtc2-todo.md) ; il n'a aucun test, et n'en aura pas (`happy-dom` n'a pas
       d'`AudioContext`).
 
-      Périmètre : **11** fichiers `WebRTC/` (13 au cadrage — le lot C en a sorti deux), le store
+      Périmètre : **10** fichiers `WebRTC/` (13 au cadrage — le lot C en a sorti deux, E2 un), le store
       `stores/peers.js` (+ son dossier `stores/peers/`) et ses **trois** consommateurs restants (six
       au cadrage ; D1, D2 et D3 en ont débranché un chacun — restent
       `WebRTC/composables/usePeers.js`, `WebRTC/widgets/VideoComponent.vue` et `Server/Server.vue`,
-      dont **les deux premiers partent avec le dossier** : le seul à migrer est `Server.vue`, c'est
-      F1), la migration de **l'appelant restant** vers `WebRTC2/` — `AudioRoom`, un provider
-      **media**, c'est le lot E — et le sort de `SpectrumAnalyzer`.
+      dont **les deux premiers partent avec le dossier** : le seul à toucher est `Server.vue`, c'est
+      F1 — une suppression, ses getters ne sont jamais lus). ~~La migration de l'appelant restant
+      (`AudioRoom`, lot E) et le sort de `SpectrumAnalyzer`~~ : **faits le 26/10/2026** (E1, E2).
       Annotation (7 fichiers) : `CLAUDE.md` · `docs/INDEX.md` ·
       `docs/modules/webrtc2/INDEX.md` · `docs/modules/autres-modules.md` ·
       `docs/architecture/package.md` · `docs/modules/chat.md` ·
@@ -779,19 +782,100 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
                         Le second défaut du site d'appel PHP (la confidentialité passée en entier au
                         lieu d'un tableau, donc **ignorée**) n'aurait pas été vu en corrigeant le
                         seul crash
-      - [ ] **E. AudioRoom** `[M]`
-            - [ ] E1 — `AudioComponent` importe le `MediaBroadcastProvider` **v1** : l'homonyme en
-                  action. Comparer les deux contrats de slot avant de substituer (v2 :
-                  `v-slot="webrtc"`, api sous la clé `api`). Le module est atteignable par une vraie
-                  route (`routes/application.js`) et déclaré dans `Server/roomSettings.js` — ce n'est
-                  pas du code mort, la vérification manuelle est obligatoire
-            - [ ] E2 — trancher `SpectrumAnalyzer` : rebranché sur un consommateur v2, ou supprimé.
-                  **Décision datée** (sortie D) ; il n'a aucun test et n'en aura pas — `happy-dom`
-                  n'a pas d'`AudioContext`
+      - [ ] **E. AudioRoom** `[M]` — **code fait le 26/10/2026, quatre commits ; reste la vérif
+            manuelle**, qui appartient à David. **AudioRoom est le premier consommateur de
+            production du mode `stream`** — jusqu'ici seul `Exemples/Home.vue` l'employait —, et c'est
+            ce qui a décidé du lot : la méthode de D1 (lire le chemin de RÉCEPTION avant de choisir
+            quoi émettre) a trouvé **deux défauts du cœur v2** qu'AudioRoom aurait rencontrés le
+            premier, et qu'aucun test ne voyait. Ils sont passés en prérequis, chacun son commit,
+            sur décision de David.
+            - [x] E0a — 🔴 **le TTL du registre des flux distants évinçait un flux VIVANT** — sortie A,
+                  `42dfd4b`. `createdAt` date la réception, jamais rafraîchi ; l'arrivée de tout flux
+                  de clé nouvelle évinçait tout flux de plus de 5 min. Dans un salon audio : A et B
+                  parlent 6 min, C arrive ⇒ A cesse d'entendre B **pour de bon**. Le docblock de
+                  `STREAM_STALE_MS` disait « sans activité » : **le nom de l'intention, pas du code**.
+                  Le TTL ne vise plus que les entrées sans piste vivante. 3 cas, le ⭐ né rouge ;
+                  4 mutations mesurées sur la suite complète, dont `.every` — **trouvée par la
+                  relecture**, qui survivait au premier jeu de cas. Doc : « éviction LRU », faux deux
+                  fois (c'est un FIFO par insertion), dans `api.md` et `INDEX.md`
+            - [x] E0b — 🔴 **le teardown du provider n'arrêtait AUCUN flux local** — sortie A,
+                  `92ea831`. Seuls
+                  `stopCurrentStream` / `stopScreenCapture` arrêtent des pistes, et `cleanupPeerConnection`
+                  n'appelait ni l'un ni l'autre ; le commentaire du provider annonçait pourtant « arrêt
+                  des flux, etc. » — **l'« etc. » cachait le trou**. Quitter une page en diffusion
+                  laissait micro, caméra ou écran capturés, sur un contexte que plus rien n'atteint. La
+                  v1 d'AudioRoom, elle, coupait le micro au démontage : sans E0b, migrer était une
+                  régression de vie privée. 3 cas nés rouges, plus un cas d'isolation entre contextes
+                  (né vert, contrôlé par un harnais à flux partagé) ; 4 mutations mesurées.
+                  🔴 **La première version de ce correctif était fausse, et c'est la relecture qui l'a
+                  vu** : elle arrêtait l'écran par le verbe de `media`, en écrivant « les connexions
+                  viennent d'être fermées juste au-dessus ». Faux pour l'écran — la fermeture du
+                  dessus ne vise que le type de session, et la MediaConnection `screen` restait
+                  ouverte, rangée dans le store d'un contexte mort. Le verbe de l'orchestrateur la
+                  ferme ; c'est un mot. **La phrase fausse était une justification, pas une
+                  description** : elle disait pourquoi le code pouvait se dispenser de quelque chose.
+                  C'est l'espèce que ce lot a documentée, produite par l'auteur du lot lui-même.
+                  ⚠️ **Retirer une ligne PAR NUMÉRO, pas par motif** : `media.stopScreenCapture()`
+                  existe deux fois à la même indentation, et la mutation par motif a rougi 4 cas dont 3
+                  hors sujet — écrit dans le docblock du test
+            - [x] E1 — `AudioComponent` sur le provider v2, **un seul fichier de code** — `0d3393f`.
+                  Le delta media
+                  v1→v2 — que D0 renvoyait ici — tient en six lignes, et aucune n'est une substitution :
+                  · **mode `stream`**, pas `vocal` : `visio`/`vocal` sont les appels directs sous FSM ;
+                  · **le rendu des flux distants passe à l'appelant** — la v1 les injectait dans le
+                  `#videoContainer` de `Notifications` (`streamPlayerCallback`), le mode `stream` v2 ne
+                  crée **aucun** player. Sans ce rendu, la migration « marchait » sans un son.
+                  `MediaBroadcastPlayer` en `:videoActive="false"` : `RemoteMediaPlayer` rendrait un
+                  `<video>` noir, son `videoActive` valant `true` tant que le pair n'annonce rien ;
+                  · **les noms viennent de la présence**, par `remoteSlug` — en `stream`, le flux de
+                  réponse d'un pair arrive sur MA sortante, dont la metadata porte MON nom ;
+                  · démarrage `getAudioStream()` en `mounted()` **avec `.catch`** (la v1 n'en avait pas :
+                  un refus de micro était un rejet non traité) ; arrêt par E0b, rien côté appelant ;
+                  · slot v1 à 20 clés à plat → une clé `api` portant des `ref` ; `started-stream` /
+                  `stoped-stream` sans équivalent v2, et **personne ne les écoutait** ;
+                  · **pas de player local** — `LocalMediaPlayer` lit `api.isMuted`, que
+                  `startAudioStream` pose à `true` sur un micro ouvert (item ouvert dans
+                  [webrtc2-todo.md](webrtc2-todo.md)) : il afficherait « muet » à quelqu'un qu'on entend.
+                  Appelants v1 vivants : **un → zéro au premier grep** ; au second reste
+                  `Server/Server.vue:105`, import mort du store v1 — c'est F1. Build vert.
+                  ❓ **Décision produit laissée ouverte** (relevée en relecture) : **pas de bouton
+                  Mute** — parité v1 stricte, mais le seul moyen de couper son micro est de quitter le
+                  salon. Ajouter le bouton demande d'abord l'item `startAudioStream` de
+                  [webrtc2-todo.md](webrtc2-todo.md), sans quoi son premier clic serait sans effet.
+                  ℹ️ `this.$refs.audioBroadcast?.api.getAudioStream()` s'éteindrait **en silence** si le
+                  provider n'était pas monté ; inatteignable aujourd'hui (`Room.vue` ne rend la route
+                  que sous `v-if="currentRoom"`, et `users` vaut `[]` dès le départ).
+            - [x] E2 — **`SpectrumAnalyzer` SUPPRIMÉ — décision du 26/10/2026 (David), sortie B**,
+                  `cd8aae1`. Il
+                  mixait tous les flux en un spectre (il ne dit pas *qui* parle), et la lecture lui a
+                  trouvé trois défauts : sources initiales hors de `sourceMap`, boucle
+                  `requestAnimationFrame` jamais annulée (elle tourne à vie après le démontage), et
+                  mixer branché sur `audioContext.destination` — **il rejouait l'audio distant une
+                  seconde fois** par-dessus les players de la v1. Partent avec lui son seul importeur,
+                  `WebRTC/widgets/ui/AudioDefaultUserButtonUI.vue` (orphelin depuis E1), et dans
+                  `StreamSimpleUI` le `defineAsyncComponent` mort et les deux usages commentés — faux,
+                  ils passaient `{streamData}` à une prop `streams: Array`. Un indicateur « qui parle »,
+                  s'il revient, se fera **par participant**
+            - [ ] **Vérif manuelle à deux navigateurs** (David) — rechargement dur des deux côtés,
+                  aucune écriture dans `.env` pendant la mesure (`.ai/rules/web-r-t-c2.md`). Créer un
+                  contenu « Audio » dans un salon dont A et B sont membres.
+                  1. A puis B entrent : invite micro des deux côtés ; chacun voit un player au **nom de
+                     l'autre** (jamais le sien) et **l'entend**. Console : aucune erreur.
+                  2. B quitte le salon : **le voyant micro du navigateur de B s'éteint** (E0b) ; chez A,
+                     le player de B disparaît — **noter le DÉLAI observé**. A ne l'apprend que par la
+                     fermeture côté PeerJS (fin de pistes ou ICE), jamais par la présence : le
+                     `leaving` n'oublie que des références du store. Délai réel jamais mesuré.
+                  3. B revient : ils s'entendent à nouveau — cycle démonter/remonter du contexte.
+                  4. Refuser le micro (paramètres du site) puis entrer : un toast `NotAllowedError`.
+                  5. *Long, mais seul exercice réel d'E0a* : A et B restent plus de 5 min, puis C
+                     entre — A entend toujours B.
+                  ⚠️ **Ne pas cocher sur la foi du vert** — la leçon de D1 vaut double ici : c'est le
+                  premier usage réel du mode `stream`, et le transport n'est exercé par aucun test
       - [ ] **F. La suppression** `[M]`
-            - [ ] F1 — `Server/Server.vue` : migrer `getIsStreaming` / `getIsCapturing` du store v1
-                  vers `peers2` (vérifier d'abord qu'il les expose ; sinon, l'ajouter est le
-                  préalable)
+            - [ ] F1 — `Server/Server.vue` : **retirer** l'import du store v1 et la ligne 147.
+                  Relevé le 26/10/2026 : les deux getters y sont **destructurés et jamais lus** — ni dans
+                  le script ni dans le template. Ce n'est donc pas une migration vers `peers2` : il n'y a
+                  rien à exposer
             - [ ] F2 — supprimer `components/WebRTC/`, `stores/peers.js` et `stores/peers/`.
                   Preuve : les **deux** greps rendent zéro · suite JS verte · **`npm run build`**,
                   seul contrôle qui voie un import cassé dans un fichier qu'aucun test n'importe
@@ -827,6 +911,23 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
       prouvés **à la main** — D l'est depuis le 26/10, reste E. B5 reste ouvert en
       parallèle, sans dépendance : il ferme un 🟠 qui mord aujourd'hui, mais demande de trancher une
       question produit avant d'écrire la `key`.
+      **État au 26/10/2026** : **le code du lot E est fait** — E0a, E0b, E1, E2, quatre commits —
+      et **aucun composant n'importe plus `components/WebRTC/`** ; seul `Server.vue` importe encore le store v1, sans le lire (F1). Reste sa vérif manuelle (David) ; **F ne part
+      qu'après**. F1 rétrécit : `Server.vue` ne lit pas les getters qu'il importe, c'est une
+      suppression de deux lignes.
+      ⚠️ **Ce que E ajoute à la doctrine : la migration est le premier USAGE RÉEL d'un chemin
+      que seul un exemple exerçait.** AudioRoom est le premier consommateur de production du mode
+      `stream` ; ses deux 🔴 (E0a, E0b) ne sont pas des défauts de la migration mais du **cœur v2**,
+      invisibles tant que `Exemples/Home.vue` était seul à le monter — un exemple ne dure pas
+      5 minutes et ne quitte pas sa page. Les deux étaient pourtant **écrits** : « sans activité »
+      dans un docblock, « arrêt des flux, etc. » dans un commentaire. **Une phrase d'intention
+      posée sur un code qui ne la tient pas est une annotation fausse dès sa naissance** — voisine
+      de la *caractérisation fausse* de D3, mais sur le code d'à côté et non sur un module — et la seule que la relecture du
+      code d'à côté démasque, parce qu'elle ressemble à de la doc et non à une promesse. Le test
+      qui la repère : **« quelle ligne fait ce que cette phrase dit ? »** — pour « etc. », aucune.
+      ℹ️ **La relecture par une seconde session a payé dès le premier commit** : le mutant `.every`
+      survivait au jeu de cas d'E0a, et l'auteur ne l'avait pas essayé. Un contrôle de harnais
+      mesure les mutations qu'on pense à faire ; la relecture en fait d'autres.
       ⚠️ **Ce que D3 ajoute à la doctrine, et c'est une espèce d'annotation qu'aucun lot n'avait
       rencontrée : le fait EXACT mais SANS OBJET.** La recette instruisait « ClassRoom lit
       `conn.connectionId` (journalisation) : inchangé en v2 ». Vérifiable, vrai — et portant sur une

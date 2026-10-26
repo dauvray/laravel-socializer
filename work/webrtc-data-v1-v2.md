@@ -400,8 +400,8 @@ voie un import cassé.
 
 ## Hors périmètre
 
-Le **lot E (AudioRoom)** migre un provider **media** v1, dont le delta est ailleurs et n'est pas
-écrit ici : slot v1 à **20 clés à plat** → une seule clé `api` portant des `ref`, et
-`emits: ['started-stream', 'stoped-stream']` **sans équivalent v2** (le provider v2 n'émet rien). E
-l'écrira quand il partira, avec le code sous les yeux — une table écrite d'avance périmerait, comme
-les décomptes du lot C.
+Le **lot E (AudioRoom)** migrait un provider **media** v1 : son delta n'est pas ici. Il a été écrit
+le 26/10/2026 avec le code sous les yeux, dans l'item E1 de [doc-rustines.md](doc-rustines.md) — et
+les deux faits annoncés ici d'avance (20 clés à plat → `api` ; `started-stream` / `stoped-stream` sans
+équivalent v2) se sont révélés **les moins importants** des six : le vrai travail était le rendu des
+flux distants, que le mode `stream` v2 laisse à l'appelant.
