@@ -29,7 +29,7 @@
 
 <script setup>
 // VUE & LIBS
-import { ref, computed, watch, onMounted, onUnmounted, inject, defineAsyncComponent } from 'vue'
+import { ref, shallowRef, computed, watch, onMounted, onUnmounted, inject, defineAsyncComponent } from 'vue'
 import { storeToRefs } from 'pinia'
 
 // STORES
@@ -41,8 +41,37 @@ import { useConversationsStore } from '~socializer/stores/conversations.js'
 import { useMediaBroadcast } from '~socializer/components/WebRTC2/Composables/useMediaBroadcast.js'
 import { useReverbChannel } from '~socializer/components/System/composables/useReverbChannel.js'
 
+// CONFIG
+import { ALERT_LOAD_TIMEOUT_MS } from '~socializer/components/System/system.config.js'
+
 // COMPOSANTS ASYNCHRONES
-const AlertComponent = defineAsyncComponent(() =>import('~socializer/components/System/widgets/AlertComponent.vue'))
+
+/**
+ * Ce que Vue rend à la place d'`AlertComponent` quand son chunk ne se charge pas — rejeté (un onglet
+ * ouvert avant un déploiement, typiquement) ou pendu au-delà d'`ALERT_LOAD_TIMEOUT_MS` : un refus
+ * immédiat, par le `response-alert` qu'émettrait l'alerte.
+ *
+ * ⚠️ Sans lui, le wrapper en échec ne rendait rien et restait monté, `notificationComponent` restait
+ * non nul, et le garde « occupé » refusait tous les appelants suivants pour la vie de l'onglet — avec
+ * un toast parlant d'un appel que personne ne voyait. Le refus vide le créneau, et le montage suivant
+ * retente l'import.
+ */
+const AlertComponentUnavailable = {
+    name: 'AlertComponentUnavailable',
+    props: ['error', 'fromUserSlug', 'options'],
+    emits: ['response-alert'],
+    mounted() {
+        console.warn('[Notifications] alerte introuvable — invitation refusée d\'office', this.error)
+        this.$emit('response-alert', this.fromUserSlug, this.options, false)
+    },
+    render: () => null,
+}
+
+const AlertComponent = defineAsyncComponent({
+    loader: () => import('~socializer/components/System/widgets/AlertComponent.vue'),
+    errorComponent: AlertComponentUnavailable,
+    timeout: ALERT_LOAD_TIMEOUT_MS,
+})
 const CallManagerBtn = defineAsyncComponent(() =>import('~socializer/components/WebRTC2/Widgets/UI/Buttons/CallManagerBtn.vue'))
 const ToasterNewMessage = defineAsyncComponent(() =>import('~socializer/components/System/widgets/ToasterNewMessage.vue'))
 
@@ -65,7 +94,8 @@ const { addConversation } = conversationsStore
 const peers = useMediaBroadcast()
 
 // State local
-const notificationComponent = ref(null)
+// `shallowRef` : il porte un COMPOSANT, qu'un `ref` profond envelopperait dans un proxy réactif.
+const notificationComponent = shallowRef(null)
 const notificationComponentProps = ref(null)
 const NewMessageNotification = ref(null)
 const heartbeatIntervalId = ref(null)
@@ -87,8 +117,18 @@ const { whisper: whisperPing } = useReverbChannel(userChannel, {
     },
     listeners: {
         // display alerts to user
-        '.AlertToUser': (event) => {
+        '.AlertToUser': async (event) => {
             if (peers.isInviteDuplicate(event?.options?.inviteId)) return
+
+            // Occupé ⇒ refus. Réaffecter le même composant ne le remonterait pas : Vue patcherait
+            // l'alerte vivante, qui garderait son type et son minuteur d'auto-refus, et ce
+            // minuteur refuserait le second appelant à la place du premier.
+            if (isAwaitingAnotherCaller(event)) {
+                window.AWN?.info(`Appel de ${event.fromUserSlug} refusé : un autre appel attend votre réponse`)
+                await respondToInvitation(event.fromUserSlug, event.options, false)
+                return
+            }
+
             notificationComponentProps.value = event
             notificationComponent.value = AlertComponent
         },
@@ -143,7 +183,8 @@ const { whisper: whisperPing } = useReverbChannel(userChannel, {
 
         '.ChatInvitation': (event) => {
             addConversation(event)
-            // `window.AWN`, comme ses deux voisines (le refus l.113 et l'abandon l.185) : un
+            // `window.AWN`, comme ses deux voisines (le refus `.ResponseToAuthorizationPeer` et
+            // l'abandon `inviteAbandonedSignal`) : un
             // `AWN` nu était un identifiant NON DÉCLARÉ — ni `const`, ni `inject` — donc un
             // `ReferenceError` en module ESM, toujours strict. Plus difficile à diagnostiquer
             // qu'un `TypeError` : la trace ne nomme pas le toaster, elle nomme une variable
@@ -201,8 +242,32 @@ watch(() => peers.inviteAbandonedSignal.value, async (abandoned) => {
 })
 
 // Méthodes
+
+/**
+ * Une alerte attend-elle déjà la réponse d'un AUTRE appelant ?
+ *
+ * ⚠️ La comparaison d'appelant n'est pas une politesse. Une relance du moteur de retry réutilise
+ * son `inviteId`, et `isInviteDuplicate` l'élimine avant ce garde ; ce qui lui échappe et vient du
+ * MÊME compte est un client sans `inviteId` (le serveur l'accepte `nullable`), ou un second onglet ou
+ * appareil, qui appelle avec un id neuf. Refuser celui-là partirait sur le canal de l'appelant, donc
+ * vers tous ses onglets, et y couperait l'appel qui sonne ici : la charge d'un refus ne porte pas
+ * d'`inviteId`, et `useCallManager.test.js` (« refus du distant : retire l'user et ferme tout s'il
+ * était le dernier ») mène un tel refus de CALLING à IDLE. Le patch ne fait que REPORTER cette
+ * coupure à la réponse finale. Le même compte y repasse donc — borne écrite dans `flux.md`. `fromUserSlug` est
+ * posé par le serveur depuis l'utilisateur authentifié : il ne se forge pas.
+ */
+function isAwaitingAnotherCaller(event) {
+    return notificationComponent.value !== null
+        && notificationComponentProps.value?.fromUserSlug !== event?.fromUserSlug
+}
+
 async function onResponseAlert(fromUserSlug, options, status) {
     notificationComponent.value = null
+    await respondToInvitation(fromUserSlug, options, status)
+}
+
+/** Le verbe qui répond à une invitation, qu'elle vienne d'une alerte ou d'un refus d'office. */
+async function respondToInvitation(fromUserSlug, options, status) {
     switch (options.action) {
         case 'peer-access-permission':
             await peers.acceptCallFromPeer({
@@ -265,7 +330,8 @@ async function onStopCall() {
  * alors en CALLING pour la vie de l'onglet — spinner sans bouton raccrocher, et plus aucun
  * appel possible vers qui que ce soit. Le moteur remet désormais la FSM à IDLE et rend `null` ;
  * ici on ajoute ce que seul cet étage peut faire : le dire à l'utilisateur, et réarmer les
- * boutons d'appel des murs. Les mêmes deux gestes que le refus (l.113) et l'abandon (l.185).
+ * boutons d'appel des murs. Les mêmes deux gestes que le refus (`.ResponseToAuthorizationPeer`) et
+ * l'abandon (`inviteAbandonedSignal`).
  */
 async function onStartCall(toUserSlug, type) {
     const inviteId = await peers.startCallWithPeer({ toUserSlug, type })

@@ -57,17 +57,18 @@
  * écarts par soustraction** : le n° 1 du fichier unitaire le prouve — sa mutation rougissait des cas
  * que B1 rendait verts. Chaque conversion demande la mesure ; dette assumée, à reprendre au lot C,
  * qui déplace les deux alertes.
- * Colonnes : ce fichier · unitaire · câblage · callControls.
+ * Colonnes : ce fichier · unitaire · câblage · callControls. Les numéros de ligne sont ceux du
+ * 2026-10-26 (B3-B5 les ont décalés) ; les chiffres restent ceux du 2026-08-31.
  *
  * LA COUTURE — mutations dans `Notifications.vue` :
  *    1. `@response-alert="onResponseAlert"` retiré (l. 9) ......... 4 · 3 · 0 · 0
  *    2. `v-bind="notificationComponentProps"` retiré (l. 8) ....... 7 · 3 · 0 · 0
- *    3. `notificationComponent.value = AlertComponent` (l. 93) .... 7 · 3 · 0 · 0
- *    4. garde `isInviteDuplicate` retirée (l. 91) ................. 2 · 3 · 0 · 0
- *    5. `notificationComponent.value = null` retiré (l. 205) ...... 2 · 3 · 0 · 0
- *    6. `case 'peer-access-permission'` renommé (l. 207) .......... 3 · 3 · 0 · 0
+ *    3. `notificationComponent.value = AlertComponent` (l. 133) ... 7 · 3 · 0 · 0
+ *    4. garde `isInviteDuplicate` retirée (l. 121) ................ 2 · 3 · 0 · 0
+ *    5. `notificationComponent.value = null` retiré (l. 265) ...... 2 · 3 · 0 · 0
+ *    6. `case 'peer-access-permission'` renommé (l. 272) .......... 3 · 3 · 0 · 0
  *    7. `props.value = event` → `event.options` seul .............. 7 · 3 · 0 · 0
- *    8. `options: { ...options }` → même référence (l. 210) ....... 1 · 3 · 0 · 0   ← 0 écart
+ *    8. `options: { ...options }` → même référence (l. 275) ....... 1 · 3 · 0 · 0   ← 0 écart
  *
  * LE HARNAIS — l'attente du double niveau d'asynchrone :
  *    9. l'attente réduite à ZÉRO tour (`nextTick` seul) .......... 7
@@ -97,11 +98,42 @@
  *   **Il a été retiré** — c'est l'état livré du fichier, donc ce 0 est la mesure de ce qui n'est
  *   plus là. `dynamicImportSettled` est récursif : il voit naître le second `import()`.
  *
- * ⚠️ **Warning Vue observé au montage réel, et il vient de la PRODUCTION** : « Vue received a
- * Component that was made a reactive object » — `notificationComponent` est un `ref` qui porte un
- * composant (`Notifications.vue:68`), là où `shallowRef` / `markRaw` est attendu. Aucun test ne
- * le provoque : il apparaît dès qu'une alerte est réellement montée, donc en production aussi.
- * Nommé, pas corrigé — item ouvert de `work/doc-rustines.md` (lot 1, B4).
+ * ── CE QUE CE FICHIER A ÉPINGLÉ : B3, B4, B5, fermés le 2026-10-26 ─────────────
+ * Écrits rouges de quatre cas — ceux marqués B3, B4, et les deux ⭐ de B5 —, verts au correctif sans
+ * qu'une assertion change. Les deux autres cas de B5 sont nés VERTS, et c'est voulu : ils gardent
+ * les deux façons fausses d'écrire le garde, qui n'existait pas encore. Leur mesure est M2 et M3.
+ *
+ * • **B5 — occupé ⇒ refus** (décision de David). Une invitation reçue pendant qu'une alerte attend
+ *   la réponse d'un AUTRE appelant est refusée d'office, avec un toast. Avant, Vue patchait l'alerte
+ *   vivante : « Appel video de carole » sur l'alerte de Bob, et le minuteur armé pour Bob refusait
+ *   Carole à sa place. Le même compte n'est pas refusé — un client sans `inviteId`, un second
+ *   onglet : la raison est dans le docblock d'`isAwaitingAnotherCaller`.
+ * • **B3 — une invitation qu'aucune alerte ne sait afficher se refuse d'office.** Mesuré avant le
+ *   correctif : après une invitation `screen`, l'appel suivant de Carole était INVISIBLE — l'alerte
+ *   vide gardait le créneau. Avec le garde de B5 seul, il aurait été refusé : B5 sans B3 changeait
+ *   un défaut silencieux en refus systématique. ⚠️ **La relecture a trouvé le même trou là où l'alerte
+ *   ne PEUT pas s'afficher** — chunk rejeté ou pendu : `*.loadError.test.js`, un fichier par niveau.
+ * • **B4 — `notificationComponent` est un `shallowRef`.** Un `ref` profond enveloppait le composant
+ *   dans un proxy réactif, et Vue le signalait à chaque montage réel d'alerte, production comprise.
+ *
+ * ── CONTRÔLES DE B3, B4, B5, mesurés le 2026-10-26 ────────────────────────────
+ * Rouges sous mutation, sur une référence verte, sur les sept fichiers de `System/__tests__`.
+ * Colonnes : ce fichier · unitaire · timers · câblage · callControls · `AlertComponent.loadError` ·
+ * `Notifications.alerts.loadError`. Les contrôles des deux pannes de chunk sont dans leurs fichiers.
+ *
+ *    M1. garde « occupé » neutralisée (`return false`) .......... 2 · 0 · 0 · 0 · 0 · 0 · 0
+ *    M2. comparaison d'appelant retirée ......................... 1 · 0 · 0 · 0 · 0 · 0 · 0
+ *    M3. « occupé » lu sur les props, pas sur le composant ...... 2 · 0 · 0 · 0 · 0 · 0 · 1
+ *    M4. toast du refus d'office retiré ......................... 1 · 0 · 0 · 0 · 0 · 0 · 0
+ *    M5. refus d'office retiré (B5) ............................. 1 · 0 · 0 · 0 · 0 · 0 · 0
+ *    M6. `shallowRef` → `ref` (B4) .............................. 1 · 0 · 0 · 0 · 0 · 0 · 0
+ *    M7. auto-refus d'`AlertComponent` retiré (B3) .............. 1 · 2 · 0 · 0 · 0 · 0 · 0
+ *    M8. `console.warn` du repli retiré (B3) .................... 0 · 2 · 0 · 0 · 0 · 0 · 0
+ *    M9. chaînage optionnel retiré (B3) ......................... 0 · 1 · 0 · 0 · 0 · 0 · 0
+ *
+ * Aucun 0 en tête de ligne sur le fichier qui porte le cas. M3 vaut d'être lu : les props ne sont
+ * jamais remises à `null`, donc un garde qui les lirait refuserait tout appelant après le premier
+ * — c'est le cas « répondre libère l'écran » qui le voit, celui de B3, et la panne de chunk.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { nextTick } from 'vue'
@@ -160,8 +192,8 @@ import Notifications from '~socializer/components/System/Notifications.vue'
 const eventBus = { $emit: vi.fn(), $on: vi.fn(), $off: vi.fn() }
 
 /** L'invitation telle que `.AlertToUser` la diffuse : cinq clés d'options, et `fromUserSlug`. */
-const invitationEntrante = (type, inviteId = 'invite-1') => ({
-    fromUserSlug: 'bob',
+const invitationEntrante = (type, inviteId = 'invite-1', fromUserSlug = 'bob') => ({
+    fromUserSlug,
     options: {
         type,
         action: 'peer-access-permission',
@@ -186,8 +218,8 @@ const monter = async () => {
  * naître le second niveau. Un second tour, écrit d'abord par prudence, rougissait **0 cas** de
  * plus : il a été retiré. Zéro tour, en revanche, rougit 7 cas sur 9.
  */
-const recevoirLInvitation = async (type, inviteId = 'invite-1') => {
-    reverbListeners['.AlertToUser'](invitationEntrante(type, inviteId))
+const recevoirLInvitation = async (type, inviteId = 'invite-1', fromUserSlug = 'bob') => {
+    reverbListeners['.AlertToUser'](invitationEntrante(type, inviteId, fromUserSlug))
     await nextTick()
     await vi.dynamicImportSettled()
     await nextTick()
@@ -204,6 +236,7 @@ const boutonDansLeBody = (classe) =>
     document.body.querySelector(`#notification-component-wrapper .${classe}`)
 
 let wrapper
+let espionWarn
 
 beforeEach(() => {
     vi.clearAllMocks()
@@ -219,6 +252,8 @@ beforeEach(() => {
 afterEach(() => {
     wrapper?.unmount()
     wrapper = undefined
+    espionWarn?.mockRestore()
+    espionWarn = undefined
     delete window.AWN
     // Hygiène de Teleport : les nœuds livrés dans `body` ne sont pas emportés par le
     // remplacement du conteneur de montage. Le démontage les retire — ce garde-fou rend visible
@@ -277,6 +312,21 @@ describe('Notifications — .AlertToUser, l\'invitation d\'appel affichée', () 
         expect(alerte(wrapper, 'VideoCallAlert').text()).toContain('bob')
     })
 
+    it('poser l\'alerte ne fait pas avertir Vue d\'un composant rendu réactif (B4)', async () => {
+        // Un composant porté par un `ref` profond est enveloppé dans un proxy réactif : Vue le
+        // signale à chaque montage réel d'alerte — donc en production aussi, pas en test seulement.
+        espionWarn = vi.spyOn(console, 'warn')
+        wrapper = await monter()
+
+        await recevoirLInvitation('visio')
+
+        expect(alerte(wrapper).exists()).toBe(true)
+        const avertissementsReactifs = espionWarn.mock.calls
+            .map(([message]) => String(message))
+            .filter((message) => message.includes('made a reactive object'))
+        expect(avertissementsReactifs).toEqual([])
+    })
+
     describe('répondre à l\'invitation', () => {
 
         it('⭐ « Accepter » demande l\'ouverture de l\'appel au moteur, avec les options reçues', async () => {
@@ -329,13 +379,8 @@ describe('Notifications — .AlertToUser, l\'invitation d\'appel affichée', () 
         })
 
         it('une seconde invitation réaffiche une alerte : répondre n\'éteint pas le canal', async () => {
-            // ⚠️ **Ce cas ne couvre PAS son voisin, et c'est ici qu'on croira le contraire.** Il
-            // passe par `notificationComponent.value = null` (on a répondu), donc l'alerte est
-            // REMONTÉE. Une seconde invitation reçue **sans avoir répondu** ne l'est pas : Vue
-            // patche la même instance, `created()` et `mounted()` ne rejouent pas — le type
-            // d'alerte affiché ne change plus et l'auto-refus du premier appelant tire sur les
-            // options du second. C'est le lot **B5** de `work/doc-rustines.md`, et son rouge est
-            // de couture, donc il viendra dans ce fichier.
+            // Ce cas passe par `notificationComponent.value = null` (on a répondu). Une seconde
+            // invitation reçue SANS avoir répondu est l'affaire du `describe` de B5, plus bas.
             wrapper = await monter()
             await recevoirLInvitation('visio')
             await accepter(wrapper).trigger('click')
@@ -368,6 +413,109 @@ describe('Notifications — .AlertToUser, l\'invitation d\'appel affichée', () 
                 options: invitationEntrante('vocal').options,
                 status: true,
             })
+        })
+    })
+
+    describe('une seconde invitation pendant qu\'une alerte attend — B5 : occupé ⇒ refus', () => {
+
+        it('⭐ un AUTRE appelant est refusé d\'office, et l\'alerte affichée ne bouge pas', async () => {
+            wrapper = await monter()
+            await recevoirLInvitation('visio', 'invite-1', 'bob')
+
+            await recevoirLInvitation('vocal', 'invite-2', 'carole')
+            await flushPromises()
+
+            // L'écran reste celui de Bob, en entier : le type d'alerte ET le nom. Avant B5, Vue
+            // patchait l'instance vivante — l'alerte vidéo affichait « carole », et l'auto-refus
+            // armé pour Bob tirait sur les options de Carole.
+            expect(alerte(wrapper, 'VideoCallAlert').exists()).toBe(true)
+            expect(alerte(wrapper, 'AudioCallAlert').exists()).toBe(false)
+            expect(alerte(wrapper, 'VideoCallAlert').text()).toContain('bob')
+            expect(alerte(wrapper, 'VideoCallAlert').text()).not.toContain('carole')
+
+            // Carole reçoit un refus EXPLICITE, par le verbe d'un clic sur « Refuser » : son moteur
+            // de retry s'arrête et sa FSM revient à IDLE tout de suite, au lieu d'attendre
+            // l'abandon du retry.
+            expect(peersDouble.acceptCallFromPeer).toHaveBeenCalledTimes(1)
+            expect(peersDouble.acceptCallFromPeer).toHaveBeenCalledWith({
+                fromUserSlug: 'carole',
+                options: invitationEntrante('vocal', 'invite-2', 'carole').options,
+                status: false,
+            })
+            expect(window.AWN.info).toHaveBeenCalledWith(expect.stringContaining('carole'))
+        })
+
+        it('⭐ l\'alerte affichée répond toujours pour SON appelant', async () => {
+            wrapper = await monter()
+            await recevoirLInvitation('visio', 'invite-1', 'bob')
+            await recevoirLInvitation('vocal', 'invite-2', 'carole')
+            await flushPromises()
+
+            await accepter(wrapper).trigger('click')
+            await flushPromises()
+
+            expect(peersDouble.acceptCallFromPeer).toHaveBeenLastCalledWith({
+                fromUserSlug: 'bob',
+                options: invitationEntrante('visio', 'invite-1', 'bob').options,
+                status: true,
+            })
+        })
+
+        it('une ré-émission du MÊME appelant n\'est pas refusée, même sans inviteId', async () => {
+            // Une relance du moteur de retry réutilise son `inviteId` et `isInviteDuplicate` l'élimine
+            // avant le garde. Ce cas prend ce qui lui échappe : un client sans `inviteId`, que le
+            // serveur accepte (`nullable`) et pour lequel `isInviteDuplicate(null)` rend faux. Un
+            // second onglet du même compte, avec un id neuf, passe par la même comparaison.
+            wrapper = await monter()
+            await recevoirLInvitation('visio', null, 'bob')
+
+            await recevoirLInvitation('visio', null, 'bob')
+            await flushPromises()
+
+            expect(peersDouble.acceptCallFromPeer).not.toHaveBeenCalled()
+            expect(alerte(wrapper, 'VideoCallAlert').exists()).toBe(true)
+        })
+
+        it('répondre libère l\'écran : l\'appelant suivant est affiché, pas refusé', async () => {
+            wrapper = await monter()
+            await recevoirLInvitation('visio', 'invite-1', 'bob')
+            await refuser(wrapper).trigger('click')
+            await flushPromises()
+
+            await recevoirLInvitation('vocal', 'invite-2', 'carole')
+
+            // Remonté, et non patché : c'est l'alerte VOCALE qui s'affiche. Un seul appel au
+            // verbe — le refus de Bob, par le clic ; aucun pour Carole.
+            expect(alerte(wrapper, 'AudioCallAlert').exists()).toBe(true)
+            expect(alerte(wrapper, 'AudioCallAlert').text()).toContain('carole')
+            expect(peersDouble.acceptCallFromPeer).toHaveBeenCalledTimes(1)
+        })
+    })
+
+    describe('une invitation qu\'aucune alerte ne sait afficher — B3', () => {
+
+        it('⭐ elle est refusée d\'office et ne garde pas l\'écran : l\'appel suivant s\'affiche', async () => {
+            // `screen` passe la validation du backend, et `mappingComponents` ne le connaît pas.
+            // Avant B3, l'alerte invisible GARDAIT le créneau, et l'invitation suivante patchait
+            // une instance dont `currentComponent` restait vide : tous les appels suivants
+            // devenaient invisibles. Avec le garde de B5 et sans B3, ils seraient tous refusés.
+            espionWarn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+            wrapper = await monter()
+
+            await recevoirLInvitation('screen', 'invite-1', 'bob')
+            await flushPromises()
+
+            expect(peersDouble.acceptCallFromPeer).toHaveBeenCalledWith({
+                fromUserSlug: 'bob',
+                options: invitationEntrante('screen', 'invite-1', 'bob').options,
+                status: false,
+            })
+
+            await recevoirLInvitation('visio', 'invite-2', 'carole')
+
+            expect(alerte(wrapper, 'VideoCallAlert').exists()).toBe(true)
+            expect(alerte(wrapper, 'VideoCallAlert').text()).toContain('carole')
+            expect(peersDouble.acceptCallFromPeer).toHaveBeenCalledTimes(1)
         })
     })
 })

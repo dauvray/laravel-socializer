@@ -58,21 +58,24 @@
  * n'émet qu'une réponse » ferme l'autre forme fautive : un parent qui écouterait les deux
  * vocabulaires émettrait deux fois. Les rétablir séparément recasse le lot C, pas ce fichier.
  *
+ * ── CE QUE CE FICHIER A ÉPINGLÉ : B3, fermé le 2026-10-26 ─────────────────────
+ * Une invitation qu'aucune alerte ne sait afficher — `type` hors de `vocal`/`visio`, ou `action`
+ * inconnue — se refuse d'office : `response-alert(slug, options, false)` émis dès le `created()`,
+ * avec un `console.warn`. Deux cas, rouges d'abord : le `type` (`screen` passe la validation du
+ * backend) n'émettait rien, et l'`action` levait un `TypeError` — le garde PHP
+ * (`VALID_INVITE_ACTIONS`, épinglé par `ValidationTest`) reste la première ligne, celui-ci est la
+ * seconde. Ne rien afficher sans répondre ne suffisait pas : l'alerte invisible gardait le créneau
+ * de `Notifications`, et rendait invisibles tous les appels suivants. L'alerte connue dont le chunk
+ * ne se charge pas prend le même chemin : `AlertComponent.loadError.test.js`.
+ *
  * ── HORS PÉRIMÈTRE, NOMMÉMENT ────────────────────────────────────────────────
  * • **les timers des deux alertes** — la sonnerie, l'auto-refus, et leur annulation : c'est
  *   `AlertComponent.timers.test.js`, le troisième harnais, seul du paquet à monter un composant
  *   sous horloge factice. **Rien ici n'appelle `vi.useFakeTimers()`** ni n'asserte sur les 20 s /
  *   10 s ou sur `ding` / `interval` : c'est ce partage qui vaut le fichier séparé, et sa mesure est
  *   là-bas (la mutation qui y rougit 5 cas n'en rougit **aucun** ici).
- * • **`options.action` inconnu ⇒ TypeError au `created()`** (double déréférencement sans garde,
- *   `AlertComponent.vue:51`). Le garde existe **une couche plus haut** et il est déjà testé :
- *   `/send-alert-to-user` exige `options.action ∈ VALID_INVITE_ACTIONS`
- *   (`UserController.php:108,199-205`) et le PHP `ValidationTest` l'épingle en nommant ce
- *   déréférencement. Un cas ici serait soit un rouge qu'AUCUN lot ne referme — donc
- *   `hooks/pre-push` bloqué —, soit un constat qui DEMANDE au JS de ne jamais être durci. Item
- *   **B3** ouvert dans `work/doc-rustines.md`.
- * • le `type` hors des deux alertes, lui, est atteignable (`typeRules()` du backend accepte
- *   `data|stream|screen`) et ne lève pas : il est donc COUVERT ici.
+ * • **ce qu'un refus d'office fait du CRÉNEAU d'alerte** — le libérer pour l'appel suivant : c'est
+ *   une couture, donc `Notifications.alerts.test.js` (describe B3).
  * • la divergence de contrat sur `fromUserSlug` — `default: null` chez `AlertComponent`,
  *   `required: true` chez les deux enfants : aucun cas ne passe `null`, la corriger serait un
  *   changement de comportement.
@@ -169,6 +172,7 @@ const titre = (w) => w.find('.alert-heading').text()
 const vocabulaire = (w) => Object.keys(w.emitted()).filter((e) => e !== 'click').sort()
 
 let wrapper
+let espionWarn
 
 afterEach(() => {
     // Coupe TOUT ce que le montage a armé (`beforeUnmount` → `stopAlert`) : la sonnerie et
@@ -176,6 +180,8 @@ afterEach(() => {
     // c'est ce qui rend ce fichier insensible à l'horloge sous laquelle il tourne.
     wrapper?.unmount()
     wrapper = undefined
+    espionWarn?.mockRestore()
+    espionWarn = undefined
 })
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
@@ -226,18 +232,38 @@ describe('AlertComponent — l\'alerte d\'appel entrant et la réponse qu\'elle 
             expect(titre(wrapper)).toContain('carole')
         })
 
-        it('un type d\'invitation hors des deux alertes n\'affiche rien, et ne lève pas', async () => {
+        it('⭐ un type d\'invitation hors des deux alertes n\'affiche rien, et se refuse d\'office', async () => {
             // `screen` passe la validation du backend (`typeRules()` accepte
             // data|stream|screen|visio|vocal) alors que `mappingComponents` ne connaît que
-            // vocal et visio : le double déréférencement rend `undefined`, le `v-if` retient le
-            // rendu, et rien ne lève. Asymétrie assumée avec un `action` inconnu, qui LÈVE — et
-            // que le backend, lui, refuse en 422 (voir l'en-tête, item B3).
+            // vocal et visio. Ne rien afficher ne suffit pas : une alerte invisible GARDE le
+            // créneau de `Notifications`, que rien ne libère sans réponse — c'est le refus qui le
+            // rend, et qui dit à l'appelant que personne ne décrochera (B3).
+            espionWarn = vi.spyOn(console, 'warn').mockImplementation(() => {})
             wrapper = await monter('screen')
 
             expect(alerte(wrapper, 'AudioCallAlert').exists()).toBe(false)
             expect(alerte(wrapper, 'VideoCallAlert').exists()).toBe(false)
             expect(wrapper.findAll('button')).toHaveLength(0)
-            expect(wrapper.emitted('response-alert')).toBeUndefined()
+            expect(wrapper.emitted('response-alert')).toEqual([
+                ['bob', invitation('screen'), false],
+            ])
+            // Pas en silence : le repli est un état que l'utilisateur ne voit pas.
+            expect(espionWarn).toHaveBeenCalledTimes(1)
+        })
+
+        it('⭐ un `action` inconnu ne lève plus : rien n\'est affiché, et l\'invitation se refuse d\'office', async () => {
+            // Le backend refuse cet `action` en 422 (`VALID_INVITE_ACTIONS`, épinglé par
+            // `ValidationTest`) : ce cas ne remplace pas ce garde, il garantit qu'un écart entre
+            // les deux listes ne devienne pas un `TypeError` au `created()` (B3).
+            espionWarn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+            const options = { ...invitation('visio'), action: 'action-inconnue' }
+
+            wrapper = mount(AlertComponent, { props: { fromUserSlug: 'bob', options } })
+            await vi.dynamicImportSettled()
+
+            expect(wrapper.findAll('button')).toHaveLength(0)
+            expect(wrapper.emitted('response-alert')).toEqual([['bob', options, false]])
+            expect(espionWarn).toHaveBeenCalledTimes(1)
         })
     })
 

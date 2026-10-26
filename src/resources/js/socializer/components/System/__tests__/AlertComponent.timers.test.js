@@ -93,7 +93,7 @@
  *
  * ⚠️ **C'est aussi ce qui interdit d'écrire un seul de ces cas dans `Notifications.alerts.test.js`.**
  * `onResponseAlert` y met `notificationComponent.value = null` en PREMIÈRE ligne
- * (`Notifications.vue:205`), donc répondre démonte l'alerte avant l'échéance : le rouge annoncé par
+ * (`Notifications.vue:265`), donc répondre démonte l'alerte avant l'échéance : le rouge annoncé par
  * `work/doc-rustines.md` (« accepter à 5 s n'émet pas de refus à 10 s ») y serait né **VERT**, ce
  * que la règle n° 2 du paquet interdit. Il est ici, à l'étage `AlertComponent`, qui ne démonte
  * jamais l'alerte : il ne fait que ré-émettre.
@@ -112,13 +112,11 @@
  * le vide. Le récit est dans `git log`.
  *
  * ── HORS PÉRIMÈTRE, NOMMÉMENT ───────────────────────────────────────────────────
- * • **La face VIVE de la même famille : une seconde invitation PATCHE l'alerte au lieu de la
- *   remonter** (lot **B5** de `work/doc-rustines.md`). `Notifications.vue:93` réaffecte le MÊME
- *   objet composant, donc ni `AlertComponent.created()` ni le `mounted()` de l'alerte ne rejouent :
- *   aucun nouveau minuteur n'est armé et l'ancien tire sur les `options` du second appelant. **B2 ne
- *   le referme pas** — il n'y a pas de démontage — et un cas écrit ici resterait rouge après B2,
- *   c'est-à-dire un rouge qu'aucun lot ne ferme. Son rouge ne demande d'ailleurs AUCUN faux timer :
- *   il est de couture, et il ira dans `Notifications.alerts.test.js`.
+ * • **La face VIVE de la même famille : une seconde invitation PATCHAIT l'alerte au lieu de la
+ *   remonter**, et le minuteur du premier appelant refusait le second. Fermé par B5 le 2026-10-26,
+ *   **sans faux timer** : un autre appelant est refusé d'office avant d'atteindre l'alerte, donc
+ *   l'instance vivante n'est plus jamais patchée par lui. Le rouge était de couture, il est dans
+ *   `Notifications.alerts.test.js`.
  * • **Ce que les deux alertes AFFICHENT et remontent** : c'est A1, `AlertComponent.test.js`. Rien
  *   ici n'asserte sur le mapping `vocal`/`visio` autrement que comme garde-fou, ni sur la forme de
  *   `response-alert(slug, options, status)`.

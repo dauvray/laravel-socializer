@@ -257,8 +257,9 @@ class ValidationTest extends TestCase
     #[Test]
     public function une_action_d_invitation_inconnue_est_refusee(): void
     {
-        // `AlertComponent.vue` fait `mappingComponents[options.action][options.type]` sans
-        // garde : une action inconnue y lève un TypeError chez le destinataire.
+        // La première ligne de défense. Le destinataire en a une seconde depuis B3 :
+        // `AlertComponent.vue` refuse d'office une action qu'il ne sait pas afficher, au lieu de
+        // lever au `created()`. Mais l'invitation ne doit pas l'atteindre.
         $alice = $this->makeUser('alice');
         $bob = $this->makeUser('bob');
 

@@ -160,7 +160,10 @@ toast rougit 2 cas de `Notifications.test.js` et **0** de l'autre.
 ```
 Reverb .AlertToUser → Notifications.vue
   ├─ peers.isInviteDuplicate(inviteId)      ← dédoublonnage
+  ├─ une alerte attend un AUTRE appelant ?   ← occupé ⇒ refus d'office (toast + acceptCallFromPeer, status false)
   └─ affiche System/widgets/AlertComponent.vue
+       ├─ aucune alerte pour (action, type) ?    ← refus d'office (console.warn) : le créneau est rendu
+       └─ chunk rejeté, ou pendu > 10 s ?        ← idem, par l'errorComponent des deux wrappers
 
   … l'utilisateur répond …
 
@@ -198,6 +201,29 @@ orchestrateur, wrap onStreamReceived
 détail : c'est ce mapping que `_isAuthorizedIncomingPeer` consulte pour autoriser un appel
 direct hors room. Et il doit être posé **avant** que `sendAuthorizationRemotePeerId` n'écrase
 `payload.options.peerId` avec le peerId **local**.
+
+**Une seule alerte à la fois : occupé ⇒ refus.** Une invitation reçue pendant qu'une alerte attend
+la réponse d'un **autre** appelant est refusée d'office — un toast chez l'appelé, et chez l'appelant
+le même refus que le bouton « Refuser », qui arrête son retry tout de suite. Réaffecter l'alerte ne
+la remonterait pas : Vue patcherait l'instance vivante, qui garderait son type et son minuteur, et
+ce minuteur refuserait le second appelant à la place du premier. Le **même** compte n'est jamais
+refusé ainsi — la raison est dans le docblock d'`isAwaitingAnotherCaller` : il repasse par le patch,
+sans effet pour une relance identique.
+
+**Bornes assumées le 2026-10-26.** Un *nouvel* appel du même compte pendant que son alerte sonne —
+second onglet, autre appareil, ou rechargement : l'onglet qui appelle n'a aucun bouton en `calling` —
+hérite du type affiché et du reliquat de minuteur du premier, 20 s au plus. Et pendant qu'une alerte
+se **charge**, le créneau est tenu sans rien à l'écran : un appelant qui arrive dans cette fenêtre
+est refusé avec le toast « un autre appel attend » — 2 × `ALERT_LOAD_TIMEOUT_MS` au plus, les deux
+niveaux de chargement étant en série.
+
+**Une alerte qui ne peut pas s'afficher se refuse elle-même** — invisible et muette, elle garderait
+le créneau pour toujours, et le garde ci-dessus refuserait tous les appelants suivants. Trois cas :
+un couple `(action, type)` sans alerte (`screen`, `data` et `stream` passent la validation du
+backend), et un chunk d'alerte **rejeté** — un onglet ouvert avant un déploiement — ou **pendu**
+au-delà d'`ALERT_LOAD_TIMEOUT_MS` (`System/system.config.js`, 10 s), aux deux niveaux de la chaîne.
+L'appelé n'en voit rien, l'appelant est fixé tout de suite. Épinglé par
+`System/__tests__/Notifications.alerts.test.js` et les deux `*.loadError.test.js`.
 
 ---
 

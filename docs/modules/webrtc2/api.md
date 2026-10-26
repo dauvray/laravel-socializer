@@ -461,7 +461,9 @@ entrant :
   par leur libellé et par leur délai. Props `fromUserSlug` et `options`, requises ; émettent
   `response-alert` avec un booléen. **Aucune ne se monte directement** : leur seul consommateur est
   `System/widgets/AlertComponent.vue`, qui les charge en `defineAsyncComponent` et choisit sur
-  `options.type` (`vocal` → audio, `visio` → vidéo). Chacune sonne en boucle et **s'auto-refuse**
+  `options.type` (`vocal` → audio, `visio` → vidéo) — et qui **refuse d'office** une invitation
+  qu'aucune des deux ne sait — ou ne peut, son chunk ne se chargeant pas — afficher
+  ([flux.md](flux.md#appel-entrant)). Chacune sonne en boucle et **s'auto-refuse**
   seule au bout de son délai (les valeurs et ce qu'un refus déclenche : [flux.md](flux.md#refus-du-distant--le-même-chemin-jamais-un-raccourci)) ;
   les trois chemins qui la terminent — accepter, refuser, quitter l'écran — passent par le même
   `stopAlert()`, épinglé par `AlertComponent.timers.test.js`.

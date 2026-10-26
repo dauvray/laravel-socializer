@@ -236,7 +236,7 @@ Contrôleur unique : `src/app/Http/Controllers/Front/UserController.php`, sectio
 |---|---|---|---|
 | `.AskToPeerID` | `askForPeerId` | `/ask-to-peer-id` | `dispatchSignal(PEER_CONNECTION_REQUEST)` |
 | `.ResponseToPeerID` | `responseToPeerId` | `/response-to-peer-id` | `dispatchSignal(PEER_CONNECT_TO_REMOTE_PEER)` |
-| `.AlertToUser` | `sendAlertToUser` | `/send-alert-to-user` | affiche `System/widgets/AlertComponent.vue` |
+| `.AlertToUser` | `sendAlertToUser` | `/send-alert-to-user` | affiche `System/widgets/AlertComponent.vue` — ou refuse d'office si une alerte attend déjà un autre appelant |
 | `.ResponseToAuthorizationPeer` | `responseToPeerAuthorization` | `/response-to-authorization-peer` | `openCallBetweenPeer` |
 | `.CloseConnectionToPeerID` | `closeConnectionToPeerId` | `/close-connection-to-peer-id` | `remoteStopCall` |
 

@@ -1018,6 +1018,24 @@ extractions : c'est 18 lignes, sous un filet cinq fois plus dense.
 
 ## Robustesse
 
+- [ ] 🟠 **Une alerte d'appel qui ne se charge pas est refusée sans que l'appelé le sache** `[S]` —
+  ouvert le 26/10/2026 par la relecture du lot B (`doc-rustines.md`, B3), qui l'a fermé côté
+  **appelant** : le chunk d'alerte rejeté ou pendu au-delà d'`ALERT_LOAD_TIMEOUT_MS` se refuse
+  d'office, le créneau est rendu, l'appelant est fixé tout de suite.
+
+  Ce qui reste est côté **appelé**, et trois décisions reviennent à David :
+  1. **Le prévenir.** Un onglet ouvert avant un déploiement refuse désormais TOUS ses appels entrants,
+     avec la console pour seule trace (l'avertissement du repli, plus ceux de Vue). Un toast « appel de X manqué — rechargez la page »
+     coûte une ligne par `errorComponent`, mais c'est un texte d'interface à trancher.
+  2. **`vite:preloadError` n'est écouté nulle part** — ni l'hôte ni les paquets (grep vide, relecture).
+     C'est la cause amont, et elle dépasse ce module : tout chunk paresseux d'un onglet périmé tombe de
+     la même façon. Sa place est probablement dans le socle ou chez l'hôte, pas ici. Non mesuré :
+     qu'aucun volume ne conserve les anciens chunks de `public/build`.
+  3. **La durée d'`ALERT_LOAD_TIMEOUT_MS`** (10 s, alignée sur l'auto-refus vidéo) — contrainte
+     **T < ≈ 17 s**, pas 55 s : les deux niveaux sont en série, et 2T plus l'auto-refus vocal doivent
+     tenir sous l'abandon du retry de l'appelant — et le **toast « occupé »** pendant la fenêtre de
+     chargement (2T au plus), où il parle d'un appel encore invisible.
+
 - [x] ✅ **`useRemotePeerState` : le garde inatteignable et le signal perdu sont FERMÉS le
   31/08/2026** — avec le lot C, comme prévu. Les deux moitiés de l'item ont tenu, et une troisième
   correction est sortie en chemin.
@@ -1345,33 +1363,6 @@ extractions : c'est 18 lignes, sous un filet cinq fois plus dense.
 ## Les boutons d'appel — ce que le lot F a ouvert le 31/08/2026
 
 Tous mesurés **avant** d'être écrits ici, aucun n'est une impression de lecture.
-
-- [ ] 🟠 **Une seconde invitation ne remonte pas l'alerte, elle la PATCHE** `[S]` — relevé le
-  31/08/2026 en cadrant le lot B2, sur lequel il est adjacent sans en faire partie.
-
-  `Notifications.vue:93` réaffecte `notificationComponent.value = AlertComponent` — **le même objet
-  composant**. Vue patche donc au lieu de remonter : ni `AlertComponent.created()` (`:50-52`) ni le
-  `mounted()` de l'alerte ne rejouent. Deux conséquences, toutes deux visibles à l'écran :
-
-  1. **`currentComponent` reste celui de la PREMIÈRE invitation** : une invitation `vocal` reçue
-     par-dessus une `visio` affiche encore « Appel video de … ».
-  2. **Aucun nouveau minuteur d'auto-refus n'est armé, et l'ancien continue de courir.** Alice
-     appelle en visio à t=0 (10 s), Bob à t=6 s : à t=10 s le minuteur d'Alice tire sur l'instance
-     vivante, qui porte désormais les `options` de Bob — **Bob est refusé au bout de 4 s**, et son
-     moteur de retry s'arrête sur ce refus explicite. Alice, elle, n'est jamais auto-refusée.
-
-  `isInviteDuplicate` ne l'attrape pas : elle dédoublonne par `inviteId`, et deux appelants distincts
-  ont deux `inviteId` distincts.
-
-  ⚠️ **Ce n'est PAS le défaut B2, et B2 ne le referme pas** : il n'y a pas de démontage, donc
-  l'annulation du minuteur n'a rien à annuler. B2 en est en revanche le **préalable** — poser une
-  `key` sans lui échangerait ce défaut contre une fuite de minuteur à chaque remontage. Et là où B2
-  était latent (l'émission d'une instance démontée est avalée par Vue), **celui-ci mord aujourd'hui** :
-  l'instance est vivante, l'émission remonte, `acceptCallFromPeer({status: false})` est atteint.
-
-  ⚠️ **Ne pas traiter ici** : c'est le lot **B5** du découpage de la migration v1 —
-  [doc-rustines.md](doc-rustines.md), lot 1 · B5, qui porte le correctif candidat et la question
-  produit à trancher avant de coder.
 
 - [ ] 🟠 **Le mute et la caméra ne sont annoncés à personne dans un appel 1-à-1** `[M]`
 

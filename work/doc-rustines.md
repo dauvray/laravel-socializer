@@ -316,8 +316,8 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
                         mord. Le reste de `docs/` attend le lot G, décidé · - [x] Tests — 3 cas,
                         3 mutations mesurées. Suite JS **85 fichiers / 1501 cas, 0 échec**
                         (85 / 1498 avant) ; PHP non rejouée, aucun `.php` touché
-      - [ ] **B. Les défauts propres aux deux alertes — indépendants de la migration, livrables
-            seuls** `[S]` — B1 et B2 fermés, restent deux 🟢 et un 🟠 (B5) ouvert par le cadrage de B2
+      - [x] **B. Les défauts propres aux deux alertes — indépendants de la migration, livrables
+            seuls** `[S]` — **CLOS le 26/10/2026** : B1 et B2 le 31/08, B3, B4 et B5 le 26/10
             - [x] B1 — **fait le 31/08/2026, sortie A.** `AudioCallAlert` émettait `response-call`
                   quand tout le monde écoute `response-alert` : **zéro écouteur dans le paquet**,
                   donc Accepter et Refuser étaient morts sur un appel VOCAL entrant, et l'auto-refus
@@ -391,47 +391,93 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
                         d'abord**, verts au correctif sans qu'une assertion change. 12 mutations
                         mesurées, référence relue à 0 avant chacune. Suites : JS **85 fichiers /
                         1498 cas, 0 échec** (84 / 1489 avant) ; PHP 286 OK
-            - [ ] B3 — 🟢 **rien ne garde `mappingComponents[action][type]`** (`AlertComponent.vue:51`,
-                  double déréférencement) : un `action` inconnu **lève** au `created()`, un `type`
-                  hors `{vocal, visio}` rend silencieusement un écran vide. Relevé en écrivant A1,
-                  **délibérément non testé là-bas** : le garde existe une couche plus haut et il est
-                  déjà épinglé côté PHP (`/send-alert-to-user` exige
-                  `options.action ∈ VALID_INVITE_ACTIONS`, et `ValidationTest` nomme ce
-                  déréférencement). Un cas JS aurait été soit un rouge qu'aucun lot ne referme, soit
-                  un constat demandant au code de ne jamais être durci. Le `type` inatteignable par
-                  les deux alertes est, lui, **couvert** par A1 (cas « n'affiche rien, et ne lève
-                  pas »). Décider : garde + repli, ou sortie D datée
-            - [ ] B4 — 🟢 **`notificationComponent` est un `ref` qui porte un composant**
-                  (`Notifications.vue:68`) : Vue le journalise à chaque montage réel d'alerte
-                  (« Vue received a Component that was made a reactive object », `markRaw` /
-                  `shallowRef` attendus). Vu pour la première fois en montant l'alerte pour de vrai
-                  en A1 — donc présent en production, pas un artefact de test. Une ligne à changer,
-                  aucun comportement
-            - [ ] B5 — 🟠 **une seconde invitation PATCHE l'alerte vivante au lieu de la remonter**
-                  `[S]` — trouvé au cadrage de B2, adjacent et distinct. `Notifications.vue:93`
-                  réaffecte le **même objet** composant : ni `AlertComponent.created()` ni le
-                  `mounted()` de l'alerte ne rejouent, donc le type d'alerte affiché reste celui de
-                  la première invitation, aucun nouveau minuteur d'auto-refus n'est armé, et l'ancien
-                  tire sur les `options` du second appelant — qui est refusé au bout du reliquat, son
-                  moteur de retry s'arrêtant sur ce refus explicite. `isInviteDuplicate` ne l'attrape
-                  pas : elle dédoublonne par `inviteId`, et deux appelants en ont deux.
-                  ⚠️ **B2 ne le referme pas** — il n'y a pas de démontage, donc l'annulation du
-                  minuteur n'a rien à annuler. B2 en est le **préalable** : sans lui, poser une `key`
-                  échangerait le défaut contre une fuite. Et là où B2 était latent (Vue avale
-                  l'émission d'une instance démontée), **celui-ci mord aujourd'hui**.
-                  Correctif candidat : `key` sur le `<component>` de `Notifications.vue:4-10`, **par
-                  compteur monotone et non par `inviteId`**, qui est `nullable` côté serveur — une
-                  `key` `undefined` retombe sur le patch. Écarté : un `watch` dans les deux alertes,
-                  qui descend une responsabilité du parent dans deux enfants que le lot C déplace.
-                  ⚠️ **La question produit se tranche AVANT d'écrire la `key`** : que doit-il se
-                  passer quand un second appel arrive pendant une invitation affichée ? La `key`
-                  livre « le dernier appelant gagne, proprement » ; l'autre réponse défendable est
-                  « occupé ⇒ refus automatique du second ». Ne pas coder la première en croyant
-                  qu'elle est neutre. **Rouge d'abord, et il ne demande AUCUN faux timer** : `visio`
-                  puis `vocal` sans avoir répondu ⇒ l'écran doit basculer sur `AudioCallAlert`. Cas
-                  de couture, donc `Notifications.alerts.test.js`, où le cas « une seconde invitation
-                  réaffiche une alerte » porte déjà le commentaire qui dit qu'il ne le couvre pas
-                  - [ ] Code · - [ ] Doc · - [ ] Tests
+            - [x] B3 — **fait le 26/10/2026, sortie A — garde + repli (décision de David).** Le
+                  double déréférencement d'`AlertComponent.created()` passe en chaînage optionnel, et
+                  un couple `(action, type)` sans alerte **se refuse d'office** : `response-alert(…,
+                  false)` dès le `created()`, avec un `console.warn`. ⚠️ **Le repli ne pouvait pas
+                  être « ne rien afficher »**, et c'est B5 qui l'a montré : une alerte invisible
+                  GARDE le créneau de `Notifications`, que rien ne libère sans réponse. Mesuré avant
+                  le correctif : après une invitation `screen`, que le backend laisse passer, l'appel
+                  suivant d'un autre utilisateur était **invisible** — le patch ne rejouait pas le
+                  `created()`. Avec le garde de B5 seul, il aurait été **refusé** : B5 sans B3
+                  changeait un défaut silencieux en refus systématique. Le garde PHP
+                  (`VALID_INVITE_ACTIONS`) reste la première ligne ; le commentaire de son test, qui
+                  disait le JS « sans garde », est requalifié.
+                  🔴 **La relecture a réfuté le docblock que ce lot venait d'écrire** (« le refus
+                  libère le créneau ») : une alerte CONNUE dont le chunk ne se charge pas — un onglet
+                  ouvert avant un déploiement — ne rendait rien, ne répondait rien, et `currentComponent`
+                  valait la chaîne `'VideoCallAlert'`, vraie, donc le repli ne la voyait pas. Le garde de
+                  B5 refusait alors tous les appelants suivants, avec un toast parlant d'un appel que
+                  personne ne voyait. Pas une régression — sur HEAD, ces appels étaient invisibles —,
+                  mais l'affirmation était fausse. Corrigé par un `errorComponent` sur les **deux**
+                  `defineAsyncComponent` de la chaîne, qui se refuse dès son montage — et, second trou
+                  trouvé par la même relecture, un **`timeout`** (`ALERT_LOAD_TIMEOUT_MS`, 10 s) : un
+                  chunk qui PEND n'atteint le composant d'erreur que par lui.
+                  - [x] Code — le `created()` d'`AlertComponent.vue`, les deux `errorComponent` et
+                        `ALERT_LOAD_TIMEOUT_MS` dans `system.config.js` · - [x] Doc — `flux.md` (le
+                        schéma et deux paragraphes de l'appel entrant), une incise d'`api.md`, l'en-tête
+                        d'`AlertComponent.test.js` (B3 sort du « hors périmètre ») et le commentaire
+                        de `ValidationTest.php` · - [x] Tests — 3 cas rouges d'abord : 2 unitaires (le
+                        `type`, l'`action` qui levait), 1 de couture (le créneau rendu) ; puis
+                        `AlertComponent.loadError.test.js` et `Notifications.alerts.loadError.test.js`,
+                        un par niveau, 5 cas : rejet et pendu à chaque niveau, plus « l'appelant
+                        suivant n'est pas refusé comme occupé » — les cas de rejet rouges d'abord, les
+                        cas pendus rouges sans `timeout`
+            - [x] B4 — **fait le 26/10/2026, sortie A.** `shallowRef` au lieu de `ref` : une ligne,
+                  aucun comportement. Épinglé par un cas qui lit `console.warn` pendant un montage
+                  réel d'alerte — rouge d'abord, et la mutation inverse ne rougit que lui.
+                  - [x] Code — `Notifications.vue` · - [x] Doc — le paragraphe « nommé, pas
+                        corrigé » de `Notifications.alerts.test.js` · - [x] Tests — 1 cas
+            - [x] B5 — **fait le 26/10/2026, sortie A — décision produit : occupé ⇒ refus**
+                  (David). Une invitation reçue pendant qu'une alerte attend la réponse d'un AUTRE
+                  appelant est refusée d'office : un toast chez l'appelé, et chez l'appelant le refus
+                  du bouton « Refuser » (`acceptCallFromPeer`, `status: false`), qui arrête son retry
+                  tout de suite. **Pas de `key`** : c'était le correctif de l'autre réponse, « le
+                  dernier gagne ». `onResponseAlert` est scindé pour que le refus d'office prenne le
+                  MÊME verbe que le clic (`respondToInvitation`).
+                  ⚠️ **Le garde compare l'appelant, et ce n'est pas une politesse** — mais pas pour la
+                  raison écrite d'abord. Une relance du moteur de retry réutilise son `inviteId`, et
+                  `isInviteDuplicate` l'élimine avant le garde (relecture). Ce qui lui échappe et vient
+                  du même compte : un client sans `inviteId` (`nullable` côté serveur), ou un **second
+                  onglet / appareil**, avec un id neuf. Le refuser partirait sur le canal de
+                  l'appelant, vers tous ses onglets, et y couperait l'appel qui sonne ici — mesuré
+                  par la relecture : la charge du refus ne porte pas d'`inviteId`, et
+                  `useCallManager.test.js` mène un tel refus de CALLING à IDLE. Le patch ne fait que
+                  reporter cette coupure à la réponse finale. `fromUserSlug` est posé par le serveur depuis l'utilisateur authentifié.
+                  **Bornes assumées, écrites dans `flux.md`** : le même compte repasse par le patch —
+                  un *nouvel* appel de sa part pendant que son alerte sonne (second onglet, autre
+                  appareil, ou rechargement ; la première version disait « seulement en rechargeant »,
+                  réfuté par la relecture) hérite du type affiché et du reliquat de minuteur, 20 s au
+                  plus, mesuré par la relecture à 4 s du refus. Et pendant qu'une alerte se CHARGE, un
+                  autre appelant est refusé avec un toast qui parle d'un appel encore invisible,
+                  2 × `ALERT_LOAD_TIMEOUT_MS` au plus — les deux niveaux sont en série (première
+                  version : « au plus 1× », réfuté par la relecture, 20,5 s mesurés). Et
+                  `CallAlertUnavailable` ne couvre que le chargement : une exception dans le `data()`
+                  d'une alerte garderait le créneau — aucun chemin réaliste aujourd'hui.
+                  - [x] Code — `Notifications.vue` : le garde, `isAwaitingAnotherCaller`,
+                        `respondToInvitation` · - [x] Doc — `flux.md`, la table des événements de
+                        `signalisation.md`, le commentaire du cas voisin dans
+                        `Notifications.alerts.test.js`, la puce « face vive » de
+                        `AlertComponent.timers.test.js`, `webrtc2-todo.md` (item élagué) et les deux
+                        `work/README.md` · - [x] Tests — 4 cas, dont 2 rouges d'abord ; les deux nés
+                        verts gardent les deux façons fausses d'écrire le garde — sans comparaison
+                        d'appelant, « occupé » lu sur les props — et chacune est mesurée par mutation
+            ⚠️ **Ce que le lot B ajoute à la doctrine en se fermant : deux tâches d'une même famille se
+            cadrent ensemble, même quand elles se livrent séparément.** Lu seul, B3 offrait « garde +
+            repli, ou sortie D », et le repli évident — ne rien afficher — était faux : il a fallu
+            poser le garde de B5 à côté pour voir que l'alerte vide gardait le créneau.
+            ⚠️ **Et ce que la relecture y ajoute** : une phrase qui promet « pour toujours » ou « le
+            libère » se falsifie en cherchant le chemin qui **n'atteint pas** le code qui la tient —
+            ici, une alerte qui ne monte jamais, donc dont aucun minuteur ne naît. Le repli de B3
+            couvrait « ne sait pas afficher » ; il fallait aussi « ne peut pas charger », et deux
+            pannes pour le dire : le rejet ET l'attente sans fin.
+            Clôture : 15 mutations et 2 contrôles de harnais mesurés sur une référence verte, aucun
+            à 0 sur le fichier qui porte son cas. Suites : JS **89 fichiers / 1537 cas, 0 échec**
+            (87 / 1525 avant) ; PHP 286 OK ; build vert. **Aucun `boost:update`** : `grep` à zéro sur
+            `core.blade.php` et le `CLAUDE.md` du paquet. Relevés en passant, non corrigés, périmés
+            AVANT ce lot : les renvois `Notifications.vue:42` et `:71` de
+            `Notifications.callControls.test.js`, et `Notifications.vue:71` de
+            `helpers/createCallPeersDouble.js`.
       - [x] **C. Déplacer les deux alertes** `[S]` — **fait le 31/08/2026, sortie B.** `git mv` vers
             `WebRTC2/Widgets/UI/Alerts/` + les deux `defineAsyncComponent` d'`AlertComponent`. Elles
             étaient v1 **par leur chemin, pas par leurs dépendances** : elles n'importent que
@@ -1033,7 +1079,7 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
       pas écrit : il l'écrira avec le code sous les yeux. F ne part pas avant que D et E soient
       prouvés **à la main** — D et E le sont depuis le 26/10. B5 reste ouvert en
       parallèle, sans dépendance : il ferme un 🟠 qui mord aujourd'hui, mais demande de trancher une
-      question produit avant d'écrire la `key`.
+      question produit avant d'écrire la `key` *(fermé le 26/10, sans `key` : occupé ⇒ refus)*.
       **État au 26/10/2026** : **le code du lot E est fait** — E0a, E0b, E1, E2, quatre commits —
       et **aucun composant n'importe plus `components/WebRTC/`** ; seul `Server.vue` importe encore
       le store v1, sans le lire (F1). **Vérif à deux navigateurs passée le même jour : le lot E est
