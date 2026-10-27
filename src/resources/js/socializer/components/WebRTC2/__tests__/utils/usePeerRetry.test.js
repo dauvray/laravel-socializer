@@ -5,19 +5,16 @@
  * Utilise vi.useFakeTimers() pour contrôler le temps sans attendre réellement.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { createMockContext } from '../helpers/createMockContext.js'
 import { withSetup } from '../helpers/withSetup.js'
 import { usePeerRetry } from '~socializer/components/WebRTC2/Composables/utils/usePeerRetry.js'
 
 describe('usePeerRetry', () => {
-    let ctx
     let app
     let retry
 
     beforeEach(() => {
         vi.useFakeTimers()
-        ctx = createMockContext()
-        ;[retry, app] = withSetup(() => usePeerRetry(ctx))
+        ;[retry, app] = withSetup(() => usePeerRetry())
     })
 
     afterEach(() => {
@@ -69,7 +66,7 @@ describe('usePeerRetry', () => {
         it('abandonne après maxAttempts et appelle onAbandoned', async () => {
             const onAbandoned = vi.fn()
             const [localRetry, localApp] = withSetup(() =>
-                usePeerRetry(ctx, { maxAttempts: 2, onAbandoned })
+                usePeerRetry({ maxAttempts: 2, onAbandoned })
             )
 
             const callback = vi.fn().mockResolvedValue(false) // toujours en échec
@@ -166,7 +163,7 @@ describe('usePeerRetry', () => {
         })
     })
 
-    // ── Isolation par clé (type:room:slug) ──────────────────────────────────
+    // ── Isolation par clé (le slug) ─────────────────────────────────────────
 
     describe('isolation de clé retry', () => {
         it('un nouveau scheduleRetry remplace l\'ancien timer pour le même slug', async () => {
@@ -204,7 +201,7 @@ describe('usePeerRetry', () => {
         it('une erreur fatale stoppe les retries sans replanifier', async () => {
             const onAbandoned = vi.fn()
             const [localRetry, localApp] = withSetup(() =>
-                usePeerRetry(ctx, { onAbandoned })
+                usePeerRetry({ onAbandoned })
             )
 
             const callback = vi.fn(async () => {
@@ -240,7 +237,7 @@ describe('usePeerRetry', () => {
             expect(callback).not.toHaveBeenCalled()
 
             // Re-créer pour afterEach
-            ;[retry, app] = withSetup(() => usePeerRetry(ctx))
+            ;[retry, app] = withSetup(() => usePeerRetry())
         })
     })
 })

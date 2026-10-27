@@ -41,7 +41,7 @@ export function useConnectionPool(ctx, { core, connections }) {
 
     // Moteur de retry des connexions, propriété du pool.
     // (usePeerCore garde le sien, dédié aux invitations d'appel.)
-    const retryManager = usePeerRetry(ctx)
+    const retryManager = usePeerRetry()
 
     /**
      * Le flux exigé par ce type de connexion est-il réellement émettable ?
@@ -173,7 +173,7 @@ export function useConnectionPool(ctx, { core, connections }) {
         if (remotePeerId) {
             // ⚠️ Les deux tentatives sont INDÉPENDANTES : ne jamais sortir entre les deux.
             // Le type principal et le partage d'écran partagent la même chaîne de retry
-            // (usePeerRetry._retryKey ne discrimine pas le type), donc un `return`
+            // (la clé de usePeerRetry est le seul slug), donc un `return`
             // prématuré ici condamne l'autre tentative avec lui. Le cas critique est
             // l'écran : `requestRemotePeerConnection` envoie toujours `type: currentType`,
             // jamais `'screen'` — ce moteur est donc le SEUL à ouvrir la connexion d'écran

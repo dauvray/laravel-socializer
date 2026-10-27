@@ -752,8 +752,7 @@ describe('usePeerCore', () => {
         it('signale l\'abandon avec le slug et le type de l\'appel', async () => {
             vi.spyOn(console, 'warn').mockImplementation(() => {})
             // `startCallWithPeer` pose `session.currentType` AVANT d'émettre l'invitation
-            // (useCallManager) : c'est cette valeur-là que le signal transporte, et c'est
-            // aussi celle que `usePeerRetry` utilise déjà dans sa clé de retry.
+            // (useCallManager) : c'est cette valeur-là que le signal transporte.
             ctx.session.currentType = 'visio'
 
             await core.requestAuthorizationRemotePeerId(buildPayload())
@@ -1132,67 +1131,130 @@ describe('usePeerCore', () => {
         })
 
         /**
-         * ⭐ FAIT ÉPINGLÉ, pas un contrat souhaité — et il est pire que « un minuteur
-         * traîne ».
+         * Une chaîne d'invitation n'appartient qu'à SON `inviteId`.
          *
-         * La clé du minuteur est `${currentType}:${currentRoom}:${userSlug}`
-         * (`utils/usePeerRetry.js`). Changer de room ou de type entre la planification et
-         * l'annulation fait calculer à `clearRetry` une clé qui ne désigne plus rien : le
-         * minuteur de l'ancienne chaîne SURVIT. Seul, il serait inoffensif — sa garde
-         * d'arrêt (`userSlugToInviteId.has`) le tuerait à son réveil.
+         * Le décor des trois cas : une invitation vers alice est annulée
+         * (`stopCallInviteRetryForUser`, le chemin d'un refus ou d'un abandon), puis alice est
+         * rappelée — nouvelle room d'appel, donc nouvel `inviteId` et nouveau `data`. L'entrée
+         * `userSlugToInviteId` d'alice est alors RÉÉCRITE, et l'ancienne chaîne, si elle a
+         * survécu à l'annulation, prend la place de la vivante en deux temps :
          *
-         * Il ne l'est plus dès qu'une NOUVELLE invitation existe pour le même pair, ce que
-         * la production fait sans rien d'exotique (annuler un appel, changer de room,
-         * rappeler la même personne) :
+         *   1. sa garde d'arrêt ne voit qu'une entrée pour alice, donc elle POSTe une
+         *      invitation pour la room ABANDONNÉE ;
+         *   2. sa replanification commence par `clearRetry(alice)`, donc elle EFFACE le
+         *      minuteur de la chaîne vivante, qui n'est plus jamais relancée.
          *
-         *   1. l'entrée `userSlugToInviteId` est réécrite, donc la chaîne périmée repasse
-         *      sa garde d'arrêt et POSTe une invitation pour la room ABANDONNÉE ;
-         *   2. puis elle se replanifie — et `scheduleRetry` commence par `clearRetry` sous
-         *      la clé COURANTE : elle EFFACE le minuteur de la chaîne vivante.
+         * Elle survivait par trois chemins, un par cas : une clé de minuteur qui dérivait
+         * avec le contexte, une relance en vol, un premier envoi en vol. Les trois cas sont
+         * nés rouges sur le code d'avant.
          *
-         * Résultat : la chaîne survivante est la mauvaise. L'invitation en cours ne sera
-         * plus jamais relancée, et c'est l'abandonnée qui occupe le créneau.
+         * Contrôle de harnais (mesuré le 2026-10-27, une protection neutralisée à la fois) :
          *
-         * ⚠️ Jitter neutralisé (`Math.random → 0`), sans quoi le cas est FLAKY : à jitter
-         * libre, l'ordre de réveil des deux chaînes décide qui écrase qui, et le décompte
-         * vaut 3 ou 4 selon le tirage. Mesuré : 1 vert sur 3 exécutions avant cette
-         * neutralisation. Un test dont la couleur dépend du tirage ne dit rien.
+         *   | Neutralisé (retour à `.has`, ou retiré)   | Rougit                                  |
+         *   |-------------------------------------------|-----------------------------------------|
+         *   | garde d'ENTRÉE de la tentative            | **0**                                   |
+         *   | garde de SORTIE de la tentative           | la relance en vol                       |
+         *   | garde du retour du premier envoi          | le premier envoi                        |
+         *   | clé du moteur rendue à `type:room:slug`   | le changement de type, sur son compte   |
+         *   |                                           | de minuteurs — seulement ; ses relances |
+         *   |                                           | restent vertes (garde d'entrée)         |
          *
-         * ⚠️ Contrôle négatif INVERSÉ : indexer la clé sur le seul `userSlug` fait rougir
-         * ce cas. Il rougira donc le jour de la correction, et c'est le signal voulu — le
-         * mettre à jour, pas le supprimer.
+         * Le 0 de la garde d'entrée est la règle 7.2 de `docs/architecture/tests.md` : elle
+         * ne mord que si la clé dérive — avec une clé au seul slug, toute supplantation passe
+         * par un `clearRetry(slug)` qui tue le minuteur, et une chaîne supplantée n'atteint
+         * plus jamais son entrée. Clé ET garde d'entrée neutralisées : les relances du
+         * changement de type rougissent aussi. Conservée comme second rempart de la clé.
          *
-         * ⚠️ C'est aussi le piège des quatre cas ci-dessus : aucun ne doit toucher
-         * `session.currentRoom` ni `currentType` entre la planification et l'annulation,
-         * sinon il passerait pour la mauvaise raison.
+         * Le compte de minuteurs est la seule assertion qui voie la clé : sans elle, la
+         * rendre au contexte ne rougissait la suite que par les plantages de signature de
+         * `utils/usePeerRetry.test.js`, qui ne passe plus de contexte au moteur.
+         *
+         * ⚠️ Jitter neutralisé (`Math.random → 0`) dans les trois : à jitter libre, l'ordre
+         * de réveil de deux chaînes décide qui écrase qui. Mesuré quand le premier cas
+         * épinglait encore le défaut : 1 vert sur 3 exécutions avant la neutralisation.
          */
-        it('[épinglé] changer de room entre l\'invitation et l\'annulation fait survivre la MAUVAISE chaîne', async () => {
-            vi.spyOn(Math, 'random').mockReturnValue(0)
+        describe('une chaîne supplantée ne prend jamais la place de la vivante', () => {
 
+            /** Room d'appel de chaque POST d'invitation, dans l'ordre d'émission. */
             const roomsInvitees = () => ctx.AjaxService.load.mock.calls
                 .filter(([url]) => url === ENDPOINTS.SEND_ALERT_TO_USER)
                 .map(([, , data]) => data.options.room)
 
-            ctx.session.currentCallRoomId = 'call-1'
-            await core.requestAuthorizationRemotePeerId(buildPayload({ toUserSlug: 'alice' }))
+            beforeEach(() => {
+                vi.spyOn(Math, 'random').mockReturnValue(0)
+            })
 
-            // L'appel est abandonné, on change de room, puis on rappelle le même pair.
-            ctx.session.currentRoom = 'autre-room'
-            ctx.session.currentCallRoomId = 'call-2'
-            core.stopCallInviteRetryForUser('alice')
-            await core.requestAuthorizationRemotePeerId(buildPayload({ toUserSlug: 'alice' }))
+            it('changer de type entre l\'invitation et son annulation n\'emporte plus la chaîne vivante', async () => {
+                // Relatif, jamais absolu : la base dépend du décor.
+                const minuteursAvant = vi.getTimerCount()
 
-            expect(roomsInvitees()).toEqual(['call-1', 'call-2'])
+                ctx.session.currentType = 'visio'
+                ctx.session.currentCallRoomId = 'call-1'
+                await core.requestAuthorizationRemotePeerId(buildPayload({ toUserSlug: 'alice' }))
 
-            // Premier réveil : c'est la chaîne PÉRIMÉE qui relance, pas la vivante.
-            await vi.advanceTimersByTimeAsync(1300)
+                ctx.session.currentType = 'vocal'
+                ctx.session.currentCallRoomId = 'call-2'
+                core.stopCallInviteRetryForUser('alice')
 
-            expect(roomsInvitees()).toEqual(['call-1', 'call-2', 'call-1'])
+                // L'annulation a bien tué le minuteur : c'est la clé du moteur qui le
+                // retrouve, quel que soit le type courant.
+                expect(vi.getTimerCount()).toBe(minuteursAvant)
 
-            // Et elle a pris la place : plus jamais un seul `call-2`.
-            await vi.advanceTimersByTimeAsync(30_000)
+                await core.requestAuthorizationRemotePeerId(buildPayload({ toUserSlug: 'alice', type: 'vocal' }))
 
-            expect(roomsInvitees().filter((room) => room === 'call-2')).toHaveLength(1)
+                expect(roomsInvitees()).toEqual(['call-1', 'call-2'])
+
+                await vi.advanceTimersByTimeAsync(30_000)
+
+                const relances = roomsInvitees().slice(2)
+                expect(relances).not.toContain('call-1')
+                expect(relances.length).toBeGreaterThan(1)
+            })
+
+            it('une relance EN VOL pendant l\'annulation ne réarme pas l\'ancienne chaîne', async () => {
+                ctx.session.currentCallRoomId = 'call-1'
+                await core.requestAuthorizationRemotePeerId(buildPayload({ toUserSlug: 'alice' }))
+
+                // La première relance part, et sa réponse se fait attendre.
+                let repondreRelance
+                ctx.AjaxService.load.mockImplementationOnce(
+                    () => new Promise((resolve) => { repondreRelance = () => resolve({ data: {} }) }),
+                )
+                await vi.advanceTimersByTimeAsync(1000)
+                expect(roomsInvitees()).toEqual(['call-1', 'call-1'])
+
+                core.stopCallInviteRetryForUser('alice')
+                ctx.session.currentCallRoomId = 'call-2'
+                await core.requestAuthorizationRemotePeerId(buildPayload({ toUserSlug: 'alice' }))
+
+                repondreRelance()
+                await vi.advanceTimersByTimeAsync(30_000)
+
+                const relances = roomsInvitees().slice(3)
+                expect(relances).not.toContain('call-1')
+                expect(relances.length).toBeGreaterThan(1)
+            })
+
+            it('un premier envoi EN VOL pendant l\'annulation n\'arme pas l\'ancienne chaîne', async () => {
+                let repondreEnvoi
+                ctx.AjaxService.load.mockImplementationOnce(
+                    () => new Promise((resolve) => { repondreEnvoi = () => resolve({ data: {} }) }),
+                )
+                ctx.session.currentCallRoomId = 'call-1'
+                const premiereInvitation = core.requestAuthorizationRemotePeerId(buildPayload({ toUserSlug: 'alice' }))
+
+                core.stopCallInviteRetryForUser('alice')
+                ctx.session.currentCallRoomId = 'call-2'
+                await core.requestAuthorizationRemotePeerId(buildPayload({ toUserSlug: 'alice' }))
+
+                repondreEnvoi()
+                await premiereInvitation
+                await vi.advanceTimersByTimeAsync(30_000)
+
+                const relances = roomsInvitees().slice(2)
+                expect(relances).not.toContain('call-1')
+                expect(relances.length).toBeGreaterThan(1)
+            })
         })
     })
 

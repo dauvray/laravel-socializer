@@ -694,8 +694,8 @@ scénarios) et `_hubRateLimiter` (arbitrage « verbe `.reset()` plutôt que Pini
   envoyer, abandonner » de « pas encore prêt, réessayer »
 - **Tentatives indépendantes dans `_handleConnectionAttempt`** : accumuler dans `settled` et ne
   décider qu'à la fin. Un `return` prématuré en fin de branche « type principal » condamne la
-  tentative `screen` qui suit — les deux partagent la même chaîne de retry (`_retryKey` ne
-  discrimine pas le type)
+  tentative `screen` qui suit — les deux partagent la même chaîne de retry (la clé de
+  `usePeerRetry` est le seul slug)
 - **Flags sur objets PeerJS tiers** : interdit (pas de `conn.__ctxListenersBound`) — utiliser un
   `WeakSet` interne
 - **Listeners d'objets PeerJS** : handlers nommés (ou branchés par un helper qui les mémorise) +

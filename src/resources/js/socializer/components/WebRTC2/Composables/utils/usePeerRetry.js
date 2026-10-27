@@ -2,7 +2,6 @@
  * ⏱️ usePeerRetry
  * Gère uniquement la logique temporelle des tentatives (Backoff exponentiel).
  *
- * @param {object} ctx
  * @param {object} [options]
  * @param {number}   [options.maxAttempts]      - Nombre maximal de tentatives avant abandon (défaut : MAX_RETRY_ATTEMPTS).
  * @param {Function} [options.onAbandoned]      - Appelé quand toutes les tentatives sont épuisées.
@@ -11,17 +10,24 @@
 import { onUnmounted } from 'vue'
 import { MAX_RETRY_ATTEMPTS } from '../../webrtc2.config.js'
 
-export function usePeerRetry(ctx, options = {}) {
+export function usePeerRetry(options = {}) {
     const {
         maxAttempts = MAX_RETRY_ATTEMPTS,
         onAbandoned = null,
     } = options
 
+    /**
+     * Un minuteur par slug, et par slug SEUL.
+     *
+     * Le moteur ne reçoit pas le contexte, et c'est voulu : une clé qui portait aussi son
+     * type et sa room les relisait à chaque appel, or le type est réécrit par
+     * `useCallManager` à chaque appel. Recalculée au moment d'annuler, elle ne désignait
+     * plus le minuteur posé avant — `clearRetry` le laissait vivre, `hasPendingRetry` le
+     * disait absent. Le slug suffit aux deux consommateurs : `usePeerCore` n'a qu'une
+     * invitation par pair, et le callback du pool relit le type et la room du contexte à
+     * chaque tentative.
+     */
     const pendingTimers = new Map()
-
-    // Clé unique pour isoler les retries par type/room/user
-    const _retryKey = (userSlug) => 
-        `${ctx.currentType.value}:${ctx.currentRoom.value}:${userSlug}`
 
     /**
      * Annule une tentative en cours pour un utilisateur donné.
@@ -29,18 +35,16 @@ export function usePeerRetry(ctx, options = {}) {
      * @returns {void}
      */
     const clearRetry = (userSlug) => {
-        const key = _retryKey(userSlug)
-        if (pendingTimers.has(key)) {
-            clearTimeout(pendingTimers.get(key))
-            pendingTimers.delete(key)
+        if (pendingTimers.has(userSlug)) {
+            clearTimeout(pendingTimers.get(userSlug))
+            pendingTimers.delete(userSlug)
         }
     }
 
     /**
      * Une chaîne de tentatives est-elle déjà en vol pour ce pair ?
      *
-     * ⚠️ Prédicat en LECTURE SEULE, et sur la même clé que `clearRetry` — donc portant le
-     * type et la room courants du contexte, pas seulement le slug.
+     * ⚠️ Prédicat en LECTURE SEULE.
      *
      * Sa raison d'être : `scheduleRetry(slug, 0, …)` commence par `clearRetry`, donc tout
      * appelant qui relance à l'attente 0 remet `attempt` à zéro et **défait l'horizon
@@ -51,7 +55,7 @@ export function usePeerRetry(ctx, options = {}) {
      * @param {string} userSlug
      * @returns {boolean}
      */
-    const hasPendingRetry = (userSlug) => pendingTimers.has(_retryKey(userSlug))
+    const hasPendingRetry = (userSlug) => pendingTimers.has(userSlug)
 
     /**
      * Stoppe toutes les tentatives en cours (ex: lors de la fermeture d'une room ou du composant)
@@ -84,14 +88,13 @@ export function usePeerRetry(ctx, options = {}) {
             return
         }
 
-        const key = _retryKey(userSlug)
         clearRetry(userSlug) // On nettoie l'éventuel timer précédent
 
         // Calcul du délai : exponentiel (1s, 2s, 4s, 8s...) + petit jitter aléatoire
         const delay = Math.min(1000 * (2 ** attempt), 10000) + Math.floor(Math.random() * 300)
 
         const timer = setTimeout(async () => {
-            pendingTimers.delete(key)
+            pendingTimers.delete(userSlug)
             
             try {
                 // On exécute la logique métier fournie par l'orchestrateur
@@ -119,7 +122,7 @@ export function usePeerRetry(ctx, options = {}) {
             }
         }, delay)
 
-        pendingTimers.set(key, timer)
+        pendingTimers.set(userSlug, timer)
     }
 
     // Sécurité : si le composant Vue est détruit, on stoppe tout

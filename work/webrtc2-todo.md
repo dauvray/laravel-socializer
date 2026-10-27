@@ -947,39 +947,6 @@ extractions : c'est 18 lignes, sous un filet cinq fois plus dense.
 
 ---
 
-## usePeerCore — le moteur de retry d'invitation
-
-- [ ] 🟠 **La clé de minuteur de `usePeerRetry` périme, et la chaîne périmée vole la place de la
-  vivante** `[M]` — trouvé le 29/08/2026 en écrivant les tests des trois annuleurs, où le
-  comportement est **épinglé** (`usePeerCore.test.js`, describe « les trois annuleurs
-  d'invitation »).
-
-  La clé est `` `${ctx.currentType.value}:${ctx.currentRoom.value}:${userSlug}` ``
-  (`utils/usePeerRetry.js`). Changer de room ou de type entre la planification et l'annulation fait
-  donc calculer à `clearRetry` une clé qui ne désigne plus rien : **le minuteur survit**.
-
-  Seul, il serait inoffensif — sa garde d'arrêt (`userSlugToInviteId.has`) le tuerait à son réveil.
-  Il cesse de l'être dès qu'une nouvelle invitation existe pour le même pair, ce que la production
-  produit sans rien d'exotique (annuler un appel, changer de room, rappeler la même personne) :
-
-  1. l'entrée `userSlugToInviteId` est réécrite, donc la chaîne périmée **repasse sa garde d'arrêt**
-     et POSTe une invitation portant la room ABANDONNÉE ;
-  2. puis elle se replanifie — et `scheduleRetry` commence par `clearRetry` sous la clé **courante**,
-     donc elle **efface le minuteur de la chaîne vivante**.
-
-  Résultat : la chaîne survivante est la mauvaise. L'invitation en cours n'est plus jamais relancée,
-  et c'est l'abandonnée qui occupe le créneau — mesuré, `['call-1', 'call-2', 'call-1', 'call-1', …]`.
-
-  ⚠️ **Le cas est flaky sans neutraliser le jitter** (`Math.random → 0`) : à jitter libre, l'ordre
-  de réveil décide qui écrase qui — 1 vert sur 3 exécutions avant neutralisation. Toute reprise de
-  cet item doit garder cette neutralisation.
-
-  ℹ️ `clearAll()` n'a pas le défaut : il itère la Map au lieu de recalculer une clé. Piste la plus
-  simple : indexer `pendingTimers` sur le seul `userSlug`, ou faire porter au minuteur la clé sous
-  laquelle il a été posé. ⚠️ Contrôle négatif **inversé** — le cas épinglé rougira à la correction.
-
----
-
 ## Observabilité
 
 - [ ] 🟠 **En star, un client dont le hub est absent n'a AUCUN signal à l'écran** `[S]` — relevé le
@@ -1400,6 +1367,41 @@ Tous mesurés **avant** d'être écrits ici, aucun n'est une impression de lectu
   en calling » — dont le lot F a fermé la troisième route. Épinglé en attendant par le cas « en
   attente il n'y a rien à cliquer » de `CallManagerBtn.test.js`, dont le titre dit que c'est un
   constat.
+
+  ⚠️ **Prérequis, mesuré le 27/10/2026 par la relecture du lot « clé de `usePeerRetry` » : un
+  arrêt complet pendant `calling` n'éteint PAS la chaîne d'invitation.** `stopCallWithPeers`
+  (full) n'appelle aucun ANNULEUR d'invitation de `usePeerCore` — hors de `usePeerCore`, les seuls
+  sont `openCallBetweenPeer`, la réponse reçue dans `Notifications.vue` et son démontage. Sonde sur
+  le vrai call manager, sans rappel : **jusqu'à 8 POST d'invitation** (les tentatives restantes)
+  partent encore vers l'appelé après l'arrêt, puis `inviteAbandonedSignal` tombe en IDLE environ
+  **55 s après l'invitation**, pas après l'arrêt. Ce que `Notifications` en fait (« … n'a pas
+  répondu », `close-call`) est lu dans son watcher, non sondé.
+
+  Sans parcours DÉTERMINISTE aujourd'hui — pas de bouton pendant `calling`, et le démontage
+  annule —, mais **atteignable sous course** par un `.CloseConnectionToPeerID` de l'appelé, que
+  `handleRemoteDeparture` applique sans garde (item suivant) : mesuré par sonde, fenêtre lue et non
+  mesurée. **Ce ticket la rend déterministe** : ajouter le bouton sans annuler les invitations dans
+  le même geste livre la fuite à chaque clic. (Avant le lot de la clé, rappeler ensuite la même
+  personne dans l'autre type laissait en plus la chaîne morte prendre la place de la vivante ; ce
+  volet-là est fermé.) Non sondé : ce que l'appelé fait des POST fantômes (déduplication par
+  `inviteId`).
+
+- [ ] 🟠 **`handleRemoteDeparture` applique à l'appel courant un départ qui porte la room d'un autre
+  appel** `[S]` — mesuré le 27/10/2026 par la relecture du lot « clé de `usePeerRetry` ».
+
+  `.CloseConnectionToPeerID` (`Notifications.vue`) → `remoteStopCall` → `handleRemoteDeparture`
+  ne garde ni l'état d'appel ni la room. Sonde (vrai call manager + vrai core) : en `calling` vers
+  alice dans `call-2`, un départ d'alice portant `room: 'call-1'` — l'appel PRÉCÉDENT — ramène
+  l'appelant à IDLE, et sa chaîne d'invitation survit (item précédent). Le signal n'est pas forgé :
+  `UserController::closeConnectionToPeerId` refuse un `fromUserSlug` qui n'est pas l'authentifié,
+  et il part quand alice raccroche SON appel. Cas concret, lu : des raccrochés croisés en fin
+  d'appel, suivis d'un rappel immédiat — fenêtre de l'ordre de deux latences de signalisation, non
+  mesurée. Non établi : une fermeture PeerJS (`useStreamManager.handleStreamRemoved`) atteignant le
+  contexte de `Notifications` pendant `calling` serait un second déclencheur.
+
+  ℹ️ Même famille, lue et non mesurée : `.ResponseToAuthorizationPeer` en `status: false` appelle
+  `openCallBetweenPeer` sans vérifier l'`inviteId`. Avec deux onglets du même compte, un refus
+  destiné au premier pourrait retirer le pair de l'appel établi du second.
 
 - [ ] 🟢 **`startCallWithPeer` ne distingue pas ses quatre refus** `[S]`
 

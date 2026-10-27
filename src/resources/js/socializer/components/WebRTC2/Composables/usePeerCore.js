@@ -43,7 +43,7 @@ export function usePeerCore(ctx) {
     /*------  Retry invitation pour calls ----------*/
 
     // Moteur de retry dédié aux invitations (séparé du retryManager connexions de l'orchestrateur)
-    const inviteRetryManager = usePeerRetry(ctx, {
+    const inviteRetryManager = usePeerRetry({
         /**
          * Tentatives épuisées = le destinataire n'a jamais répondu, et n'a très
          * probablement aucun onglet ouvert : aucun `.ResponseToAuthorizationPeer` ne
@@ -367,11 +367,22 @@ export function usePeerCore(ctx) {
             // Le moteur de retry prendra le relais
         }
 
+        // ⚠️ « Encore en attente » se juge sur l'IDENTITÉ de l'invitation, jamais sur la seule
+        // présence d'une entrée pour ce pair. Annulée puis rappelée, l'invitation a un
+        // successeur sous le même slug : une chaîne qui ne testait que `.has(slug)` passait
+        // sa garde, POSTait la room abandonnée, et sa replanification — `scheduleRetry`
+        // commence par `clearRetry(slug)` — effaçait le minuteur du successeur. Les deux
+        // points où une chaîne supplantée peut encore agir sont gardés ici : le retour du
+        // premier envoi, qui armerait le moteur, et chaque tentative, qui le réarme.
+        const isStillPending = () => userSlugToInviteId.get(toUserSlug) === inviteId
+
+        if (!isStillPending()) return inviteId
+
         // Planifie les tentatives suivantes via le moteur de retry partagé.
         // Le callback retourne true (stop) si l'invitation n'est plus en attente
-        // (acceptée, refusée ou annulée), false pour continuer.
+        // (acceptée, refusée, annulée ou supplantée), false pour continuer.
         inviteRetryManager.scheduleRetry(toUserSlug, 0, async (userSlug) => {
-            if (!userSlugToInviteId.has(userSlug)) return true
+            if (!isStillPending()) return true
 
             try {
                 await ctx.AjaxService.load(ENDPOINTS.SEND_ALERT_TO_USER, 'post', {
@@ -382,7 +393,7 @@ export function usePeerCore(ctx) {
                 console.error('[usePeerCore] requestAuthorizationRemotePeerId retry send failed:', e)
             }
 
-            return !userSlugToInviteId.has(userSlug)
+            return !isStillPending()
         })
 
         return inviteId
