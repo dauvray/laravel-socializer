@@ -114,6 +114,7 @@ export function createPeerContext({ type, room, options = {} }) {
         onAirRoom: room || 'app',
         currentCallRoomId: null, // roomId spécifique pour les appels audio/vidéo (différent de currentRoom qui est la room "logique")
         currentCallUsers: [], // liste des slugs des utilisateurs actuellement en appel avec moi (utile pour gérer les connexions et l'UI d'appel)
+        establishedCallRoomId: null, // room de l'appel dont un flux distant est arrivé — collant : la fin des pistes ne l'efface pas (useCallManager.isCallEstablished)
         // Pairs avec qui un appel direct a été AUTORISÉ (clé: slug, valeur: { at }).
         // Registre de sécurité, à propriétaire unique (useCallManager) — voir les
         // accesseurs plus bas pour la raison d'être distincte de `currentCallUsers`.

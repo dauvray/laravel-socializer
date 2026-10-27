@@ -198,6 +198,11 @@ const { whisper: whisperPing } = useReverbChannel(userChannel, {
                 return
             }
 
+            // Le pair d'un appel pas encore établi s'en va : c'est un départ, transmis comme tel,
+            // mais il se dit — voir `departureBeforeEstablishedMessage`.
+            const departureMessage = departureBeforeEstablishedMessage(event)
+            if (departureMessage) window.AWN?.info(departureMessage)
+
             peers.remoteStopCall(event)
         },
 
@@ -321,6 +326,48 @@ function isCancelOfRingingInvitation(event) {
     return notificationComponent.value !== null
         && ringing?.fromUserSlug === event?.fromUserSlug
         && ringing?.options?.room === event?.room
+}
+
+/**
+ * Ce qu'il faut dire quand le pair d'un appel pas encore établi s'en va — `null` si ce signal de fin
+ * d'appel n'en est pas un.
+ *
+ * Des deux côtés, le même silence jusqu'au 27/10/2026 : `remoteStopCall` ramène à IDLE sans un mot,
+ * le spinner de la barre disparaît, et rien ne distingue ce retour au repos d'un bug.
+ *
+ * « Pas encore établi » se juge au FLUX, pas à l'état de la FSM : `isCallEstablished` dit si un flux
+ * distant est arrivé dans cet appel. Un appel établi qui se termine n'est pas une indisponibilité, le
+ * pair a raccroché, et rien n'est dit.
+ *
+ * - Je suis l'appelant, en `calling` ou déjà `connected` : le pair a accepté, puis annulé — pendant
+ *   SON invite de permission (il n'a pas répondu, flux tardif coupé), ou pendant la MIENNE (je suis
+ *   CONNECTED dès la réception de son acceptation, avant mon `getUserMedia` et avant tout flux).
+ * - Je suis l'appelé, en `receiving` : j'ai accepté, l'appelant a annulé ou raccroché avant que son
+ *   flux m'arrive. Le libellé est celui de l'alerte annulée. Ce `receiving` couvre deux moments —
+ *   avant que mon acceptation parte, une annulation ; après, un raccroché de l'appelant déjà
+ *   CONNECTED — et le libellé est assumé pour les deux : aucun flux n'est arrivé, l'appel n'a pas eu
+ *   lieu pour moi. L'appelé ne passe `connected` qu'au premier flux, donc jamais sans lui.
+ *
+ * ⚠️ La ROOM, pas l'expéditeur seul : un départ qui porte la room d'un autre appel (des raccrochés
+ * croisés suivis d'un rappel) ne parle pas de celui-ci. Qu'il soit encore appliqué à l'appel en
+ * cours est l'item `handleRemoteDeparture` de `work/webrtc2-todo.md` ; ici on ne le présente pas
+ * comme une réponse.
+ */
+function departureBeforeEstablishedMessage(event) {
+    const isPeerOfCurrentCall = event?.room === peers.currentCallRoomId?.value
+        && (peers.currentCallUsers?.value ?? []).some((user) => user.userSlug === event?.fromUserSlug)
+
+    if (!isPeerOfCurrentCall || peers.isCallEstablished()) return null
+
+    switch (peers.callStatus()) {
+        case 'calling':
+        case 'connected':
+            return `${event.fromUserSlug} est indisponible`
+        case 'receiving':
+            return `Appel de ${event.fromUserSlug} annulé`
+        default:
+            return null
+    }
 }
 
 async function onResponseAlert(fromUserSlug, options, status) {

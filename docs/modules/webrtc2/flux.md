@@ -205,6 +205,9 @@ Reverb .CloseConnectionToPeerID → Notifications.vue
   ├─ l'alerte de CETTE invitation sonne ?     ← même appelant ET même room
   │    → elle tombe, toast « Appel de <slug> annulé », RIEN ne part
   └─ sinon → peers.remoteStopCall(event)       ← un départ (§ Départ d'un pair)
+       └─ précédé d'un toast si aucun flux du pair n'est arrivé (même room, participant) :
+          appelant (calling | connected) → « <slug> est indisponible »
+          appelé   (receiving)           → « Appel de <slug> annulé »
 ```
 
 ⚠️ **C'est l'arrêt COMPLET qui rend l'annulation sûre**, pas le bouton : il éteint la chaîne de
@@ -240,9 +243,37 @@ La **room** et non l'état de la FSM : annuler puis appeler aussitôt quelqu'un 
 hors d'IDLE avant que l'invite se referme. Ce défaut existait déjà en CONNECTED (« raccrocher »
 pendant l'invite, ou départ du pair) ; le bouton le rendait atteignable d'un clic en RECEIVING.
 
+**L'appelé qui accepte puis annule ne répond donc pas — et l'appelant est prévenu quand même.** Seul
+son signal de fin d'appel arrive, avec la room de l'appel : `Notifications` affiche « <slug> est
+indisponible », puis transmet le départ, qui ramène l'appelant à IDLE. Avant, le spinner disparaissait
+sans un mot. C'est le troisième des libellés qui closent une invitation partie, après « est
+injoignable » (refus) et « n'a pas répondu » (abandon) : sur une capture d'écran, il dit quel chemin
+s'est produit.
+
+**L'appelé qui a accepté est prévenu de la même façon** quand l'appelant s'en va avant que son flux
+arrive : « Appel de <slug> annulé », le libellé de l'alerte annulée. Ce `receiving` couvre deux
+moments — avant que l'acceptation parte, le signal est une annulation ; après, l'appelant est déjà
+CONNECTED et son signal est un raccroché — et le libellé est assumé pour les deux : aucun flux n'est
+arrivé, l'appel n'a pas eu lieu pour l'appelé.
+
+Les deux toasts ne partent **qu'avant l'établissement**, et l'établissement se juge au **flux**, pas
+à l'état de la FSM : `isCallEstablished()` dit si un flux distant est arrivé dans cet appel. L'état ne
+suffit pas, parce que l'appelant passe CONNECTED dès la **réception** de l'acceptation, avant son
+propre `getUserMedia` : un appelé qui annule pendant l'invite de permission de l'**appelant** le
+laissait sans un mot. Le registre des flux ne suffit pas non plus — `useStreamManager` en retire une
+entrée dès que ses pistes se terminent, ce qui peut précéder le signal de fin d'appel, et un raccroché
+passerait pour un appel jamais établi. Le marqueur est donc collant : la room de l'appel, posée au
+premier flux distant par `markCallConnected` (appelé des deux côtés), qu'un appel suivant ignore
+puisqu'il tire une room neuve — parce que l'arrêt complet la vide. Un arrêt qui lève la laisse en
+place (`finally` de `stopCallWithPeers`) : un départ avant flux de l'appel suivant serait alors muet,
+un faux silence et jamais un faux toast. Un appel établi qui se termine ne dit rien — le pair a raccroché, il
+n'est pas indisponible. Et **sur la room de l'appel** : un départ qui porte celle d'un autre appel ne
+répond pas à l'invitation.
+
 Gardé par `CallManagerBtn.test.js` (le bouton), `Notifications.callControls.test.js` (le joint),
-`Notifications.alerts.test.js` (l'alerte d'en face) et `useCallManager.test.js` (§ un arrêt pendant
-l'acquisition du flux local).
+`Notifications.alerts.test.js` (l'alerte d'en face), `Notifications.test.js` (le pair d'un appel pas
+encore établi s'en va) et `useCallManager.test.js` (§ un arrêt pendant l'acquisition du flux local,
+§ `isCallEstablished`).
 
 ---
 

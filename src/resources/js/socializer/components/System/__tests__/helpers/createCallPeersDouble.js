@@ -28,12 +28,15 @@ import { vi } from 'vitest'
  *      le chemin d'échec, sans le dire.
  *   5. **`inviteAbandonedSignal` est un VRAI ref** : le composant l'observe par `watch` et c'est
  *      lui qui le remet à null.
+ *   6. **`isCallEstablished` est une FONCTION**, comme `callStatus` : la production l'expose telle
+ *      quelle (`useCallManager`), et le composant l'appelle au moment du signal.
  *
  * ⚠️ `vi.clearAllMocks()` ne touche ni un `ref` ni un `reactive` — il ne remet à zéro que des
  * compteurs d'appels. D'où `reinitialiser()`, à appeler en `beforeEach` AVANT le montage.
  */
 export const createCallPeersDouble = () => {
     const statutAppel = ref('calling')
+    const appelEtabli = ref(false)
     const etatsFlux = reactive({ isMuted: false, isVideoEnabled: true })
 
     const api = {
@@ -41,6 +44,7 @@ export const createCallPeersDouble = () => {
         handleStreamReceived: vi.fn(),
         handleStreamRemoved: vi.fn(),
         callStatus: vi.fn(() => statutAppel.value),
+        isCallEstablished: vi.fn(() => appelEtabli.value),
         isCallInProgress: vi.fn(() => true),
         isInviteDuplicate: vi.fn(() => false),
         stopCallInviteRetry: vi.fn(),
@@ -52,6 +56,7 @@ export const createCallPeersDouble = () => {
         stopCallWithPeers: vi.fn(async () => {}),
         remoteStopCall: vi.fn(async () => {}),
         currentCallUsers: ref([]),
+        currentCallRoomId: ref(null),
         inviteAbandonedSignal: ref(null),
 
         // Bascules de flux local, exposées à `CallManagerBtn` pendant un appel.
@@ -64,12 +69,14 @@ export const createCallPeersDouble = () => {
     const reinitialiser = () => {
         api.inviteAbandonedSignal.value = null
         api.currentCallUsers.value = []
+        api.currentCallRoomId.value = null
         statutAppel.value = 'calling'
+        appelEtabli.value = false
         etatsFlux.isMuted = false
         etatsFlux.isVideoEnabled = true
     }
 
-    return { api, statutAppel, etatsFlux, reinitialiser }
+    return { api, statutAppel, appelEtabli, etatsFlux, reinitialiser }
 }
 
 /** Les verbes que `Notifications` peut appeler sur l'API — support de l'assertion négative. */

@@ -264,3 +264,97 @@ describe('Notifications — abandon du retry d\'invitation', () => {
         })
     })
 })
+
+describe('Notifications — le pair d\'un appel pas encore établi s\'en va', () => {
+    /**
+     * Côté appelant : B a accepté, puis annulé pendant l'invite de permission. `_enterCallSession`
+     * ne répond pas (le flux tardif est coupé), et l'arrêt complet de B émet
+     * `.CloseConnectionToPeerID` avec la room de l'appel. Chez moi, encore en `calling`, c'est un
+     * départ : `remoteStopCall` me ramène à IDLE. Côté appelé, le même signal en `receiving` : j'ai
+     * accepté, l'appelant s'en va avant que son flux m'arrive. Jusqu'au 27/10/2026, sans un mot des
+     * deux côtés — le spinner disparaissait. Relevé par la vérif à deux navigateurs du bouton
+     * « annuler » (étape 3), et la décision est de prévenir les deux.
+     *
+     * Le toast ne remplace pas le départ, il le précède : c'est `remoteStopCall` qui ramène la FSM à
+     * IDLE, comme `openCallBetweenPeer` pour un refus.
+     */
+    const depart = (fromUserSlug = 'bob', room = 'call-room-1') => ({
+        fromUserSlug,
+        room,
+        type: 'visio',
+    })
+
+    const enAttenteDe = (userSlug = 'bob', room = 'call-room-1') => {
+        peers.statutAppel.value = 'calling'
+        peersDouble.currentCallRoomId.value = room
+        peersDouble.currentCallUsers.value = [{ userSlug, type: 'visio' }]
+    }
+
+    it('⭐ je suis prévenu que le pair est indisponible, et le départ est transmis', async () => {
+        enAttenteDe()
+
+        await reverbListeners['.CloseConnectionToPeerID'](depart())
+
+        expect(window.AWN.info).toHaveBeenCalledWith('bob est indisponible')
+        expect(peersDouble.remoteStopCall).toHaveBeenCalledWith(depart())
+    })
+
+    it('⭐ appelé, j\'ai accepté : l\'appelant qui s\'en va avant son flux, c\'est un appel annulé', async () => {
+        // L'appelant a annulé pendant mon invite de permission, ou raccroché avant que son flux
+        // m'arrive : pour moi, l'appel n'a pas eu lieu. Le libellé est celui de l'alerte annulée.
+        enAttenteDe()
+        peers.statutAppel.value = 'receiving'
+
+        await reverbListeners['.CloseConnectionToPeerID'](depart())
+
+        expect(window.AWN.info).toHaveBeenCalledWith('Appel de bob annulé')
+        expect(window.AWN.info).toHaveBeenCalledTimes(1)
+        expect(peersDouble.remoteStopCall).toHaveBeenCalledWith(depart())
+    })
+
+    it('⭐ appelant déjà CONNECTED mais sans flux : l\'appelé qui annule est indisponible', async () => {
+        // Je passe CONNECTED dès la RÉCEPTION de son acceptation, avant mon `getUserMedia` : s'il
+        // annule pendant MON invite de permission, aucun flux n'est arrivé, l'appel n'a pas eu lieu.
+        enAttenteDe()
+        peers.statutAppel.value = 'connected'
+
+        await reverbListeners['.CloseConnectionToPeerID'](depart())
+
+        expect(window.AWN.info).toHaveBeenCalledWith('bob est indisponible')
+        expect(peersDouble.remoteStopCall).toHaveBeenCalledWith(depart())
+    })
+
+    it('⭐ un appel ÉTABLI qui se termine ne dit pas « indisponible »', async () => {
+        // Le pair a raccroché : il était disponible, il ne l'est plus. Pas le même fait. Établi =
+        // un flux distant est arrivé, et non l'état `connected`, que l'appelant atteint avant.
+        enAttenteDe()
+        peers.statutAppel.value = 'connected'
+        peers.appelEtabli.value = true
+
+        await reverbListeners['.CloseConnectionToPeerID'](depart())
+
+        expect(window.AWN.info).not.toHaveBeenCalled()
+        expect(peersDouble.remoteStopCall).toHaveBeenCalledWith(depart())
+    })
+
+    it('⭐ le départ qui porte la room d\'un AUTRE appel ne dit rien', async () => {
+        // Des raccrochés croisés suivis d'un rappel : le pair que j'appelle quitte l'appel
+        // PRÉCÉDENT. Ce n'est pas une réponse à mon invitation. Qu'il soit encore appliqué à
+        // l'appel en cours est l'item `handleRemoteDeparture` de work/webrtc2-todo.md — ce cas
+        // n'épingle que le toast.
+        enAttenteDe()
+
+        await reverbListeners['.CloseConnectionToPeerID'](depart('bob', 'call-room-0'))
+
+        expect(window.AWN.info).not.toHaveBeenCalled()
+    })
+
+    it('le départ d\'un pair que je n\'appelle pas ne dit rien', async () => {
+        enAttenteDe('carole')
+
+        await reverbListeners['.CloseConnectionToPeerID'](depart())
+
+        expect(window.AWN.info).not.toHaveBeenCalled()
+        expect(peersDouble.remoteStopCall).toHaveBeenCalledWith(depart())
+    })
+})

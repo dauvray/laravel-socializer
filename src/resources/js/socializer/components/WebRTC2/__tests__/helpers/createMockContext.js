@@ -51,6 +51,7 @@ export function createMockContext(overrides = {}) {
         onAirRoom: 'app',
         currentCallRoomId: null,
         currentCallUsers: [],
+        establishedCallRoomId: null,
         // Allowlist du garde sortant — registre dédié, jamais currentCallUsers
         // (cf. createPeerContext)
         authorizedCallPeers: new Map(),

@@ -1359,7 +1359,9 @@ Tous mesurés **avant** d'être écrits ici, aucun n'est une impression de lectu
   `docs/modules/webrtc2/securite.md`, jamais séparément.
 
 - [x] 🟠 **Pendant `calling` et `receiving`, l'utilisateur n'a aucun moyen d'annuler** `[S]` —
-  **code fait le 27/10/2026, vérif à deux navigateurs OUVERTE (David)** : voir la liste en fin d'item.
+  **code fait le 27/10/2026, vérif à deux navigateurs passée le 27/10 sauf l'étape 3 (David)**, qui a
+  appelé une décision de produit, livrée le même jour — **reste à revérifier l'étape 3** : voir la
+  liste en fin d'item.
 
   `CallManagerBtn` ne rendait qu'un `<Spinner>` dans ces deux états. Il y rend désormais un bouton
   « annuler » qui émet `stop-call`, comme « raccrocher » — le même verbe en aval, l'arrêt complet,
@@ -1412,16 +1414,29 @@ Tous mesurés **avant** d'être écrits ici, aucun n'est une impression de lectu
   - **Deux acquisitions concurrentes** ne sont pas départagées (borne écrite au garde) :
     inatteignable sans deux appels acceptés pendant la même invite de permission.
 
-  **Vérif à deux navigateurs, à faire (David)** — rien de ceci n'exerce le transport réel :
-  1. A appelle B, A annule : l'alerte de B tombe avec le toast « Appel de A annulé » (libellé à
-     valider), A revient au repos, son bouton d'appel est réarmé ;
-  2. A annule puis rappelle aussitôt : B voit la nouvelle alerte, que l'annulation de la première ne
+  **Vérif à deux navigateurs (David, 27/10)** — rien de ceci n'exerce le transport réel :
+  1. ✅ A appelle B, A annule : l'alerte de B tombe avec le toast « Appel de A annulé », A revient au
+     repos, son bouton d'appel est réarmé ;
+  2. ✅ A annule puis rappelle aussitôt : B voit la nouvelle alerte, que l'annulation de la première ne
      ferme pas ;
-  3. B accepte et, **pendant l'invite de permission**, annule : le voyant caméra de B s'éteint, A
-     revient au repos — **en silence** : chez A, `handleRemoteDeparture` émet `close-call` sans
-     toast, le spinner disparaît sans un mot (relecture, lu). Décision de produit, pas défaut ;
-  4. à l'œil : le spinner et le bouton rouge côte à côte dans la barre (`.btn-group`), copie hôte du
-     SCSS — `happy-dom` ne calcule aucune mise en page.
+  3. 🔁 **à revérifier.** B accepte et, **pendant l'invite de permission**, annule : le voyant caméra
+     de B s'éteint, A revient au repos. Passé tel qu'annoncé — **en silence** chez A — et c'est ce
+     silence que David a refusé : **A doit être prévenu que B est indisponible** ; puis, pour le cas
+     inverse, **B doit être averti quand A s'en va après son acceptation** ; puis **A aussi quand B
+     annule pendant l'invite de permission de A** (A est alors déjà CONNECTED, sans flux). Fait le
+     même jour, `Notifications.departureBeforeEstablishedMessage` : tant qu'aucun flux du pair n'est
+     arrivé (`isCallEstablished`, verbe neuf, marqueur collant posé par `markCallConnected` des
+     deux côtés), l'appelant lit « B est indisponible » et l'appelé « Appel de A annulé » ; un appel
+     établi qui se termine ne dit rien. Cas neufs : 6 dans `Notifications.test.js`, 5 dans
+     `useCallManager.test.js`, 1 clé au contrat de surface ; chaque nominal rouge d'abord, les
+     négatifs nés verts, c'est voulu ; dix-neuf contre-épreuves en trois passes (prédicat, libellés,
+     marqueur, exposition par la façade), aucune à 0. Le côté
+     A relu par une seconde session : quatre affirmations tenues, un décompte faux corrigé dans
+     `flux.md`. À revoir à l'écran : (a) le toast chez A ; (b) B accepte, A annule pendant l'invite
+     de permission de B → « Appel de A annulé » chez B ; (c) B accepte, B annule pendant l'invite de
+     permission de A (première autorisation de caméra chez A) → « B est indisponible » chez A ;
+     (d) **aucun** toast quand l'un raccroche un appel établi ;
+  4. ✅ à l'œil : le spinner et le bouton rouge côte à côte dans la barre (`.btn-group`).
 
   ⤵️ **L'énoncé d'origine, conservé** : `CallManagerBtn` ne rendait qu'un `<Spinner>` dans ces deux
   états — deux filets en aval (l'abandon du retry à ≈55 s, l'auto-refus des alertes, 10 s en visio,
@@ -1496,7 +1511,8 @@ Tous mesurés **avant** d'être écrits ici, aucun n'est une impression de lectu
   lieu d'être coupé avec l'autre — docblock d'`isAwaitingAnotherCaller`, borne dans `flux.md`.
   **Reste, lu et non sondé** : `Notifications.vue` affiche « … est injoignable » et émet `close-call`
   AVANT `openCallBetweenPeer` — un refus périmé, désormais ignoré par la FSM, produit donc encore ce
-  toast pendant le rappel, et réarme le bouton d'appel de ce pair. Cosmétique, mesuré par la
+  toast pendant le rappel, et réarme le bouton d'appel de ce pair (→ élargi le 27/10 : item « un
+  appel pris sur un onglet de l'appelé fait sonner les autres »). Cosmétique, mesuré par la
   relecture : une alerte remplacée pendant que son chunk pend journalise encore « Async component
   timed out » à son ancienne échéance (le minuteur de `defineAsyncComponent` survit à l'instance).
 
@@ -1504,6 +1520,30 @@ Tous mesurés **avant** d'être écrits ici, aucun n'est une impression de lectu
   arrêtait l'appel en laissant l'invitation vivante ; il l'arrête désormais avec elle. Sonde non
   committée — elle figerait le défaut de l'item suivant : avant, 8 relances, l'abandon et l'entrée
   survivante ; après, le seul premier envoi.
+
+- [ ] 🟠 **Un appel pris sur un onglet de l'appelé fait sonner les autres, et leur auto-refus
+  atteint l'appelant** `[S]` + `[M]` — lu le 27/10/2026, non sondé. Élargit le « Reste, lu » du
+  refus discriminant (plus bas), qui ne le voyait que pendant un rappel.
+
+  `UserController::sendAlertToUser` diffuse l'invitation sur le canal privé de l'appelé, donc à
+  **tous** ses onglets et appareils ; la réponse ne repart que vers l'appelant. Quand un onglet
+  répond, les autres n'en savent rien : leur alerte sonne jusqu'à l'auto-refus (10 s visio, 20 s
+  vocal), qui part vers l'appelant avec le même `inviteId`. La FSM de l'appelant est sauve
+  (`_consumeRefusedInvitation` l'ignore, l'invitation n'est plus en vol), mais `Notifications.vue`
+  affiche « … est injoignable » et émet `close-call` **avant** cette garde : toast faux en pleine
+  conversation, et bouton d'appel du mur réarmé (`CallRemotePeerBtn.onCloseCall`). Même chose après
+  une annulation de l'appelé : « indisponible » puis « injoignable ».
+
+  Deux morceaux, complémentaires — (a) d'abord :
+  - **(a) côté appelant, la garde avant la parole** `[S]` : `openCallBetweenPeer` rend son verdict
+    (refus consommé ou non), et `Notifications` ne fait toast + `close-call` que s'il l'est. Ferme
+    ce que l'appelant voit à tort. Reste nécessaire avec (b) : l'auto-refus d'un autre onglet peut
+    être déjà parti, et une invitation sans `inviteId` ne se cible pas.
+  - **(b) côté appelé, « décroché ailleurs »** `[M]` : `responseToPeerAuthorization` diffuse aussi,
+    sur le canal privé du répondant, un événement portant l'`inviteId` ; les autres onglets ferment
+    l'alerte de cette invitation sans répondre (même geste qu'`isCancelOfRingingInvitation`). Par le
+    serveur et non par `BroadcastChannel`, pour couvrir les autres appareils. PHP + JS. **Décidé
+    (David, 27/10) : fermeture muette**, sans toast sur les autres onglets.
 
 - [ ] 🟠 **`handleRemoteDeparture` applique à l'appel courant un départ qui porte la room d'un autre
   appel** `[S]` — mesuré le 27/10/2026 par la relecture du lot « clé de `usePeerRetry` ».

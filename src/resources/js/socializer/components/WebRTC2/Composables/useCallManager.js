@@ -80,14 +80,39 @@ export function useCallManager(ctx, { core, media, connections, transport, pool 
     }
 
     /**
+     * Un flux distant est-il arrivé dans l'appel en cours ?
+     *
+     * Pas l'état de la FSM : l'initiateur passe CONNECTED dès la RÉCEPTION de l'acceptation
+     * (`openCallBetweenPeer`), avant son propre `getUserMedia` et avant tout flux. Pas non plus le
+     * registre des flux : `useStreamManager` en retire une entrée dès que ses pistes se terminent,
+     * qui peut précéder le signal de fin d'appel — un raccroché passerait alors pour un appel
+     * jamais établi. Le marqueur est la ROOM de l'appel, posée au premier flux : un appel suivant
+     * en tire une neuve, donc un marqueur laissé par le précédent ne vaut rien pour lui.
+     *
+     * ⚠️ Même borne que les autres discriminants par room : un arrêt complet qui lève laisse la
+     * room en place (`finally` de `stopCallWithPeers`), et l'appel suivant la conserve.
+     */
+    const isCallEstablished = () => {
+        return ctx.session.currentCallRoomId !== null
+            && ctx.session.establishedCallRoomId === ctx.session.currentCallRoomId
+    }
+
+    /**
      * Confirme qu'un appel reçu est réellement établi.
      * Appelé par la couche streams (`useStreamManager`) quand le premier flux distant
      * arrive : c'est elle qui observe le flux, mais c'est ici qu'on décide de la
      * transition — la FSM n'a qu'un seul propriétaire.
      *
+     * Appelé aussi côté initiateur, déjà CONNECTED : la transition y est refusée, mais le
+     * marqueur d'`isCallEstablished` est posé dans les deux sens.
+     *
      * @returns {boolean} true si la transition a eu lieu
      */
     const markCallConnected = () => {
+        if (ctx.session.currentCallRoomId) {
+            ctx.session.establishedCallRoomId = ctx.session.currentCallRoomId
+        }
+
         if (ctx.callMachine.callState.value !== CALL_STATES.RECEIVING) return false
         return ctx.callMachine.transition(CALL_STATES.CONNECTED)
     }
@@ -682,6 +707,7 @@ export function useCallManager(ctx, { core, media, connections, transport, pool 
         ctx.clearCurrentCallUsers()
         ctx.clearAllAuthorizedCallPeers()  // plus d'appel ⇒ plus d'autorisation d'appel
         setCurrentCallRoomId(null)
+        ctx.session.establishedCallRoomId = null
         ctx.media.remoteStreamsMap.clear()
     }
 
@@ -719,6 +745,7 @@ export function useCallManager(ctx, { core, media, connections, transport, pool 
         // état
         isCallInProgress,
         callStatus,
+        isCallEstablished,
 
         // FSM — verbes destinés à la couche streams
         markCallConnected,

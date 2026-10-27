@@ -1373,6 +1373,83 @@ describe('useCallManager', () => {
         })
     })
 
+    describe('isCallEstablished — un flux distant est-il arrivé dans cet appel ?', () => {
+        /**
+         * Pas l'état de la FSM : l'initiateur est CONNECTED dès la réception de l'acceptation,
+         * avant tout flux. Et un marqueur COLLANT : `useStreamManager` retire l'entrée d'un flux dès
+         * que ses pistes se terminent, ce qui peut précéder le signal de fin d'appel.
+         */
+        const accepterDeAlice = () => cm.acceptCallFromPeer({
+            fromUserSlug: 'alice',
+            status: true,
+            options: { room: 'r', type: 'visio', peerId: 'peer-alice' },
+        })
+
+        it('⭐ l\'initiateur CONNECTED n\'est pas établi tant qu\'aucun flux n\'est arrivé', async () => {
+            // La demande en vol écrite comme en production — le bloc `openCallBetweenPeer` dit pourquoi.
+            core.requestAuthorizationRemotePeerId = vi.fn(async ({ toUserSlug, type }) => {
+                ctx.peerStore.addWaitingRemotePeerId(toUserSlug, {
+                    room: ctx.session.currentCallRoomId,
+                    type,
+                    contextId: ctx.contextId,
+                })
+                return 'invite-1'
+            })
+            await cm.startCallWithPeer({ toUserSlug: 'alice', type: 'visio', room: 'r' })
+            await cm.openCallBetweenPeer({
+                fromUserSlug: 'alice',
+                status: true,
+                options: { room: 'r', type: 'visio', peerId: 'peer-alice' },
+            })
+            expect(ctx.callMachine.callState.value).toBe(CALL_STATES.CONNECTED)
+
+            expect(cm.isCallEstablished()).toBe(false)
+
+            // Son premier flux : la transition est refusée (déjà CONNECTED), le marqueur est posé.
+            expect(cm.markCallConnected()).toBe(false)
+            expect(cm.isCallEstablished()).toBe(true)
+        })
+
+        it('⭐ l\'appelé l\'est au premier flux, avec la transition', async () => {
+            await accepterDeAlice()
+            expect(cm.isCallEstablished()).toBe(false)
+
+            cm.markCallConnected()
+
+            expect(cm.isCallEstablished()).toBe(true)
+        })
+
+        it('⭐ le marqueur survit à la purge du registre des flux', async () => {
+            await accepterDeAlice()
+            cm.markCallConnected()
+
+            ctx.media.remoteStreamsMap.clear()
+
+            expect(cm.isCallEstablished()).toBe(true)
+        })
+
+        it('⭐ il ne vaut que pour SON appel : la fin le remet à zéro, une room neuve l\'ignore', async () => {
+            await accepterDeAlice()
+            cm.markCallConnected()
+
+            cm.resetCallState()
+            expect(cm.isCallEstablished()).toBe(false)
+            expect(ctx.session.establishedCallRoomId).toBe(null)
+
+            // Sans reset (le `finally` d'un arrêt qui lève) : c'est la room qui départage.
+            ctx.session.establishedCallRoomId = 'r'
+            cm.setCurrentCallRoomId('r-2')
+            expect(cm.isCallEstablished()).toBe(false)
+        })
+
+        it('hors appel, rien n\'est établi, même avec un flux', () => {
+            cm.markCallConnected()
+
+            expect(cm.isCallEstablished()).toBe(false)
+            expect(ctx.session.establishedCallRoomId).toBe(null)
+        })
+    })
+
     describe('garde par participant', () => {
 
         it('marque puis libère un départ en cours', () => {

@@ -413,6 +413,7 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}, 
         ensureCurrentCallRoomId: callManager.ensureCurrentCallRoomId,
         isCallInProgress: callManager.isCallInProgress,
         callStatus: callManager.callStatus,
+        isCallEstablished: callManager.isCallEstablished,
         stopCallInviteRetry: callManager.stopCallInviteRetry,
         clearAllCallInviteRetries: callManager.clearAllCallInviteRetries,
 

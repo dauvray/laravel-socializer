@@ -103,6 +103,7 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}, dep
 
         isCallInProgress, // fonction pour vérifier s'il y a un appel en cours avec au moins un utilisateur
         callStatus, // fonction pour obtenir l'état actuel de l'appel (idle, calling, receiving, connected, closing)
+        isCallEstablished, // fonction : un flux distant est-il arrivé dans l'appel en cours ? (≠ `connected`, que l'initiateur atteint avant tout flux)
 
 
         remoteStopCall, // fonction pour gérer l'arrêt d'un appel initié à distance (ex: quand un peer distant raccroche)
@@ -243,6 +244,7 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}, dep
 
         callStatus,
         isCallInProgress,
+        isCallEstablished,
 
 
         callState,

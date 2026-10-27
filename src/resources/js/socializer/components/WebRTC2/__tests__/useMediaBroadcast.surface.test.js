@@ -100,6 +100,7 @@ const EXPECTED_VERBS = [
     'clearSeenInvites',           // Notifications.vue:250
     'isInviteDuplicate',          // Notifications.vue:82
     'callStatus',                 // Notifications.vue:71
+    'isCallEstablished',          // Notifications.vue, departureBeforeEstablishedMessage
     'isCallInProgress',           // Notifications.vue:241
 ]
 
