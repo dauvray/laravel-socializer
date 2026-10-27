@@ -86,6 +86,8 @@
             return {
                 database: null,
                 componentLoaded: false,
+                /** Vrai dès que l'app a été demandée une fois — le garde de `requestApplication()`. */
+                applicationRequested: false,
                 componentData: '',
                 componentInfos: null,
                 error: null,
@@ -95,16 +97,20 @@
             await nextTick()
             window.addEventListener('message', this.handleMessageFromIframe)
             this.$refs.sandboxFrame.onload = () => {}
+
+            // Présence déjà connue au montage : le watcher de `users` ne tirera pas — voir
+            // `requestApplication()`.
+            if (this.users.length) {
+                await this.requestApplication()
+            }
         },
         beforeUnmount() {
             window.removeEventListener('message', this.handleMessageFromIframe)
         },
         watch: {
             users: {
-                async  handler(newUsers) {
-                    if(!this.componentLoaded) {
-                        await this.loadComponent()
-                    }
+                async handler() {
+                    await this.requestApplication()
                     this.sendMessageToIframe({ 
                         event:'users', 
                         payload: this.filterdUsers
@@ -155,6 +161,39 @@
                 'loadApplication', 
                 'saveApplication'
             ]),
+            /**
+             * Demande l'application UNE fois, dès que la présence du salon est connue.
+             *
+             * ⚠️ Deux chemins y mènent et il faut les deux : `mounted()` si `users` est déjà
+             * renseignée, le `watch` de `users` sinon. `Room.vue` rejoint `room.{id}` PUIS pousse
+             * la route du contenu, et pusher confirme la présence (`here`) par un aller-retour
+             * pendant que le routeur charge ce module. À froid (premier import : transformation
+             * Vite, cache navigateur vide), le chunk perd la course : le composant monte avec
+             * `users` déjà pleine, un watcher sans `immediate` ne tire jamais, et le spinner
+             * restait à l'écran. Caches chauds, le composant monte avant `here` et le watcher
+             * suffisait — d'où un bug « première visite seulement », sans rien en console.
+             *
+             * Le garde n'est pas `componentLoaded` : celui-ci n'est vrai qu'au `resize_iframe`
+             * émis une fois Vue chargé depuis le CDN, et chaque arrivée dans le salon entre-temps
+             * réécrivait l'iframe. Un échec rend la main au prochain changement de présence :
+             * `loadComponent()` relève le garde dans son `catch`.
+             *
+             * Ne PAS demander l'app sur une présence vide pour « simplifier » : l'iframe reçoit
+             * la liste par `USERS_PLACEHOLDER` à l'écriture, et le message `users` qui suit part
+             * avant que l'app de l'iframe n'écoute. Un `here` inclut toujours l'utilisateur
+             * courant, donc `users.length` dit exactement « la présence est connue ».
+             * Épinglé par `__tests__/ApplicationComponent.load.test.js`.
+             *
+             * @returns {Promise<void>}
+             */
+            async requestApplication() {
+                if (this.applicationRequested) {
+                    return
+                }
+
+                this.applicationRequested = true
+                await this.loadComponent()
+            },
             async loadComponent() {
                 try {
                     let result = await this.loadApplication({
@@ -216,6 +255,7 @@
                     } 
 
                 } catch (err) {
+                    this.applicationRequested = false
                     this.error = `Erreur : ${err.message}`
                     console.error(err)
                 }
