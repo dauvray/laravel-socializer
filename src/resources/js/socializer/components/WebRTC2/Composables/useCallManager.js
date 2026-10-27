@@ -30,10 +30,11 @@
  */
 
 import { CALL_STATES } from '~socializer/components/WebRTC2/Composables/utils/useCallStateMachine.js'
-// ⚠️ `isValidCallType` reste utilisé sur les trois chemins ENTRANTS (l. 236, 293, 568), et
-// délibérément : ils sont symétriques de ce que les autres onglets émettent, et les durcir est
-// un arbitrage de sécurité à part — item ouvert de `work/webrtc2-todo.md`. Seul le chemin
-// SORTANT normalise, parce que c'est lui qui fabriquait le cul-de-sac.
+// ⚠️ `isValidCallType` reste utilisé sur les trois chemins ENTRANTS (`acceptCallFromPeer`,
+// `openCallBetweenPeer`, `remoteStopCall`), et délibérément : ils sont symétriques de ce que
+// les autres onglets émettent, et les durcir est un arbitrage de sécurité à part — item ouvert
+// de `work/webrtc2-todo.md`. Seul le chemin SORTANT normalise, parce que c'est lui qui
+// fabriquait le cul-de-sac.
 import { isValidSlug, isValidCallType, normalizeDirectCallType } from '~socializer/components/WebRTC2/Composables/utils/validators.js'
 
 export function useCallManager(ctx, { core, media, connections, transport, pool }) {
@@ -406,6 +407,21 @@ export function useCallManager(ctx, { core, media, connections, transport, pool 
 
             // === MODE FULL ===
             pool.clearAllRetries()
+
+            // L'appel s'arrête, ses invitations aussi : la chaîne de relance ET l'entrée en
+            // vol qui rend une acceptation recevable. `pool.clearAllRetries` n'éteint que le
+            // moteur des connexions, et `closePeerConnection` ne purge rien pendant
+            // `calling` (aucune connexion dans la room d'appel).
+            //
+            // Sans ça, un arrêt pendant `calling` laissait partir les relances restantes vers
+            // l'appelé, puis l'abandon tombait environ 55 s après l'invitation, que
+            // `Notifications.vue` rejoue en refus — donc contre ce pair, même s'il a rejoint
+            // un autre appel entre-temps. Et une acceptation de l'invitation déjà livrée
+            // passait encore la garde d'`openCallBetweenPeer` : allowlist et mapping peerId
+            // écrits hors appel en IDLE, et, si j'appelais déjà quelqu'un d'autre, l'appelé
+            // annulé ENTRAIT dans ce nouvel appel (CALLING → CONNECTED).
+            core.clearAllCallInviteRetries()
+            ctx.peerStore.clearCallInvitesForContext(ctx.contextId)
 
             connections.closePeerConnection({
                 room: roomId,

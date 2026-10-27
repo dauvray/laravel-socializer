@@ -876,6 +876,26 @@ export default {
             if (entry?.contextId === contextId) this.waitingRemotePeerId.delete(key)
         }
     },
+    /**
+     * L'appel de ce contexte est terminé : ses invitations ne sont plus acceptables.
+     *
+     * Une invitation d'appel est une demande en vol qui porte un `inviteId`
+     * (`usePeerCore.requestAuthorizationRemotePeerId`) ; celles de `/ask-to-peer-id` n'en
+     * portent jamais, et survivent — elles n'appartiennent pas à l'appel.
+     *
+     * ⚠️ Ni `closePeerConnection` ni la purge de contexte ne font ce travail. La première
+     * sort tôt quand la room d'appel n'a aucune connexion, ce qui est le cas pendant
+     * `calling`. La seconde emporterait les demandes `/ask-to-peer-id` d'un contexte qui
+     * continue de vivre.
+     *
+     * @param {string} contextId
+     */
+    clearCallInvitesForContext(contextId) {
+        if (!contextId) return
+        for (const [key, entry] of [...this.waitingRemotePeerId.entries()]) {
+            if (entry?.contextId === contextId && entry?.inviteId) this.waitingRemotePeerId.delete(key)
+        }
+    },
 
     // gestion des players actifs (pour les appels en cours)
     addPlayer(player) {

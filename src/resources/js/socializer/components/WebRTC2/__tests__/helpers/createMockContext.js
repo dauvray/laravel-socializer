@@ -399,6 +399,12 @@ export function createMockContext(overrides = {}) {
                 if (entry?.contextId === ctxId) _waitingRemotePeerIds.delete(key)
             }
         }),
+        clearCallInvitesForContext: vi.fn((ctxId) => {
+            if (!ctxId) return
+            for (const [key, entry] of [..._waitingRemotePeerIds.entries()]) {
+                if (entry?.contextId === ctxId && entry?.inviteId) _waitingRemotePeerIds.delete(key)
+            }
+        }),
 
         // Peer local : `usePeerTransport` lit et écrit ce membre directement, et
         // `getLocalPeer` en est l'ALIAS — le même objet, comme dans le store réel.

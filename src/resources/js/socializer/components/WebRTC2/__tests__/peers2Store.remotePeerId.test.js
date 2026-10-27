@@ -164,6 +164,20 @@ describe('peers2 — cycle de vie des peerId distants', () => {
             expect(store.getWaitingRemotePeerIds('bob').map((e) => e.room)).toEqual(['room-chat'])
         })
 
+        it('la fin d\'un appel purge les invitations de SON contexte, et elles seules', () => {
+            store.addWaitingRemotePeerId('alice', { room: 'call-1', type: 'visio', inviteId: 'i-1', contextId: 'data-app' })
+            // Une demande `/ask-to-peer-id` du même contexte : pas d'`inviteId`, elle survit.
+            store.addWaitingRemotePeerId('alice', { room: 'app', type: 'data', contextId: 'data-app' })
+            // L'invitation d'un autre contexte : elle survit aussi.
+            store.addWaitingRemotePeerId('bob', { room: 'call-2', type: 'vocal', inviteId: 'i-2', contextId: 'stream-room' })
+
+            store.clearCallInvitesForContext('data-app')
+
+            expect(store.hasWaitingRemotePeerId('alice', 'call-1', 'visio')).toBe(false)
+            expect(store.hasWaitingRemotePeerId('alice', 'app', 'data')).toBe(true)
+            expect(store.hasWaitingRemotePeerId('bob', 'call-2', 'vocal')).toBe(true)
+        })
+
         it('horodate la demande — c\'est ce que lit le throttle SIGNALING_STALE_MS', () => {
             store.addWaitingRemotePeerId('bob', { room: 'room-test', type: 'stream' })
 

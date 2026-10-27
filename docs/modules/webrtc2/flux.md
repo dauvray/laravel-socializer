@@ -112,6 +112,13 @@ supérieure, ce que [l'ordre des couches](architecture.md) interdit. Le signal v
 `useMediaBroadcast`. Le `type` transporté est `session.currentType`, que `startCallWithPeer` pose
 **avant** d'émettre l'invitation — la même valeur que celle de la clé de retry.
 
+⚠️ **L'abandon ne doit concerner qu'une invitation vivante.** L'arrêt complet d'un appel éteint donc
+la chaîne d'invitation de son contexte (`core.clearAllCallInviteRetries`, dans le mode `full` de
+`stopCallWithPeers`) : `pool.clearAllRetries` n'arrête que le moteur des connexions. Sans ça, un
+arrêt pendant `calling` laissait partir les relances restantes vers l'appelé, et l'abandon tombait
+≈55 s après l'**invitation**, pas après l'arrêt — rejoué en refus contre ce pair, quel que soit
+l'appel où il se trouve alors.
+
 Le libellé du toast diffère de celui du refus (« n'a pas répondu » vs « est injoignable ») : sur une
 capture d'écran, il dit lequel des deux chemins s'est produit. Gardé par
 `__tests__/usePeerCore.test.js` (le signal, et son absence tant qu'il reste des tentatives) et

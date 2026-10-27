@@ -606,6 +606,17 @@ toute écriture et consommée ensuite. Un garde indexé sur le slug seul passera
 cas-là, le client peut le trancher **seul** — « ai-je invité ce pair ? » est un fait purement local,
 contrairement à l'usurpation intra-room.
 
+⚠️ **« En vol » veut dire « pour un appel qui vit encore ».** L'arrêt complet d'un appel purge les
+invitations de son contexte (`peerStore.clearCallInvitesForContext`, qui ne retient que les entrées
+portant un `inviteId` — celles de `/ask-to-peer-id` n'en ont pas). Rien d'autre ne le faisait :
+`closePeerConnection` sort tôt quand la room d'appel n'a aucune connexion, ce qui est le cas
+pendant `calling`. Une invitation déjà livrée restait donc acceptable après l'arrêt. En IDLE,
+l'acceptation écrivait allowlist et mapping peerId hors appel — la même écriture que ci-dessus,
+par un pair réellement invité cette fois. **Le pire cas est l'enchaînement naturel d'un
+« annuler » :** j'annule alice, j'appelle bob, et l'acceptation tardive d'alice tombe pendant que
+bob sonne. La FSM étant en CALLING, elle passait en CONNECTED : alice entrait dans l'appel de bob,
+autorisée et connectée, avant que bob ait répondu. Épinglé par `useCallManager.invitations.test.js`.
+
 ⚠️ **Le `contextId` de la demande n'est volontairement pas contrôlé**, bien que le store soit
 partagé par l'onglet. `openCallBetweenPeer` ne s'exécute que dans le contexte de `Notifications.vue`
 (seul destinataire de `.ResponseToAuthorizationPeer`), alors que `startCallWithPeer` est exposé par

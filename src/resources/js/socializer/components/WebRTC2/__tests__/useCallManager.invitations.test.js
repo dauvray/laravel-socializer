@@ -26,6 +26,19 @@
  *
  * La première ligne n'est vue que d'ici : `usePeerCore.test.js` rend 0 cas sous cette
  * mutation (mesuré par la relecture du lot).
+ *
+ * ── L'arrêt complet éteint l'invitation (mesurés le 2026-10-27) ──────────────────────────
+ *
+ *   | Neutralisé dans `stopCallWithPeers` (full)        | Rougit                           |
+ *   |---------------------------------------------------|----------------------------------|
+ *   | `core.clearAllCallInviteRetries()`                | « plus aucune relance »          |
+ *   | `peerStore.clearCallInvitesForContext(...)`       | les deux cas d'acceptation       |
+ *   | `useCallManager.js` d'avant le lot (b08faba)      | les trois cas                    |
+ *
+ * ⚠️ Ces cas passent par le DOUBLE du store : le prédicat de `clearCallInvitesForContext`
+ * (`inviteId`, portée `contextId`) y est recopié, et ses deux mutants laissent la suite entière
+ * verte. Le vrai verbe n'est épinglé que par `peers2Store.remotePeerId.test.js` — même
+ * arbitrage que `clearWaitingRemotePeerIdsForContext`.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createMockContext } from './helpers/createMockContext.js'
@@ -41,6 +54,7 @@ describe('useCallManager × usePeerCore — invitations', () => {
     let app
     let core
     let cm
+    let pool
 
     beforeEach(() => {
         vi.useFakeTimers()
@@ -53,6 +67,7 @@ describe('useCallManager × usePeerCore — invitations', () => {
         // `withSetup` : le moteur de retry du core enregistre un `onUnmounted`.
         ;[core, app] = withSetup(() => usePeerCore(ctx))
 
+        pool = { requestOrConnectPeer: vi.fn(), clearRetry: vi.fn(), clearAllRetries: vi.fn() }
         cm = useCallManager(ctx, {
             core,
             media: {
@@ -64,7 +79,7 @@ describe('useCallManager × usePeerCore — invitations', () => {
             },
             connections: { closePeerConnection: vi.fn() },
             transport: { setLocalPeer: vi.fn(async () => undefined) },
-            pool: { requestOrConnectPeer: vi.fn(), clearRetry: vi.fn(), clearAllRetries: vi.fn() },
+            pool,
         })
     })
 
@@ -104,5 +119,72 @@ describe('useCallManager × usePeerCore — invitations', () => {
         const relances = roomsInvitees().slice(2)
         expect(relances).not.toContain('call-1')
         expect(relances.length).toBeGreaterThan(1)
+    })
+
+    describe('un arrêt complet pendant `calling` éteint l\'invitation', () => {
+        /** L'arrêt de `Notifications.onStopCall` : les participants courants, signalés au distant. */
+        const raccrocher = () => cm.stopCallWithPeers([...ctx.session.currentCallUsers], true, { mode: 'full' })
+
+        it('plus aucune relance ne part, et aucun abandon ne tombe après l\'arrêt', async () => {
+            await cm.startCallWithPeer({ toUserSlug: 'alice', type: 'visio', room: 'call-1' })
+            expect(roomsInvitees()).toEqual(['call-1'])
+
+            await raccrocher()
+            expect(ctx.callMachine.callState.value).toBe(CALL_STATES.IDLE)
+
+            await vi.advanceTimersByTimeAsync(60_000)
+
+            expect(roomsInvitees()).toEqual(['call-1'])
+            expect(ctx.inviteAbandonedSignal.value).toBeNull()
+        })
+
+        it('une acceptation arrivée après l\'arrêt n\'autorise pas le pair', async () => {
+            const inviteId = await cm.startCallWithPeer({ toUserSlug: 'alice', type: 'visio', room: 'call-1' })
+            await raccrocher()
+
+            // L'alerte d'alice était encore affichée : elle accepte l'invitation déjà livrée.
+            await cm.openCallBetweenPeer({
+                fromUserSlug: 'alice',
+                status: true,
+                options: { room: 'call-1', type: 'visio', peerId: 'alice-peer-id', inviteId },
+            })
+
+            expect(ctx.isAuthorizedCallPeer('alice')).toBe(false)
+            expect(ctx.peerStore.hasRemotePeerId('alice')).toBe(false)
+            expect(ctx.callMachine.callState.value).toBe(CALL_STATES.IDLE)
+        })
+
+        /**
+         * Le pire cas, et c'est l'enchaînement naturel d'un bouton « annuler » : on annule alice,
+         * on appelle bob, et l'acceptation tardive d'alice tombe pendant que bob sonne. Avant le
+         * lot, elle passait la garde et faisait entrer alice dans l'appel de bob — CONNECTED avec
+         * les deux, alice autorisée, connexion lancée vers elle — avant que bob ait répondu.
+         */
+        it('une acceptation tardive n\'entre pas dans l\'appel suivant', async () => {
+            const inviteAlice = await cm.startCallWithPeer({ toUserSlug: 'alice', type: 'visio', room: 'call-1' })
+            await raccrocher()
+            const inviteBob = await cm.startCallWithPeer({ toUserSlug: 'bob', type: 'visio', room: 'call-2' })
+
+            await cm.openCallBetweenPeer({
+                fromUserSlug: 'alice',
+                status: true,
+                options: { room: 'call-1', type: 'visio', peerId: 'alice-peer-id', inviteId: inviteAlice },
+            })
+
+            expect(ctx.callMachine.callState.value).toBe(CALL_STATES.CALLING)
+            expect(ctx.session.currentCallUsers.map((u) => u.userSlug)).toEqual(['bob'])
+            expect(ctx.isAuthorizedCallPeer('alice')).toBe(false)
+            expect(pool.requestOrConnectPeer).not.toHaveBeenCalledWith('alice')
+
+            // L'appel de bob, lui, n'a rien perdu.
+            await cm.openCallBetweenPeer({
+                fromUserSlug: 'bob',
+                status: true,
+                options: { room: 'call-2', type: 'visio', peerId: 'bob-peer-id', inviteId: inviteBob },
+            })
+
+            expect(ctx.callMachine.callState.value).toBe(CALL_STATES.CONNECTED)
+            expect(ctx.session.currentCallUsers.map((u) => u.userSlug)).toEqual(['bob'])
+        })
     })
 })

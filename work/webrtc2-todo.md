@@ -1352,9 +1352,9 @@ Tous mesurés **avant** d'être écrits ici, aucun n'est une impression de lectu
 - [ ] 🟠 **`isValidCallType` reste trop permissif sur les trois chemins ENTRANTS** `[S]`
 
   Le chemin sortant normalise depuis le lot F (`normalizeDirectCallType`), mais `useCallManager.js`
-  garde `isValidCallType` aux l.191, 248 et 568 — délibérément : ils sont symétriques de ce que les
-  autres onglets émettent, et les durcir sans mesurer casserait la compatibilité entre deux versions
-  du bundle. Le constat reste : un `type: 'screen'` **forgé** y pose `session.currentType = 'screen'`
+  garde `isValidCallType` dans `acceptCallFromPeer`, `openCallBetweenPeer` et `remoteStopCall` —
+  délibérément : ils sont symétriques de ce que les autres onglets émettent, et les durcir sans
+  mesurer casserait la compatibilité entre deux versions du bundle. Le constat reste : un `type: 'screen'` **forgé** y pose `session.currentType = 'screen'`
   chez le récepteur. C'est un arbitrage de sécurité, pas un correctif de widget — à traiter avec
   `docs/modules/webrtc2/securite.md`, jamais séparément.
 
@@ -1368,23 +1368,47 @@ Tous mesurés **avant** d'être écrits ici, aucun n'est une impression de lectu
   attente il n'y a rien à cliquer » de `CallManagerBtn.test.js`, dont le titre dit que c'est un
   constat.
 
-  ⚠️ **Prérequis, mesuré le 27/10/2026 par la relecture du lot « clé de `usePeerRetry` » : un
-  arrêt complet pendant `calling` n'éteint PAS la chaîne d'invitation.** `stopCallWithPeers`
-  (full) n'appelle aucun ANNULEUR d'invitation de `usePeerCore` — hors de `usePeerCore`, les seuls
-  sont `openCallBetweenPeer`, la réponse reçue dans `Notifications.vue` et son démontage. Sonde sur
-  le vrai call manager, sans rappel : **jusqu'à 8 POST d'invitation** (les tentatives restantes)
-  partent encore vers l'appelé après l'arrêt, puis `inviteAbandonedSignal` tombe en IDLE environ
-  **55 s après l'invitation**, pas après l'arrêt. Ce que `Notifications` en fait (« … n'a pas
-  répondu », `close-call`) est lu dans son watcher, non sondé.
+  ✅ **Prérequis fait le 27/10/2026 : l'arrêt complet éteint l'invitation, sur ses DEUX moitiés.**
+  Le mode `full` de `stopCallWithPeers` appelle `core.clearAllCallInviteRetries()` et
+  `peerStore.clearCallInvitesForContext(contextId)` (verbe neuf, ne retient que les entrées à
+  `inviteId`). Le durable est dans [`flux.md`](../docs/modules/webrtc2/flux.md#personne-ne-répond--labandon-du-retry-est-le-seul-signal)
+  et [`securite.md`](../docs/modules/webrtc2/securite.md). Quatre cas, nés rouges : trois de
+  jonction (`useCallManager.invitations.test.js`, dont le troisième demandé par la relecture), un
+  de store (`peers2Store.remotePeerId.test.js`). Les contre-épreuves sont dans les docblocks : chaîne
+  non éteinte ⇒ 1 cas, entrée non purgée ⇒ 2, chacun des deux termes du prédicat du store ⇒ 1.
 
-  Sans parcours DÉTERMINISTE aujourd'hui — pas de bouton pendant `calling`, et le démontage
-  annule —, mais **atteignable sous course** par un `.CloseConnectionToPeerID` de l'appelé, que
-  `handleRemoteDeparture` applique sans garde (item suivant) : mesuré par sonde, fenêtre lue et non
-  mesurée. **Ce ticket la rend déterministe** : ajouter le bouton sans annuler les invitations dans
-  le même geste livre la fuite à chaque clic. (Avant le lot de la clé, rappeler ensuite la même
-  personne dans l'autre type laissait en plus la chaîne morte prendre la place de la vivante ; ce
-  volet-là est fermé.) Non sondé : ce que l'appelé fait des POST fantômes (déduplication par
-  `inviteId`).
+  **L'énoncé ne voyait que la moitié.** Il nommait la chaîne de relance ; la sonde rouge en a
+  trouvé une seconde, que `closePeerConnection` laissait passer en sortant tôt (aucune connexion dans
+  la room d'appel pendant `calling`) : **l'entrée « invitation en vol » survivait à l'arrêt**, donc
+  une acceptation de l'invitation déjà livrée passait encore la garde d'`openCallBetweenPeer`. En
+  IDLE : allowlist et mapping peerId écrits hors appel. 🔴 **Et la relecture a mesuré le pire cas,
+  qui est l'enchaînement naturel du futur bouton** : annuler alice, appeler bob, et l'acceptation
+  tardive d'alice faisait passer l'appelant en CONNECTED avec bob **et** alice — alice autorisée,
+  connexion lancée vers elle, avant que bob ait répondu. Né rouge, épinglé par le troisième cas.
+
+  ⚠️ **Ce qui reste avant le bouton : côté APPELÉ, et c'est désormais mesuré.** L'alerte n'est
+  fermée que par la réponse de l'appelé (`onResponseAlert`, seule écriture de `notificationComponent`
+  à `null` — lu, exhaustif), jamais par un `.CloseConnectionToPeerID` de l'appelant. Après un
+  « annuler », elle sonne donc jusqu'à sa réponse ou son auto-refus (10 s / 20 s, lu). S'il accepte :
+  sonde de la relecture, deux vrais call managers et deux vrais cores, **à +120 s il est toujours en
+  RECEIVING**, `startCurrentStream` a ouvert ses périphériques, l'appelant ne lui renvoie rien —
+  aucun minuteur ne fait sortir de RECEIVING, où `CallManagerBtn` n'affiche qu'un spinner — et il
+  garde l'appelant dans son allowlist. Le bouton doit donc fermer l'alerte en face, pas seulement
+  arrêter l'appelant. Non sondé : ce que l'appelé fait des POST fantômes partis avant le correctif
+  (déduplication par `inviteId`).
+
+  ⚠️ **Et le bouton exige un REFUS discriminant — défaut antérieur au lot, mesuré à l'identique
+  avant et après.** Un refus ne porte ni `inviteId` ni room : `sendAuthorizationRemotePeerId` n'envoie
+  que `{ type }` quand `status` est faux. Côté appelant, `openCallBetweenPeer({ status: false })`
+  l'impute donc à l'appel EN COURS. Sonde de la relecture : annuler alice, la rappeler dans les 10 s
+  / 20 s, et le refus de la première alerte coupe le second appel (IDLE). Côté appelé, que ce refus
+  parte bien quand l'alerte est rafraîchie par le rappel est lu, pas monté. À fermer avec le bouton :
+  un `inviteId` (ou la room) dans le refus, et une garde côté appelant.
+
+  ℹ️ Le parcours sous course (un `.CloseConnectionToPeerID` appliqué sans garde, item suivant)
+  arrêtait l'appel en laissant l'invitation vivante ; il l'arrête désormais avec elle. Sonde non
+  committée — elle figerait le défaut de l'item suivant : avant, 8 relances, l'abandon et l'entrée
+  survivante ; après, le seul premier envoi.
 
 - [ ] 🟠 **`handleRemoteDeparture` applique à l'appel courant un départ qui porte la room d'un autre
   appel** `[S]` — mesuré le 27/10/2026 par la relecture du lot « clé de `usePeerRetry` ».
@@ -1392,7 +1416,8 @@ Tous mesurés **avant** d'être écrits ici, aucun n'est une impression de lectu
   `.CloseConnectionToPeerID` (`Notifications.vue`) → `remoteStopCall` → `handleRemoteDeparture`
   ne garde ni l'état d'appel ni la room. Sonde (vrai call manager + vrai core) : en `calling` vers
   alice dans `call-2`, un départ d'alice portant `room: 'call-1'` — l'appel PRÉCÉDENT — ramène
-  l'appelant à IDLE, et sa chaîne d'invitation survit (item précédent). Le signal n'est pas forgé :
+  l'appelant à IDLE. Sa chaîne d'invitation survivait aussi ; depuis le 27/10 elle s'éteint avec
+  l'arrêt (item précédent), mais l'appel vivant est toujours coupé. Le signal n'est pas forgé :
   `UserController::closeConnectionToPeerId` ignore le `fromUserSlug` déclaré et diffuse celui de
   l'authentifié (l'écart est seulement journalisé), et il part quand alice raccroche SON appel. Cas concret, lu : des raccrochés croisés en fin
   d'appel, suivis d'un rappel immédiat — fenêtre de l'ordre de deux latences de signalisation, non
@@ -1402,6 +1427,24 @@ Tous mesurés **avant** d'être écrits ici, aucun n'est une impression de lectu
   ℹ️ Même famille, lue et non mesurée : `.ResponseToAuthorizationPeer` en `status: false` appelle
   `openCallBetweenPeer` sans vérifier l'`inviteId`. Avec deux onglets du même compte, un refus
   destiné au premier pourrait retirer le pair de l'appel établi du second.
+
+- [ ] 🟢 **La garde d'acceptation est aveugle au `contextId` pour un chemin qui ne marche pas** `[S]`
+  — mesuré le 27/10/2026 par la relecture du lot « l'arrêt complet éteint l'invitation ».
+
+  `securite.md` justifie l'absence de contrôle du `contextId` dans `openCallBetweenPeer` par
+  « l'exiger casserait un appel initié depuis un provider de room ». Ce chemin est déjà cassé.
+  Sonde, store partagé : un provider `visio-room42` invite, l'acceptation arrive au contexte de
+  `Notifications` (`data-app`), qui reste IDLE et écrit alice dans SON allowlist, hors appel ; le
+  provider reste en `calling`, sa chaîne va jusqu'à l'abandon (9 envois), et l'abandon tombe sur
+  son signal, que personne n'observe. Raccrocher côté `Notifications` ne le touche pas.
+
+  Inatteignable aujourd'hui : le seul appelant de `startCallWithPeer` est
+  `Notifications.onStartCall`, et l'hôte n'en a aucun. **Décision à prendre (David)** : retirer
+  `startCallWithPeer` de la surface du provider, ou faire marcher ce chemin — et alors revoir
+  ensemble la garde aveugle et la portée par contexte de `clearCallInvitesForContext`. Borne voisine,
+  raisonnée et non mesurée : un `contextId` n'est pas unique par FSM (deux homonymes se chevauchent
+  au remontage, `createPeerContext`), donc cette purge traverserait leurs deux FSM — inatteignable
+  tant que `Notifications` n'est monté qu'une fois, même borne que la purge au démontage.
 
 - [ ] 🟢 **`startCallWithPeer` ne distingue pas ses quatre refus** `[S]`
 
