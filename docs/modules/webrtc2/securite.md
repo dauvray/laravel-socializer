@@ -621,9 +621,12 @@ autorisée et connectée, avant que bob ait répondu. Épinglé par `useCallMana
 partagé par l'onglet. `openCallBetweenPeer` ne s'exécute que dans le contexte de `Notifications.vue`
 (seul destinataire de `.ResponseToAuthorizationPeer`), alors que `startCallWithPeer` est exposé par
 **toute** instance de `useMediaBroadcast` : une invitation partie d'un provider de room porte donc
-un autre `contextId`. L'exiger fabriquerait une régression. Le fait qui compte est « cet onglet a
-invité ce pair » — le test correspondant est **inversé** et vire au rouge si un contrôle de
-`contextId` se glisse un jour.
+un autre `contextId`. ⚠️ Ce chemin ne fonctionne pas aujourd'hui — l'acceptation arrive à
+`Notifications`, dont la FSM est en IDLE, quand la chaîne et la FSM de l'appel vivent dans le
+provider —, mais il est **voulu** : les appels devront fonctionner dans les rooms (décision du
+27/10/2026). Exiger le `contextId` le fermerait par avance ; le chantier qui le fera marcher
+reprendra cette garde avec lui. Le fait qui compte est « cet onglet a invité ce pair » — le test
+correspondant est **inversé** et vire au rouge si un contrôle de `contextId` se glisse un jour.
 
 Deux durcissements joints, même classe de défaut — le payload vient du réseau : `addRemotePeerId`
 est conditionné à la présence de `options.peerId` (l'écriture inconditionnelle mappait `undefined`,

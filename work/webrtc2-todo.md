@@ -1428,8 +1428,10 @@ Tous mesurés **avant** d'être écrits ici, aucun n'est une impression de lectu
   `openCallBetweenPeer` sans vérifier l'`inviteId`. Avec deux onglets du même compte, un refus
   destiné au premier pourrait retirer le pair de l'appel établi du second.
 
-- [ ] 🟢 **La garde d'acceptation est aveugle au `contextId` pour un chemin qui ne marche pas** `[S]`
-  — mesuré le 27/10/2026 par la relecture du lot « l'arrêt complet éteint l'invitation ».
+- [ ] 🟢 **Les appels depuis une room : voulus, différés — et la garde aveugle au `contextId` attend
+  ce chantier** `[L]` — mesuré le 27/10/2026 par la relecture du lot « l'arrêt complet éteint
+  l'invitation », **décidé le même jour (David) : les appels devront fonctionner dans les rooms,
+  mais pas maintenant.**
 
   `securite.md` justifie l'absence de contrôle du `contextId` dans `openCallBetweenPeer` par
   « l'exiger casserait un appel initié depuis un provider de room ». Ce chemin est déjà cassé.
@@ -1439,9 +1441,12 @@ Tous mesurés **avant** d'être écrits ici, aucun n'est une impression de lectu
   son signal, que personne n'observe. Raccrocher côté `Notifications` ne le touche pas.
 
   Inatteignable aujourd'hui : le seul appelant de `startCallWithPeer` est
-  `Notifications.onStartCall`, et l'hôte n'en a aucun. **Décision à prendre (David)** : retirer
-  `startCallWithPeer` de la surface du provider, ou faire marcher ce chemin — et alors revoir
-  ensemble la garde aveugle et la portée par contexte de `clearCallInvitesForContext`. Borne voisine,
+  `Notifications.onStartCall`, et l'hôte n'en a aucun. **Donc `startCallWithPeer` reste sur la
+  surface du provider** : la retirer fermerait un chemin voulu. Le chantier qui le fera marcher
+  devra revoir ensemble trois choses, qui supposent toutes qu'un appel vit dans le contexte de
+  `Notifications` : la garde aveugle au `contextId`, la portée par contexte de
+  `clearCallInvitesForContext`, et le fait que la réponse n'arrive qu'à `Notifications` alors que
+  la FSM et la chaîne vivent dans le provider. Borne voisine,
   raisonnée et non mesurée : un `contextId` n'est pas unique par FSM (deux homonymes se chevauchent
   au remontage, `createPeerContext`), donc cette purge traverserait leurs deux FSM — inatteignable
   tant que `Notifications` n'est monté qu'une fois, même borne que la purge au démontage.
