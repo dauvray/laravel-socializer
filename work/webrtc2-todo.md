@@ -1393,8 +1393,8 @@ Tous mesurés **avant** d'être écrits ici, aucun n'est une impression de lectu
   ne garde ni l'état d'appel ni la room. Sonde (vrai call manager + vrai core) : en `calling` vers
   alice dans `call-2`, un départ d'alice portant `room: 'call-1'` — l'appel PRÉCÉDENT — ramène
   l'appelant à IDLE, et sa chaîne d'invitation survit (item précédent). Le signal n'est pas forgé :
-  `UserController::closeConnectionToPeerId` refuse un `fromUserSlug` qui n'est pas l'authentifié,
-  et il part quand alice raccroche SON appel. Cas concret, lu : des raccrochés croisés en fin
+  `UserController::closeConnectionToPeerId` ignore le `fromUserSlug` déclaré et diffuse celui de
+  l'authentifié (l'écart est seulement journalisé), et il part quand alice raccroche SON appel. Cas concret, lu : des raccrochés croisés en fin
   d'appel, suivis d'un rappel immédiat — fenêtre de l'ordre de deux latences de signalisation, non
   mesurée. Non établi : une fermeture PeerJS (`useStreamManager.handleStreamRemoved`) atteignant le
   contexte de `Notifications` pendant `calling` serait un second déclencheur.
