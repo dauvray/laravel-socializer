@@ -1358,172 +1358,20 @@ Tous mesurés **avant** d'être écrits ici, aucun n'est une impression de lectu
   chez le récepteur. C'est un arbitrage de sécurité, pas un correctif de widget — à traiter avec
   `docs/modules/webrtc2/securite.md`, jamais séparément.
 
-- [x] 🟠 **Pendant `calling` et `receiving`, l'utilisateur n'a aucun moyen d'annuler** `[S]` —
-  **code fait le 27/10/2026, vérif à deux navigateurs passée le 27/10 sauf l'étape 3 (David)**, qui a
-  appelé une décision de produit, livrée le même jour — **reste à revérifier l'étape 3** : voir la
-  liste en fin d'item.
+- [ ] 🟢 **Une relance partie avant une annulation peut poser une alerte morte** `[S]` — lu le
+  27/10/2026 par le lot du bouton « annuler », non sondé. Une relance d'invitation partie avant
+  l'arrêt, arrivée après l'annulation chez un appelé qui n'avait pas vu la première, pose une alerte
+  pour une invitation morte. S'il accepte, il passe en RECEIVING sans personne en face — et en sort
+  par « annuler », depuis le bouton.
 
-  `CallManagerBtn` ne rendait qu'un `<Spinner>` dans ces deux états. Il y rend désormais un bouton
-  « annuler » qui émet `stop-call`, comme « raccrocher » — le même verbe en aval, l'arrêt complet,
-  dont les deux prérequis ci-dessous font une annulation sûre. Le durable est dans
-  [`flux.md` § Annuler avant que l'appel soit établi](../docs/modules/webrtc2/flux.md#annuler-avant-que-lappel-soit-établi--le-verbe-de--raccrocher-).
-  Trois morceaux, un fichier de code chacun, dix cas neufs (suite JS 91 fichiers / 1570 cas, build
-  vert) :
-
-  1. **Le bouton** (`CallManagerBtn.vue`). Le cas « en attente il n'y a rien à cliquer », qui
-     épinglait un constat, est réécrit en contrat ; le joint est dans
-     `Notifications.callControls.test.js`.
-  2. **L'alerte d'en face tombe** (`Notifications.vue`, `isCancelOfRingingInvitation`) quand le
-     `.CloseConnectionToPeerID` vient de son appelant ET porte sa room — sans réponse, et sans
-     passer par `remoteStopCall`. Rouge d'abord sur le fait le plus parlant : l'alerte annulée
-     **envoyait encore son auto-refus** à 20 s, au nom d'une invitation morte.
-  3. **Un arrêt pendant `getUserMedia` coupe le flux à son arrivée** (`useCallManager`,
-     `_enterCallSession` rend un booléen). **Absent de l'énoncé, trouvé en lisant le chemin du bouton
-     en RECEIVING** : l'invite de permission est exactement le moment où l'on veut annuler, et le flux
-     arrivait après l'arrêt — caméra ouverte en IDLE, acceptation envoyée, et côté initiateur une
-     connexion relancée. Le défaut existait déjà en CONNECTED (« raccrocher » pendant l'invite) ; le
-     bouton le rendait atteignable d'un clic en RECEIVING. La garde compare la ROOM, pas l'état de la
-     FSM : un cas « annuler puis appeler carole » la distingue.
-
-  **Contre-épreuves**, mesurées sur 10 fichiers (`CallManagerBtn`, les sept de `System/__tests__`,
-  `useCallManager`, `useCallManager.invitations`) — aucune à 0, et chacune rougit dans le fichier
-  qui porte le fait :
-
-  | Neutralisé | Rougit |
-  |---|---|
-  | le bouton d'attente retiré | 1 · 2 au joint |
-  | son `@click` retiré | 1 · 1 au joint |
-  | `isCancelOfRingingInvitation` → `false` | 2 (alertes) |
-  | comparaison de room retirée · d'appelant retirée | 1 · 1 |
-  | alerte fermée PUIS transmise à `remoteStopCall` | 1 |
-  | toast retiré · alerte non fermée (toast seul) | 1 · 2 |
-  | garde du flux tardif retiré · flux non coupé | 3 · 3 |
-  | garde sur l'état de la FSM au lieu de la room | 1 |
-  | verdict ignoré par `acceptCallFromPeer` · par `openCallBetweenPeer` | 2 · 1 |
-
-  Nés verts, et c'est voulu : les trois cas qui gardent les mauvaises façons d'écrire la
-  correspondance (autre room, autre appelant, pas d'alerte), et le nominal sans arrêt.
-
-  ⚠️ **Fait de harnais payé ici** : `happy-dom` ne résout pas un sélecteur `[title="…"]` dont la
-  valeur porte une apostrophe — « absent » sur un rendu correct. L'assertion lit l'attribut.
-
-  **Restes, lus et non sondés :**
-  - **Relances fantômes** : une relance partie avant l'arrêt, arrivée après l'annulation, chez un
-    appelé qui n'avait pas vu la première, pose une alerte pour une invitation morte. S'il accepte,
-    il passe en RECEIVING sans personne en face — mais il a maintenant « annuler ».
-  - **Deux acquisitions concurrentes** ne sont pas départagées (borne écrite au garde) :
-    inatteignable sans deux appels acceptés pendant la même invite de permission.
-
-  **Vérif à deux navigateurs (David, 27/10)** — rien de ceci n'exerce le transport réel :
-  1. ✅ A appelle B, A annule : l'alerte de B tombe avec le toast « Appel de A annulé », A revient au
-     repos, son bouton d'appel est réarmé ;
-  2. ✅ A annule puis rappelle aussitôt : B voit la nouvelle alerte, que l'annulation de la première ne
-     ferme pas ;
-  3. 🔁 **à revérifier.** B accepte et, **pendant l'invite de permission**, annule : le voyant caméra
-     de B s'éteint, A revient au repos. Passé tel qu'annoncé — **en silence** chez A — et c'est ce
-     silence que David a refusé : **A doit être prévenu que B est indisponible** ; puis, pour le cas
-     inverse, **B doit être averti quand A s'en va après son acceptation** ; puis **A aussi quand B
-     annule pendant l'invite de permission de A** (A est alors déjà CONNECTED, sans flux). Fait le
-     même jour, `Notifications.departureBeforeEstablishedMessage` : tant qu'aucun flux du pair n'est
-     arrivé (`isCallEstablished`, verbe neuf, marqueur collant posé par `markCallConnected` des
-     deux côtés), l'appelant lit « B est indisponible » et l'appelé « Appel de A annulé » ; un appel
-     établi qui se termine ne dit rien. Cas neufs : 6 dans `Notifications.test.js`, 5 dans
-     `useCallManager.test.js`, 1 clé au contrat de surface ; chaque nominal rouge d'abord, les
-     négatifs nés verts, c'est voulu ; dix-neuf contre-épreuves en trois passes (prédicat, libellés,
-     marqueur, exposition par la façade), aucune à 0. Le côté
-     A relu par une seconde session : quatre affirmations tenues, un décompte faux corrigé dans
-     `flux.md`. À revoir à l'écran : (a) le toast chez A ; (b) B accepte, A annule pendant l'invite
-     de permission de B → « Appel de A annulé » chez B ; (c) B accepte, B annule pendant l'invite de
-     permission de A (première autorisation de caméra chez A) → « B est indisponible » chez A ;
-     (d) **aucun** toast quand l'un raccroche un appel établi ;
-  4. ✅ à l'œil : le spinner et le bouton rouge côte à côte dans la barre (`.btn-group`).
-
-  ⤵️ **L'énoncé d'origine, conservé** : `CallManagerBtn` ne rendait qu'un `<Spinner>` dans ces deux
-  états — deux filets en aval (l'abandon du retry à ≈55 s, l'auto-refus des alertes, 10 s en visio,
-  20 s en vocal), **aucun geste de l'utilisateur**. C'est ce qui a rendu invisible, longtemps, la
-  famille « FSM bloquée en calling », dont le lot F a fermé la troisième route.
-
-  ✅ **Prérequis fait le 27/10/2026 : l'arrêt complet éteint l'invitation, sur ses DEUX moitiés.**
-  Le mode `full` de `stopCallWithPeers` appelle `core.clearAllCallInviteRetries()` et
-  `peerStore.clearCallInvitesForContext(contextId)` (verbe neuf, ne retient que les entrées à
-  `inviteId`). Le durable est dans [`flux.md`](../docs/modules/webrtc2/flux.md#personne-ne-répond--labandon-du-retry-est-le-seul-signal)
-  et [`securite.md`](../docs/modules/webrtc2/securite.md). Quatre cas, nés rouges : trois de
-  jonction (`useCallManager.invitations.test.js`, dont le troisième demandé par la relecture), un
-  de store (`peers2Store.remotePeerId.test.js`). Les contre-épreuves sont dans les docblocks : chaîne
-  non éteinte ⇒ 1 cas, entrée non purgée ⇒ 2, chacun des deux termes du prédicat du store ⇒ 1.
-
-  **L'énoncé ne voyait que la moitié.** Il nommait la chaîne de relance ; la sonde rouge en a
-  trouvé une seconde, que `closePeerConnection` laissait passer en sortant tôt (aucune connexion dans
-  la room d'appel pendant `calling`) : **l'entrée « invitation en vol » survivait à l'arrêt**, donc
-  une acceptation de l'invitation déjà livrée passait encore la garde d'`openCallBetweenPeer`. En
-  IDLE : allowlist et mapping peerId écrits hors appel. 🔴 **Et la relecture a mesuré le pire cas,
-  qui est l'enchaînement naturel du futur bouton** : annuler alice, appeler bob, et l'acceptation
-  tardive d'alice faisait passer l'appelant en CONNECTED avec bob **et** alice — alice autorisée,
-  connexion lancée vers elle, avant que bob ait répondu. Né rouge, épinglé par le troisième cas.
-
-  ⚠️ **Ce qui reste avant le bouton : côté APPELÉ, et c'est désormais mesuré.** L'alerte n'est
-  fermée que par la réponse de l'appelé (`onResponseAlert`, seule écriture de `notificationComponent`
-  à `null` — lu, exhaustif), jamais par un `.CloseConnectionToPeerID` de l'appelant. Après un
-  « annuler », elle sonne donc jusqu'à sa réponse ou son auto-refus (10 s / 20 s, lu). S'il accepte :
-  sonde de la relecture, deux vrais call managers et deux vrais cores, **à +120 s il est toujours en
-  RECEIVING**, `startCurrentStream` a ouvert ses périphériques, l'appelant ne lui renvoie rien —
-  aucun minuteur ne fait sortir de RECEIVING, où `CallManagerBtn` n'affiche qu'un spinner — et il
-  garde l'appelant dans son allowlist. Le bouton doit donc fermer l'alerte en face, pas seulement
-  arrêter l'appelant. Non sondé : ce que l'appelé fait des POST fantômes partis avant le correctif
-  (déduplication par `inviteId`). → **Fait** avec le bouton (morceau 2 ci-dessus).
-
-  ✅ **Le refus discriminant est fait le 27/10/2026, en lot séparé AVANT le bouton** — décision de
-  David (« au mieux, à part ou en même temps ») : le défaut était atteignable sans bouton, par les
-  deux onglets d'un même compte, et le lot du bouton est déjà lourd. « Annuler puis rappeler » avait
-  besoin de **deux** moitiés, et la première version du lot n'en avait qu'une — la relecture l'a
-  montré en MONTANT l'alerte. Durable dans [`flux.md`](../docs/modules/webrtc2/flux.md).
-
-  - **Appelant** : le refus renvoie `room` et `inviteId` (le serveur les relayait déjà — épinglé
-    côté PHP), et `openCallBetweenPeer` compare l'`inviteId` à celui de l'entrée en vol. Sans
-    `inviteId`, l'ancien sens est gardé (bundle antérieur, abandon, invitation non émise). Ferme
-    aussi le refus adressé à un autre onglet, qui coupait l'appel établi de celui-ci.
-  - **Appelé** : rappelé pendant que sa première alerte sonne, il la PATCHAIT — props du rappel,
-    minuteur de la première. L'auto-refus partait donc à l'échéance de la première, avec
-    l'`inviteId` du rappel : un refus légitime pour la garde, qui coupait le rappel comme avant.
-    Corrigé par un `:key` = `inviteId` sur le `<component>` de `Notifications.vue` : une alerte, un
-    type et un minuteur par invitation. Monté (`Notifications.alerts.test.js`).
-  - **La relecture a trouvé que la garde fabriquait une RÉGRESSION**, deux causes cumulées : un
-    `peer-unavailable` dans n'importe quel contexte (`invalidateRemotePeerId`) effaçait aussi les
-    invitations, et `Notifications.vue` coupait la relance AVANT la garde. Un refus légitime d'un
-    appelé qui a rechargé son onglet était alors ignoré sans relance ni abandon : appelant en
-    `calling` pour toujours (le même blocage existait déjà pour une acceptation). Corrigé aux deux
-    bouts — un peerId mort n'efface plus que les demandes de peerId, et seul `openCallBetweenPeer`
-    arrête la relance, après ses gardes.
-  - **Seconde porte trouvée en lisant** : `openCallBetweenPeer` coupait lui-même la relance en tête,
-    avant ses deux gardes — une acceptation tardive éteignait la relance du rappel.
-
-  Sur les sources de 8d03a37, **11 cas rougissent** : 5 de jonction
-  (`useCallManager.invitations.test.js`), 3 montages de `Notifications`, 1 de store, le contrat
-  d'envoi du refus (`usePeerCore.test.js`, dont l'ancien cas épinglait « uniquement `{ type }` », donc
-  le défaut) et l'ordre de `Notifications.test.js` (qui épinglait l'arrêt avant la garde). Un 6e cas
-  de jonction, « un peerId mort », est **vert sur 8d03a37** et rouge quand le DOUBLE du store n'a pas
-  le correctif : c'est le témoin de la régression, pas un cas né rouge. Il épingle la copie du
-  double ; le vrai `invalidateRemotePeerId` ne l'est que par le cas de store. Le relais PHP est
-  épinglé, né vert (le serveur le faisait déjà). Contre-épreuves dans les docblocks.
-
-  ℹ️ **Ce que coûte le remplacement d'alerte, assumé** : l'invitation remplacée ne reçoit aucune
-  réponse. Avec deux onglets appelants du même compte, le plus ancien attend son abandon (≈55 s) au
-  lieu d'être coupé avec l'autre — docblock d'`isAwaitingAnotherCaller`, borne dans `flux.md`.
-  **Reste, lu et non sondé** : `Notifications.vue` affiche « … est injoignable » et émet `close-call`
-  AVANT `openCallBetweenPeer` — un refus périmé, désormais ignoré par la FSM, produit donc encore ce
-  toast pendant le rappel, et réarme le bouton d'appel de ce pair (→ élargi le 27/10 : item « un
-  appel pris sur un onglet de l'appelé fait sonner les autres »). Cosmétique, mesuré par la
-  relecture : une alerte remplacée pendant que son chunk pend journalise encore « Async component
-  timed out » à son ancienne échéance (le minuteur de `defineAsyncComponent` survit à l'instance).
-
-  ℹ️ Le parcours sous course (un `.CloseConnectionToPeerID` appliqué sans garde, item suivant)
-  arrêtait l'appel en laissant l'invitation vivante ; il l'arrête désormais avec elle. Sonde non
-  committée — elle figerait le défaut de l'item suivant : avant, 8 relances, l'abandon et l'entrée
-  survivante ; après, le seul premier envoi.
+- [ ] 🟢 **Cosmétique : une alerte remplacée pendant que son chunk pend journalise « Async component
+  timed out »** `[S]` — mesuré le 27/10/2026 par la relecture du refus discriminant. Le minuteur de
+  `defineAsyncComponent` survit à l'instance remplacée et journalise à son ancienne échéance. Sans
+  effet fonctionnel.
 
 - [ ] 🟠 **Un appel pris sur un onglet de l'appelé fait sonner les autres, et leur auto-refus
-  atteint l'appelant** `[S]` + `[M]` — lu le 27/10/2026, non sondé. Élargit le « Reste, lu » du
-  refus discriminant (plus bas), qui ne le voyait que pendant un rappel.
+  atteint l'appelant** `[S]` + `[M]` — lu le 27/10/2026, non sondé. Le lot du refus discriminant
+  (569bd4f) l'avait relevé, mais seulement pendant un rappel.
 
   `UserController::sendAlertToUser` diffuse l'invitation sur le canal privé de l'appelé, donc à
   **tous** ses onglets et appareils ; la réponse ne repart que vers l'appelant. Quand un onglet
@@ -1552,14 +1400,14 @@ Tous mesurés **avant** d'être écrits ici, aucun n'est une impression de lectu
   ne garde ni l'état d'appel ni la room. Sonde (vrai call manager + vrai core) : en `calling` vers
   alice dans `call-2`, un départ d'alice portant `room: 'call-1'` — l'appel PRÉCÉDENT — ramène
   l'appelant à IDLE. Sa chaîne d'invitation survivait aussi ; depuis le 27/10 elle s'éteint avec
-  l'arrêt (item précédent), mais l'appel vivant est toujours coupé. Le signal n'est pas forgé :
+  l'arrêt (8d03a37), mais l'appel vivant est toujours coupé. Le signal n'est pas forgé :
   `UserController::closeConnectionToPeerId` ignore le `fromUserSlug` déclaré et diffuse celui de
   l'authentifié (l'écart est seulement journalisé), et il part quand alice raccroche SON appel. Cas concret, lu : des raccrochés croisés en fin
   d'appel, suivis d'un rappel immédiat — fenêtre de l'ordre de deux latences de signalisation, non
   mesurée. Non établi : une fermeture PeerJS (`useStreamManager.handleStreamRemoved`) atteignant le
   contexte de `Notifications` pendant `calling` serait un second déclencheur.
 
-  ✅ Même famille, **fermée le 27/10/2026 par le refus discriminant** (item précédent) : un refus
+  ✅ Même famille, **fermée le 27/10/2026 par le refus discriminant** (569bd4f) : un refus
   adressé à l'invitation d'un autre onglet de l'appelant retirait le pair de l'appel établi de
   celui-ci. Épinglé (« un refus destiné à un autre onglet ne coupe pas l'appel établi »).
 
