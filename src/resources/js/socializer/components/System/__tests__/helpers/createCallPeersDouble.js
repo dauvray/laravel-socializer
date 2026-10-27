@@ -50,6 +50,7 @@ export const createCallPeersDouble = () => {
         acceptCallFromPeer: vi.fn(async () => {}),
         startCallWithPeer: vi.fn(async () => 'invite-1'),
         stopCallWithPeers: vi.fn(async () => {}),
+        remoteStopCall: vi.fn(async () => {}),
         currentCallUsers: ref([]),
         inviteAbandonedSignal: ref(null),
 
@@ -74,5 +75,5 @@ export const createCallPeersDouble = () => {
 /** Les verbes que `Notifications` peut appeler sur l'API — support de l'assertion négative. */
 export const VERBES_APPEL = [
     'openCallBetweenPeer', 'acceptCallFromPeer', 'startCallWithPeer', 'stopCallWithPeers',
-    'toggleAudioMute', 'toggleVideoVisibility',
+    'remoteStopCall', 'toggleAudioMute', 'toggleVideoVisibility',
 ]

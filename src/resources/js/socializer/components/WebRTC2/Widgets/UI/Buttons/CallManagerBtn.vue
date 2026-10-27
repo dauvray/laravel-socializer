@@ -2,6 +2,12 @@
     <div v-if="props.status !== 'idle'" id="call-web-ui">
         <template v-if="props.status === 'calling' || props.status === 'receiving'">
             <Spinner></Spinner>
+            <button
+                type="button"
+                class="btn-stop-call"
+                @click="emit('stop-call')">
+                <IconWidget icon="phone-slash" title="annuler l'appel"></IconWidget>
+            </button>
         </template>
         <template v-else>
             <button
@@ -30,7 +36,16 @@
 
 <script setup>
     /**
-     * Barre de commande d'un appel en cours : couper son micro, couper sa caméra, raccrocher.
+     * Barre de commande d'un appel en cours : couper son micro, couper sa caméra, raccrocher — et,
+     * tant que rien n'est établi (`calling`, `receiving`), l'annuler.
+     *
+     * ⚠️ « Annuler » émet `stop-call`, comme « raccrocher », et ce n'est pas un raccourci : c'est le
+     * même verbe en aval. L'arrêt complet (`stopCallWithPeers`, mode `full`) éteint l'invitation en
+     * vol — chaîne de relance et entrée qui rend une acceptation recevable — et prévient le pair
+     * d'en face avec la room de l'appel, que son alerte reconnaît (`Notifications.vue`). Jusqu'au
+     * 2026-10-27, ces deux états n'affichaient qu'un spinner : aucune sortie que l'abandon du retry
+     * (≈55 s) ou l'auto-refus de l'alerte d'en face, et c'est ce qui avait rendu invisible la famille
+     * « FSM bloquée en calling ».
      *
      * Purement présentationnel, comme `LocalStreamBtn` : aucun état local, aucun store. Il rend
      * l'état que son parent lui passe et lui redemande une action. L'adaptateur est

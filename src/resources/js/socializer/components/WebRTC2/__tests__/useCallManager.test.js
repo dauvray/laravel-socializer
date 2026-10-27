@@ -830,6 +830,119 @@ describe('useCallManager', () => {
         })
     })
 
+    // ── un arrêt pendant l'acquisition du flux local ────────────────────────
+    //
+    // `getUserMedia` peut durer autant que l'invite de permission reste ouverte, et pendant ce
+    // temps la barre d'appel offre « annuler » (RECEIVING) ou « raccrocher » (CONNECTED). L'arrêt
+    // complet ne peut pas couper un flux qui n'existe pas encore : sans garde, il arrivait après
+    // lui — caméra et micro ouverts en IDLE, player local hors appel, et réponse ou connexion
+    // envoyées au nom d'un appel fini.
+
+    describe('un arrêt pendant l\'acquisition du flux local', () => {
+
+        /** Résout le `getUserMedia` en suspens : l'utilisateur répond à l'invite de permission. */
+        let repondreALInvite
+
+        beforeEach(() => {
+            media.startCurrentStream = vi.fn(() => new Promise((resolve) => {
+                repondreALInvite = resolve
+            }))
+        })
+
+        const invitation = {
+            fromUserSlug: 'alice',
+            status: true,
+            options: { room: 'call-room-1', type: 'visio', peerId: 'peer-alice', inviteId: 'invite-1' },
+        }
+
+        it('⭐ appelé : annuler pendant l\'invite ne laisse ni flux, ni player, ni acceptation', async () => {
+            const acceptation = cm.acceptCallFromPeer(invitation)
+            expect(ctx.callMachine.callState.value).toBe(CALL_STATES.RECEIVING)
+
+            await cm.stopCallWithPeers([{ userSlug: 'alice', type: 'visio' }])
+            expect(ctx.callMachine.callState.value).toBe(CALL_STATES.IDLE)
+            media.stopCurrentStream.mockClear()
+
+            repondreALInvite()
+            await acceptation
+
+            // Le flux arrivé après l'arrêt est coupé à son arrivée…
+            expect(media.stopCurrentStream).toHaveBeenCalledTimes(1)
+            expect(media.createVideoElement).not.toHaveBeenCalled()
+            // … et l'acceptation ne part pas : l'appelant a été prévenu par l'arrêt, une
+            // acceptation tardive ne ferait que passer — ou buter sur — sa garde.
+            expect(core.sendAuthorizationRemotePeerId).not.toHaveBeenCalled()
+            expect(ctx.session.currentCallRoomId).toBe(null)
+            expect(ctx.session.currentCallUsers).toEqual([])
+        })
+
+        it('⭐ initiateur : raccrocher pendant l\'invite ne relance aucune connexion vers le pair', async () => {
+            core.requestAuthorizationRemotePeerId = vi.fn(async ({ toUserSlug, type }) => {
+                ctx.peerStore.addWaitingRemotePeerId(toUserSlug, {
+                    room: ctx.session.currentCallRoomId,
+                    type,
+                    contextId: ctx.contextId,
+                    inviteId: 'invite-1',
+                })
+                return 'invite-1'
+            })
+            await cm.startCallWithPeer({ toUserSlug: 'alice', type: 'visio', room: 'call-room-1' })
+
+            const ouverture = cm.openCallBetweenPeer({
+                fromUserSlug: 'alice',
+                status: true,
+                options: { room: 'call-room-1', type: 'visio', peerId: 'peer-alice' },
+            })
+            expect(ctx.callMachine.callState.value).toBe(CALL_STATES.CONNECTED)
+
+            await cm.stopCallWithPeers([{ userSlug: 'alice', type: 'visio' }])
+            media.stopCurrentStream.mockClear()
+
+            repondreALInvite()
+            await ouverture
+
+            expect(media.stopCurrentStream).toHaveBeenCalledTimes(1)
+            expect(media.createVideoElement).not.toHaveBeenCalled()
+            expect(pool.requestOrConnectPeer).not.toHaveBeenCalled()
+        })
+
+        it('⭐ c\'est l\'APPEL qui est comparé, pas l\'état : un nouvel appel parti entre-temps ne le blanchit pas', async () => {
+            // J'annule alice pendant l'invite, j'appelle aussitôt carole : la FSM est de nouveau
+            // hors d'IDLE quand l'invite se referme. Un garde sur l'état laisserait passer le
+            // flux d'alice dans l'appel de carole ; la room, vidée par l'arrêt puis tirée neuve
+            // pour carole, ne le laisse pas.
+            const acceptation = cm.acceptCallFromPeer(invitation)
+            await cm.stopCallWithPeers([{ userSlug: 'alice', type: 'visio' }])
+            await cm.startCallWithPeer({ toUserSlug: 'carole', type: 'visio' })
+            expect(ctx.callMachine.callState.value).toBe(CALL_STATES.CALLING)
+            media.stopCurrentStream.mockClear()
+
+            repondreALInvite()
+            await acceptation
+
+            expect(media.stopCurrentStream).toHaveBeenCalledTimes(1)
+            expect(media.createVideoElement).not.toHaveBeenCalled()
+            expect(core.sendAuthorizationRemotePeerId).not.toHaveBeenCalled()
+            // L'appel vers carole n'a pas été touché.
+            expect(ctx.callMachine.callState.value).toBe(CALL_STATES.CALLING)
+            expect(ctx.session.currentCallUsers).toEqual([{ userSlug: 'carole', type: 'visio' }])
+        })
+
+        it('sans arrêt, l\'invite refermée ouvre la session comme avant', async () => {
+            const acceptation = cm.acceptCallFromPeer(invitation)
+
+            repondreALInvite()
+            await acceptation
+
+            expect(media.stopCurrentStream).not.toHaveBeenCalled()
+            expect(media.createVideoElement).toHaveBeenCalledWith(
+                expect.objectContaining({ videoId: 'local-webcam' }),
+                ctx.media.currentStream,
+            )
+            expect(core.sendAuthorizationRemotePeerId).toHaveBeenCalledTimes(1)
+        })
+    })
+
     // ── remoteStopCall ──────────────────────────────────────────────────────
 
     describe('remoteStopCall', () => {

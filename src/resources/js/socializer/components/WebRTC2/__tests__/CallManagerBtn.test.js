@@ -136,16 +136,30 @@ describe('CallManagerBtn — la barre de commande d\'appel', () => {
             }
         })
 
-        it('⭐ en attente — à l\'émission COMME à la réception — il n\'y a rien à cliquer', () => {
+        it('⭐ en attente — à l\'émission COMME à la réception — un seul bouton, et il annule', async () => {
             // Deux états et non un : une condition réduite à `'calling'` resterait verte la
-            // moitié du temps. Et le fait dur, qui n'est pas un contrat mais un constat :
-            // on ne peut PAS annuler un appel qui sonne. C'est exactement ce qui a rendu
-            // invisible la régression du spinner bloqué (`Notifications.vue:118-124`).
+            // moitié du temps. Ce cas épinglait jusqu'au 27/10/2026 un CONSTAT — « en attente il
+            // n'y a rien à cliquer » —, ce qui avait rendu invisible la famille « FSM bloquée en
+            // calling » : sans geste de l'utilisateur, seuls l'abandon du retry (≈55 s) et
+            // l'auto-refus de l'alerte d'en face en faisaient sortir.
+            //
+            // Le spinner reste : il dit que rien n'est établi. Le bouton est le rouge, mais son
+            // libellé dit « annuler » et non « raccrocher » — et il émet le MÊME événement, parce
+            // que c'est le même verbe en aval.
             for (const status of ['calling', 'receiving']) {
                 const wrapper = monter({ status })
 
                 expect(attente(wrapper).exists()).toBe(true)
-                expect(wrapper.findAll('button')).toHaveLength(0)
+                expect(wrapper.findAll('button')).toHaveLength(1)
+                expect(raccrocher(wrapper).exists()).toBe(true)
+                // Lu sur l'attribut et non par un sélecteur `[title="…"]` : `happy-dom` ne résout
+                // pas l'apostrophe de la valeur — mesuré, le sélecteur rend « absent » sur un
+                // rendu correct.
+                expect(raccrocher(wrapper).find('i').attributes('title')).toBe('annuler l\'appel')
+
+                await raccrocher(wrapper).trigger('click')
+
+                expect(wrapper.emitted('stop-call')).toHaveLength(1)
             }
         })
 

@@ -166,8 +166,9 @@ export function useCallManager(ctx, { core, media, connections, transport, pool 
         // ne se corrige plus. Mais à ce moment la FSM est déjà en CALLING, et le moteur de
         // retry n'est PAS armé : le `return null` précède `scheduleRetry`. Sans la reprise
         // ci-dessous, la FSM restait donc en CALLING **pour la vie de l'onglet** — `callStatus`
-        // bloqué, `CallManagerBtn` réduit à un spinner sans bouton raccrocher, et surtout plus
-        // AUCUN appel possible, `transition(CALLING)` depuis `calling` étant invalide.
+        // bloqué, `CallManagerBtn` réduit à un spinner (le bouton « annuler » n'y existe que
+        // depuis le 2026-10-27), et surtout plus AUCUN appel possible, `transition(CALLING)`
+        // depuis `calling` étant invalide.
         //
         // La reprise ne réinvente rien : c'est `openCallBetweenPeer({status:false})`, le chemin
         // qu'emprunte déjà un refus distant (`Notifications.vue`, `.ResponseToAuthorizationPeer`)
@@ -193,15 +194,37 @@ export function useCallManager(ctx, { core, media, connections, transport, pool 
      * @param {string}      fromUserSlug - Slug de l'interlocuteur
      * @param {string|null} room         - ID de room (null → conserve ou génère)
      * @param {string}      type         - Type d'appel (visio, vocal, …)
+     * @returns {Promise<boolean>} false si l'appel s'est arrêté pendant l'acquisition du flux
+     *          local : l'appelant ne doit plus rien faire en son nom.
      */
     const _enterCallSession = async ({ fromUserSlug, room, type }) => {
-        ensureCurrentCallRoomId(room)
+        const callRoomId = ensureCurrentCallRoomId(room)
         ctx.addCurrentCallUser(fromUserSlug, type)
         ctx.session.currentType = type
 
         // Le TYPE d'appel, et non `true` : cet argument était ignoré (la fonction n'en prenait
         // aucun), si bien qu'un appel `vocal` capturait et transmettait une piste vidéo.
         await media.startCurrentStream(type)
+
+        // ⚠️ `getUserMedia` dure autant que l'invite de permission reste ouverte, et pendant ce
+        // temps la barre d'appel offre « annuler » (RECEIVING) ou « raccrocher » (CONNECTED) ; un
+        // départ du pair peut aussi tomber. L'arrêt complet ne coupe pas un flux qui n'existe pas
+        // encore, et il remet la room à `null`. Sans ce garde, le flux arrivait APRÈS lui : caméra
+        // et micro ouverts en IDLE, player local hors appel, puis l'acceptation (appelé) ou la
+        // connexion (initiateur) envoyée au nom d'un appel fini.
+        //
+        // La ROOM et non l'état de la FSM : annuler puis appeler aussitôt quelqu'un d'autre remet la
+        // FSM hors d'IDLE avant que l'invite se referme, et ce flux entrerait dans l'autre appel.
+        // Bornes. Deux acquisitions concurrentes — deux appels acceptés pendant la même invite —
+        // ne sont pas départagées, `startCurrentStream` écrivant `currentStream` sans condition.
+        // Et la room n'est neuve que parce que l'arrêt complet la VIDE : un appel suivant qui
+        // imposerait la même room (appels depuis une room, différés) passerait ce garde, comme un
+        // arrêt qui lève avant de la vider — le `finally` de `stopCallWithPeers` remet la FSM à
+        // IDLE sans toucher à la room. Items de `work/webrtc2-todo.md`.
+        if (ctx.session.currentCallRoomId !== callRoomId) {
+            media.stopCurrentStream()
+            return false
+        }
 
         const me = ctx.meStore.getMe
 
@@ -226,6 +249,8 @@ export function useCallManager(ctx, { core, media, connections, transport, pool 
             },
             ctx.media.currentStream
         )
+
+        return true
     }
 
     const acceptCallFromPeer = async (payload) => {
@@ -251,16 +276,21 @@ export function useCallManager(ctx, { core, media, connections, transport, pool 
             }
 
             // J'accepte : ce pair a le droit que je lui ouvre une connexion, même s'il
-            // n'est dans aucune room commune (visio 1-à-1). Marqué ici et pas dans
-            // `_enterCallSession` : la réponse `status: true` part quoi qu'il arrive
-            // ensuite (transition refusée comprise), le distant se connectera donc —
-            // l'autorisation doit couvrir exactement ce que j'ai promis.
+            // n'est dans aucune room commune (visio 1-à-1).
+            // ⚠️ Marqué AVANT la transition, alors que la réponse ne part qu'APRÈS
+            // `_enterCallSession` : une transition refusée (déjà en appel) sort sans réponse et
+            // laisse la marque jusqu'au reset de l'appel en cours ; un arrêt pendant
+            // l'acquisition du flux sort sans réponse aussi, la marque étant alors effacée par
+            // l'arrêt. Ce commentaire disait la réponse partie « transition refusée comprise » :
+            // faux, le `return` la précède — item ouvert de `work/webrtc2-todo.md`.
             // Pas conditionné à `options.peerId` : l'autorisation porte sur le pair, le
             // mapping sur son identité PeerJS. Deux faits distincts.
             ctx.markAuthorizedCallPeer(fromUserSlug)
 
             if (!ctx.callMachine.transition(CALL_STATES.RECEIVING)) return
-            await _enterCallSession({ fromUserSlug, room, type })
+            // Arrêté pendant l'invite de permission : pas d'acceptation, elle partirait au nom
+            // d'un appel fini.
+            if (!await _enterCallSession({ fromUserSlug, room, type })) return
         }
 
         // ✅ Ajouter l'inviteId dans les options retournées
@@ -282,7 +312,8 @@ export function useCallManager(ctx, { core, media, connections, transport, pool 
      * Sans ça, un refus était imputé à l'appel EN COURS, quel qu'il soit : le refus adressé à
      * l'invitation d'un autre onglet coupait l'appel établi de celui-ci, et celui d'une alerte
      * fermée avant un rappel coupait le rappel. La comparaison porte sur l'`inviteId` de l'entrée en
-     * vol, et non sur sa seule présence : la clé (slug, room, type) d'un rappel peut coïncider.
+     * vol, et non sur sa seule présence : la clé (slug, room, type) d'un rappel peut coïncider, dès
+     * qu'un appelant impose la room (`startCallWithPeer({ room })`).
      *
      * ⚠️ Ce n'est que la moitié APPELANTE de « annuler puis rappeler ». Rappelé pendant que sa
      * première alerte sonne, l'appelé la remplace (`:key` de `Notifications.vue`) : sans ça, le
@@ -401,7 +432,7 @@ export function useCallManager(ctx, { core, media, connections, transport, pool 
         ctx.markAuthorizedCallPeer(fromUserSlug)
 
         if (!ctx.callMachine.transition(CALL_STATES.CONNECTED)) return
-        await _enterCallSession({ fromUserSlug, room, type })
+        if (!await _enterCallSession({ fromUserSlug, room, type })) return
 
         pool.requestOrConnectPeer(fromUserSlug)
     }

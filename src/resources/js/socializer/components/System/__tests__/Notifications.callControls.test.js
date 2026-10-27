@@ -179,7 +179,7 @@ describe('Notifications — la barre de commande d\'appel', () => {
         wrapper = await monter()
 
         expect(wrapper.find('.spinner-stub').exists()).toBe(true)
-        expect(wrapper.findAll('button')).toHaveLength(0)
+        expect(wrapper.findAll('button')).toHaveLength(1)
 
         // ⚠️ C'est ce cas qui exige la fidélité n° 1 du double : `callStatus` doit être lu à
         // travers un `ref`. Avec un `vi.fn(() => 'calling')` figé, le `computed` de
@@ -253,5 +253,30 @@ describe('Notifications — la barre de commande d\'appel', () => {
         expect(peersDouble.stopCallWithPeers).toHaveBeenCalledWith([
             { userSlug: 'bob', type: 'visio' },
         ])
+    })
+
+    it('⭐ annuler pendant l\'attente prend le chemin de raccrocher, dans les deux sens de l\'appel', async () => {
+        // Le joint de « annuler » : rien n'est établi, mais le verbe est le même. C'est
+        // l'arrêt COMPLET qui éteint l'invitation en vol (chaîne de relance et entrée en
+        // vol) et qui prévient le pair d'en face — avec la room de l'appel, que son alerte
+        // reconnaît (`Notifications.alerts.test.js`).
+        for (const status of ['calling', 'receiving']) {
+            vi.clearAllMocks()
+            peers.statutAppel.value = status
+            peersDouble.currentCallUsers.value = [{ userSlug: 'bob', type: 'visio' }]
+            wrapper = await monter()
+
+            await raccrocher(wrapper).trigger('click')
+            await flushPromises()
+
+            expect(eventBus.$emit).toHaveBeenCalledWith('close-call', [
+                { userSlug: 'bob', type: 'visio' },
+            ])
+            expect(peersDouble.stopCallWithPeers).toHaveBeenCalledWith([
+                { userSlug: 'bob', type: 'visio' },
+            ])
+            wrapper.unmount()
+        }
+        wrapper = undefined
     })
 })

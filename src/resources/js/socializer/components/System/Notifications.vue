@@ -190,6 +190,14 @@ const { whisper: whisperPing } = useReverbChannel(userChannel, {
         },
 
         '.CloseConnectionToPeerID': (event) => {
+            // L'appelant a annulé l'invitation dont l'alerte sonne : rien n'est établi, ce n'est
+            // pas un départ. L'alerte tombe, sans réponse — voir `isCancelOfRingingInvitation`.
+            if (isCancelOfRingingInvitation(event)) {
+                notificationComponent.value = null
+                window.AWN?.info(`Appel de ${event.fromUserSlug} annulé`)
+                return
+            }
+
             peers.remoteStopCall(event)
         },
 
@@ -278,6 +286,41 @@ watch(() => peers.inviteAbandonedSignal.value, async (abandoned) => {
 function isAwaitingAnotherCaller(event) {
     return notificationComponent.value !== null
         && notificationComponentProps.value?.fromUserSlug !== event?.fromUserSlug
+}
+
+/**
+ * Ce signal de fin d'appel annule-t-il l'invitation dont l'alerte sonne ?
+ *
+ * L'appelant qui annule pendant `calling` passe par le verbe de « raccrocher » (`stopCallWithPeers`,
+ * mode `full`), donc par le même signal, avec la room de l'appel. Avant le 27/10/2026, ce signal
+ * allait tout droit à `remoteStopCall`, qui n'a rien à défaire en l'absence d'appel : l'alerte
+ * sonnait jusqu'à la réponse ou à l'auto-refus — qui envoyait alors un refus au nom d'une invitation
+ * annulée. Et si l'appelé acceptait, il restait en RECEIVING, périphériques ouverts, l'appelant dans
+ * son allowlist : revenu à IDLE, l'appelant ignore une acceptation sans invitation en vol.
+ *
+ * ⚠️ C'est la ROOM qui discrimine, l'appelant seul ne suffit pas : un même compte peut sonner ici
+ * depuis un onglet et raccrocher depuis un autre un appel établi avec moi — ce signal-là est un
+ * départ. `fromUserSlug` est posé par le serveur depuis l'authentifié : il ne se forge pas. Le
+ * serveur exige la room sur ce signal, pas sur l'invitation : une alerte sans room ne s'annule donc
+ * jamais ainsi, elle sonne jusqu'à sa réponse ou son auto-refus, comme avant.
+ *
+ * ⚠️ Que deux appels n'aient jamais la même room n'est PAS un contrat de `ensureCurrentCallRoomId`,
+ * qui conserve ou impose une room autant qu'il en tire une : c'est l'arrêt complet qui la vide, et
+ * le seul appelant de `startCallWithPeer` (`onStartCall`) n'en impose aucune. Un appel qui
+ * imposerait la room d'une salle — l'item « appels depuis une room » — ferait porter la même room
+ * à deux invitations du même compte : ce discriminant devrait alors comparer l'`inviteId`, que le
+ * signal de fermeture ne porte pas aujourd'hui.
+ *
+ * ⚠️ Rien ne part, et c'est voulu. Pas de réponse : l'appelant ne lit plus de refus pour cette
+ * invitation, il afficherait seulement « … est injoignable ». Pas de `remoteStopCall` non plus : il
+ * appliquerait à l'appel en cours, s'il y en a un, un départ qui porte la room d'un autre
+ * (`handleRemoteDeparture`, item ouvert de `work/webrtc2-todo.md`).
+ */
+function isCancelOfRingingInvitation(event) {
+    const ringing = notificationComponentProps.value
+    return notificationComponent.value !== null
+        && ringing?.fromUserSlug === event?.fromUserSlug
+        && ringing?.options?.room === event?.room
 }
 
 async function onResponseAlert(fromUserSlug, options, status) {

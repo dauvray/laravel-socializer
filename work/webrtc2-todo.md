@@ -1358,15 +1358,75 @@ Tous mesurés **avant** d'être écrits ici, aucun n'est une impression de lectu
   chez le récepteur. C'est un arbitrage de sécurité, pas un correctif de widget — à traiter avec
   `docs/modules/webrtc2/securite.md`, jamais séparément.
 
-- [ ] 🟠 **Pendant `calling` et `receiving`, l'utilisateur n'a aucun moyen d'annuler** `[S]`
+- [x] 🟠 **Pendant `calling` et `receiving`, l'utilisateur n'a aucun moyen d'annuler** `[S]` —
+  **code fait le 27/10/2026, vérif à deux navigateurs OUVERTE (David)** : voir la liste en fin d'item.
 
-  `CallManagerBtn` ne rend qu'un `<Spinner>` dans ces deux états : le seul bouton d'arrêt vit dans la
-  branche `v-else`, donc à partir de `connected`. Deux filets existent en aval (l'abandon du moteur
-  de retry à ≈55 s, et l'auto-refus des deux alertes — 10 s en visio, 20 s en vocal), mais **aucun
-  n'est un geste de l'utilisateur**. C'est ce qui a rendu invisible, longtemps, la famille de régressions « FSM bloquée
-  en calling » — dont le lot F a fermé la troisième route. Épinglé en attendant par le cas « en
-  attente il n'y a rien à cliquer » de `CallManagerBtn.test.js`, dont le titre dit que c'est un
-  constat.
+  `CallManagerBtn` ne rendait qu'un `<Spinner>` dans ces deux états. Il y rend désormais un bouton
+  « annuler » qui émet `stop-call`, comme « raccrocher » — le même verbe en aval, l'arrêt complet,
+  dont les deux prérequis ci-dessous font une annulation sûre. Le durable est dans
+  [`flux.md` § Annuler avant que l'appel soit établi](../docs/modules/webrtc2/flux.md#annuler-avant-que-lappel-soit-établi--le-verbe-de--raccrocher-).
+  Trois morceaux, un fichier de code chacun, dix cas neufs (suite JS 91 fichiers / 1570 cas, build
+  vert) :
+
+  1. **Le bouton** (`CallManagerBtn.vue`). Le cas « en attente il n'y a rien à cliquer », qui
+     épinglait un constat, est réécrit en contrat ; le joint est dans
+     `Notifications.callControls.test.js`.
+  2. **L'alerte d'en face tombe** (`Notifications.vue`, `isCancelOfRingingInvitation`) quand le
+     `.CloseConnectionToPeerID` vient de son appelant ET porte sa room — sans réponse, et sans
+     passer par `remoteStopCall`. Rouge d'abord sur le fait le plus parlant : l'alerte annulée
+     **envoyait encore son auto-refus** à 20 s, au nom d'une invitation morte.
+  3. **Un arrêt pendant `getUserMedia` coupe le flux à son arrivée** (`useCallManager`,
+     `_enterCallSession` rend un booléen). **Absent de l'énoncé, trouvé en lisant le chemin du bouton
+     en RECEIVING** : l'invite de permission est exactement le moment où l'on veut annuler, et le flux
+     arrivait après l'arrêt — caméra ouverte en IDLE, acceptation envoyée, et côté initiateur une
+     connexion relancée. Le défaut existait déjà en CONNECTED (« raccrocher » pendant l'invite) ; le
+     bouton le rendait atteignable d'un clic en RECEIVING. La garde compare la ROOM, pas l'état de la
+     FSM : un cas « annuler puis appeler carole » la distingue.
+
+  **Contre-épreuves**, mesurées sur 10 fichiers (`CallManagerBtn`, les sept de `System/__tests__`,
+  `useCallManager`, `useCallManager.invitations`) — aucune à 0, et chacune rougit dans le fichier
+  qui porte le fait :
+
+  | Neutralisé | Rougit |
+  |---|---|
+  | le bouton d'attente retiré | 1 · 2 au joint |
+  | son `@click` retiré | 1 · 1 au joint |
+  | `isCancelOfRingingInvitation` → `false` | 2 (alertes) |
+  | comparaison de room retirée · d'appelant retirée | 1 · 1 |
+  | alerte fermée PUIS transmise à `remoteStopCall` | 1 |
+  | toast retiré · alerte non fermée (toast seul) | 1 · 2 |
+  | garde du flux tardif retiré · flux non coupé | 3 · 3 |
+  | garde sur l'état de la FSM au lieu de la room | 1 |
+  | verdict ignoré par `acceptCallFromPeer` · par `openCallBetweenPeer` | 2 · 1 |
+
+  Nés verts, et c'est voulu : les trois cas qui gardent les mauvaises façons d'écrire la
+  correspondance (autre room, autre appelant, pas d'alerte), et le nominal sans arrêt.
+
+  ⚠️ **Fait de harnais payé ici** : `happy-dom` ne résout pas un sélecteur `[title="…"]` dont la
+  valeur porte une apostrophe — « absent » sur un rendu correct. L'assertion lit l'attribut.
+
+  **Restes, lus et non sondés :**
+  - **Relances fantômes** : une relance partie avant l'arrêt, arrivée après l'annulation, chez un
+    appelé qui n'avait pas vu la première, pose une alerte pour une invitation morte. S'il accepte,
+    il passe en RECEIVING sans personne en face — mais il a maintenant « annuler ».
+  - **Deux acquisitions concurrentes** ne sont pas départagées (borne écrite au garde) :
+    inatteignable sans deux appels acceptés pendant la même invite de permission.
+
+  **Vérif à deux navigateurs, à faire (David)** — rien de ceci n'exerce le transport réel :
+  1. A appelle B, A annule : l'alerte de B tombe avec le toast « Appel de A annulé » (libellé à
+     valider), A revient au repos, son bouton d'appel est réarmé ;
+  2. A annule puis rappelle aussitôt : B voit la nouvelle alerte, que l'annulation de la première ne
+     ferme pas ;
+  3. B accepte et, **pendant l'invite de permission**, annule : le voyant caméra de B s'éteint, A
+     revient au repos — **en silence** : chez A, `handleRemoteDeparture` émet `close-call` sans
+     toast, le spinner disparaît sans un mot (relecture, lu). Décision de produit, pas défaut ;
+  4. à l'œil : le spinner et le bouton rouge côte à côte dans la barre (`.btn-group`), copie hôte du
+     SCSS — `happy-dom` ne calcule aucune mise en page.
+
+  ⤵️ **L'énoncé d'origine, conservé** : `CallManagerBtn` ne rendait qu'un `<Spinner>` dans ces deux
+  états — deux filets en aval (l'abandon du retry à ≈55 s, l'auto-refus des alertes, 10 s en visio,
+  20 s en vocal), **aucun geste de l'utilisateur**. C'est ce qui a rendu invisible, longtemps, la
+  famille « FSM bloquée en calling », dont le lot F a fermé la troisième route.
 
   ✅ **Prérequis fait le 27/10/2026 : l'arrêt complet éteint l'invitation, sur ses DEUX moitiés.**
   Le mode `full` de `stopCallWithPeers` appelle `core.clearAllCallInviteRetries()` et
@@ -1395,7 +1455,7 @@ Tous mesurés **avant** d'être écrits ici, aucun n'est une impression de lectu
   aucun minuteur ne fait sortir de RECEIVING, où `CallManagerBtn` n'affiche qu'un spinner — et il
   garde l'appelant dans son allowlist. Le bouton doit donc fermer l'alerte en face, pas seulement
   arrêter l'appelant. Non sondé : ce que l'appelé fait des POST fantômes partis avant le correctif
-  (déduplication par `inviteId`).
+  (déduplication par `inviteId`). → **Fait** avec le bouton (morceau 2 ci-dessus).
 
   ✅ **Le refus discriminant est fait le 27/10/2026, en lot séparé AVANT le bouton** — décision de
   David (« au mieux, à part ou en même temps ») : le défaut était atteignable sans bouton, par les
@@ -1463,6 +1523,32 @@ Tous mesurés **avant** d'être écrits ici, aucun n'est une impression de lectu
   adressé à l'invitation d'un autre onglet de l'appelant retirait le pair de l'appel établi de
   celui-ci. Épinglé (« un refus destiné à un autre onglet ne coupe pas l'appel établi »).
 
+  ℹ️ **Le bouton « annuler » ouvrait une route neuve vers ce défaut, et ne l'ouvre pas** (27/10) :
+  un onglet de B en appel avec moi, un autre onglet de B qui me fait sonner puis annule — sans le
+  morceau 2 du bouton, ce signal aurait coupé mon appel établi avec B (lu, sur le chemin que la
+  sonde de cet item a mesuré en `calling`). Il ferme désormais l'alerte sans atteindre
+  `remoteStopCall` — épinglé par « l'alerte de SON invitation disparaît… et ce n'est pas un départ ». **Ce qui reste est cet item tel quel** : une annulation qui
+  croise un refus (l'alerte n'est déjà plus là) atteint encore `handleRemoteDeparture`, et la garde
+  de room n'y est toujours pas.
+
+  ℹ️ Le même morceau ferme, en passant, un cas que personne n'avait nommé (relecture, par
+  énumération mesurée de `remoteStopCall` en IDLE, puis raisonné) : **appels croisés** — je suis en
+  `calling` vers alice pendant que SON invitation sonne chez moi ; son annulation passait par
+  `removeCurrentCallUser(alice)`, vidait mes participants et faisait le full stop de MON appel.
+  Elle ne fait plus que fermer l'alerte.
+
+- [ ] 🟢 **`acceptCallFromPeer` écrit l'allowlist AVANT une transition qui peut refuser, sans
+  répondre** `[S]` — lu le 27/10/2026 en posant la garde du flux tardif, non sondé.
+
+  Le commentaire disait la réponse `status: true` partie « transition refusée comprise » : faux,
+  le `return` de la transition la précède (corrigé côté commentaire, pas côté code). Donc un appelé
+  **déjà en appel** qui accepte une seconde alerte — le garde « occupé » ne porte que sur les
+  alertes, pas sur les appels — inscrit l'appelant dans son allowlist et son mapping peerId, ne lui
+  répond pas, et l'y laisse jusqu'à la fin de l'appel en cours ; l'appelant attend son abandon
+  (≈55 s). Même classe que « la FSM ne protège que ce qui la suit » de `securite.md`. À trancher :
+  refuser explicitement (répondre `false`) et ne marquer qu'après la transition, ou refuser en
+  amont, dès l'alerte, quand un appel est en cours.
+
 - [ ] 🟢 **Les appels depuis une room : voulus, différés — et la garde aveugle au `contextId` attend
   ce chantier** `[L]` — mesuré le 27/10/2026 par la relecture du lot « l'arrêt complet éteint
   l'invitation », **décidé le même jour (David) : les appels devront fonctionner dans les rooms,
@@ -1490,6 +1576,29 @@ Tous mesurés **avant** d'être écrits ici, aucun n'est une impression de lectu
   raisonnée et non mesurée : un `contextId` n'est pas unique par FSM (deux homonymes se chevauchent
   au remontage, `createPeerContext`), donc cette purge traverserait leurs deux FSM — inatteignable
   tant que `Notifications` n'est monté qu'une fois, même borne que la purge au démontage.
+
+  ⚠️ **Cinquième chose à revoir, ajoutée le 27/10 par le lot du bouton « annuler » : deux
+  discriminants supposent qu'une room n'est JAMAIS réutilisée.** Ce n'est vrai que parce que
+  l'arrêt complet la vide et que `onStartCall` n'en impose aucune — `ensureCurrentCallRoomId`
+  conserve ou impose autant qu'il tire. Si ce chantier passe la room de la salle à
+  `startCallWithPeer({ room })` : (1) `Notifications.isCancelOfRingingInvitation` — A tab1 en appel
+  établi avec moi dans la salle S raccroche pendant que l'alerte de A tab2 (room S) sonne →
+  l'alerte tombe et le départ n'est PAS appliqué, l'appel établi n'est pas démonté (relecture,
+  raisonné sur le code) ; (2) le garde du flux tardif de `_enterCallSession` — annuler puis
+  rappeler dans la même salle laisse passer le flux de l'appel annulé. Remède commun : porter
+  l'`inviteId` sur `.CloseConnectionToPeerID` (le serveur ne le relaie pas aujourd'hui) et le
+  comparer, ou garder une room d'appel distincte de celle de la salle.
+
+- [ ] 🟢 **Un arrêt complet qui lève laisse la room d'appel en place** `[S]` — relevé le 27/10/2026
+  par la relecture du bouton « annuler », lu, non mesuré.
+
+  Le `finally` de `stopCallWithPeers` remet la FSM à IDLE (`callMachine.reset()`) quand une
+  exception a précédé `resetCallState` — par exemple dans `closePeerConnection` —, mais ne touche
+  ni à `currentCallRoomId` ni au reste de la session (participants, allowlist). Conséquence
+  nommée : le garde du flux tardif de `_enterCallSession` compare la room, qui n'a pas bougé — un
+  flux arrivé après cet arrêt-là ouvrirait caméra et micro en IDLE, le défaut même que le garde
+  ferme (borne écrite au garde). À trancher : vider la room avant `closePeerConnection`, ou faire
+  du filet un `resetCallState` complet.
 
 - [ ] 🟢 **`startCallWithPeer` ne distingue pas ses quatre refus** `[S]`
 

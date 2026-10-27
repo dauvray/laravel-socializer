@@ -426,7 +426,9 @@ l'appelé — le lui faire afficher demanderait un champ `fromUserName` dans les
 - **`CallManagerBtn.vue`** — la barre de commande d'un appel en cours. Props `status` (les cinq
   états de la FSM), `isMuted`, `isVideoEnabled` ; émet `stop-call`, `toggle-audio`,
   `toggle-video`. Purement présentationnel, comme `LocalStreamBtn` : son adaptateur est
-  `System/Notifications.vue`.
+  `System/Notifications.vue`. En `calling` et `receiving`, un spinner et un seul bouton,
+  « annuler », qui émet `stop-call` lui aussi — le même verbe en aval, voir
+  [flux.md](flux.md#annuler-avant-que-lappel-soit-établi--le-verbe-de--raccrocher-).
 - **`CallRemotePeerBtn.vue`** — le bouton d'appel d'un mur. Props `user` (requise) et `type`,
   **normalisé** à `visio | vocal` (voir ci-dessous). `AWN` est optionnel avec repli
   `window.AWN` ; **`eventBus` est REQUIS** — sans lui le bouton se désactive et le journalise

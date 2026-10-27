@@ -573,3 +573,96 @@ describe('Notifications — un rappel du MÊME compte remonte l\'alerte', () => 
         expect(alerte(wrapper, 'VideoCallAlert').exists()).toBe(false)
     })
 })
+
+describe('Notifications — l\'appelant annule pendant que l\'alerte sonne', () => {
+    /**
+     * L'appelant qui annule pendant `calling` passe par le verbe de « raccrocher »
+     * (`stopCallWithPeers`, mode `full`), donc par le MÊME signal : `.CloseConnectionToPeerID`,
+     * tel que `UserController::closeConnectionToPeerId` le diffuse — `fromUserSlug` posé depuis
+     * l'authentifié, `room` (exigée) et `type` relayés.
+     *
+     * Avant le 27/10/2026, ce signal allait tout droit à `remoteStopCall` : l'alerte sonnait
+     * jusqu'à la réponse de l'appelé ou son auto-refus, et s'il acceptait, il restait en RECEIVING —
+     * l'appelant, revenu à IDLE, ignore une acceptation sans invitation en vol.
+     */
+    const annulation = (fromUserSlug = 'bob', room = 'call-room-1') => ({
+        fromUserSlug,
+        room,
+        type: 'visio',
+    })
+
+    const recevoirLAnnulation = async (event) => {
+        reverbListeners['.CloseConnectionToPeerID'](event)
+        await flushPromises()
+    }
+
+    it('⭐ l\'alerte de SON invitation disparaît, sans réponse, et ce n\'est pas un départ', async () => {
+        wrapper = await monter()
+        await recevoirLInvitation('visio')
+        expect(alerte(wrapper, 'VideoCallAlert').exists()).toBe(true)
+
+        await recevoirLAnnulation(annulation())
+
+        expect(alerte(wrapper).exists()).toBe(false)
+        expect(document.body.querySelector('.alert')).toBeNull()
+        // Aucune réponse : l'appelant est déjà en IDLE, et un refus n'y produirait qu'un
+        // toast « bob est injoignable » de plus.
+        expect(peersDouble.acceptCallFromPeer).not.toHaveBeenCalled()
+        // Pas un départ : rien n'est établi. Le transmettre ferait appliquer à l'appel en cours,
+        // s'il y en a un, un départ qui porte la room d'un autre.
+        expect(peersDouble.remoteStopCall).not.toHaveBeenCalled()
+        expect(window.AWN.info).toHaveBeenCalledWith('Appel de bob annulé')
+    })
+
+    it('⭐ son auto-refus part avec elle : rien ne répond après coup', async () => {
+        vi.useFakeTimers()
+        try {
+            wrapper = await monter()
+            await recevoirLInvitation('vocal')
+
+            reverbListeners['.CloseConnectionToPeerID'](annulation())
+            await vi.advanceTimersByTimeAsync(25_000)
+
+            // 20 s pour l'alerte vocale : une alerte retirée de l'écran mais dont le minuteur
+            // survivrait enverrait un refus au nom d'une invitation déjà annulée.
+            expect(peersDouble.acceptCallFromPeer).not.toHaveBeenCalled()
+        } finally {
+            vi.useRealTimers()
+        }
+    })
+
+    it('⭐ un signal d\'une AUTRE room du même appelant n\'y touche pas : c\'est un départ, transmis', async () => {
+        // Le même compte peut sonner ici depuis un onglet et raccrocher depuis un autre un appel
+        // établi avec moi : l'appelant seul ne discrimine pas, la room si — tant qu'aucun appelant
+        // n'impose la sienne (docblock d'`isCancelOfRingingInvitation`).
+        wrapper = await monter()
+        await recevoirLInvitation('visio')
+
+        const depart = annulation('bob', 'call-room-0')
+        await recevoirLAnnulation(depart)
+
+        expect(alerte(wrapper, 'VideoCallAlert').exists()).toBe(true)
+        expect(peersDouble.remoteStopCall).toHaveBeenCalledWith(depart)
+    })
+
+    it('un signal d\'un AUTRE appelant n\'y touche pas', async () => {
+        wrapper = await monter()
+        await recevoirLInvitation('visio')
+
+        const depart = annulation('carole')
+        await recevoirLAnnulation(depart)
+
+        expect(alerte(wrapper, 'VideoCallAlert').exists()).toBe(true)
+        expect(peersDouble.remoteStopCall).toHaveBeenCalledWith(depart)
+    })
+
+    it('sans alerte, le signal reste un départ, transmis tel quel', async () => {
+        wrapper = await monter()
+
+        const depart = annulation()
+        await recevoirLAnnulation(depart)
+
+        expect(peersDouble.remoteStopCall).toHaveBeenCalledWith(depart)
+        expect(window.AWN.info).not.toHaveBeenCalled()
+    })
+})

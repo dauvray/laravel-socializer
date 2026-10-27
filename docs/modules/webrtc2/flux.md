@@ -87,7 +87,8 @@ useCallManager.openCallBetweenPeer
 
 ⚠️ **Un refus ne vaut que pour SON invitation.** `sendAuthorizationRemotePeerId` y renvoie `room` et
 `inviteId` tels que reçus — jamais le `peerId` —, et l'appelant compare l'`inviteId` à celui de
-l'entrée en vol, pas sa seule présence : la clé (slug, room, type) d'un rappel peut coïncider. Sans
+l'entrée en vol, pas sa seule présence : la clé (slug, room, type) d'un rappel peut coïncider, dès
+qu'un appelant impose la room (§ Annuler avant que l'appel soit établi). Sans
 ça, un refus frappait l'appel EN COURS, quel qu'il soit — l'appel établi d'un autre onglet compris.
 Un refus **sans** `inviteId` garde l'ancien sens — appelé sur un bundle antérieur, ou les deux
 reprises internes (abandon, invitation non émise), qui portent par construction sur l'invitation
@@ -170,8 +171,8 @@ Notifications.onStartCall
 ⚠️ **Ce chemin n'était fermé nulle part avant le 2026-08-31, et c'était le pire des trois.** Le
 `return null` de `usePeerCore` précède l'armement du moteur de retry : ni `.ResponseToAuthorizationPeer`
 ni `inviteAbandonedSignal` ne pouvaient donc arriver. La FSM restait en CALLING **pour la vie de
-l'onglet**, et par ordre de gravité : `CallManagerBtn` n'affiche qu'un spinner dans cet état, donc
-**aucune sortie** ; `transition(CALLING)` depuis `calling` étant invalide, **plus aucun appel
+l'onglet**, et par ordre de gravité : `CallManagerBtn` n'affichait alors qu'un spinner dans cet état,
+donc **aucune sortie** ; `transition(CALLING)` depuis `calling` étant invalide, **plus aucun appel
 possible vers personne** ; la session restait polluée ; et seulement en quatrième, le bouton du mur
 restait désactivé. Le commentaire de `usePeerCore` affirmait « l'utilisateur peut rappeler » : c'est
 vrai depuis, faux avant.
@@ -183,6 +184,65 @@ d'appel **pendant** la conversation.
 Gardé des deux côtés, et les deux moitiés sont mesurées mutuellement aveugles : retirer la reprise
 rougit 3 cas de `__tests__/useCallManager.test.js` et **0** de `Notifications.test.js` ; retirer le
 toast rougit 2 cas de `Notifications.test.js` et **0** de l'autre.
+
+### Annuler avant que l'appel soit établi : le verbe de « raccrocher »
+
+Pendant `calling` et `receiving`, `CallManagerBtn` rend un spinner **et** un bouton « annuler », qui
+émet `stop-call` comme « raccrocher » : c'est le même verbe en aval. Avant le 2026-10-27, ces deux
+états n'avaient **aucune sortie** que l'utilisateur puisse déclencher.
+
+```
+CallManagerBtn (calling | receiving) → stop-call
+Notifications.onStopCall → close-call + peers.stopCallWithPeers(currentCallUsers)
+useCallManager.stopCallWithPeers (mode full)
+  ├─ core.notifyCloseConnectionToPeer({ toUserSlug, type, room })   ← la room de l'appel
+  ├─ core.clearAllCallInviteRetries() + peerStore.clearCallInvitesForContext()
+  └─ … → CLOSING → IDLE
+
+  … chez le pair d'en face …
+
+Reverb .CloseConnectionToPeerID → Notifications.vue
+  ├─ l'alerte de CETTE invitation sonne ?     ← même appelant ET même room
+  │    → elle tombe, toast « Appel de <slug> annulé », RIEN ne part
+  └─ sinon → peers.remoteStopCall(event)       ← un départ (§ Départ d'un pair)
+```
+
+⚠️ **C'est l'arrêt COMPLET qui rend l'annulation sûre**, pas le bouton : il éteint la chaîne de
+relance et l'entrée « invitation en vol » (§ Personne ne répond), sans quoi une acceptation tardive
+passait la garde d'`openCallBetweenPeer` — et, si l'on appelait déjà quelqu'un d'autre, entrait
+dans ce nouvel appel.
+
+⚠️ **L'alerte d'en face se reconnaît à la ROOM, l'appelant seul ne suffit pas.** Un même compte peut
+faire sonner un onglet et raccrocher, depuis un autre, un appel établi avec moi : ce signal-là est un
+départ. Le serveur exige la room sur ce signal et non sur l'invitation : une alerte **sans** room ne
+s'annule jamais ainsi, elle sonne jusqu'à sa réponse ou son auto-refus.
+
+⚠️ **Deux appels n'ont pas la même room aujourd'hui, mais ce n'est pas un contrat.**
+`ensureCurrentCallRoomId` conserve ou impose une room autant qu'il en tire une ; ce qui la rend neuve
+est que l'arrêt complet la vide, et que le seul appelant de `startCallWithPeer` (`onStartCall`) n'en
+impose aucune. Le jour où un appel imposera la room d'une salle (appels depuis une room, différés),
+deux invitations du même compte porteront la même : ce discriminant devra comparer l'`inviteId`, que
+le signal de fermeture ne porte pas — et le garde du flux tardif, ci-dessous, aussi.
+
+⚠️ **Rien ne part de l'appelé, et c'est voulu.** Pas de réponse : l'appelant, revenu à IDLE, ne lit
+plus de refus pour cette invitation et n'afficherait que « … est injoignable ». Pas de
+`remoteStopCall` : rien n'est établi, et `handleRemoteDeparture` appliquerait à l'appel en cours, s'il
+y en a un, un départ qui porte la room d'un autre. Avant, l'alerte sonnait jusqu'à son auto-refus,
+qui partait au nom de l'invitation annulée ; et si l'appelé acceptait, il restait en RECEIVING,
+périphériques ouverts — l'appelant ignore une acceptation sans invitation en vol.
+
+⚠️ **Un arrêt pendant `getUserMedia` coupe le flux à son arrivée.** L'acquisition dure autant que
+l'invite de permission reste ouverte, et la barre offre « annuler » (RECEIVING) ou « raccrocher »
+(CONNECTED) pendant ce temps. L'arrêt complet ne coupe pas un flux qui n'existe pas encore :
+`_enterCallSession` compare donc, au retour, la room d'appel à celle de son entrée, et rend `false`
+si elle a changé — flux coupé, aucun player, et ni acceptation (appelé) ni connexion (initiateur).
+La **room** et non l'état de la FSM : annuler puis appeler aussitôt quelqu'un d'autre ramène la FSM
+hors d'IDLE avant que l'invite se referme. Ce défaut existait déjà en CONNECTED (« raccrocher »
+pendant l'invite, ou départ du pair) ; le bouton le rendait atteignable d'un clic en RECEIVING.
+
+Gardé par `CallManagerBtn.test.js` (le bouton), `Notifications.callControls.test.js` (le joint),
+`Notifications.alerts.test.js` (l'alerte d'en face) et `useCallManager.test.js` (§ un arrêt pendant
+l'acquisition du flux local).
 
 ---
 
@@ -205,7 +265,8 @@ useCallManager.acceptCallFromPeer
   ├─ transport.setLocalPeer()
   ├─ peerStore.addRemotePeerId(fromUserSlug, options.peerId)   ← AVANT la transition
   ├─ callMachine.transition(RECEIVING)
-  ├─ _enterCallSession()
+  ├─ _enterCallSession()                                       ← false si arrêté pendant getUserMedia
+  │                                                              : rien ne part (§ Annuler…)
   └─ core.sendAuthorizationRemotePeerId()
        └─ POST /response-to-authorization-peer
           (le peerId LOCAL n'y est injecté que si `status` est vrai)
@@ -508,8 +569,8 @@ Deux transports, une seule séquence. Voir
 pour le rationale.
 
 ```
-signal serveur .CloseConnectionToPeerID → remoteStopCall ─┐
-fermeture de connexion PeerJS → handleStreamRemoved ──────┤
+signal serveur .CloseConnectionToPeerID → remoteStopCall ─┐   (sauf l'annulation de l'alerte
+fermeture de connexion PeerJS → handleStreamRemoved ──────┤    qui sonne : § Annuler…)
    (entrantes seulement, contexte 'stream')               ▼
                                     useCallManager.handleRemoteDeparture
                                       ├─ garde par participant (closingUsers) + try/finally
