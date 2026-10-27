@@ -77,11 +77,35 @@ Reverb .ResponseToAuthorizationPeer (status: false) → Notifications.vue
   ├─ toast « <slug> est injoignable » + eventBus close-call     ← UI seule, n'AGIT PAS sur la FSM
   └─ peers.openCallBetweenPeer(event)                           ← branche !status
 useCallManager.openCallBetweenPeer
-  ├─ core.stopCallInviteRetryForUser(...)
+  ├─ options.inviteId porté ? → doit être celui de l'invitation en vol, sinon refus IGNORÉ
+  │                             (périmé) ; s'il l'est, l'invitation est consommée
+  ├─ core.stopCallInviteRetryForUser(...)                       ← APRÈS la garde, jamais avant
   ├─ ctx.removeCurrentCallUser(fromUserSlug)
   └─ dernier participant ? → stopCallWithPeers([], false, {mode:'full'})
                                → CALLING → CLOSING → IDLE
 ```
+
+⚠️ **Un refus ne vaut que pour SON invitation.** `sendAuthorizationRemotePeerId` y renvoie `room` et
+`inviteId` tels que reçus — jamais le `peerId` —, et l'appelant compare l'`inviteId` à celui de
+l'entrée en vol, pas sa seule présence : la clé (slug, room, type) d'un rappel peut coïncider. Sans
+ça, un refus frappait l'appel EN COURS, quel qu'il soit — l'appel établi d'un autre onglet compris.
+Un refus **sans** `inviteId` garde l'ancien sens — appelé sur un bundle antérieur, ou les deux
+reprises internes (abandon, invitation non émise), qui portent par construction sur l'invitation
+vivante.
+
+⚠️ **« Annuler puis rappeler » a besoin des DEUX moitiés.** Côté appelant, la garde ci-dessus.
+Côté appelé, une alerte par invitation : rappelé pendant que sa première alerte sonne, il la
+**remplace** (`:key` du `<component>` de `Notifications.vue`, cf. plus bas). Tant qu'elle était
+patchée, le minuteur de la première refusait le rappel avec l'`inviteId` du rappel — un refus
+légitime aux yeux de la garde, qui coupait le rappel.
+
+⚠️ **Même règle pour l'arrêt de la relance, dans les deux branches** : il porte sur le slug, donc sur
+l'invitation vivante vers ce pair, et c'est `openCallBetweenPeer` seul qui l'arrête, **après** ses
+gardes — ni en tête, ni dans `Notifications.vue` avant l'appel. Arrêtée avant la décision, une
+réponse que la garde ignore ensuite ne laissait ni relance ni abandon : l'appelant restait en
+`calling` pour toujours. Corollaire : l'entrée en vol doit vivre aussi longtemps que la chaîne —
+`invalidateRemotePeerId` (un `peer-unavailable` dans n'importe quel contexte de l'onglet) n'efface
+pas les invitations, seulement les demandes de peerId.
 
 ⚠️ **`openCallBetweenPeer` doit être appelé AUSSI sur refus** : sa branche `!status` est le seul
 chemin qui retire le participant et ramène la FSM à IDLE. Ni le toast ni `close-call` ne touchent
@@ -215,12 +239,16 @@ la réponse d'un **autre** appelant est refusée d'office — un toast chez l'ap
 le même refus que le bouton « Refuser », qui arrête son retry tout de suite. Réaffecter l'alerte ne
 la remonterait pas : Vue patcherait l'instance vivante, qui garderait son type et son minuteur, et
 ce minuteur refuserait le second appelant à la place du premier. Le **même** compte n'est jamais
-refusé ainsi — la raison est dans le docblock d'`isAwaitingAnotherCaller` : il repasse par le patch,
-sans effet pour une relance identique.
+refusé ainsi — la raison est dans le docblock d'`isAwaitingAnotherCaller` : son invitation
+**remplace** l'alerte, remontée par le `:key` du `<component>` (l'`inviteId`), donc avec son propre
+type et son propre minuteur. Une relance identique est éliminée avant, par `isInviteDuplicate`.
 
-**Bornes assumées le 2026-10-26.** Un *nouvel* appel du même compte pendant que son alerte sonne —
-second onglet, autre appareil, ou rechargement : l'onglet qui appelle n'a aucun bouton en `calling` —
-hérite du type affiché et du reliquat de minuteur du premier, 20 s au plus. Et pendant qu'une alerte
+**Bornes assumées le 2026-10-26, la première révisée le 27/10.** Un *nouvel* appel du même compte
+pendant que son alerte sonne — second onglet, autre appareil — remplace l'alerte, et l'invitation
+remplacée ne reçoit **aucune** réponse : son onglet appelant attend l'abandon, ≈55 s après son
+invitation. Jusqu'au 27/10, le rappel héritait au contraire du type affiché et du reliquat de
+minuteur de la première alerte, qui le refusait à son échéance — ce qui coupait un « annuler puis
+rappeler ». Une invitation **sans** `inviteId` garde cet ancien patch. Et pendant qu'une alerte
 se **charge**, le créneau est tenu sans rien à l'écran : un appelant qui arrive dans cette fenêtre
 est refusé — 2 × `ALERT_LOAD_TIMEOUT_MS` au plus, les deux niveaux de chargement étant en série. Le
 toast le dit sans mentir : « un autre appel arrivait déjà », vrai que l'alerte soit affichée ou

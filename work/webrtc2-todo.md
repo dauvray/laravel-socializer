@@ -1397,13 +1397,48 @@ Tous mesurés **avant** d'être écrits ici, aucun n'est une impression de lectu
   arrêter l'appelant. Non sondé : ce que l'appelé fait des POST fantômes partis avant le correctif
   (déduplication par `inviteId`).
 
-  ⚠️ **Et le bouton exige un REFUS discriminant — défaut antérieur au lot, mesuré à l'identique
-  avant et après.** Un refus ne porte ni `inviteId` ni room : `sendAuthorizationRemotePeerId` n'envoie
-  que `{ type }` quand `status` est faux. Côté appelant, `openCallBetweenPeer({ status: false })`
-  l'impute donc à l'appel EN COURS. Sonde de la relecture : annuler alice, la rappeler dans les 10 s
-  / 20 s, et le refus de la première alerte coupe le second appel (IDLE). Côté appelé, que ce refus
-  parte bien quand l'alerte est rafraîchie par le rappel est lu, pas monté. À fermer avec le bouton :
-  un `inviteId` (ou la room) dans le refus, et une garde côté appelant.
+  ✅ **Le refus discriminant est fait le 27/10/2026, en lot séparé AVANT le bouton** — décision de
+  David (« au mieux, à part ou en même temps ») : le défaut était atteignable sans bouton, par les
+  deux onglets d'un même compte, et le lot du bouton est déjà lourd. « Annuler puis rappeler » avait
+  besoin de **deux** moitiés, et la première version du lot n'en avait qu'une — la relecture l'a
+  montré en MONTANT l'alerte. Durable dans [`flux.md`](../docs/modules/webrtc2/flux.md).
+
+  - **Appelant** : le refus renvoie `room` et `inviteId` (le serveur les relayait déjà — épinglé
+    côté PHP), et `openCallBetweenPeer` compare l'`inviteId` à celui de l'entrée en vol. Sans
+    `inviteId`, l'ancien sens est gardé (bundle antérieur, abandon, invitation non émise). Ferme
+    aussi le refus adressé à un autre onglet, qui coupait l'appel établi de celui-ci.
+  - **Appelé** : rappelé pendant que sa première alerte sonne, il la PATCHAIT — props du rappel,
+    minuteur de la première. L'auto-refus partait donc à l'échéance de la première, avec
+    l'`inviteId` du rappel : un refus légitime pour la garde, qui coupait le rappel comme avant.
+    Corrigé par un `:key` = `inviteId` sur le `<component>` de `Notifications.vue` : une alerte, un
+    type et un minuteur par invitation. Monté (`Notifications.alerts.test.js`).
+  - **La relecture a trouvé que la garde fabriquait une RÉGRESSION**, deux causes cumulées : un
+    `peer-unavailable` dans n'importe quel contexte (`invalidateRemotePeerId`) effaçait aussi les
+    invitations, et `Notifications.vue` coupait la relance AVANT la garde. Un refus légitime d'un
+    appelé qui a rechargé son onglet était alors ignoré sans relance ni abandon : appelant en
+    `calling` pour toujours (le même blocage existait déjà pour une acceptation). Corrigé aux deux
+    bouts — un peerId mort n'efface plus que les demandes de peerId, et seul `openCallBetweenPeer`
+    arrête la relance, après ses gardes.
+  - **Seconde porte trouvée en lisant** : `openCallBetweenPeer` coupait lui-même la relance en tête,
+    avant ses deux gardes — une acceptation tardive éteignait la relance du rappel.
+
+  Sur les sources de 8d03a37, **11 cas rougissent** : 5 de jonction
+  (`useCallManager.invitations.test.js`), 3 montages de `Notifications`, 1 de store, le contrat
+  d'envoi du refus (`usePeerCore.test.js`, dont l'ancien cas épinglait « uniquement `{ type }` », donc
+  le défaut) et l'ordre de `Notifications.test.js` (qui épinglait l'arrêt avant la garde). Un 6e cas
+  de jonction, « un peerId mort », est **vert sur 8d03a37** et rouge quand le DOUBLE du store n'a pas
+  le correctif : c'est le témoin de la régression, pas un cas né rouge. Il épingle la copie du
+  double ; le vrai `invalidateRemotePeerId` ne l'est que par le cas de store. Le relais PHP est
+  épinglé, né vert (le serveur le faisait déjà). Contre-épreuves dans les docblocks.
+
+  ℹ️ **Ce que coûte le remplacement d'alerte, assumé** : l'invitation remplacée ne reçoit aucune
+  réponse. Avec deux onglets appelants du même compte, le plus ancien attend son abandon (≈55 s) au
+  lieu d'être coupé avec l'autre — docblock d'`isAwaitingAnotherCaller`, borne dans `flux.md`.
+  **Reste, lu et non sondé** : `Notifications.vue` affiche « … est injoignable » et émet `close-call`
+  AVANT `openCallBetweenPeer` — un refus périmé, désormais ignoré par la FSM, produit donc encore ce
+  toast pendant le rappel, et réarme le bouton d'appel de ce pair. Cosmétique, mesuré par la
+  relecture : une alerte remplacée pendant que son chunk pend journalise encore « Async component
+  timed out » à son ancienne échéance (le minuteur de `defineAsyncComponent` survit à l'instance).
 
   ℹ️ Le parcours sous course (un `.CloseConnectionToPeerID` appliqué sans garde, item suivant)
   arrêtait l'appel en laissant l'invitation vivante ; il l'arrête désormais avec elle. Sonde non
@@ -1424,9 +1459,9 @@ Tous mesurés **avant** d'être écrits ici, aucun n'est une impression de lectu
   mesurée. Non établi : une fermeture PeerJS (`useStreamManager.handleStreamRemoved`) atteignant le
   contexte de `Notifications` pendant `calling` serait un second déclencheur.
 
-  ℹ️ Même famille, lue et non mesurée : `.ResponseToAuthorizationPeer` en `status: false` appelle
-  `openCallBetweenPeer` sans vérifier l'`inviteId`. Avec deux onglets du même compte, un refus
-  destiné au premier pourrait retirer le pair de l'appel établi du second.
+  ✅ Même famille, **fermée le 27/10/2026 par le refus discriminant** (item précédent) : un refus
+  adressé à l'invitation d'un autre onglet de l'appelant retirait le pair de l'appel établi de
+  celui-ci. Épinglé (« un refus destiné à un autre onglet ne coupe pas l'appel établi »).
 
 - [ ] 🟢 **Les appels depuis une room : voulus, différés — et la garde aveugle au `contextId` attend
   ce chantier** `[L]` — mesuré le 27/10/2026 par la relecture du lot « l'arrêt complet éteint
@@ -1443,10 +1478,15 @@ Tous mesurés **avant** d'être écrits ici, aucun n'est une impression de lectu
   Inatteignable aujourd'hui : le seul appelant de `startCallWithPeer` est
   `Notifications.onStartCall`, et l'hôte n'en a aucun. **Donc `startCallWithPeer` reste sur la
   surface du provider** : la retirer fermerait un chemin voulu. Le chantier qui le fera marcher
-  devra revoir ensemble trois choses, qui supposent toutes qu'un appel vit dans le contexte de
+  devra revoir ensemble quatre choses, qui supposent toutes qu'un appel vit dans le contexte de
   `Notifications` : la garde aveugle au `contextId`, la portée par contexte de
-  `clearCallInvitesForContext`, et le fait que la réponse n'arrive qu'à `Notifications` alors que
-  la FSM et la chaîne vivent dans le provider. Borne voisine,
+  `clearCallInvitesForContext`, le fait que la réponse n'arrive qu'à `Notifications` alors que
+  la FSM et la chaîne vivent dans le provider — et, depuis le lot « une réponse ne vaut que pour
+  SON invitation », une **collision de clé** : `invalidateRemotePeerId` garde les invitations,
+  donc une invitation dont la room vaut l'`onAirRoom` du contexte (la forme même d'un appel depuis
+  une room, `startCallWithPeer` posant `session.currentType` au type d'appel) étrangle la
+  re-demande de peerId de ce contexte — mesuré par la relecture, 0 POST contre 1 avant.
+  Inatteignable tant que `onStartCall` ne passe pas de room (room d'appel en UUID). Borne voisine,
   raisonnée et non mesurée : un `contextId` n'est pas unique par FSM (deux homonymes se chevauchent
   au remontage, `createPeerContext`), donc cette purge traverserait leurs deux FSM — inatteignable
   tant que `Notifications` n'est monté qu'une fois, même borne que la purge au démontage.

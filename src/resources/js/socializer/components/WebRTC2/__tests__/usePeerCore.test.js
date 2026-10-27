@@ -872,13 +872,20 @@ describe('usePeerCore', () => {
             expect(sentOptions.peerId).toBe('peer-id-injected')
         })
 
-        it('envoie un POST à RESPONSE_TO_AUTHORIZATION_PEER avec status false et uniquement { type } dans options', async () => {
+        /**
+         * Ce cas épinglait « uniquement { type } », et c'était le défaut : sans `inviteId`,
+         * l'appelant imputait le refus à l'appel en cours, quel qu'il soit — le rappel d'un pair
+         * qu'on venait d'annuler était coupé par le refus de sa première alerte.
+         */
+        it('envoie un POST à RESPONSE_TO_AUTHORIZATION_PEER avec status false, le type et de quoi désigner l\'invitation', async () => {
             const payload = buildPayload({
                 status: false,
                 options: {
                     type: 'visio',
                     room: 'room-42',
                     action: 'peer-access-permission',
+                    peerId: 'peer-de-l-appelant',
+                    inviteId: 'invite-42',
                 },
             })
 
@@ -890,10 +897,16 @@ describe('usePeerCore', () => {
                 'post',
                 {
                     toUserSlug: 'bob',
-                    options: { type: 'visio' },
+                    options: { type: 'visio', room: 'room-42', inviteId: 'invite-42' },
                     status: false,
                 }
             )
+        })
+
+        it('un refus sans room ni inviteId (bundle antérieur de l\'appelant) n\'envoie que le type', async () => {
+            await core.sendAuthorizationRemotePeerId(buildPayload({ status: false, options: { type: 'vocal' } }))
+
+            expect(ctx.AjaxService.load.mock.calls[0][2].options).toEqual({ type: 'vocal' })
         })
 
         it('n\'inclut pas peerId dans options quand status est false', async () => {

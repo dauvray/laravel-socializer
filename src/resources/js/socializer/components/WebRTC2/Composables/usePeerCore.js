@@ -427,10 +427,19 @@ export function usePeerCore(ctx) {
             }
         }
 
+        // Un refus ne porte pas les infos de connexion (`peerId`) — seulement le type d'appel,
+        // et de quoi désigner SON invitation : `room` et `inviteId`, renvoyés tels que reçus.
+        // Sans eux, l'appelant imputait le refus à l'appel en cours, quel qu'il soit (cf.
+        // `useCallManager._consumeRefusedInvitation`). Le serveur les relaie déjà
+        // (`RELAYED_OPTION_KEYS`) ; une clé absente n'est pas envoyée.
+        const refusalOptions = { type: payload.options.type }
+        if (payload.options.room) refusalOptions.room = payload.options.room
+        if (payload.options.inviteId) refusalOptions.inviteId = payload.options.inviteId
+
         try {
             await ctx.AjaxService.load(ENDPOINTS.RESPONSE_TO_AUTHORIZATION_PEER, 'post', {
                 toUserSlug: payload.fromUserSlug,
-                options: payload.status ? payload.options : { type: payload.options.type }, // on envoie les infos de connexion seulement si l'accès est autorisé, sinon on précise juste le type d'appel pour que le client puisse réagir (ex: afficher une notification d'appel refusé)
+                options: payload.status ? payload.options : refusalOptions,
                 status: payload.status
             })
         } catch (e) {

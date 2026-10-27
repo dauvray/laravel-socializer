@@ -94,7 +94,8 @@ const EXPECTED_VERBS = [
     'setCurrentCallRoomId',
     'ensureCurrentCallRoomId',
     'announceBroadcastState',
-    'stopCallInviteRetry',        // Notifications.vue:109
+    'stopCallInviteRetry',        // AUCUN site d'appel depuis le 2026-10-27 : `Notifications.vue`
+                                  // ne coupe plus la relance avant la garde d'`openCallBetweenPeer`
     'clearAllCallInviteRetries',  // Notifications.vue:249
     'clearSeenInvites',           // Notifications.vue:250
     'isInviteDuplicate',          // Notifications.vue:82

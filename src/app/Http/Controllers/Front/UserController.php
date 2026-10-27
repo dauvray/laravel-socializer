@@ -189,9 +189,10 @@ class UserController extends Controller
      * Règles du bloc `options` des deux routes d'invitation d'appel.
      *
      * `$actionRequired` sépare les deux sens de l'échange : l'invitation porte toujours son
-     * `action`, alors qu'un REFUS n'envoie que `{ type }` (`usePeerCore::sendAuthorizationRemotePeerId`
-     * — « on envoie les infos de connexion seulement si l'accès est autorisé »). L'exiger
-     * des deux côtés casserait le refus d'appel.
+     * `action`, alors qu'un REFUS n'en porte pas (`usePeerCore::sendAuthorizationRemotePeerId`) :
+     * `{ type, room, inviteId }` depuis le 27/10/2026 — le client compare l'`inviteId` pour
+     * n'imputer le refus qu'à SON invitation —, et `{ type }` seul pour un bundle antérieur.
+     * L'exiger des deux côtés casserait le refus d'appel.
      */
     private function optionsRules(bool $actionRequired): array
     {

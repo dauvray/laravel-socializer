@@ -39,6 +39,26 @@
  * (`inviteId`, portée `contextId`) y est recopié, et ses deux mutants laissent la suite entière
  * verte. Le vrai verbe n'est épinglé que par `peers2Store.remotePeerId.test.js` — même
  * arbitrage que `clearWaitingRemotePeerIdsForContext`.
+ *
+ * ── Une réponse ne vaut que pour SON invitation (mesurés le 2026-10-27) ──────────────────
+ *
+ *   | Neutralisé dans `useCallManager`                       | Rougit                       |
+ *   |--------------------------------------------------------|------------------------------|
+ *   | garde du refus (`_consumeRefusedInvitation` → true)    | 4 cas                        |
+ *   | identité → présence de l'entrée en vol                 | « même room »                |
+ *   | consommation de l'invitation refusée                   | « consomme son invitation »  |
+ *   | arrêt de la relance remis en tête                      | les deux réponses tardives   |
+ *   | `useCallManager.js` et `usePeerCore.js` de 8d03a37      | 5 cas, plus le contrat       |
+ *   |                                                        | d'envoi de `usePeerCore`     |
+ *   | `invalidateRemotePeerId` d'avant (store et double)     | « un peerId mort »           |
+ *
+ * ⚠️ « Un peerId mort » est VERT sur 8d03a37, et c'est voulu : sans garde, tout refus fermait
+ * l'appel. Il est le témoin de la régression que la garde fabriquait tant qu'un `peer-unavailable`
+ * effaçait aussi les invitations — un refus légitime ignoré, l'appelant en `calling` pour toujours.
+ *
+ * ⚠️ Les réponses sont fabriquées ici, pas émises par un core appelé : le contrat d'envoi du
+ * refus (`room` + `inviteId`) est épinglé à part, dans `usePeerCore.test.js`. Le cas « refus de
+ * l'invitation vivante » est vert sur les deux versions : c'est un contrat, pas un témoin.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createMockContext } from './helpers/createMockContext.js'
@@ -185,6 +205,146 @@ describe('useCallManager × usePeerCore — invitations', () => {
 
             expect(ctx.callMachine.callState.value).toBe(CALL_STATES.CONNECTED)
             expect(ctx.session.currentCallUsers.map((u) => u.userSlug)).toEqual(['bob'])
+        })
+    })
+
+    describe('une réponse ne vaut que pour SON invitation', () => {
+        const raccrocher = () => cm.stopCallWithPeers([...ctx.session.currentCallUsers], true, { mode: 'full' })
+
+        /**
+         * La séquence de `.ResponseToAuthorizationPeer` dans `Notifications.vue`, côté FSM : le
+         * toast et `close-call` n'y touchent pas, et la relance n'y est plus arrêtée avant la
+         * garde — `openCallBetweenPeer` est le seul à décider.
+         */
+        const recevoirReponse = (event) => cm.openCallBetweenPeer(event)
+
+        /** Rappel d'alice après annulation : la 1re alerte peut encore répondre. */
+        const annulerPuisRappeler = async () => {
+            const premiere = await cm.startCallWithPeer({ toUserSlug: 'alice', type: 'visio', room: 'call-1' })
+            await raccrocher()
+            const seconde = await cm.startCallWithPeer({ toUserSlug: 'alice', type: 'visio', room: 'call-2' })
+            return { premiere, seconde }
+        }
+
+        it('le refus tardif de la 1re alerte ne coupe pas le rappel', async () => {
+            const { premiere } = await annulerPuisRappeler()
+
+            await recevoirReponse({
+                fromUserSlug: 'alice',
+                status: false,
+                options: { type: 'visio', room: 'call-1', inviteId: premiere },
+            })
+
+            expect(ctx.callMachine.callState.value).toBe(CALL_STATES.CALLING)
+            expect(ctx.session.currentCallUsers).toEqual([{ userSlug: 'alice', type: 'visio' }])
+
+            await vi.advanceTimersByTimeAsync(30_000)
+            expect(roomsInvitees().filter((room) => room === 'call-2').length).toBeGreaterThan(1)
+        })
+
+        it('l\'acceptation tardive de la 1re alerte n\'éteint pas la relance du rappel', async () => {
+            const { premiere } = await annulerPuisRappeler()
+
+            await recevoirReponse({
+                fromUserSlug: 'alice',
+                status: true,
+                options: { type: 'visio', room: 'call-1', peerId: 'alice-peer-id', inviteId: premiere },
+            })
+
+            expect(ctx.callMachine.callState.value).toBe(CALL_STATES.CALLING)
+
+            await vi.advanceTimersByTimeAsync(30_000)
+            expect(roomsInvitees().filter((room) => room === 'call-2').length).toBeGreaterThan(1)
+        })
+
+        it('le refus tardif ne coupe pas non plus un rappel qui réutilise la même room', async () => {
+            // Même clé (alice, call-1, visio) pour les deux invitations : seule l'identité de
+            // l'invitation les distingue, sa simple présence ne dit rien.
+            const premiere = await cm.startCallWithPeer({ toUserSlug: 'alice', type: 'visio', room: 'call-1' })
+            await raccrocher()
+            await cm.startCallWithPeer({ toUserSlug: 'alice', type: 'visio', room: 'call-1' })
+
+            await recevoirReponse({
+                fromUserSlug: 'alice',
+                status: false,
+                options: { type: 'visio', room: 'call-1', inviteId: premiere },
+            })
+
+            expect(ctx.callMachine.callState.value).toBe(CALL_STATES.CALLING)
+            expect(ctx.session.currentCallUsers).toEqual([{ userSlug: 'alice', type: 'visio' }])
+        })
+
+        it('un refus valide consomme son invitation, même quand l\'appel survit', async () => {
+            // Seul cas où la consommation est observable : avec un dernier participant, le full
+            // stop purge l'entrée de toute façon. Le second participant est semé, comme dans
+            // `useCallManager.test.js` — un appel direct n'invite qu'un pair à la fois.
+            const inviteId = await cm.startCallWithPeer({ toUserSlug: 'alice', type: 'visio', room: 'call-1' })
+            ctx.addCurrentCallUser('bob', 'visio')
+
+            await recevoirReponse({
+                fromUserSlug: 'alice',
+                status: false,
+                options: { type: 'visio', room: 'call-1', inviteId },
+            })
+
+            expect(ctx.callMachine.callState.value).toBe(CALL_STATES.CALLING)
+            expect(ctx.peerStore.hasWaitingRemotePeerId('alice', 'call-1', 'visio')).toBe(false)
+        })
+
+        it('un refus destiné à un autre onglet ne coupe pas l\'appel établi', async () => {
+            // Le canal privé de l'appelant porte TOUS ses onglets : le refus adressé à l'invitation
+            // d'un autre onglet arrive aussi ici, où l'appel avec alice est déjà établi.
+            const inviteId = await cm.startCallWithPeer({ toUserSlug: 'alice', type: 'visio', room: 'call-1' })
+            await recevoirReponse({
+                fromUserSlug: 'alice',
+                status: true,
+                options: { type: 'visio', room: 'call-1', peerId: 'alice-peer-id', inviteId },
+            })
+            expect(ctx.callMachine.callState.value).toBe(CALL_STATES.CONNECTED)
+
+            await recevoirReponse({
+                fromUserSlug: 'alice',
+                status: false,
+                options: { type: 'visio', room: 'call-autre-onglet', inviteId: 'invite-autre-onglet' },
+            })
+
+            expect(ctx.callMachine.callState.value).toBe(CALL_STATES.CONNECTED)
+            expect(ctx.session.currentCallUsers).toEqual([{ userSlug: 'alice', type: 'visio' }])
+        })
+
+        it('un peerId mort n\'efface pas l\'invitation : son refus ferme encore l\'appel', async () => {
+            // `peer-unavailable` dans N'IMPORTE QUEL contexte de l'onglet invalide le peerId du
+            // pair (`usePeerTransport`) — l'appelé a rechargé son onglet. Son refus, émis par le
+            // nouvel onglet que la relance a atteint, porte l'invitation vivante.
+            const inviteId = await cm.startCallWithPeer({ toUserSlug: 'alice', type: 'visio', room: 'call-1' })
+            await vi.advanceTimersByTimeAsync(2_000)
+            ctx.peerStore.invalidateRemotePeerId('alice')
+
+            await recevoirReponse({
+                fromUserSlug: 'alice',
+                status: false,
+                options: { type: 'visio', room: 'call-1', inviteId },
+            })
+
+            expect(ctx.callMachine.callState.value).toBe(CALL_STATES.IDLE)
+        })
+
+        it('le refus de l\'invitation vivante ferme l\'appel et l\'éteint', async () => {
+            const { seconde } = await annulerPuisRappeler()
+
+            await recevoirReponse({
+                fromUserSlug: 'alice',
+                status: false,
+                options: { type: 'visio', room: 'call-2', inviteId: seconde },
+            })
+
+            expect(ctx.callMachine.callState.value).toBe(CALL_STATES.IDLE)
+            expect(ctx.peerStore.hasWaitingRemotePeerId('alice', 'call-2', 'visio')).toBe(false)
+
+            const envoisAvant = roomsInvitees().length
+            await vi.advanceTimersByTimeAsync(60_000)
+            expect(roomsInvitees().length).toBe(envoisAvant)
+            expect(ctx.inviteAbandonedSignal.value).toBeNull()
         })
     })
 })

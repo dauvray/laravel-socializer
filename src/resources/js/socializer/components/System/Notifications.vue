@@ -1,9 +1,17 @@
 <template>
     <Teleport to="body">
         <div id="videoContainer"></div>
+        <!--
+            `:key` = l'invitation : une alerte par invitation, donc un type et un minuteur
+            d'auto-refus par invitation. Sans lui, le rappel d'un compte dont l'alerte sonnait
+            encore PATCHAIT l'instance vivante, et le minuteur de la première refusait le rappel.
+            Les relances réutilisent leur inviteId (éliminées avant par `isInviteDuplicate`) ;
+            une invitation sans inviteId garde l'ancien patch.
+        -->
         <component
             id="notification-component-wrapper"
             v-if="notificationComponent"
+            :key="notificationComponentProps?.options?.inviteId"
             :is="notificationComponent"
             v-bind="notificationComponentProps"
             @response-alert="onResponseAlert"
@@ -156,7 +164,10 @@ const { whisper: whisperPing } = useReverbChannel(userChannel, {
 
         // receive authorization to peer connection
         '.ResponseToAuthorizationPeer': async (event) => {
-            peers.stopCallInviteRetry(event?.options?.inviteId)
+            // ⚠️ Pas d'arrêt de la relance ICI : c'est `openCallBetweenPeer` qui décide si la
+            // réponse vaut pour l'invitation en vol, et qui l'arrête quand elle vaut. Arrêtée
+            // avant sa garde, une réponse que la garde ignore ensuite ne laissait ni relance ni
+            // abandon — l'appelant restait en `calling` pour toujours.
 
             if (!event.status) {
                 window.AWN.info(`${event.fromUserSlug} est injoignable`)
@@ -251,11 +262,18 @@ watch(() => peers.inviteAbandonedSignal.value, async (abandoned) => {
  * son `inviteId`, et `isInviteDuplicate` l'élimine avant ce garde ; ce qui lui échappe et vient du
  * MÊME compte est un client sans `inviteId` (le serveur l'accepte `nullable`), ou un second onglet ou
  * appareil, qui appelle avec un id neuf. Refuser celui-là partirait sur le canal de l'appelant, donc
- * vers tous ses onglets, et y couperait l'appel qui sonne ici : la charge d'un refus ne porte pas
- * d'`inviteId`, et `useCallManager.test.js` (« refus du distant : retire l'user et ferme tout s'il
- * était le dernier ») mène un tel refus de CALLING à IDLE. Le patch ne fait que REPORTER cette
- * coupure à la réponse finale. Le même compte y repasse donc — borne écrite dans `flux.md`. `fromUserSlug` est
- * posé par le serveur depuis l'utilisateur authentifié : il ne se forge pas.
+ * vers tous ses onglets, et y couperait l'appel qui sonne ici quand l'onglet appelant ne sait pas
+ * reconnaître son invitation : un refus SANS `inviteId` garde l'ancien sens, « ce pair refuse
+ * l'appel en cours » (`useCallManager._consumeRefusedInvitation`), et c'est ce qu'émettent un client
+ * sans `inviteId` et tout bundle antérieur au 27/10/2026. Le même compte n'est donc pas refusé : son
+ * invitation REMPLACE l'alerte — remontée, et non patchée, par le `:key` du template, donc avec son
+ * propre type et son propre minuteur.
+ *
+ * Ce que ça coûte, et c'est assumé : l'invitation remplacée ne reçoit AUCUNE réponse. Entre deux
+ * bundles à jour, la réponse finale porte l'`inviteId` du remplaçant, et l'onglet appelant le plus
+ * ancien l'ignore — il attend l'abandon de son moteur de retry, ≈55 s après son invitation. Avant,
+ * le même refus les coupait tous les deux. Borne écrite dans `flux.md`. `fromUserSlug` est posé par
+ * le serveur depuis l'utilisateur authentifié : il ne se forge pas.
  */
 function isAwaitingAnotherCaller(event) {
     return notificationComponent.value !== null

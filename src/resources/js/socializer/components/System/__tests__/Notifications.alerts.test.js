@@ -521,3 +521,55 @@ describe('Notifications — .AlertToUser, l\'invitation d\'appel affichée', () 
         })
     })
 })
+
+describe('Notifications — un rappel du MÊME compte remonte l\'alerte', () => {
+    /**
+     * Monté par la relecture du lot « une réponse ne vaut que pour SON invitation » (27/10/2026) :
+     * le rappel d'un compte dont l'alerte sonne encore PATCHAIT l'instance vivante — props passées
+     * au rappel, minuteur d'auto-refus de la première conservé. Le refus partait donc 10 s (visio)
+     * ou 20 s (vocal) après la PREMIÈRE alerte, mais au nom du RAPPEL, que l'appelant honore :
+     * annuler puis rappeler dans cette fenêtre coupait le rappel, même avec un refus qui désigne
+     * son invitation. Une alerte par invitation, donc un minuteur par invitation.
+     *
+     * ⚠️ Horloge factice posée ICI, ce fichier n'en ayant pas : sans elle, les deux premiers cas
+     * rougissaient sur « Timers are not mocked » — un rouge de harnais, pas le défaut.
+     *
+     * ⚠️ Le retour en arrière n'est PAS monté ici : une relance de l'invitation remplacée
+     * remonterait l'alerte sur elle, mais le double rend toujours faux à `isInviteDuplicate`. Il est
+     * tenu par ses deux bouts, sans recopier la dédup : `useMediaBroadcast.test.js` (un id vu est un
+     * doublon, à chaque fois) et « une invitation en DOUBLE… » ci-dessus (un doublon ne touche pas
+     * l'alerte).
+     */
+    beforeEach(() => { vi.useFakeTimers() })
+    afterEach(() => { vi.useRealTimers() })
+
+    for (const [type, delai] of [['visio', 10_000], ['vocal', 20_000]]) {
+        it(`${type} : l'auto-refus part ${delai / 1000} s après l'alerte du RAPPEL, au nom du rappel`, async () => {
+            wrapper = await monter()
+            await recevoirLInvitation(type, 'invite-1')
+            await vi.advanceTimersByTimeAsync(delai * 0.6)
+            await recevoirLInvitation(type, 'invite-2')
+
+            // L'échéance du minuteur de la première alerte : rien ne doit partir.
+            await vi.advanceTimersByTimeAsync(delai * 0.4 + 50)
+            expect(peersDouble.acceptCallFromPeer).not.toHaveBeenCalled()
+
+            await vi.advanceTimersByTimeAsync(delai * 0.6)
+            expect(peersDouble.acceptCallFromPeer).toHaveBeenCalledTimes(1)
+            expect(peersDouble.acceptCallFromPeer).toHaveBeenCalledWith({
+                fromUserSlug: 'bob',
+                options: invitationEntrante(type, 'invite-2').options,
+                status: false,
+            })
+        })
+    }
+
+    it('un rappel dans l\'autre type affiche l\'alerte de SON type', async () => {
+        wrapper = await monter()
+        await recevoirLInvitation('visio', 'invite-1')
+        await recevoirLInvitation('vocal', 'invite-2')
+
+        expect(alerte(wrapper, 'AudioCallAlert').exists()).toBe(true)
+        expect(alerte(wrapper, 'VideoCallAlert').exists()).toBe(false)
+    })
+})

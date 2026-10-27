@@ -137,14 +137,19 @@ describe('Notifications — .ResponseToAuthorizationPeer', () => {
         expect(eventBus.$emit).not.toHaveBeenCalledWith('close-call', expect.anything())
     })
 
-    it('arrête le retry d\'invitation quel que soit le statut', async () => {
+    /**
+     * Ce cas épinglait l'inverse — « arrête le retry quel que soit le statut », AVANT
+     * `openCallBetweenPeer`. Or c'est sa garde qui décide si la réponse vaut pour l'invitation
+     * en vol, et elle arrête elle-même la relance quand elle l'accepte. Arrêtée ici d'abord,
+     * une réponse que la garde ignore ensuite ne laissait ni relance ni abandon : l'appelant
+     * restait en `calling` pour toujours.
+     */
+    it('ne coupe pas la relance avant que la garde d\'openCallBetweenPeer ait décidé', async () => {
         await reverbListeners['.ResponseToAuthorizationPeer'](answer(false))
-        expect(peersDouble.stopCallInviteRetry).toHaveBeenCalledWith('invite-1')
-
-        peersDouble.stopCallInviteRetry.mockClear()
-
         await reverbListeners['.ResponseToAuthorizationPeer'](answer(true))
-        expect(peersDouble.stopCallInviteRetry).toHaveBeenCalledWith('invite-1')
+
+        expect(peersDouble.stopCallInviteRetry).not.toHaveBeenCalled()
+        expect(peersDouble.openCallBetweenPeer).toHaveBeenCalledTimes(2)
     })
 })
 

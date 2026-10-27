@@ -810,17 +810,25 @@ export default {
      * ⚠️ À NE PAS confondre avec removeRemotePeerId, qui exprime « ce pair a quitté la
      * room » et reste donc soumis au prédicat de présence. Ici l'information est
      * différente et certaine : ce peerId n'existe plus côté serveur de signalisation.
-     * On supprime donc sans condition, et on purge TOUTES les demandes en vol pour ce
-     * pair — quel que soit le contexte qui les a émises, puisqu'elles portent toutes sur
-     * la même identité morte. Sans cette purge, la re-demande déclenchée juste après
-     * serait étranglée par le garde d'âge SIGNALING_STALE_MS de
+     * On supprime donc sans condition, et on purge TOUTES les demandes de peerId en vol
+     * pour ce pair — quel que soit le contexte qui les a émises, puisqu'elles portent
+     * toutes sur la même identité morte. Sans cette purge, la re-demande déclenchée juste
+     * après serait étranglée par le garde d'âge SIGNALING_STALE_MS de
      * requestRemotePeerConnection.
+     *
+     * ⚠️ Mais PAS les invitations d'appel (entrées à `inviteId`) : elles disent « j'ai
+     * invité ce pair », pas « j'attends son peerId », et leur chaîne de relance vit encore —
+     * elle atteint justement l'onglet rechargé qui a rendu ce peerId mort. Purgées, la
+     * réponse de ce nouvel onglet ne trouvait plus son invitation : l'appelant ignorait son
+     * refus et restait en `calling`, sans relance ni abandon.
      *
      * @param {string} userSlug
      */
     invalidateRemotePeerId(userSlug) {
         this.remotePeersId.delete(userSlug)
-        this.clearWaitingRemotePeerIds(userSlug)
+        for (const [key, entry] of [...this.waitingRemotePeerId.entries()]) {
+            if (entry?.userSlug === userSlug && !entry?.inviteId) this.waitingRemotePeerId.delete(key)
+        }
     },
 
     /*--------------------------

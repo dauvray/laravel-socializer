@@ -307,11 +307,14 @@ export function createMockContext(overrides = {}) {
             _remotePeerIds.delete(slug)
         }),
         // Invalidation inconditionnelle : le peerId est mort, pas « peut-être encore
-        // utile ailleurs ». Purge aussi TOUTES les demandes en vol pour ce pair (tous
-        // contextes), sans quoi la re-demande serait étranglée par SIGNALING_STALE_MS.
+        // utile ailleurs ». Purge aussi TOUTES les demandes de peerId en vol pour ce pair
+        // (tous contextes), sans quoi la re-demande serait étranglée par SIGNALING_STALE_MS
+        // — mais pas les invitations d'appel (entrées à `inviteId`), comme le vrai.
         invalidateRemotePeerId: vi.fn((slug) => {
             _remotePeerIds.delete(slug)
-            peerStore.clearWaitingRemotePeerIds(slug)
+            for (const [key, entry] of [..._waitingRemotePeerIds.entries()]) {
+                if (entry?.userSlug === slug && !entry?.inviteId) _waitingRemotePeerIds.delete(key)
+            }
         }),
 
         // ── Composition des rooms (roomMembers) ───────────────────────────────

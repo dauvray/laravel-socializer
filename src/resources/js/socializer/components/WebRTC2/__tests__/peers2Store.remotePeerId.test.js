@@ -123,6 +123,16 @@ describe('peers2 — cycle de vie des peerId distants', () => {
             expect(store.getWaitingRemotePeerIds('alice')).toHaveLength(1)
         })
 
+        it('garde les invitations d\'appel : un peerId mort n\'est pas une invitation', () => {
+            store.addWaitingRemotePeerId('alice', { room: 'call-1', type: 'visio', inviteId: 'i-1', contextId: 'data-app' })
+            store.addWaitingRemotePeerId('alice', { room: 'room-test', type: 'stream', contextId: 'stream-room-test' })
+
+            store.invalidateRemotePeerId('alice')
+
+            expect(store.hasWaitingRemotePeerId('alice', 'call-1', 'visio')).toBe(true)
+            expect(store.hasWaitingRemotePeerId('alice', 'room-test', 'stream')).toBe(false)
+        })
+
         it('est idempotent sur un slug inconnu', () => {
             expect(() => store.invalidateRemotePeerId('inconnu')).not.toThrow()
         })

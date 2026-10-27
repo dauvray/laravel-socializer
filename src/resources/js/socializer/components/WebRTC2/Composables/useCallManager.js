@@ -275,15 +275,66 @@ export function useCallManager(ctx, { core, media, connections, transport, pool 
         return
     }
 
+    /**
+     * Un refus vaut-il pour l'invitation en vol ? S'il porte un `inviteId`, il ne vaut que pour
+     * cette invitation-là, et il la consomme.
+     *
+     * Sans ça, un refus était imputé à l'appel EN COURS, quel qu'il soit : le refus adressé à
+     * l'invitation d'un autre onglet coupait l'appel établi de celui-ci, et celui d'une alerte
+     * fermée avant un rappel coupait le rappel. La comparaison porte sur l'`inviteId` de l'entrée en
+     * vol, et non sur sa seule présence : la clé (slug, room, type) d'un rappel peut coïncider.
+     *
+     * ⚠️ Ce n'est que la moitié APPELANTE de « annuler puis rappeler ». Rappelé pendant que sa
+     * première alerte sonne, l'appelé la remplace (`:key` de `Notifications.vue`) : sans ça, le
+     * minuteur de la première refusait le rappel avec l'`inviteId` du rappel — légitime ici.
+     *
+     * Sans `inviteId`, l'ancien sens est gardé — « ce pair refuse l'appel en cours » : c'est le
+     * cas d'un appelé sur un bundle antérieur, et des deux reprises internes (l'abandon du moteur
+     * de retry, le `!inviteId` de `startCallWithPeer`), qui portent par construction sur
+     * l'invitation vivante. Les ignorer laisserait l'appelant en `calling`.
+     *
+     * @param   {object}  payload - Réponse `.ResponseToAuthorizationPeer` en `status: false`
+     * @returns {boolean} false si le refus est périmé et doit être ignoré
+     */
+    const _consumeRefusedInvitation = (payload) => {
+        const inviteId = payload?.options?.inviteId
+        if (!inviteId) return true
+
+        const fromUserSlug = payload?.fromUserSlug
+        const room = payload?.options?.room || ctx.session.currentCallRoomId
+        const type = isValidCallType(payload?.options?.type) ? payload.options.type : 'visio'
+
+        if (ctx.peerStore.getWaitingRemotePeerId(fromUserSlug, room, type)?.inviteId !== inviteId) {
+            console.warn(
+                '[useCallManager] refus d\'une invitation qui n\'est plus en vol — ignoré',
+                { fromUserSlug, room, type, inviteId, contextId: ctx.contextId },
+            )
+            return false
+        }
+
+        ctx.peerStore.removeWaitingRemotePeerId(fromUserSlug, room, type)
+        return true
+    }
+
     const openCallBetweenPeer = async (payload) => {
         if (!payload || typeof payload !== 'object') return
 
-        // Arrête le retry pour ce userSlug (fiable peu importe le retour de inviteId)
-        if (payload?.fromUserSlug && isValidSlug(payload.fromUserSlug)) {
-            core.stopCallInviteRetryForUser(payload.fromUserSlug)
+        // Arrête le retry pour ce userSlug (fiable peu importe le retour de inviteId).
+        //
+        // ⚠️ Appelé APRÈS les gardes des deux branches, jamais en tête : l'arrêt porte sur le
+        // slug, donc sur l'invitation VIVANTE vers ce pair, quelle que soit celle à laquelle
+        // la réponse répond. En tête, la réponse périmée d'une alerte annulée éteignait la
+        // relance du rappel — qui restait alors en `calling` sans relance ni abandon.
+        const stopInviteRetry = () => {
+            if (payload?.fromUserSlug && isValidSlug(payload.fromUserSlug)) {
+                core.stopCallInviteRetryForUser(payload.fromUserSlug)
+            }
         }
 
         if(!payload?.status) {
+            if (!_consumeRefusedInvitation(payload)) return
+            stopInviteRetry()
+
             ctx.removeCurrentCallUser(payload.fromUserSlug)
             if(ctx.session.currentCallUsers.length === 0) {
                 await stopCallWithPeers([], false, {
@@ -331,6 +382,8 @@ export function useCallManager(ctx, { core, media, connections, transport, pool 
             )
             return
         }
+
+        stopInviteRetry()
 
         // L'invitation est acceptée : MA demande d'autorisation n'est plus en vol.
         ctx.peerStore.removeWaitingRemotePeerId(fromUserSlug, callRoom, type)

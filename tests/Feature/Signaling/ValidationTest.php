@@ -28,7 +28,8 @@ use PHPUnit\Framework\Attributes\Test;
  *  - `connectionType` — tous les émetteurs vivants l'envoient depuis que la v1 n'a plus
  *    d'appelant (26/10/2026), mais le repli `connectionType || type` est un choix documenté de
  *    rétrocompatibilité, et un onglet sur un bundle antérieur doit passer ;
- *  - `options.action` sur la route de RÉPONSE — un refus d'appel n'envoie que `{ type }`.
+ *  - `options.action` sur la route de RÉPONSE — un refus d'appel n'en porte pas :
+ *    `{ type, room, inviteId }`, ou `{ type }` seul pour un bundle antérieur au 27/10/2026.
  */
 class ValidationTest extends TestCase
 {
@@ -85,12 +86,39 @@ class ValidationTest extends TestCase
     }
 
     #[Test]
-    public function le_refus_d_appel_ne_porte_que_le_type(): void
+    public function le_refus_d_appel_relaie_room_et_invite_id(): void
     {
-        // `sendAuthorizationRemotePeerId` : « on envoie les infos de connexion seulement si
-        // l'accès est autorisé, sinon on précise juste le type ». Exiger `options.action`
-        // des deux côtés casserait ce chemin — c'est la raison d'être du paramètre
-        // `actionRequired` d'`optionsRules()`.
+        // Le client en dépend depuis le 27/10/2026 : `useCallManager._consumeRefusedInvitation`
+        // compare l'`inviteId` du refus à celui de l'invitation en vol, et ignore un refus qui
+        // ne désigne pas la sienne. Retirés du relais, chaque refus retomberait sur l'ancien
+        // sens — « ce pair refuse l'appel en cours » — et couperait un rappel.
+        $alice = $this->makeUser('alice');
+        $bob = $this->makeUser('bob');
+
+        $this->actingAs($alice)->postJson('/response-to-authorization-peer', [
+            'toUserSlug' => $bob->slug,
+            'status' => false,
+            'options' => [
+                'type' => 'visio',
+                'room' => '9b2f6c1e-5d4a-4e8b-a1c3-0f7e2d9b6a54',
+                'inviteId' => '3c8e1f2a-7b6d-4c5e-9f0a-1d2b3c4e5f60',
+            ],
+        ])->assertOk();
+
+        $this->assertBroadcastSent($bob, 'ResponseToAuthorizationPeer', function (array $payload) {
+            return $payload['status'] === false
+                && ($payload['options']['room'] ?? null) === '9b2f6c1e-5d4a-4e8b-a1c3-0f7e2d9b6a54'
+                && ($payload['options']['inviteId'] ?? null) === '3c8e1f2a-7b6d-4c5e-9f0a-1d2b3c4e5f60';
+        });
+    }
+
+    #[Test]
+    public function le_refus_d_appel_d_un_bundle_anterieur_ne_porte_que_le_type(): void
+    {
+        // Avant le 27/10/2026, `sendAuthorizationRemotePeerId` ne renvoyait que le type sur un
+        // refus. Un onglet resté sur ce bundle doit passer : exiger `options.action` — ou
+        // `room`, `inviteId` — des deux côtés casserait son refus d'appel. C'est la raison d'être
+        // du paramètre `actionRequired` d'`optionsRules()`.
         $alice = $this->makeUser('alice');
         $bob = $this->makeUser('bob');
 
