@@ -893,11 +893,17 @@ extractions : c'est 18 lignes, sous un filet cinq fois plus dense.
   ligne précise de la méthode et non à son bord — sans quoi un inconnu écrirait au journal le nom de
   qui il veut.
 
-- [ ] 🟠 **Basculer `SOCIALIZER_PEER_ATTESTATION_ENFORCE=true`** `[S]` — **le code est prêt et
-  mesuré depuis le 29/08/2026 ; il ne reste qu'un geste de DÉPLOIEMENT.** Seul reste ouvert de la
-  famille « attestation d'identité ».
+- [ ] 🟠 **Basculer `SOCIALIZER_PEER_ATTESTATION_ENFORCE=true` chez chaque consommateur** `[S]` —
+  **le code est prêt, et la bascule est FAITE EN DEV le 28/10/2026** : `.env` du bac à sable
+  `estarter-test`, mode strict en continu. Le mécanisme a tourné en vrai, à deux navigateurs, sur
+  ses quatre issues : nominal admis, sans attestation refusé sans que le serveur le voie, serveur
+  muet admis en fail-open et compté, attestation périmée refusée **et journalisée** (`reason:
+  expired`, `attested_slug` du diffuseur, `auth_user_slug` du récepteur). Ce qui reste est un geste
+  de DÉPLOIEMENT chez chaque consommateur, après sa phase d'observation — et aucun consommateur n'a
+  encore le bundle porteur (cf. la ligne de ce fichier dans `work/README.md`).
 
-  La procédure et ses **trois termes** sont dans
+  La procédure, ses **trois termes** et la **recette de vérification manuelle** (rôles, blocages,
+  attendus) sont dans
   [`securite.md` § « Ce qu'il faut regarder pour basculer »](../docs/modules/webrtc2/securite.md#ce-quil-faut-regarder-pour-basculer-enforce).
   Deux avertissements qui décident du résultat :
 
@@ -908,9 +914,29 @@ extractions : c'est 18 lignes, sous un filet cinq fois plus dense.
   - ⚠️ **Un refus entrant n'est jamais rattrapable** : il ne revient pas à l'émetteur. Une bascule
     trop tôt coupe des pairs légitimes en silence, de leur point de vue comme du nôtre.
 
-  Le terme 2 est une **borne assumée**, non mesurable sur un serveur : il s'établit par un argument
-  de déploiement (durée de vie d'onglet vs actifs hachés par Vite), corroboré par un échantillon au
-  panneau.
+  **Ce que la vérification du 28/10 a appris, et que le harnais ne pouvait pas montrer** — le
+  durable est remonté dans `securite.md`, ceci n'est que l'index :
+
+  - **le mapping gagne la course en conditions réelles.** `connectToPeer` écrit le mapping avant de
+    décider s'il ouvre, et la réponse à `/ask-to-peer-id` de l'arrivant revient avant l'appel du
+    diffuseur. L'attestation n'est consultée que si la signalisation a échoué, ou pour un peerId
+    qu'elle n'a jamais nommé — l'usurpateur. Rien ne change à la sécurité ; les compteurs du panneau
+    ne bougeront presque jamais en usage nominal, et la fenêtre de déploiement mixte est plus
+    étroite que la doc ne le craignait. `incomingMappingInvariant.test.js` mesure l'ordre inverse :
+    à relire comme un invariant du harnais, pas de la production ;
+  - **un émetteur refusé réessaie toutes les quelques secondes**, chaque tentative refusée, sans en
+    être informé ;
+  - **le journal serveur compte des vérifications, pas des tentatives** : verdict mémorisé
+    `ATTESTATION_REFRESH_MARGIN_MS` par peerId chez le récepteur ;
+  - **toute initialisation neuve du `Peer` vide l'attestation et en redemande une.** Une observation
+    commence une fois l'onglet installé dans sa room. ⚠️ Observé une fois : une init neuve a suivi
+    l'entrée dans la room **sans** rechargement ni redémarrage de Vite (journal du conteneur
+    relu) — cause non tranchée, démontage du dernier contexte probable. À remesurer avant d'en
+    faire une règle.
+
+  Le terme 2 reste une **borne assumée**, non mesurable sur un serveur : il s'établit par un
+  argument de déploiement (durée de vie d'onglet vs actifs hachés par Vite), corroboré par un
+  échantillon au panneau.
 
 - [x] 🔴 **`/attest-peer-id` bouclait le rechargement de la page de login pour tout invité** `[S]` —
   **trouvé et fermé le 29/08/2026**, en allant simplement REGARDER le panneau que l'item ci-dessus

@@ -251,13 +251,34 @@ non-résolution — voir « Le mapping peerId n'existe pas à l'admission » ci-
 
 ### Le mapping peerId n'existe pas à l'admission, sur le chemin présence
 
-Mesuré, pas supposé (`scenarios/incomingMappingInvariant.test.js`) : quand une connexion entrante
+Mesuré dans le harnais (`scenarios/incomingMappingInvariant.test.js`) : quand une connexion entrante
 arrive par le chemin (a) — arrivant tardif, partage d'écran — `peerStore.getRemotePeerId(from)` est
 **vide**. La cause est structurelle : le mapping du récepteur est écrit par **sa propre**
 `connectToPeer`, donc quand c'est LUI qui ouvre ; sur la présence, le premier contact est l'appel
-**entrant** de l'autre, qui arrive nécessairement avant. Sur l'appel direct c'est l'inverse —
+**entrant** de l'autre, qui y arrive avant. Sur l'appel direct c'est l'inverse —
 `acceptCallFromPeer` écrit le mapping avant même de répondre à l'invitation. Les deux chemins sont
 opposés par construction ; aucun réglage de timing ne les rapprochera.
+
+> ⚠️ **Constat du 28/10/2026, sur la pile réelle : pour l'arrivant tardif, l'ordre est le plus
+> souvent INVERSE.** `connectToPeer` écrit le mapping **avant** de décider s'il ouvre quelque chose
+> (`addRemotePeerId`, puis les sorties sans flux local). Un arrivant sans flux, qui n'ouvre rien,
+> mappe donc le diffuseur dès que la réponse à sa propre demande `/ask-to-peer-id` lui revient — et
+> elle revient avant l'appel du diffuseur, qui doit d'abord obtenir le peerId de l'arrivant par la
+> même voie, puis passer par la signalisation PeerJS. Observé à deux navigateurs sur une même
+> machine : l'arrivant admet le diffuseur **par le mapping**, sans consulter l'attestation ni rien
+> compter ; bloquer sa demande `/ask-to-peer-id` rétablit l'ordre du harnais, et le chemin (a).
+>
+> Ce que ça change, et ce que ça ne change pas :
+>
+> - **rien à la sécurité.** Le mapping vient de `/response-to-peer-id`, dont le slug est celui
+>   d'`Auth::user()` : un membre ne peut y faire mapper que son propre peerId sous son propre nom.
+>   Un second `Peer` a un UUID que la signalisation n'a jamais nommé, donc jamais mappé — pour lui,
+>   le chemin (a) et l'attestation restent le seul discriminant, exactement comme dans le harnais ;
+> - **la lecture de la mesure.** En usage nominal, les compteurs du panneau ne bougent que si
+>   l'échange de signalisation a échoué (route injoignable, cadence dépassée) ou pour un peerId
+>   jamais nommé. Un onglet resté sur un bundle antérieur est donc le plus souvent admis par le
+>   mapping : la fenêtre du déploiement mixte décrite plus bas est plus étroite que prévu, sans
+>   être nulle.
 
 Conséquence de conception : « peerId non résolu » ne vaut **pas** refus, sous peine de fermer toute
 diffusion en room. L'admission est accordée et tracée (`console.debug`, « Admission entrante non
@@ -372,7 +393,11 @@ Elle n'est nécessaire que là où le mapping est **structurellement** absent à
 l'arrivant tardif et le partage d'écran (cf.
 [« Le mapping peerId n'existe pas à l'admission »](#le-mapping-peerid-nexiste-pas-à-ladmission-sur-le-chemin-présence)).
 Mesuré : retirer le transport dans la `metadata` ne fait rougir qu'**un** cas de
-`scenarios/incomingSpoof.test.js` — et c'est celui pour lequel tout ceci existe.
+`scenarios/incomingSpoof.test.js` — et c'est celui pour lequel tout ceci existe. Et en conditions
+réelles, même l'arrivant tardif passe le plus souvent par le mapping (constat du 28/10/2026,
+[même section](#le-mapping-peerid-nexiste-pas-à-ladmission-sur-le-chemin-présence)) : ce qui reste à
+l'attestation est le peerId que la signalisation n'a jamais nommé — le second `Peer`, c'est-à-dire
+l'usurpation elle-même.
 
 **Le déploiement se fait en deux temps, et le premier n'est pas optionnel.**
 `signaling.attestation.enforce` est **faux par défaut** : l'attestation circule, le garde compte et
@@ -380,6 +405,12 @@ ne refuse rien. Un onglet resté sur un bundle antérieur n'attesterait rien, et
 **jamais** rattrapable — basculer d'emblée couperait la visio en room pendant toute la fenêtre d'un
 déploiement mixte. Ce qu'il faut regarder pour basculer est ci-dessous, et ce n'est pas un seul
 chiffre.
+
+Deux précisions, du même constat du 28/10/2026 : la fenêtre est **plus étroite** que cette phrase ne
+le dit, puisque l'onglet ancien est le plus souvent admis par le mapping ; et un refus, quand il se
+produit, **n'est pas unique** — l'émetteur refusé redemande et rappelle toutes les quelques secondes,
+chaque tentative refusée, sans jamais en être informé. « Non rattrapable » veut dire invisible pour
+lui, pas silencieux pour le récepteur, dont le compteur avance à chaque tentative.
 
 #### Ce qu'il faut regarder pour basculer `enforce`
 
@@ -397,7 +428,10 @@ Le `reason` est ce qui rend le résidu lisible : `expired` en série est un rafr
 cassé (donc des pairs légitimes, donc pas de bascule), `bad_signature` répété depuis un seul peerId
 est une forge (donc une enquête, pas une attente). ⚠️ `mechanism_inactive` ne s'attend pas, il se
 **corrige** avant d'ouvrir la fenêtre : c'est une faute de configuration — `APP_KEY` tournée, secret
-retiré — qui désactive en silence le seul anti-usurpation du chemin (a).
+retiré — qui désactive en silence le seul anti-usurpation du chemin (a). Et ce journal compte des
+**vérifications**, pas des tentatives : le récepteur mémorise un verdict, refus compris, pendant
+`ATTESTATION_REFRESH_MARGIN_MS` par peerId (`noteAttestedPeer`), et l'émetteur refusé réessaie plus
+vite que ça. Une ligne au journal peut donc recouvrir des dizaines de refus au panneau.
 
 **Terme 2 — `unattestedAdmissions` doit être nul.** ⚠️ **Et c'est une borne assumée, pas un oubli :
 ce terme n'est mesurable sur AUCUN serveur.** Un pair qui ne présente rien n'émet aucune requête —
@@ -407,7 +441,9 @@ façons, toutes deux plus faibles qu'une mesure, et il faut le savoir en décida
 déploiement** (le temps écoulé depuis la livraison du bundle porteur dépasse la durée de vie
 plausible d'un onglet ; les noms d'actifs hachés par Vite rendent un bundle antérieur injoignable
 après tout rechargement) et un **échantillon** — ouvrir le panneau sur une room active. Zéro sur
-quelques onglets est un échantillon, pas une preuve.
+quelques onglets est un échantillon, pas une preuve. Zéro est atteignable parce qu'en usage nominal
+ce compteur ne bouge que si la signalisation a échoué (constat du 28/10/2026 sur le mapping) : c'est
+ce qui rend la condition tenable, pas ce qui la rend inutile.
 
 **Terme 3 — `unverifiableAdmissions` doit être nul, et c'est le piège.** Non nul, il veut dire que
 `/verify-peer-attestation` était injoignable : tout le monde a été admis en fail-open, **aucune
@@ -419,6 +455,33 @@ alors plus rien. C'est la raison pour laquelle ce cas est *compté* et pas seule
 > admissions ; les termes 2 et 3 couvrent toutes les admissions d'un seul onglet. Aucun dénominateur
 > commun n'existe, et un compteur de succès côté serveur en produirait un sur la mauvaise population
 > — un nombre qui ressemblerait à la réponse sans en être une.
+
+#### Vérifier le mécanisme à la main, à deux navigateurs
+
+Les deux suites sont vertes sans qu'il ait jamais tourné : la boucle de rechargement du 401 l'a
+prouvé. La vérification réelle demande deux comptes, deux navigateurs, une room en diffusion, et
+trois faits sans lesquels on mesure autre chose :
+
+- **on manipule l'onglet qui OUVRE, on observe celui qui REÇOIT.** En diffusion, c'est le diffuseur
+  qui appelle l'arrivant ; le récepteur est donc l'arrivant, et c'est l'attestation du diffuseur
+  qu'il vérifie. Le récepteur garde sa propre attestation intacte : `enforce` lui vient de cette
+  réponse-là, et un onglet dont la demande a échoué retombe sur `false` ;
+- **le récepteur bloque sa demande `/ask-to-peer-id`** (outils de développement, blocage de
+  requête), sinon le mapping arrive avant l'appel et l'attestation n'est jamais consultée (constat
+  du 28/10/2026 ci-dessus). La demande échouée est rattrapée (`requestRemotePeerConnection failed`) ;
+- **toute initialisation neuve du `Peer` redemande une attestation** — rechargement, démontage du
+  dernier contexte, redémarrage du serveur Vite en dev. On installe l'onglet dans sa room **avant**
+  de bloquer quoi que ce soit, et on lit « Mon attestation : présente » au panneau.
+
+| Cas | Côté diffuseur | Attendu chez le récepteur | Journal serveur |
+|---|---|---|---|
+| sans attestation | bloquer `/attest-peer-id`, puis recharger | refus en console, compteur principal et « sans aucune attestation » incrémentés, pas de flux | rien — l'angle mort |
+| serveur muet | rien | bloquer en plus `/verify-peer-attestation` : flux reçu malgré `enforce`, « non vérifiables » incrémenté | rien — aucune requête n'est partie |
+| périmée | installé dans la room, **puis** bloquer `/attest-peer-id` ; attendre les trois tentatives puis « abandonné », et l'échéance du TTL | refus, « sans aucune attestation » inchangé | « Attestation de pair refusée », `reason: expired`, `attested_slug` du diffuseur, `auth_user_slug` du récepteur |
+
+Le refus se répète à chaque tentative de l'émetteur et le panneau compte chacune ; le journal, lui,
+ne voit qu'une vérification par peerId et par `ATTESTATION_REFRESH_MARGIN_MS`. Les deux chiffres ne
+concordent pas, et ce n'est pas une anomalie.
 
 **Épinglé par** `usePeerTransport.attestation.test.js` (obtention et rafraîchissement),
 `usePeerTransport.incomingAuth.test.js` § corroboration (les cinq issues, dont la séparation des
