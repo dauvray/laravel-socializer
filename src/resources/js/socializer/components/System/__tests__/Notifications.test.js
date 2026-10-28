@@ -151,6 +151,50 @@ describe('Notifications — .ResponseToAuthorizationPeer', () => {
         expect(peersDouble.stopCallInviteRetry).not.toHaveBeenCalled()
         expect(peersDouble.openCallBetweenPeer).toHaveBeenCalledTimes(2)
     })
+
+    /**
+     * L'invitation sonne sur TOUS les onglets de l'appelé. Un onglet répond ; les autres sonnent
+     * jusqu'à leur auto-refus, qui arrive ici avec le même `inviteId` — en pleine conversation, ou
+     * après que l'appelé a annulé. La FSM l'ignore (`_consumeRefusedInvitation`) : son verdict est
+     * `false`, et c'est lui seul qui dit si ce refus est à annoncer.
+     */
+    it('⭐ un refus que le moteur ignore ne dit rien et ne réarme pas le bouton du mur', async () => {
+        peersDouble.openCallBetweenPeer.mockResolvedValueOnce(false)
+
+        await reverbListeners['.ResponseToAuthorizationPeer'](answer(false))
+
+        // Délégué quand même : c'est le moteur qui tranche, pas ce composant.
+        expect(peersDouble.openCallBetweenPeer).toHaveBeenCalledWith(
+            expect.objectContaining({ fromUserSlug: 'bob', status: false })
+        )
+        expect(window.AWN.info).not.toHaveBeenCalled()
+        expect(eventBus.$emit).not.toHaveBeenCalledWith('close-call', expect.anything())
+    })
+
+    /**
+     * Le verdict est attendu AVANT de parler : un moteur qui lève (l'arrêt complet n'a qu'un
+     * `finally`, et l'écouteur Reverb aucun `catch`) sauterait donc le toast et `close-call`, et le
+     * bouton du mur resterait désarmé pour la vie de la page — le défaut que le lot F a fermé. Le
+     * chemin périmé rend `false` avant tout code qui agit (seules des lectures le précèdent) : ce
+     * qui lève est un refus consommé.
+     */
+    it('⭐ un refus sur lequel le moteur lève est annoncé quand même, et réarme le bouton', async () => {
+        // Restauré en `finally` : `clearAllMocks` ne rend pas l'implémentation, et les cas suivants
+        // tourneraient avec `console.error` muet.
+        const espionErreur = vi.spyOn(console, 'error').mockImplementation(() => {})
+        try {
+            peersDouble.openCallBetweenPeer.mockRejectedValueOnce(new Error('arrêt complet en échec'))
+
+            await reverbListeners['.ResponseToAuthorizationPeer'](answer(false))
+
+            expect(window.AWN.info).toHaveBeenCalledWith('bob est injoignable')
+            expect(eventBus.$emit).toHaveBeenCalledWith('close-call', [
+                { userSlug: 'bob', type: 'visio' },
+            ])
+        } finally {
+            espionErreur.mockRestore()
+        }
+    })
 })
 
 describe('Notifications — l\'invitation qui ne part pas', () => {

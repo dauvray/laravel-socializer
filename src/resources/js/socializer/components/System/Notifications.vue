@@ -169,13 +169,6 @@ const { whisper: whisperPing } = useReverbChannel(userChannel, {
             // avant sa garde, une réponse que la garde ignore ensuite ne laissait ni relance ni
             // abandon — l'appelant restait en `calling` pour toujours.
 
-            if (!event.status) {
-                window.AWN.info(`${event.fromUserSlug} est injoignable`)
-                eventBus.$emit('close-call', [
-                    { userSlug: event.fromUserSlug, type: event?.options?.type || 'visio' },
-                ])
-            }
-
             // ⚠️ Appelé AUSSI sur refus, et surtout pas derrière un `return` : la branche
             // `!status` d'`openCallBetweenPeer` est la SEULE qui retire le participant et
             // ramène la FSM à IDLE (CALLING → CLOSING → IDLE) quand il était le dernier.
@@ -183,10 +176,33 @@ const { whisper: whisperPing } = useReverbChannel(userChannel, {
             // était ici laissait donc `callStatus` bloqué sur 'calling' après un refus,
             // y compris l'auto-refus de VideoCallAlert au bout de 10 s sans réponse : le
             // spinner de CallManagerBtn restait affiché jusqu'au rechargement de la page.
-            await peers.openCallBetweenPeer({
-                ...event,
-                options: { ...event.options },
-            })
+            //
+            // ⚠️ Le verdict AVANT la parole : l'invitation sonne sur tous les onglets de
+            // l'appelé, et l'auto-refus de ceux qui n'ont pas répondu arrive ici avec le même
+            // `inviteId` — en pleine conversation, ou après que l'appelé a annulé. Le moteur
+            // l'ignore ; annoncé quand même, il affichait « injoignable » et réarmait le bouton
+            // du mur pendant l'appel.
+            //
+            // Fail-open : un moteur qui lève ne doit pas taire un refus. Le chemin périmé rend
+            // `false` avant tout code qui AGIT — seules des lectures le précèdent —, donc ce qui
+            // lève est un refus consommé : sans le `catch`, le bouton du mur resterait désarmé
+            // pour la vie de la page.
+            let answered = true
+            try {
+                answered = await peers.openCallBetweenPeer({
+                    ...event,
+                    options: { ...event.options },
+                })
+            } catch (error) {
+                console.error('[Notifications] réponse à une invitation', error)
+            }
+
+            if (!event.status && answered) {
+                window.AWN.info(`${event.fromUserSlug} est injoignable`)
+                eventBus.$emit('close-call', [
+                    { userSlug: event.fromUserSlug, type: event?.options?.type || 'visio' },
+                ])
+            }
         },
 
         '.CloseConnectionToPeerID': (event) => {

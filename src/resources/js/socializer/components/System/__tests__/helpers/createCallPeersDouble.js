@@ -30,6 +30,9 @@ import { vi } from 'vitest'
  *      lui qui le remet à null.
  *   6. **`isCallEstablished` est une FONCTION**, comme `callStatus` : la production l'expose telle
  *      quelle (`useCallManager`), et le composant l'appelle au moment du signal.
+ *   7. **`openCallBetweenPeer` RÉSOUT un verdict booléen**, `true` par défaut — « la réponse valait
+ *      pour l'invitation en vol ». Le composant n'annonce un refus que sur `true`. Le pendant exact
+ *      de la fidélité 4 : un double qui résout `undefined` rendrait TOUS les refus muets, sans le dire.
  *
  * ⚠️ `vi.clearAllMocks()` ne touche ni un `ref` ni un `reactive` — il ne remet à zéro que des
  * compteurs d'appels. D'où `reinitialiser()`, à appeler en `beforeEach` AVANT le montage.
@@ -50,7 +53,7 @@ export const createCallPeersDouble = () => {
         stopCallInviteRetry: vi.fn(),
         clearAllCallInviteRetries: vi.fn(),
         clearSeenInvites: vi.fn(),
-        openCallBetweenPeer: vi.fn(async () => {}),
+        openCallBetweenPeer: vi.fn(async () => true),
         acceptCallFromPeer: vi.fn(async () => {}),
         startCallWithPeer: vi.fn(async () => 'invite-1'),
         stopCallWithPeers: vi.fn(async () => {}),

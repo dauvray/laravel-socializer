@@ -74,16 +74,30 @@ factice.
 
 ```
 Reverb .ResponseToAuthorizationPeer (status: false) → Notifications.vue
-  ├─ toast « <slug> est injoignable » + eventBus close-call     ← UI seule, n'AGIT PAS sur la FSM
-  └─ peers.openCallBetweenPeer(event)                           ← branche !status
-useCallManager.openCallBetweenPeer
+  ├─ answered = await peers.openCallBetweenPeer(event)          ← branche !status ; s'il lève : true
+  └─ answered ? → toast « <slug> est injoignable » + close-call ← UI seule, n'AGIT PAS sur la FSM
+useCallManager.openCallBetweenPeer                              → rend le verdict
   ├─ options.inviteId porté ? → doit être celui de l'invitation en vol, sinon refus IGNORÉ
-  │                             (périmé) ; s'il l'est, l'invitation est consommée
+  │                             (périmé : false) ; s'il l'est, l'invitation est consommée
   ├─ core.stopCallInviteRetryForUser(...)                       ← APRÈS la garde, jamais avant
   ├─ ctx.removeCurrentCallUser(fromUserSlug)
   └─ dernier participant ? → stopCallWithPeers([], false, {mode:'full'})
                                → CALLING → CLOSING → IDLE
 ```
+
+⚠️ **Un refus ne se dit qu'une fois consommé.** L'invitation sonne sur **tous** les onglets et
+appareils de l'appelé (`sendAlertToUser` diffuse sur son canal privé). Quand l'un répond, ceux qui
+n'en savent rien sonnent jusqu'à leur auto-refus, qui arrive ici avec le **même** `inviteId` — en
+pleine conversation, ou après que l'appelé a annulé (« indisponible », puis « injoignable »). La garde
+l'ignore depuis le 27/10, mais le toast et `close-call` partaient **avant** elle : un faux
+« injoignable » en plein appel, et le bouton du mur réarmé. `openCallBetweenPeer` rend donc son
+verdict — vrai pour une réponse consommée, acceptation comprise, et pour un refus sans `inviteId`
+(l'ancien sens) — et `Notifications` ne parle qu'après. L'attente est **fail-open** : le chemin
+périmé rend `false` avant tout code qui agit — seules des lectures le précèdent —, donc un moteur
+qui lève a consommé un refus, et le taire laisserait le bouton du mur désarmé pour la vie de la
+page. Gardé des deux côtés, et les deux moitiés sont mesurées mutuellement aveugles : le verdict par
+`useCallManager.invitations.test.js` (§ « le verdict rendu à Notifications »), sa lecture et le
+fail-open par `Notifications.test.js`.
 
 ⚠️ **Un refus ne vaut que pour SON invitation.** `sendAuthorizationRemotePeerId` y renvoie `room` et
 `inviteId` tels que reçus — jamais le `peerId` —, et l'appelant compare l'`inviteId` à celui de

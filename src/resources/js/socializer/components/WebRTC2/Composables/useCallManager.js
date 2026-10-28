@@ -372,8 +372,24 @@ export function useCallManager(ctx, { core, media, connections, transport, pool 
         return true
     }
 
+    /**
+     * Applique la réponse d'un pair invité — acceptation ou refus — et dit si elle valait pour
+     * l'invitation en vol.
+     *
+     * Le verdict est lu par `Notifications.vue`, qui n'annonce un refus (« … est injoignable »,
+     * `close-call`) que s'il a été consommé ici. L'invitation sonne sur TOUS les onglets de
+     * l'appelé : quand l'un répond, les autres sonnent jusqu'à leur auto-refus, qui arrive avec le
+     * même `inviteId` — en pleine conversation, ou après que l'appelé a annulé. La FSM l'ignorait
+     * déjà ; le toast partait quand même, et réarmait le bouton d'appel du mur.
+     *
+     * @param   {object}  payload - Réponse `.ResponseToAuthorizationPeer`
+     * @returns {Promise<boolean>} true si la réponse a été consommée — refus de l'invitation en vol
+     *                             (ou sans `inviteId`, ancien sens), acceptation qui passe la garde,
+     *                             même si la transition ou l'entrée en session échouent ensuite ;
+     *                             false si elle est périmée ou invalide.
+     */
     const openCallBetweenPeer = async (payload) => {
-        if (!payload || typeof payload !== 'object') return
+        if (!payload || typeof payload !== 'object') return false
 
         // Arrête le retry pour ce userSlug (fiable peu importe le retour de inviteId).
         //
@@ -388,7 +404,7 @@ export function useCallManager(ctx, { core, media, connections, transport, pool 
         }
 
         if(!payload?.status) {
-            if (!_consumeRefusedInvitation(payload)) return
+            if (!_consumeRefusedInvitation(payload)) return false
             stopInviteRetry()
 
             ctx.removeCurrentCallUser(payload.fromUserSlug)
@@ -397,11 +413,11 @@ export function useCallManager(ctx, { core, media, connections, transport, pool 
                     mode: 'full',
                 })
             }
-            return
+            return true
         }
 
         const fromUserSlug = payload?.fromUserSlug
-        if (!isValidSlug(fromUserSlug)) return
+        if (!isValidSlug(fromUserSlug)) return false
 
         const room = payload?.options?.room || null
         const type = isValidCallType(payload?.options?.type) ? payload.options.type : 'visio'
@@ -436,7 +452,7 @@ export function useCallManager(ctx, { core, media, connections, transport, pool 
                 '[useCallManager] acceptation d\'appel sans invitation en vol — ignorée',
                 { fromUserSlug, room: callRoom, type, contextId: ctx.contextId },
             )
-            return
+            return false
         }
 
         stopInviteRetry()
@@ -456,10 +472,11 @@ export function useCallManager(ctx, { core, media, connections, transport, pool 
         // `connectToPeer` refuserait l'appel direct que je viens moi-même de demander.
         ctx.markAuthorizedCallPeer(fromUserSlug)
 
-        if (!ctx.callMachine.transition(CALL_STATES.CONNECTED)) return
-        if (!await _enterCallSession({ fromUserSlug, room, type })) return
+        if (!ctx.callMachine.transition(CALL_STATES.CONNECTED)) return true
+        if (!await _enterCallSession({ fromUserSlug, room, type })) return true
 
         pool.requestOrConnectPeer(fromUserSlug)
+        return true
     }
 
     /*---------------------

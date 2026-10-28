@@ -59,6 +59,16 @@
  * ⚠️ Les réponses sont fabriquées ici, pas émises par un core appelé : le contrat d'envoi du
  * refus (`room` + `inviteId`) est épinglé à part, dans `usePeerCore.test.js`. Le cas « refus de
  * l'invitation vivante » est vert sur les deux versions : c'est un contrat, pas un témoin.
+ *
+ * ── Le verdict rendu à Notifications (mesurés le 2026-10-28) ─────────────────────────────
+ *
+ *   | Neutralisé                                                  | Rougit                       |
+ *   |-------------------------------------------------------------|------------------------------|
+ *   | refus périmé → `return true`                                | les deux ⭐ du `describe`     |
+ *   | `useCallManager.js` d'avant le lot (aucun retour)           | les cinq cas du `describe`   |
+ *
+ * La lecture du verdict est gardée par `Notifications.test.js`, qui double le moteur : chacune
+ * des deux moitiés rougit sans l'autre (mesuré).
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createMockContext } from './helpers/createMockContext.js'
@@ -345,6 +355,80 @@ describe('useCallManager × usePeerCore — invitations', () => {
             await vi.advanceTimersByTimeAsync(60_000)
             expect(roomsInvitees().length).toBe(envoisAvant)
             expect(ctx.inviteAbandonedSignal.value).toBeNull()
+        })
+    })
+
+    /**
+     * Le verdict que `Notifications.vue` lit pour décider de dire « … est injoignable ».
+     *
+     * L'invitation sonne sur TOUS les onglets de l'appelé (`sendAlertToUser` diffuse sur son canal
+     * privé). Un onglet répond ; les autres sonnent jusqu'à leur auto-refus, qui part avec le MÊME
+     * `inviteId`. La FSM l'ignore déjà — mais le toast et `close-call` partaient avant, sans savoir.
+     */
+    describe('le verdict rendu à Notifications', () => {
+        const refusDUnOngletSoeur = (inviteId) => ({
+            fromUserSlug: 'alice',
+            status: false,
+            options: { type: 'visio', room: 'call-1', inviteId },
+        })
+
+        it('⭐ appel établi : l\'auto-refus d\'un onglet sœur rend false, et l\'appel continue', async () => {
+            const inviteId = await cm.startCallWithPeer({ toUserSlug: 'alice', type: 'visio', room: 'call-1' })
+            await cm.openCallBetweenPeer({
+                fromUserSlug: 'alice',
+                status: true,
+                options: { type: 'visio', room: 'call-1', peerId: 'alice-peer-id', inviteId },
+            })
+            expect(ctx.callMachine.callState.value).toBe(CALL_STATES.CONNECTED)
+
+            const verdict = await cm.openCallBetweenPeer(refusDUnOngletSoeur(inviteId))
+
+            expect(verdict).toBe(false)
+            expect(ctx.callMachine.callState.value).toBe(CALL_STATES.CONNECTED)
+        })
+
+        it('⭐ l\'appelé a accepté puis annulé : l\'auto-refus d\'un onglet sœur rend false', async () => {
+            // Son signal de fin d'appel arrive seul (`flux.md`, « L'appelé qui accepte puis annule ») :
+            // un départ, qui ramène l'appelant à IDLE par l'arrêt complet.
+            const inviteId = await cm.startCallWithPeer({ toUserSlug: 'alice', type: 'visio', room: 'call-1' })
+            await cm.remoteStopCall({ fromUserSlug: 'alice', room: 'call-1', type: 'visio' })
+            expect(ctx.callMachine.callState.value).toBe(CALL_STATES.IDLE)
+
+            const verdict = await cm.openCallBetweenPeer(refusDUnOngletSoeur(inviteId))
+
+            expect(verdict).toBe(false)
+        })
+
+        it('le refus de l\'invitation en vol rend true', async () => {
+            const inviteId = await cm.startCallWithPeer({ toUserSlug: 'alice', type: 'visio', room: 'call-1' })
+
+            expect(await cm.openCallBetweenPeer(refusDUnOngletSoeur(inviteId))).toBe(true)
+            expect(ctx.callMachine.callState.value).toBe(CALL_STATES.IDLE)
+        })
+
+        it('un refus SANS inviteId garde l\'ancien sens, donc rend true', async () => {
+            // Appelé sur un bundle antérieur, ou les deux reprises internes : ils portent par
+            // construction sur l'invitation vivante.
+            await cm.startCallWithPeer({ toUserSlug: 'alice', type: 'visio', room: 'call-1' })
+
+            expect(await cm.openCallBetweenPeer({
+                fromUserSlug: 'alice',
+                status: false,
+                options: { type: 'visio' },
+            })).toBe(true)
+        })
+
+        it('une acceptation rend true si elle vaut pour l\'invitation en vol, false sinon', async () => {
+            const inviteId = await cm.startCallWithPeer({ toUserSlug: 'alice', type: 'visio', room: 'call-1' })
+            const acceptation = {
+                fromUserSlug: 'alice',
+                status: true,
+                options: { type: 'visio', room: 'call-1', peerId: 'alice-peer-id', inviteId },
+            }
+
+            expect(await cm.openCallBetweenPeer(acceptation)).toBe(true)
+            // La même acceptation, une seconde fois : plus rien n'est en vol.
+            expect(await cm.openCallBetweenPeer(acceptation)).toBe(false)
         })
     })
 })
