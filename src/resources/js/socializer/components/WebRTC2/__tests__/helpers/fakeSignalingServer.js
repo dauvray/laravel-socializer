@@ -196,6 +196,17 @@ export function createFakeSignalingServer() {
                     status: data.status,
                     fromUserSlug,
                 })
+
+                // « Décroché ailleurs » : `UserController::announceInvitationAnswered` prévient
+                // aussi le canal du RÉPONDANT, si et seulement si la réponse porte un `inviteId`,
+                // avec ces deux clés et aucune autre — `callerSlug` est l'appelant résolu par le
+                // serveur, pas un champ de l'émetteur.
+                if (data.options?.inviteId) {
+                    _broadcastToUser(fromUserSlug, 'InvitationAnswered', {
+                        inviteId: data.options.inviteId,
+                        callerSlug: toUserSlug,
+                    })
+                }
                 break
 
             // ── Attestation d'identité ────────────────────────────────────────────────

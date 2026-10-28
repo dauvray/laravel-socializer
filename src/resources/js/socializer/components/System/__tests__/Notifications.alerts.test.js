@@ -134,6 +134,17 @@
  * Aucun 0 en tête de ligne sur le fichier qui porte le cas. M3 vaut d'être lu : les props ne sont
  * jamais remises à `null`, donc un garde qui les lirait refuserait tout appelant après le premier
  * — c'est le cas « répondre libère l'écran » qui le voit, celui de B3, et la panne de chunk.
+ *
+ * ── CONTRÔLES DE « DÉCROCHÉ AILLEURS », mesurés le 2026-10-28 ─────────────────
+ * Même protocole, sur les sept fichiers de `System/__tests__` : tous les rouges sont dans celui-ci.
+ *
+ *    D1. fermeture de l'alerte retirée ............................ 2
+ *    D2. clé `callerSlug` retirée du prédicat ..................... 1
+ *    D3. clé `inviteId` retirée du prédicat ....................... 1
+ *    D4. marquage vu (`isInviteDuplicate`) retiré ................. 1
+ *
+ * Une cinquième clause, « l'annonce porte un `inviteId` », rougissait 0 cas : le serveur ne l'émet
+ * jamais sans (`InvitationAnsweredTest.php`). Retirée plutôt que gardée sans contre-épreuve.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { nextTick } from 'vue'
@@ -664,5 +675,111 @@ describe('Notifications — l\'appelant annule pendant que l\'alerte sonne', () 
 
         expect(peersDouble.remoteStopCall).toHaveBeenCalledWith(depart)
         expect(window.AWN.info).not.toHaveBeenCalled()
+    })
+})
+
+describe('Notifications — décroché ailleurs : un autre onglet a répondu', () => {
+    /**
+     * L'invitation sonne sur TOUS les onglets et appareils de l'appelé (`sendAlertToUser` diffuse
+     * sur son canal privé). Quand l'un répond, `UserController::announceInvitationAnswered` prévient
+     * les autres par `.InvitationAnswered`, sur ce même canal : `inviteId` et `callerSlug` (l'appelant,
+     * résolu par le serveur), rien d'autre.
+     *
+     * Avant, les onglets qui n'avaient pas répondu sonnaient jusqu'à leur auto-refus, qui atteignait
+     * l'appelant en pleine conversation (« … est injoignable »). Décidé le 27/10/2026 : la fermeture
+     * est muette — ni toast, ni réponse.
+     */
+    const reponduAilleurs = (inviteId = 'invite-1', callerSlug = 'bob') => ({ inviteId, callerSlug })
+
+    const recevoirLAnnonce = async (event) => {
+        reverbListeners['.InvitationAnswered'](event)
+        await flushPromises()
+    }
+
+    afterEach(() => {
+        // `clearAllMocks` ne remet pas une implémentation à zéro : celle, fidèle, du dernier cas
+        // déborderait sur les cas suivants.
+        peersDouble.isInviteDuplicate.mockImplementation(() => false)
+    })
+
+    it('⭐ l\'alerte de CETTE invitation disparaît, en silence : ni réponse, ni toast, ni départ', async () => {
+        wrapper = await monter()
+        await recevoirLInvitation('visio')
+        expect(alerte(wrapper, 'VideoCallAlert').exists()).toBe(true)
+
+        await recevoirLAnnonce(reponduAilleurs())
+
+        expect(alerte(wrapper).exists()).toBe(false)
+        expect(document.body.querySelector('.alert')).toBeNull()
+        // Aucune réponse : l'appelant a déjà la sienne. Et rien sur l'état d'appel — deux onglets
+        // qui acceptent dans la même fenêtre recevraient chacun l'annonce de l'autre.
+        for (const verbe of VERBES_APPEL) {
+            expect(peersDouble[verbe], verbe).not.toHaveBeenCalled()
+        }
+        expect(window.AWN.info).not.toHaveBeenCalled()
+    })
+
+    it('⭐ son auto-refus part avec elle : rien ne répond après coup', async () => {
+        vi.useFakeTimers()
+        try {
+            wrapper = await monter()
+            await recevoirLInvitation('vocal')
+
+            reverbListeners['.InvitationAnswered'](reponduAilleurs())
+            await vi.advanceTimersByTimeAsync(25_000)
+
+            // 20 s pour l'alerte vocale : c'est ce refus-là qui disait « injoignable » à l'appelant.
+            expect(peersDouble.acceptCallFromPeer).not.toHaveBeenCalled()
+        } finally {
+            vi.useRealTimers()
+        }
+    })
+
+    it('⭐ le rappel du même appelant n\'y touche pas : c\'est une autre invitation', async () => {
+        wrapper = await monter()
+        await recevoirLInvitation('visio', 'invite-2')
+
+        await recevoirLAnnonce(reponduAilleurs('invite-1'))
+
+        expect(alerte(wrapper, 'VideoCallAlert').exists()).toBe(true)
+    })
+
+    it('⭐ l\'alerte d\'un AUTRE appelant n\'y touche pas, même inviteId', async () => {
+        wrapper = await monter()
+        await recevoirLInvitation('visio', 'invite-1', 'carole')
+
+        await recevoirLAnnonce(reponduAilleurs('invite-1', 'bob'))
+
+        expect(alerte(wrapper, 'VideoCallAlert').exists()).toBe(true)
+    })
+
+    it('sans alerte — l\'onglet qui a répondu reçoit aussi l\'annonce —, rien ne se passe', async () => {
+        wrapper = await monter()
+
+        await recevoirLAnnonce(reponduAilleurs())
+
+        for (const verbe of VERBES_APPEL) {
+            expect(peersDouble[verbe], verbe).not.toHaveBeenCalled()
+        }
+        expect(window.AWN.info).not.toHaveBeenCalled()
+    })
+
+    it('⭐ une relance de cette invitation, arrivée APRÈS l\'annonce, n\'affiche rien', async () => {
+        // Un onglet ouvert pendant la sonnerie n'a pas vu la première émission : la relance partie
+        // avant la réponse peut lui arriver après l'annonce. Le dédoublonnage doit donc la connaître.
+        // Implémentation fidèle de `useMediaBroadcast.isInviteDuplicate`, pour ce seul cas.
+        const vues = new Set()
+        peersDouble.isInviteDuplicate.mockImplementation((inviteId) => {
+            if (!inviteId) return false
+            if (vues.has(inviteId)) return true
+            vues.add(inviteId)
+            return false
+        })
+        wrapper = await monter()
+
+        await recevoirLAnnonce(reponduAilleurs())
+        await recevoirLInvitation('visio')
+
+        expect(alerte(wrapper).exists()).toBe(false)
     })
 })

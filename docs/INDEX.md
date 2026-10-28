@@ -44,7 +44,7 @@ docs/
 ├── architecture/                   transverse au package
 │   ├── package.md                  identité, tri-persistance, ServiceProvider, points d'extension
 │   ├── conventions.md              PHP · front · Pinia · SCSS · i18n
-│   ├── signalisation.md            Reverb/Echo, canaux, 5 events, file de signaux
+│   ├── signalisation.md            Reverb/Echo, canaux, événements, file de signaux
 │   ├── projection-graphe.md        qui écrit le réplica NebulaGraph, l'invariant, la réparation
 │   └── tests.md                    infra Vitest (côté hôte), stratégie, hook pre-push
 ├── modules/

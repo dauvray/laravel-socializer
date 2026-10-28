@@ -92,7 +92,8 @@ pleine conversation, ou après que l'appelé a annulé (« indisponible », puis
 l'ignore depuis le 27/10, mais le toast et `close-call` partaient **avant** elle : un faux
 « injoignable » en plein appel, et le bouton du mur réarmé. `openCallBetweenPeer` rend donc son
 verdict — vrai pour une réponse consommée, acceptation comprise, et pour un refus sans `inviteId`
-(l'ancien sens) — et `Notifications` ne parle qu'après. L'attente est **fail-open** : le chemin
+(l'ancien sens) — et `Notifications` ne parle qu'après ; côté appelé, les onglets sœurs ferment
+désormais leur alerte (§ [Décroché ailleurs](#décroché-ailleurs)). L'attente est **fail-open** : le chemin
 périmé rend `false` avant tout code qui agit — seules des lectures le précèdent —, donc un moteur
 qui lève a consommé un refus, et le taire laisserait le bouton du mur désarmé pour la vie de la
 page. Gardé des deux côtés, et les deux moitiés sont mesurées mutuellement aveugles : le verdict par
@@ -375,6 +376,63 @@ réel, et sans lui un onglet périmé refuserait tous ses appels en silence. Pas
 créneau tenu pour la vie de l'onglet, sans réponse à l'appelant ni toast — mesuré. Aucun écouteur
 n'existe aujourd'hui ; celui qu'on ajoutera, côté socle, doit observer et laisser l'erreur suivre. Épinglé par
 `System/__tests__/Notifications.alerts.test.js` et les deux `*.loadError.test.js`.
+
+### Décroché ailleurs
+
+L'invitation sonne sur **tous** les onglets et appareils de l'appelé, et la réponse ne part que vers
+l'appelant. Le serveur prévient donc les autres :
+
+```
+onglet 1 de l'appelé : onResponseAlert → acceptCallFromPeer → POST /response-to-authorization-peer
+UserController::responseToPeerAuthorization
+  ├─ .ResponseToAuthorizationPeer → canal de l'APPELANT
+  └─ inviteId porté ? → .InvitationAnswered { inviteId, callerSlug } → canal du RÉPONDANT
+                         (best-effort : un échec se journalise, la réponse reste 200)
+onglets 2…n de l'appelé : Notifications.vue
+  ├─ isInviteDuplicate(inviteId)             ← marquée vue : une relance tardive n'affiche rien
+  └─ l'alerte de CETTE invitation sonne ?    ← même appelant ET même inviteId
+       → elle tombe, sans un mot, RIEN ne part
+```
+
+Avant le 2026-10-28, les onglets qui n'avaient pas répondu sonnaient jusqu'à leur auto-refus, qui
+atteignait l'appelant en pleine conversation — c'est ce que le § « Refus du distant » rend muet chez
+l'appelant ; ici, c'est l'alerte qui tombe. **Toute réponse ciblée la ferme, refus compris** (« occupé ⇒
+refus » et alerte introuvable passent par le même verbe) : l'une comme l'autre clôt l'invitation chez
+l'appelant, et une alerte sœur qui sonne encore est morte — l'accepter laissait l'appelé en RECEIVING
+sans personne en face. La fermeture est **muette**, décision du 2026-10-27 : l'onglet qui a refusé
+d'office a son toast, ses sœurs n'en ont pas.
+
+⚠️ **Les deux clés, l'appelant ET l'`inviteId`.** Un rappel du même compte remplace l'alerte avec un
+`inviteId` neuf, et l'alerte d'un autre appelant n'a rien à voir avec cette réponse. `callerSlug` est
+l'appelant résolu par le serveur, après `mayReach` — le contrat serveur est dans
+[signalisation.md](../../architecture/signalisation.md#les-événements-de-signalisation-webrtc2).
+
+⚠️ **Elle n'agit que sur une alerte qui sonne, jamais sur un état d'appel.** Deux onglets qui
+acceptent dans la même fenêtre reçoivent chacun l'annonce de l'autre : agir sur RECEIVING les
+couperait tous les deux. L'onglet qui a répondu reçoit aussi la sienne, sans effet — son alerte est
+déjà fermée. Lors d'un appel entre deux onglets du même compte, l'onglet appelant la reçoit aussi, et
+une alerte de sa propre invitation qui sonnerait chez lui se ferme : c'est voulu.
+
+**Bornes assumées le 2026-10-28** :
+
+- un onglet sœur resté sur un **bundle antérieur** n'écoute pas l'annonce : il sonne jusqu'à son
+  auto-refus, que l'appelant ignore ;
+- une invitation **sans `inviteId`** ne se cible pas : rien ne part, l'ancien comportement reste ;
+- **deux onglets qui acceptent dans la même fenêtre** : le second reste en RECEIVING sans personne en
+  face (l'appelant ignore une acceptation sans invitation en vol). L'annonce ne doit pas le fermer, voir
+  plus haut ;
+- **la garde d'acceptation compare la clé (slug, room, type), pas l'`inviteId`** — mesuré : invitation
+  A, arrêt complet, invitation B dans la MÊME room ; une acceptation tardive de A consomme l'entrée de B
+  et fait passer l'appelant CONNECTED, tandis que l'annonce porte A et laisse sonner les sœurs de B.
+  Atteignable seulement si un appelant impose la room, ce que ne fait aujourd'hui aucun (le seul
+  appelant de `startCallWithPeer` est `onStartCall`) — c'est le futur que le § « Annuler avant que
+  l'appel soit établi » nomme déjà ;
+- l'ordre de livraison entre la relance d'une invitation et son annonce n'est pas garanti : une relance
+  arrivée avant est fermée par l'annonce, une relance arrivée après est éliminée par le marquage.
+
+Gardé par `components/System/__tests__/Notifications.alerts.test.js` (§ « décroché ailleurs ») et
+`tests/Feature/Signaling/InvitationAnsweredTest.php` ; le faux serveur des scénarios émet l'annonce à
+l'identique du PHP, mais aucun scénario ne modélise plusieurs onglets d'un même compte.
 
 ---
 

@@ -383,6 +383,26 @@ abstract class TestCase extends BaseTestCase
     }
 
     /**
+     * Asserte qu'aucun broadcast de ce nom n'est parti sur le canal privé de cet utilisateur —
+     * le pendant ciblé d'`assertBroadcastSent`, quand d'autres broadcasts partent légitimement.
+     */
+    protected function assertBroadcastNotSent(User $to, string $as): void
+    {
+        Event::assertNotDispatched(
+            AnonymousEvent::class,
+            function (AnonymousEvent $event) use ($to, $as) {
+                if ($event->broadcastAs() !== $as) {
+                    return false;
+                }
+
+                return collect(Arr::wrap($event->broadcastOn()))
+                    ->map(fn ($channel) => (string) $channel)
+                    ->contains('private-App.Models.User.'.$to->id);
+            }
+        );
+    }
+
+    /**
      * Asserte qu'AUCUN broadcast n'est parti — l'assertion centrale des gardes du lot C :
      * un refus qui journaliserait sans émettre reste un refus, un refus qui émet n'en est pas un.
      */

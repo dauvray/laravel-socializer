@@ -1395,29 +1395,37 @@ Tous mesurés **avant** d'être écrits ici, aucun n'est une impression de lectu
   `defineAsyncComponent` survit à l'instance remplacée et journalise à son ancienne échéance. Sans
   effet fonctionnel.
 
-- [ ] 🟠 **Un appel pris sur un onglet de l'appelé fait sonner les autres, et leur auto-refus
-  atteint l'appelant** `[S]` + `[M]` — lu le 27/10/2026, non sondé. Le lot du refus discriminant
-  (569bd4f) l'avait relevé, mais seulement pendant un rappel.
+- [x] 🟠 **Un appel pris sur un onglet de l'appelé fait sonner les autres, et leur auto-refus
+  atteint l'appelant** `[S]` + `[M]` — **code fait le 28/10/2026, vérif à deux navigateurs OUVERTE
+  (David)** : voir la liste en fin d'item.
 
-  `UserController::sendAlertToUser` diffuse l'invitation sur le canal privé de l'appelé, donc à
-  **tous** ses onglets et appareils ; la réponse ne repart que vers l'appelant. Quand un onglet
-  répond, les autres n'en savent rien : leur alerte sonne jusqu'à l'auto-refus (10 s visio, 20 s
-  vocal), qui part vers l'appelant avec le même `inviteId`. La FSM de l'appelant est sauve
-  (`_consumeRefusedInvitation` l'ignore, l'invitation n'est plus en vol), mais `Notifications.vue`
-  affiche « … est injoignable » et émet `close-call` **avant** cette garde : toast faux en pleine
-  conversation, et bouton d'appel du mur réarmé (`CallRemotePeerBtn.onCloseCall`). Même chose après
-  une annulation de l'appelé : « indisponible » puis « injoignable ».
+  `UserController::sendAlertToUser` diffuse l'invitation à **tous** les onglets et appareils de
+  l'appelé ; la réponse ne repartait que vers l'appelant, et les autres sonnaient jusqu'à leur
+  auto-refus (10 s visio, 20 s vocal), qui faisait afficher « … est injoignable » à l'appelant en
+  pleine conversation et réarmait le bouton du mur. Sondé avant correction : sur le vrai call
+  manager, ce refus était déjà ignoré par la FSM — c'est `Notifications` qui parlait avant elle.
 
-  Deux morceaux, complémentaires — (a) d'abord :
-  - **(a) côté appelant, la garde avant la parole** `[S]` : `openCallBetweenPeer` rend son verdict
-    (refus consommé ou non), et `Notifications` ne fait toast + `close-call` que s'il l'est. Ferme
-    ce que l'appelant voit à tort. Reste nécessaire avec (b) : l'auto-refus d'un autre onglet peut
-    être déjà parti, et une invitation sans `inviteId` ne se cible pas.
-  - **(b) côté appelé, « décroché ailleurs »** `[M]` : `responseToPeerAuthorization` diffuse aussi,
-    sur le canal privé du répondant, un événement portant l'`inviteId` ; les autres onglets ferment
-    l'alerte de cette invitation sans répondre (même geste qu'`isCancelOfRingingInvitation`). Par le
-    serveur et non par `BroadcastChannel`, pour couvrir les autres appareils. PHP + JS. **Décidé
-    (David, 27/10) : fermeture muette**, sans toast sur les autres onglets.
+  - **(a) côté appelant** (45e26f7) : `openCallBetweenPeer` rend son verdict, `Notifications`
+    n'annonce un refus que s'il a été consommé, en fail-open. Durable :
+    [`flux.md` § Refus du distant](../docs/modules/webrtc2/flux.md#refus-du-distant--le-même-chemin-jamais-un-raccourci).
+  - **(b) côté appelé, « décroché ailleurs »** : `responseToPeerAuthorization` émet en plus
+    `.InvitationAnswered { inviteId, callerSlug }` sur le canal du répondant, en best-effort, sur
+    **toute** réponse ciblée (refus compris : chacune clôt l'invitation chez l'appelant). Les onglets
+    sœurs ferment en silence l'alerte de cette invitation, comme décidé le 27/10. Durable :
+    [`flux.md` § Décroché ailleurs](../docs/modules/webrtc2/flux.md#décroché-ailleurs), qui porte
+    aussi les bornes — dont une **mesurée** par la relecture : la garde d'acceptation compare la clé
+    et non l'`inviteId`, ce qui ne mord que le jour où un appelant imposera la room (item « appels
+    depuis une room »).
+
+  Vérif à deux navigateurs (David) — rechargement dur des deux côtés, aucune écriture dans `.env`
+  pendant la mesure, `enforce` actif en dev :
+
+  1. alice dans le navigateur 1, bob dans le navigateur 2 avec **deux onglets** ; alice appelle bob en
+     visio, bob accepte dans l'onglet 1 → l'alerte de l'onglet 2 tombe **aussitôt**, sans toast ;
+     chez alice, aucun « injoignable » au-delà de 10 s, et l'appel continue ;
+  2. même chose, bob **refuse** dans l'onglet 1 → un seul « bob est injoignable » chez alice, et
+     l'alerte de l'onglet 2 tombe ;
+  3. si un second appareil est disponible pour bob : l'étape 1 avec l'onglet 2 sur cet appareil.
 
 - [ ] 🟠 **`handleRemoteDeparture` applique à l'appel courant un départ qui porte la room d'un autre
   appel** `[S]` — mesuré le 27/10/2026 par la relecture du lot « clé de `usePeerRetry` ».

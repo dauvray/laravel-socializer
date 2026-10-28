@@ -222,7 +222,7 @@ voir [reference/use-reverb-channel.md](../reference/use-reverb-channel.md).
 
 ---
 
-## Les cinq événements de signalisation WebRTC2
+## Les événements de signalisation WebRTC2
 
 Émis en **broadcasting anonyme** (`Broadcast::private(...)->as(...)->with([...])->sendNow()`) — d'où
 l'absence de classes d'Event dédiées dans `src/app/Events/`. Nommés via `->as(...)`, donc écoutés
@@ -238,10 +238,27 @@ Contrôleur unique : `src/app/Http/Controllers/Front/UserController.php`, sectio
 | `.ResponseToPeerID` | `responseToPeerId` | `/response-to-peer-id` | `dispatchSignal(PEER_CONNECT_TO_REMOTE_PEER)` |
 | `.AlertToUser` | `sendAlertToUser` | `/send-alert-to-user` | affiche `System/widgets/AlertComponent.vue` — ou refuse d'office si une alerte attend déjà un autre appelant |
 | `.ResponseToAuthorizationPeer` | `responseToPeerAuthorization` | `/response-to-authorization-peer` | `openCallBetweenPeer` |
-| `.CloseConnectionToPeerID` | `closeConnectionToPeerId` | `/close-connection-to-peer-id` | `remoteStopCall` |
+| `.CloseConnectionToPeerID` | `closeConnectionToPeerId` | `/close-connection-to-peer-id` | `remoteStopCall` — ou ferme l'alerte de l'invitation annulée |
+| `.InvitationAnswered` | `responseToPeerAuthorization`, **second** broadcast | `/response-to-authorization-peer` | ferme en silence l'alerte de cette invitation, sur les autres onglets du répondant |
 
-Seuls les **deux premiers** passent par la file de signaux. Les trois autres sont consommés
-directement par `Notifications.vue`.
+Seuls les **deux premiers** passent par la file de signaux. Les autres sont consommés directement
+par `Notifications.vue`.
+
+⚠️ **`.InvitationAnswered` part sur le canal du RÉPONDANT, pas vers un tiers.** L'invitation sonne
+sur tous les onglets et appareils de l'appelé ; la réponse ne part que vers l'appelant, et ce second
+broadcast prévient les autres que l'invitation a eu sa réponse — acceptation comme refus, chacune
+la clôt chez l'appelant. Trois propriétés à ne pas défaire :
+
+- **Deux clés, `inviteId` et `callerSlug`, et seulement si la réponse porte un `inviteId`** : sans
+  lui, l'invitation ne se cible pas (bundle antérieur au 27/10/2026). Pas de `fromUserSlug` —
+  l'auteur en est le destinataire, l'invariant 1 n'a rien à y dire ; `callerSlug` est l'appelant
+  résolu par le serveur, après `mayReach`. Le répondant n'y apprend que ce qu'il sait déjà.
+- **Best-effort** : la réponse à l'appelant est partie avant (`sendNow()` est synchrone), donc un
+  échec se journalise sans rendre de 500 — `AjaxService` en ferait un toast d'échec chez un
+  répondant dont la réponse a abouti. Les onglets sœurs retombent alors sur leur auto-refus, que
+  l'appelant ignore.
+- **Le client n'agit que sur une alerte qui sonne, jamais sur un état d'appel** :
+  [modules/webrtc2/flux.md](../modules/webrtc2/flux.md#décroché-ailleurs).
 
 ### Les trois routes WebRTC qui ne sont PAS de la signalisation
 

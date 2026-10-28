@@ -359,6 +359,61 @@ class UserController extends Controller
         catch (\Exception $ex) {
             return $this->signalingFailure($ex, $request);
         }
+
+        $this->announceInvitationAnswered($request, $data, $to->slug);
+    }
+
+    /**
+     * Prévient les AUTRES onglets et appareils du répondant que cette invitation a reçu sa réponse.
+     *
+     * `sendAlertToUser` a fait sonner l'invitation sur tous, et la réponse ne part que vers
+     * l'appelant : sans ce signal, les onglets qui n'avaient pas répondu sonnaient jusqu'à leur
+     * auto-refus, qui atteignait l'appelant en pleine conversation. Toute réponse ciblée,
+     * acceptation comme refus, clôt l'invitation chez l'appelant : une alerte sœur qui sonne
+     * encore est donc morte, et `Notifications.vue` la ferme sans répondre.
+     *
+     * Sur le canal du RÉPONDANT : il n'y apprend que ce qu'il sait déjà, aucune surface nouvelle
+     * vers un tiers. Pas de `fromUserSlug` — l'auteur de ce signal en est le destinataire ;
+     * `callerSlug` est l'appelant résolu ici, après `mayReach`. Ni `status` ni `peerId` : la
+     * fermeture est muette (décision du 27/10/2026). Sans `inviteId` (bundle antérieur au
+     * 27/10/2026), l'invitation ne se cible pas : rien ne part.
+     *
+     * ⚠️ Best-effort, hors de `signalingFailure` : la réponse à l'appelant est déjà partie
+     * (`sendNow()` est synchrone). Un 500 ferait afficher par `AjaxService` un toast d'échec au
+     * répondant dont la réponse a abouti. L'échec se journalise, et les onglets sœurs retombent
+     * sur leur auto-refus, que l'appelant ignore.
+     */
+    private function announceInvitationAnswered(Request $request, array $data, string $callerSlug): void
+    {
+        // `''` n'arrive ici que chez un hôte qui retire ou contourne `ConvertEmptyStringsToNull`,
+        // middleware global par défaut : le harnais ne l'exerce pas (mesuré, le cas « chaîne vide »
+        // reste vert sans cette clause). Même frontière que la vérité JS du faux serveur.
+        $inviteId = $data['options']['inviteId'] ?? null;
+        if ($inviteId === null || $inviteId === '') {
+            return;
+        }
+
+        $user = Auth::user();
+
+        try {
+            Broadcast::private('App.Models.User.'.$user->id)
+            ->as('InvitationAnswered')
+            ->with([
+                'inviteId' => $inviteId,
+                'callerSlug' => $callerSlug,
+            ])
+            ->sendNow();
+        }
+        catch (\Exception $ex) {
+            Log::warning('Échec du broadcast « décroché ailleurs » : les autres onglets sonneront jusqu\'à leur auto-refus', [
+                'route' => $request->route()?->getName(),
+                'auth_user_id' => $user->id,
+                'auth_user_slug' => $user->slug,
+                'target_slug' => $callerSlug,
+                'ip' => $request->ip(),
+                'exception' => $ex,
+            ]);
+        }
     }
 
     public function closeConnectionToPeerId(Request $request)

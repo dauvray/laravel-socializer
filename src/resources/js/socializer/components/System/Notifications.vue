@@ -222,6 +222,20 @@ const { whisper: whisperPing } = useReverbChannel(userChannel, {
             peers.remoteStopCall(event)
         },
 
+        // Un autre onglet ou appareil de ce compte a répondu à une invitation : son alerte, si elle
+        // sonne ici, tombe sans un mot — voir `isAnsweredElsewhere`.
+        '.InvitationAnswered': (event) => {
+            // Marquée vue AVANT tout : une relance partie avant la réponse et arrivée après cette
+            // annonce remonterait sinon une alerte morte, sur un onglet qui n'avait pas vu la
+            // première émission. `isInviteDuplicate` est le seul écrivain du dédoublonnage ; son
+            // retour n'importe pas ici.
+            peers.isInviteDuplicate(event?.inviteId)
+
+            if (isAnsweredElsewhere(event)) {
+                notificationComponent.value = null
+            }
+        },
+
         '.ChatInvitation': (event) => {
             addConversation(event)
             // `window.AWN`, comme ses deux voisines (le refus `.ResponseToAuthorizationPeer` et
@@ -342,6 +356,36 @@ function isCancelOfRingingInvitation(event) {
     return notificationComponent.value !== null
         && ringing?.fromUserSlug === event?.fromUserSlug
         && ringing?.options?.room === event?.room
+}
+
+/**
+ * L'invitation dont l'alerte sonne a-t-elle reçu sa réponse sur un autre onglet ou appareil ?
+ *
+ * `sendAlertToUser` fait sonner l'invitation sur tous les onglets de ce compte, et la réponse ne part
+ * que vers l'appelant. Avant le 28/10/2026, ceux qui n'avaient pas répondu sonnaient jusqu'à leur
+ * auto-refus, qui atteignait l'appelant en pleine conversation (« … est injoignable »).
+ * `UserController::announceInvitationAnswered` diffuse donc sur CE canal l'`inviteId` répondu et son
+ * appelant — acceptation comme refus : l'une comme l'autre clôt l'invitation chez l'appelant, et une
+ * alerte sœur qui sonne encore est morte. L'accepter laisserait l'appelé en RECEIVING sans personne
+ * en face.
+ *
+ * ⚠️ Les DEUX clés : un rappel du même compte remplace l'alerte avec un `inviteId` neuf, et l'alerte
+ * d'un autre appelant n'a rien à voir avec cette réponse. `callerSlug` est l'appelant résolu par le
+ * serveur, pas un champ de l'émetteur.
+ *
+ * ⚠️ Rien ne part, et rien ne touche à l'état d'appel — le geste d'`isCancelOfRingingInvitation`, en
+ * muet (décision du 27/10/2026). Deux onglets qui acceptent dans la même fenêtre reçoivent chacun
+ * l'annonce de l'autre : agir sur RECEIVING les couperait tous les deux. L'onglet qui a répondu reçoit
+ * aussi la sienne, sans effet : son alerte est déjà fermée (`onResponseAlert`).
+ *
+ * Bornes, dans `flux.md` § « Décroché ailleurs » : un onglet sur un bundle antérieur n'écoute pas, et
+ * une invitation sans `inviteId` ne se cible pas — l'auto-refus part alors, et l'appelant l'ignore.
+ */
+function isAnsweredElsewhere(event) {
+    const ringing = notificationComponentProps.value
+    return notificationComponent.value !== null
+        && ringing?.fromUserSlug === event?.callerSlug
+        && ringing?.options?.inviteId === event?.inviteId
 }
 
 /**
