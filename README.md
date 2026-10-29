@@ -225,6 +225,29 @@ quatre arguments, et il refuse de démarrer.
 de n'importe qui. Il ne vit que dans un fichier gitignoré ; les gabarits versionnés portent une
 valeur **vide**.
 
+⚠️ **Tourner le secret, c'est recréer des conteneurs, pas vider un cache.** Nouvelle valeur dans
+`.env`, puis recréer coturn **et** tout conteneur qui exécute l'application Laravel — le web et les
+workers (queue, scheduler, Reverb). Deux raisons, chacune suffisante : l'environnement d'un
+conteneur est figé à sa création et Dotenv n'écrase jamais une variable déjà présente ; et ces
+conteneurs réécrivent au démarrage un cache de configuration commun — en recréer un seul laisse les
+autres y remettre l'ancien secret plus tard, sans bruit. `config:clear` ne touche à aucun des deux.
+Le désaccord se lit dans le journal coturn : `check_stun_auth: Cannot find credentials of user
+<exp:id>` à chaque tentative d'appel. Contrôle sans afficher le secret, une empreinte par
+exemplaire, toutes égales ou rien ne relaie (`echo` ajouterait un saut de ligne et une fausse
+alerte, d'où `tr -d`) :
+
+    sed -n 's/^COTURN_STATIC_AUTH_SECRET=//p' .env | tr -d '"\n' | sha256sum
+    docker inspect <conteneur app> -f '{{range .Config.Env}}{{println .}}{{end}}' \
+      | sed -n 's/^COTURN_STATIC_AUTH_SECRET=//p' | tr -d '\n' | sha256sum
+    docker inspect <conteneur coturn> -f '{{join .Args " "}}' \
+      | grep -oE -- '--static-auth-secret=[^ ]+' | cut -d= -f2- | tr -d '\n' | sha256sum
+    php artisan tinker --execute 'echo hash("sha256", (string) config("socializer.signaling.ice.turn.static_auth_secret"));'
+
+ℹ️ **Un STUN qui répond ne prouve pas que coturn alloue.** La preuve est une allocation
+authentifiée : la contre-épreuve n°1 écrite en tête de `tests/Feature/Signaling/IceServersTest.php`
+(`turnutils_uclient`, livré dans l'image coturn), à rejouer après tout redémarrage du relais — en
+UDP, puis avec `-t` pour le repli TCP.
+
 ℹ️ **Le TTL est raccourcissable.** Le client rafraîchit son credential avant l'échéance : la réponse
 de `/get-ice-servers` porte un `credential_ttl` et le transport réécrit la configuration ICE du
 `Peer` avant qu'elle expire, sans rechargement de page ni coupure des appels en cours. Les 24 h par

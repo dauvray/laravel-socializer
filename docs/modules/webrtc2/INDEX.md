@@ -84,3 +84,8 @@ ne voit rien »** — avec chaque fois une cause racine différente. Un test de 
 pas l'observer : il n'est vrai ou faux que **vu de B**. C'est la raison d'être de l'étage
 `__tests__/scenarios/`, et le tableau des causes déjà rencontrées est dans
 [flux.md](flux.md#où-ça-casse--causes-racines-déjà-vues).
+
+Et la cause peut être **hors du module** — réseau du poste qui ferme l'UDP, secret TURN qui diffère
+entre PHP et coturn, relais qui n'alloue plus. Avant d'ouvrir le code : l'adresse du poste dans le
+journal nginx, le journal coturn, puis la page trickle-ICE en `relay`. Les trois cas, avec ce qui
+les trahit, sont les dernières lignes de ce tableau de flux.md.
