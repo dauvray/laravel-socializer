@@ -363,7 +363,10 @@ Ils sont implicites et cassent **silencieusement**.
   **rafraîchit en place avant son échéance** (la route annonce sa durée de vie dans
   `credential_ttl`), sans recréer le `Peer` ni couper les appels en cours —
   [détail](securite.md#le-rafraîchissement-du-credential-turn). À défaut de secret, le couple
-  statique `COTURN_USER` / `COTURN_PASS` reste servi, et n'est alors pas rafraîchi. Une clé `VITE_*`
+  statique `COTURN_USER` / `COTURN_PASS` reste servi, et n'est alors pas rafraîchi. L'entrée TURN
+  porte **deux URL**, la même adresse en UDP puis en `?transport=tcp` : la seconde est le repli
+  d'un poste dont le réseau ferme l'UDP (`SOCIALIZER_TURN_TCP_FALLBACK`, vrai par défaut — ce
+  qu'elle exige et coûte est dans le README, « Réseaux qui ferment l'UDP »). Une clé `VITE_*`
   est inlinée dans le bundle public au `npm run build` ; un identifiant n'y a jamais sa place.
 - **Une source de présence** pour `users` — `useReverbPresence(channel)`, voir
   [use-reverb-channel.md](../../reference/use-reverb-channel.md). La charge utile doit porter `id`

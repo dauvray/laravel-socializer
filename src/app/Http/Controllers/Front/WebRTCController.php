@@ -197,7 +197,7 @@ class WebRTCController extends Controller
      * `ttl` est donc `null` sur le chemin de compatibilité : un couple longue durée ne se
      * rafraîchit pas, et le client ne doit pas programmer un rafraîchissement pour lui.
      *
-     * @return array{server: array{urls: string, username: string, credential: string}, ttl: int|null}|null
+     * @return array{server: array{urls: list<string>, username: string, credential: string}, ttl: int|null}|null
      */
     private function turnServer(): ?array
     {
@@ -211,9 +211,20 @@ class WebRTCController extends Controller
             return null;
         }
 
-        // Une seule URL, sans `?transport=`, comme le bundle l'écrivait. Ajouter la variante TCP
-        // serait une vraie amélioration — et un changement du chemin ICE, à mesurer à part.
-        $urls = 'turn:'.$host.':'.(int) config('socializer.signaling.ice.turn.port', 3478);
+        // La MÊME adresse, annoncée en UDP puis en TCP (`?transport=tcp`), dans UNE entrée : les
+        // deux URL partagent le couple d'identifiants signé ci-dessous, et `RTCIceServer.urls`
+        // accepte une liste. Sans la variante TCP, un réseau qui ferme l'UDP (VPN d'entreprise,
+        // poste nomade) tue d'un coup les trois sortes de candidats — direct, STUN, relais — et
+        // ICE reste en `checking` sans aucune erreur. Le navigateur alloue sur les DEUX URL à
+        // chaque connexion, et ne sélectionne la variante TCP qu'en dernier recours. Ce qu'elle
+        // exige du réseau et ce qu'elle coûte en ports de relais : `config/socializer.php`, clé
+        // `tcp_fallback`.
+        $endpoint = $host.':'.(int) config('socializer.signaling.ice.turn.port', 3478);
+        $urls = ['turn:'.$endpoint];
+
+        if ((bool) config('socializer.signaling.ice.turn.tcp_fallback', true)) {
+            $urls[] = 'turn:'.$endpoint.'?transport=tcp';
+        }
 
         $secret = (string) config('socializer.signaling.ice.turn.static_auth_secret');
 

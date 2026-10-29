@@ -56,6 +56,20 @@ describe('fetchIceServers — chemin nominal', () => {
         })
     })
 
+    it('conserve telle quelle une entrée dont urls est une liste — le relais en UDP et en TCP', async () => {
+        // La forme que `/get-ice-servers` sert depuis le repli TCP : UNE entrée TURN, deux URL, un
+        // seul couple. Elle doit atteindre `new Peer({ config: { iceServers } })` sans être aplatie
+        // ni dédoublée — `RTCIceServer.urls` accepte une liste, et c'est la seconde URL qui sauve un
+        // poste dont le réseau ferme l'UDP.
+        const TURN_DOUBLE = { ...TURN, urls: ['turn:turn.example:3478', 'turn:turn.example:3478?transport=tcp'] }
+        const AjaxService = makeAjax(async () => ({ iceServers: [STUN, TURN_DOUBLE] }))
+
+        await expect(fetchIceServers(AjaxService)).resolves.toEqual({
+            iceServers: [STUN, TURN_DOUBLE],
+            credentialTtlMs: null,
+        })
+    })
+
     it('interroge ENDPOINTS.ICE_SERVERS en GET', async () => {
         // Fige le contrat avec le backend : c'est l'URL nommée dans `routes.public.php`, et le
         // verbe qui évite le 419 → `document.location.reload()` d'`AjaxService`.

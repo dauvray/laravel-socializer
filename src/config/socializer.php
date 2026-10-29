@@ -707,6 +707,35 @@ return [
                 'port' => (int) env('SOCIALIZER_TURN_PORT', 3478),
 
                 /*
+                 * Repli TCP. Vrai par défaut : l'entrée TURN annonce la même adresse une seconde
+                 * fois en `?transport=tcp`. Le navigateur ALLOUE sur chaque URL, à chaque
+                 * connexion ; seule la sélection ICE préfère l'UDP, et la variante TCP n'est
+                 * retenue qu'en dernier recours. Sans elle, un réseau qui ferme l'UDP (VPN
+                 * d'entreprise, poste nomade) tue d'un coup les trois sortes de candidats —
+                 * direct, STUN, relais — et la négociation reste en `checking` sans aucune
+                 * erreur : « A diffuse, B reste sur le spinner ».
+                 *
+                 * Ce qu'il exige : que coturn écoute aussi en TCP sur `port` (le compose de
+                 * l'hôte doit publier `3478:3478` ET `3478:3478/udp`), et que le réseau laisse
+                 * passer TCP 3478 vers lui. Il ne couvre PAS un réseau qui ne laisse sortir que le
+                 * 443 : ce cas demande TURNS sur 443, que ce paquet ne sert pas.
+                 *
+                 * ⚠️ Ce qu'il coûte se paie PAR CONNEXION PAIR-À-PAIR, pas par onglet. Chaque
+                 * `RTCPeerConnection` alloue sur chaque URL TURN, et une allocation en TCP
+                 * consomme elle aussi un port UDP de la plage `--min-port`/`--max-port` : le
+                 * relais vers le pair reste en UDP. Une connexion `stream` ouvre deux
+                 * `RTCPeerConnection` par correspondant (`peer.call()` et `peer.connect()`,
+                 * `usePeerConnections.js`), `screen` en ajoute une. Un appel à deux tient donc
+                 * environ quatre allocations par côté, huit en tout : une plage de 41 ports
+                 * (49160-49200) ne porte plus qu'environ cinq appels relayés simultanés sur tout
+                 * le serveur, et `--user-quota` se divise de même. Les postes qui passent en
+                 * direct n'y perdent rien ; ceux qui perdent leur relais quand la plage est pleine
+                 * sont précisément ceux que ce repli veut sauver. Élargir la plage, ou mettre à
+                 * `false` sur un déploiement dont tous les postes portent l'UDP.
+                 */
+                'tcp_fallback' => (bool) env('SOCIALIZER_TURN_TCP_FALLBACK', true),
+
+                /*
                  * ⚠️ UNE SEULE VARIABLE, LUE DES DEUX CÔTÉS. C'est la même règle qui imposait
                  * `COTURN_USER` / `COTURN_PASS` ci-dessous plutôt que des clés neuves : le
                  * `docker-compose` de l'hôte interpole `COTURN_STATIC_AUTH_SECRET` dans

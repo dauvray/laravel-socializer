@@ -200,6 +200,7 @@ Générer le secret, et le poser **dans un fichier non versionné** :
     COTURN_CREDENTIAL_TTL=86400       # optionnel, 24 h par défaut — voir la borne ci-dessous
     SOCIALIZER_TURN_HOST=turn.example.org   # optionnel, dérivé d'APP_URL à défaut
     SOCIALIZER_TURN_PORT=3478               # optionnel
+    SOCIALIZER_TURN_TCP_FALLBACK=true       # optionnel — voir « Réseaux qui ferment l'UDP »
 
 **La MÊME variable doit atteindre coturn.** Deux variables pour un seul secret, et la panne est
 silencieuse des deux côtés : coturn refuse chaque allocation, le navigateur se rabat sur STUN, et le
@@ -234,6 +235,34 @@ après quelques tentatives infructueuses (route en panne), il abandonne et l'ong
 comportement d'avant — un F5 renouvelle. Et `GET /get-ice-servers` n'a **pas** de `throttle`, par une
 décision documentée dans `routes.public.php` dont la condition de réouverture est précisément « un
 credential court **et** re-demandé ». Un TTL horaire rouvre donc cette question.
+
+### Réseaux qui ferment l'UDP — le repli TCP
+
+L'entrée TURN annonce la même adresse deux fois, en UDP puis en `?transport=tcp`. Le navigateur
+alloue sur les deux à chaque connexion ; seule la sélection ICE préfère l'UDP, et la variante TCP
+n'est retenue qu'en dernier recours. Sans elle, un réseau qui ferme l'UDP (VPN d'entreprise, poste
+nomade) tue d'un coup les trois sortes de candidats ICE — direct, STUN, relais — et la négociation
+reste en `checking` sans aucune erreur : « A diffuse, B reste sur le spinner ». Ce repli exige que
+coturn écoute aussi en TCP sur le port (le compose de l'hôte publie `3478:3478` **et**
+`3478:3478/udp`) et que le réseau laisse passer TCP 3478. Il ne couvre pas un réseau qui ne laisse
+sortir que le 443 : ce cas demande TURNS sur 443, que ce paquet ne sert pas.
+
+Vérifier depuis le poste qui a le symptôme, sans toucher au code : la page
+`https://webrtc.github.io/samples/src/content/peerconnection/trickle-ice/` avec les valeurs de
+`GET /get-ice-servers` et `IceTransports` sur `relay`. Un candidat `relay` doit apparaître ; s'il
+n'apparaît qu'avec l'URL `?transport=tcp`, l'UDP est fermé sur ce chemin.
+
+⚠️ Le coût se paie **par connexion pair-à-pair**, pas par onglet : chaque `RTCPeerConnection`
+alloue sur chaque URL TURN, et une allocation en TCP consomme elle aussi un port UDP de la plage
+`--min-port`/`--max-port`, le relais vers le pair restant en UDP. Un appel à deux ouvre deux
+`RTCPeerConnection` par côté (flux et données), donc environ huit allocations : une plage de 41 ports
+ne porte plus qu'environ cinq appels relayés simultanés sur tout le serveur, et `--user-quota` se
+divise de même. Élargir la plage, ou `SOCIALIZER_TURN_TCP_FALLBACK=false` sur un déploiement dont
+tous les postes portent l'UDP.
+
+ℹ️ Un hôte qui a **publié** `config/socializer.php` avant ce repli doit y ajouter la clé
+`signaling.ice.turn.tcp_fallback` : le merge de configuration est peu profond, le repli y est actif
+par le défaut du contrôleur, et `SOCIALIZER_TURN_TCP_FALLBACK=false` y est alors ignoré sans bruit.
 
 ### Mode statique — couple partagé (déploiements existants)
 

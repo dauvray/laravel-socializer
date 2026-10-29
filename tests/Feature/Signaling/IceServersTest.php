@@ -128,7 +128,7 @@ class IceServersTest extends TestCase
         $iceServers = $this->iceServers($response);
         $this->assertCount(2, $iceServers);
         $this->assertStringStartsWith('stun:', $iceServers[0]['urls']);
-        $this->assertStringStartsWith('turn:', $iceServers[1]['urls']);
+        $this->assertStringStartsWith('turn:', $iceServers[1]['urls'][0]);
 
         // Le secret est posé, donc le couple statique du `setUp()` est IGNORÉ : c'est le sens de
         // « la présence du secret commute le mode ». Sans cette paire d'assertions, un contrôleur
@@ -302,8 +302,42 @@ class IceServersTest extends TestCase
 
         $response = $this->actingAs($this->makeUser('alice'))->getJson(self::URI);
 
-        // Pin de la construction : un seul schéma, pas de `?transport=`, port casté en entier.
-        $this->assertSame('turn:turn.example.test:3479', $this->iceServers($response)[1]['urls']);
+        // Pin de la construction : UNE entrée, la même adresse en UDP puis en `?transport=tcp`,
+        // port casté en entier. La variante TCP est ce qui sauve un poste dont le réseau ferme
+        // l'UDP (VPN d'entreprise) ; sans elle, les trois sortes de candidats ICE meurent ensemble
+        // et la négociation reste en `checking` sans erreur.
+        $this->assertSame(
+            ['turn:turn.example.test:3479', 'turn:turn.example.test:3479?transport=tcp'],
+            $this->iceServers($response)[1]['urls'],
+        );
+    }
+
+    #[Test]
+    public function les_deux_transports_tiennent_dans_une_seule_entree_turn(): void
+    {
+        // Deux URL dans UNE entrée, et non deux entrées : un seul couple signé, un seul
+        // `credential_ttl` à rafraîchir, et `la_charge_utile_ne_relaie_que_les_trois_cles_attendues`
+        // reste le contrôle d'inertie de cet ajout sans qu'on y touche.
+        $response = $this->actingAs($this->makeUser('alice'))->getJson(self::URI);
+
+        $turn = $this->turnEntries($response);
+        $this->assertCount(1, $turn);
+        $this->assertCount(2, $turn[0]['urls']);
+        $this->assertSame(['urls', 'username', 'credential'], array_keys($turn[0]));
+    }
+
+    #[Test]
+    public function le_repli_tcp_se_desactive_par_configuration(): void
+    {
+        // L'opt-out d'un déploiement dont la plage de relais est étroite (chaque
+        // `RTCPeerConnection` alloue sur chaque URL TURN, donc une allocation de plus par
+        // connexion pair-à-pair) et dont tous les postes portent l'UDP. La forme reste une
+        // LISTE : le front n'a qu'une seule forme à lire.
+        $this->setIce('turn.tcp_fallback', false);
+
+        $response = $this->actingAs($this->makeUser('alice'))->getJson(self::URI);
+
+        $this->assertSame(['turn:turn.example.test:3478'], $this->iceServers($response)[1]['urls']);
     }
 
     #[Test]
@@ -398,7 +432,8 @@ class IceServersTest extends TestCase
     {
         return array_values(array_filter(
             $this->iceServers($response),
-            fn (array $entry): bool => str_starts_with($entry['urls'], 'turn:'),
+            // `urls` est une chaîne pour STUN et une liste pour TURN — la première URL décide.
+            fn (array $entry): bool => str_starts_with(((array) $entry['urls'])[0] ?? '', 'turn:'),
         ));
     }
 }
