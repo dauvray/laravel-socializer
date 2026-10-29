@@ -18,6 +18,9 @@ Aucun chantier ne passe devant les autres. L'ordre par défaut, tant que rien n'
 explicitement :
 
 1. **Le module WebRTC2 au fil de l'eau — [webrtc2-todo.md](webrtc2-todo.md).**
+   ▶ **Prochain lot, décidé le 29/10/2026 : « couper la caméra éteint vraiment la webcam »**, à
+   ouvrir dans une nouvelle conversation. Son cahier des charges, mesuré, et ses points d'entrée
+   sont en tête du fichier.
    **Aucun 🔴 ouvert DANS CE FICHIER** — le dernier, un micro coupé reporté à l'appel suivant (fatal
    en vocal), a été ouvert et fermé le 29/10/2026. La portée est le module, pas le paquet : un 🔴
    est ouvert ailleurs, cf. le point 3 ci-dessous. « accepter un appel vocal entrant ne fait rien » est fermé
