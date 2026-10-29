@@ -115,6 +115,11 @@ Verbes : `initialize` · `cleanup` · `watchUsers` · `sendData` / `sendDataOnCo
 Ce sont des `ref`, et l'objet `api` n'est pas déballé par le template : on y écrit
 `api.remoteStreams.value` (`AudioRoom/AudioComponent.vue`), comme dans le script.
 
+**`getAudioStream` démarre micro ouvert** : `isMuted` vaut `false` à son retour, quel que soit
+l'état laissé par le flux précédent — décision du 2026-10-29. `getWebcamStream`, lui, reprend
+`isMuted` et `isVideoEnabled` tels quels dans ses contraintes de capture. Gardés par
+`usePeerMedia.streams.test.js`.
+
 ⚠️ **`stopAudio` n'a plus aucun site d'appel dans le paquet.** Il reste sur la surface publique —
 c'est un export inutilisé mais **juste** (un alias de `stopStream` en aval), pas un export faux, et
 la politique du paquet ne retire que les seconds. Le câblage qui l'appelait était mort des deux

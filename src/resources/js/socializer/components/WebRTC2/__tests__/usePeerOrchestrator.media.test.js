@@ -50,6 +50,9 @@
  *   11. l'application de `track.enabled` de `toggleVideoState` retirée .... 1 cas
  *   12. le corps de `stopAudioStream` vidé ............................... 1 cas
  *   13. `destUserSlugs` non transmis à `transport.sendData` .............. 1 cas
+ *   14. `isMuted = true` rétabli dans `startAudioStream` (2026-10-29) .... 1 cas
+ *       (+ 1 dans `usePeerMedia.streams.test.js`, seul à rougir aussi quand
+ *       l'affectation est retirée : il part d'un état muet)
  *
  * ⚠️ **Trois de ces contrôles — 5, 9 et 13 — ont d'abord rougi ZÉRO cas, et chaque fois
  * l'erreur était dans le test, pas dans le code.** Les trois cas concernés étaient verts
@@ -353,6 +356,27 @@ describe('usePeerOrchestrator — flux locaux et bascules', () => {
 
             expect(api.isMuted.value).toBe(false)
             expect(audio.enabled).toBe(true)
+        })
+
+        it('⭐ un flux audio démarre micro OUVERT : l\'état et la metadata le disent, et le premier clic coupe', async () => {
+            // Décision du 2026-10-29. Avant, le drapeau disait « muet » sur une piste active : on
+            // se croyait muet et on était entendu, et le premier clic ne changeait rien à la piste.
+            // La metadata sortante annonçait `isAudioMuted: true` — valeur transportée, recopiée
+            // chez le distant sans lecteur aujourd'hui (son icône vient d'`AUDIO_MUTE_TOGGLE`).
+            seedRemote()
+            await api.startAudioStream()
+            await settleTasks()
+            const [audio] = api.currentStream.value.getAudioTracks()
+
+            expect(api.isMuted.value).toBe(false)
+            expect(audio.enabled).toBe(true)
+            const [, , options] = peerInstance.call.mock.calls.at(-1)
+            expect(options.metadata.isAudioMuted).toBe(false)
+
+            api.toggleAudioState()
+
+            expect(api.isMuted.value).toBe(true)
+            expect(audio.enabled).toBe(false)
         })
 
         it('couper la caméra bascule le drapeau ET les pistes vidéo, dans le sens direct', async () => {

@@ -894,6 +894,8 @@ statiques — durablement pour un dynamique, temporairement pour un statique.
                   · **pas de player local** — `LocalMediaPlayer` lit `api.isMuted`, que
                   `startAudioStream` pose à `true` sur un micro ouvert (item ouvert dans
                   [webrtc2-todo.md](webrtc2-todo.md)) : il afficherait « muet » à quelqu'un qu'on entend.
+                  *(Corrigé le 29/10/2026 — un flux audio démarre micro ouvert : cette raison ne
+                  tient plus, l'absence de player local reste un choix d'AudioRoom.)*
                   Appelants v1 vivants : **un → zéro au premier grep** ; au second reste
                   `Server/Server.vue:105`, import mort du store v1 — c'est F1. Build vert.
                   ❓ **Décision produit laissée ouverte** (relevée en relecture) : **pas de bouton

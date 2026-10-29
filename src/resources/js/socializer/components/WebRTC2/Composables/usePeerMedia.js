@@ -75,6 +75,10 @@ export function usePeerMedia(ctx) {
         ctx.media.isAudioStream = false
     }
 
+    /**
+     * Un flux audio démarre micro OUVERT : la piste capturée est active, et le drapeau le dit
+     * — l'UI, la metadata sortante (`isAudioMuted`) et la première bascule le lisent.
+     */
     const startAudioStream = async () => {
         const stream = await navigator.mediaDevices.getUserMedia({
             video: false,
@@ -85,7 +89,7 @@ export function usePeerMedia(ctx) {
         ctx.media.isStreaming = true
         ctx.media.isAudioStream = true
         ctx.ui.streamStates.isVideoEnabled = false
-        ctx.ui.streamStates.isMuted = true
+        ctx.ui.streamStates.isMuted = false
         return stream
     }
 

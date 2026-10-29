@@ -1224,20 +1224,35 @@ extractions : c'est 18 lignes, sous un filet cinq fois plus dense.
   rejouait l'audio distant une seconde fois. Il mixait tous les flux : un indicateur « qui parle »,
   s'il revient, se fera par participant.
 
-- [ ] 🟠 **`startAudioStream` marque le micro MUET alors qu'il est ouvert** `[S]` — relevé le
-  26/10/2026 au lot E. `usePeerMedia.startAudioStream` capture `audio: true` (piste active) puis pose
-  `ctx.ui.streamStates.isMuted = true`. L'état affiché et l'état réel divergent dès le démarrage, et
-  **dans le mauvais sens** : on se croit muet, on est entendu. Observable dans
-  `Exemples/Home.vue` — *lu, non exécuté* : « Start audio », puis le bouton micro de `LocalStreamBtn` propose « activer le
-  son » ; le premier clic ne change rien à la piste (`track.enabled` déjà vrai), le second coupe. La
-  metadata sortante porte `isAudioMuted: true`.
-  ⚠️ **Le défaut est épinglé COMME VOULU** : `usePeerMedia.streams.test.js`, « marque le flux comme
-  audio et aligne l'UI (vidéo coupée, micro marqué muet) ». Le corriger fait donc rougir un test — c'est
-  attendu, pas une régression. Il vient de la v1, qui faisait déjà `updateVideoProps({ isMuted:
-  options.audio })`.
-  **Question produit avant le code** : un flux audio démarre-t-il ouvert (alors `isMuted = false`) ou
-  muet (alors `track.enabled = false` aussi) ? AudioRoom démarre ouvert et contourne le défaut en ne
-  rendant **aucun** player local — `LocalMediaPlayer` lit `api.isMuted` et afficherait « muet ».
+- [ ] 🔴 **Un micro coupé à la fin d'un appel l'est encore au suivant — en visio sans piste ni retour,
+  en VOCAL l'appel ne s'établit pas** `[S]` — lu le 29/10/2026 en fermant l'item « `startAudioStream`
+  marque le micro MUET », **sondé le même jour par la relecture** (vraies couches orchestrateur + call
+  manager + media, contexte `data`/`app` comme `Notifications`, côté appelé ; `getUserMedia` factice
+  qui rend les pistes demandées et rejette `{audio:false, video:false}` en `TypeError`, comme l'impose
+  la spec — rejet simulé, pas rejoué en navigateur).
+
+  L'arrêt complet (`stopCallWithPeers` → `resetCallState`) ne remet pas `streamStates.isMuted` à
+  zéro, et `startCurrentStream` demande `audio: !isMuted`. Mesuré, micro coupé dans l'appel 1 :
+  - **appel 2 en visio** → `getUserMedia({ video: true, audio: false })`, **0 piste audio**.
+    « Activer le son » passe `isMuted` à `false` sur 0 piste — `toggleAudioState` ne fait que basculer
+    les pistes existantes, « sans couper/recapturer » : l'UI dit « micro ouvert », rien ne part ;
+  - **appel 2 en vocal** → `getUserMedia({ video: false, audio: false })` → `TypeError`, et
+    `acceptCallFromPeer` **rejette** (FSM en `receiving`). Lu, non sondé : l'exception sort de
+    `_enterCallSession` avant `sendAuthorizationRemotePeerId`, donc aucune acceptation ne part et
+    l'appelant sonne jusqu'à l'abandon ; `Notifications.respondToInvitation` attend sans `catch` —
+    rejet non traité. Côté appelant, le même rejet tomberait dans `openCallBetweenPeer` après la
+    transition CONNECTED : CONNECTED sans flux local ni connexion.
+  - témoin, sans couper le micro : appel 2 → `{ video: true, audio: true }`, 1 piste audio.
+
+  **Gravité** : le symptôme vocal est celui du 🔴 B1 (« accepter un appel vocal entrant ne fait
+  rien »), au prix d'une séquence banale — couper son micro, raccrocher, recevoir un appel vocal.
+  Reporter la préférence d'un appel à l'autre est délibéré pour la caméra (docblock de
+  `startCurrentStream`) ; c'est l'absence de piste qui la rend irréversible, et fatale en vocal.
+  **Question produit avant le code** — la décision du 29/10 (« un flux audio démarre ouvert ») porte
+  sur `getAudioStream`, pas sur les appels : un appel démarre-t-il micro ouvert (remettre `isMuted`
+  à `false` à l'arrêt complet, comme `stopWebcamStream` le fait déjà), ou garde-t-il la préférence —
+  et alors capturer la piste puis la désactiver, plutôt que ne pas la capturer ? Les deux redemandent
+  l'audio, donc ferment aussi le cas vocal.
 
 - [ ] 🟢 **`StreamSimpleUI` attribue mon nom au flux de réponse d'un pair** `[S]` — relevé le
   26/10/2026 au lot E, lu dans le code, non reproduit. En mode `stream`, le flux de RÉPONSE de B arrive

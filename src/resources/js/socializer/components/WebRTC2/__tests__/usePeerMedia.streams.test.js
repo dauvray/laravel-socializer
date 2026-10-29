@@ -207,14 +207,18 @@ describe('usePeerMedia — flux locaux', () => {
             })
         })
 
-        it('marque le flux comme audio et aligne l\'UI (vidéo coupée, micro marqué muet)', async () => {
+        it('marque le flux comme audio et aligne l\'UI (vidéo coupée, micro OUVERT)', async () => {
+            // Un flux audio démarre ouvert, quel que soit l'état laissé par le précédent :
+            // décision du 2026-10-29. La piste capturée est active, le drapeau le dit.
+            ctx.ui.streamStates.isMuted = true
+
             const returned = await media.startAudioStream()
 
             expect(ctx.media.currentStream).toBe(returned)
             expect(ctx.media.isStreaming).toBe(true)
             expect(ctx.media.isAudioStream).toBe(true)
             expect(ctx.ui.streamStates.isVideoEnabled).toBe(false)
-            expect(ctx.ui.streamStates.isMuted).toBe(true)
+            expect(ctx.ui.streamStates.isMuted).toBe(false)
         })
     })
 
