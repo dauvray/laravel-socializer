@@ -117,10 +117,13 @@ Ce sont des `ref`, et l'objet `api` n'est pas déballé par le template : on y �
 
 **`getAudioStream` démarre micro ouvert** : `isMuted` vaut `false` à son retour, quel que soit
 l'état laissé par le flux précédent — décision du 2026-10-29. `getWebcamStream`, lui, reprend
-`isMuted` et `isVideoEnabled` tels quels : dans ses contraintes de capture, puis sur les pistes à
-leur arrivée, pour qu'une coupure faite pendant l'invite de permission vaille (activer un média
-non capturé, elle, ne trouve aucune piste). Gardés par
-`usePeerMedia.streams.test.js`.
+`isMuted` et `isVideoEnabled` tels quels, mais pas de la même façon. Un micro coupé n'est pas
+capturé (`audio: false`). La caméra l'est toujours, et `isVideoEnabled` ne fait que désactiver sa
+piste. Coupée et impossible à capturer, elle est abandonnée, micro ouvert : le flux part en audio
+seul au lieu de rejeter. Ouverte, ou micro coupé, son échec rejette. Les deux drapeaux sont appliqués aux pistes à leur arrivée,
+pour qu'une coupure faite pendant l'invite de permission vaille (activer un média non capturé, lui,
+ne trouve aucune piste).
+Gardés par `usePeerMedia.streams.test.js`.
 
 ⚠️ **`stopAudio` n'a plus aucun site d'appel dans le paquet.** Il reste sur la surface publique —
 c'est un export inutilisé mais **juste** (un alias de `stopStream` en aval), pas un export faux, et

@@ -41,16 +41,44 @@ useCallManager.openCallBetweenPeer
        └─ usePeerConnections.connectToPeer → peer.call(peerId, stream, config)
 ```
 
-**Ce qu'un appel hérite du précédent : la caméra, pas le micro.** `startCurrentStream` lit
-`streamStates` dans ses contraintes de capture. Une caméra coupée reste coupée à l'appel suivant
-(le type d'appel n'a sur la vidéo qu'un droit de veto, `vocal`). Le micro, lui, repart ouvert :
-l'arrêt complet remet `isMuted` à `false` dans son `finally`, donc même quand il lève — décision
-du 2026-10-29. Reporté, un micro coupé
-demandait `audio: false` : un flux sans piste audio, que la bascule ne rattrape pas (elle ne
-bascule que les pistes existantes), et en vocal `{ video: false, audio: false }`, qui fait rejeter
-la capture puis l'acceptation. Gardé par `usePeerOrchestrator.calls.test.js`. Borne connue, côté
-caméra : reportée, elle n'est pas capturée, et « activer la caméra » ne trouve alors aucune piste
-jusqu'à la fin de l'appel — `work/webrtc2-todo.md`, « Les boutons d'appel ».
+**Ce qu'un appel hérite du précédent : la caméra, pas le micro.** Une caméra coupée reste coupée à
+l'appel suivant, mais elle y est **capturée** : le type d'appel seul décide de la capture vidéo
+(`vocal` l'interdit, `visio` la capture), et `isVideoEnabled` ne fait que désactiver la piste à son
+arrivée. Le pair ne voit rien, et « activer la caméra » la rallume. Si cette caméra coupée ne peut
+pas être capturée (absente, prise par une autre application, refusée), la capture se replie sur
+l'audio seul au lieu d'échouer : l'appel passe, et la caméra ne se rallume pas de cet appel.
+Ouverte, son échec remonte. Le micro, lui, repart ouvert : l'arrêt complet remet `isMuted` à
+`false` dans son `finally`, donc même quand il lève. Reporté, un micro coupé demandait
+`audio: false` : un flux sans piste audio, que la bascule ne rattrape pas (elle ne bascule que les
+pistes existantes), et en vocal `{ video: false, audio: false }`, qui fait rejeter la capture puis
+l'acceptation. Décisions du 2026-10-29, gardées par `usePeerOrchestrator.calls.test.js`.
+
+⚠️ **En visio, l'offre de l'APPELANT demande la vidéo du pair, même sans caméra locale.** Sans
+contraintes, l'offre de PeerJS ne décrit que les pistes du flux passé à `peer.call`, et une réponse
+SDP ne peut pas ajouter de média à l'offre : une piste vidéo absente du flux de l'appelant ne
+revenait pas de l'appelé non plus. A coupait sa caméra, raccrochait, rappelait B : B voyait un cadre
+noir pour A, ce qui est attendu, et A en voyait **deux** (vu par David le 2026-10-29).
+`connectToPeer` passe donc `constraints: { offerToReceiveVideo: true }` à `peer.call` en visio
+(PeerJS 1.5.4 la transmet à `createOffer`). La capture de la caméra coupée n'est pas ce qui fait
+recevoir la vidéo du pair : elle sert à pouvoir la rallumer dans l'appel. Mesuré dans Chromium
+headless, sur deux `RTCPeerConnection` dans l'ordre de PeerJS 1.5.4 (l'appelé fait `addTrack`
+avant `setRemoteDescription`) :
+
+| Flux de l'appelant | Contraintes d'offre | Offre | L'appelant reçoit |
+|---|---|---|---|
+| audio seul | aucune (l'ancien comportement) | `m=audio` | audio |
+| audio + vidéo active | aucune | `m=audio m=video` | audio + vidéo |
+| audio + vidéo **désactivée** | aucune | `m=audio m=video` | audio + vidéo |
+| audio seul (repli : caméra coupée indisponible) | `offerToReceiveVideo` | `m=audio m=video` | audio + vidéo |
+| audio + vidéo désactivée (le cas courant) | `offerToReceiveVideo` | `m=audio m=video` | audio + vidéo |
+| audio + vidéo active | `offerToReceiveVideo` | `m=audio m=video` | audio + vidéo |
+
+Avec une piste vidéo, la contrainte n'ajoute pas de seconde ligne vidéo. `offerToReceiveVideo` est
+une option héritée de `createOffer` : non mesurée dans Firefox.
+
+**Une caméra coupée garde le voyant de la webcam ALLUMÉ** : la piste est désactivée, pas arrêtée.
+Mesuré par David le 2026-10-29 en début d'appel (caméra coupée reportée). Déduit, non mesuré, en
+cours d'appel : `toggleVideoState` ne fait lui aussi que `track.enabled = false`.
 
 ⚠️ **`setLocalPeer()` est appelée nue ici, et elle DOIT le rester.** La valeur ne dit rien (la
 fonction est `async`, donc toujours truthy, et sort par `undefined` sur ses chemins « rien à

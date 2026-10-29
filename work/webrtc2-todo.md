@@ -1160,7 +1160,8 @@ extractions : c'est 18 lignes, sous un filet cinq fois plus dense.
   était ignoré et les contraintes lisaient `isVideoEnabled`, vrai par défaut. Un appel « vocal »
   capturait donc une piste vidéo **et la transmettait**, `peer.call` passant le flux tel quel : la
   caméra s'allumait sur un appel où personne ne l'avait demandée. **Corrigé** (le type descend
-  jusqu'aux contraintes, avec un pouvoir de veto seulement), et épinglé par un 0 croisé —
+  jusqu'aux contraintes, avec un pouvoir de veto seulement ; depuis le 29/10/2026, il décide seul
+  de la capture vidéo, `isVideoEnabled` ne faisant plus que désactiver la piste), et épinglé par un 0 croisé —
   `usePeerMedia.streams.test.js` pour le veto, `useCallManager.test.js` pour la transmission du type.
 
   Ce qui reste ouvert ici est donc l'autre moitié, inchangée : `videoActive` non câblé par
@@ -1372,27 +1373,52 @@ Tous mesurés **avant** d'être écrits ici, aucun n'est une impression de lectu
   données sur la branche d'appel. À dimensionner avant. En attendant, la borne est écrite dans
   `docs/modules/webrtc2/api.md`.
 
-- [ ] 🟠 **Une caméra coupée reportée à l'appel suivant ne se rallume plus pendant cet appel** `[S]`
-  — mesuré le 29/10/2026 par la relecture du lot « couper pendant l'invite de l'appelant ».
+- [ ] 🟠 **Couper la caméra laisse le voyant de la webcam ALLUMÉ** `[M]` — mesuré par David le
+  29/10/2026 en début d'appel (caméra coupée reportée, capturée puis désactivée). Déduit, non
+  mesuré, en cours d'appel : `toggleVideoState` ne fait lui aussi que `track.enabled = false`. Le
+  pair ne voit rien, mais l'utilisateur voit son voyant allumé et peut se croire filmé.
 
-  Sonde, vraies couches, contexte `data/app`, côté appelé : caméra coupée dans l'appel 1, raccroché.
-  L'appel 2 (visio) capture `{ video: false, audio: true }`, une seule piste. « Activer la caméra »
-  passe `isVideoEnabled` à `true`, et il y a toujours 0 piste vidéo. C'est la structure du 🔴 fermé
-  pour le micro le même jour (pas de piste capturée, donc une bascule qui ne rattrape rien), côté
-  caméra et dans le sens sûr : on se croit vu, on ne l'est pas. Le report est délibéré (docblock de
-  `startCurrentStream`). C'est l'absence de piste qui le rend irréversible pendant l'appel.
+  Piste (relecture du 29/10) : à la coupure, ARRÊTER la piste (`track.stop()`) ; à la
+  réactivation, recapturer la caméra puis `RTCRtpSender.replaceTrack(nouvellePiste)` sur le sender
+  vidéo de la `MediaConnection` (`call.peerConnection.getSenders()`). Le transceiver vidéo reste en
+  place, donc pas de renégociation, que PeerJS ne gère pas. À traiter aussi : l'aperçu local
+  (`local-webcam`) qui affiche l'ancienne piste, et un appel à plusieurs pairs (un sender par
+  connexion).
 
-  Même famille, **lu, non sondé** : en appel VOCAL, `CallManagerBtn` offre aussi le bouton caméra.
-  `isVideoEnabled` y vaut `true` par défaut, la barre affiche « couper la caméra », et aucune vidéo
-  n'est jamais capturée.
+  **Cahier des charges, mesuré par la relecture le 29/10 dans Chromium headless** (deux
+  `RTCPeerConnection`, ICE réel, `replaceTrack` APRÈS négociation) :
+  - offre portant une vidéo désactivée (`sendrecv`), puis `stop()` et `replaceTrack(caméra neuve)` :
+    B passe de 7 157 à 172 360 octets vidéo. La piste tient en cours d'appel ;
+  - offre SANS piste vidéo, avec `offerToReceiveVideo` : le transceiver de A est `recvonly`.
+    `replaceTrack` réussit SANS ERREUR, la direction reste `recvonly`, et B reçoit 0 octet vidéo.
 
-  Remède proposé : capturer la vidéo dès que le type le permet (`video: typeAppel !== 'vocal'`),
-  puis laisser l'application des drapeaux au retour de `getUserMedia` la désactiver. Ce mécanisme
-  existe depuis ce lot. **Décision de David attendue** :
-  - capturer puis désactiver : la caméra se rallume en cours d'appel, mais le voyant matériel reste
-    peut-être allumé sur une piste désactivée selon le navigateur (non mesuré) ;
-  - ou garder le report sans capture, et masquer « activer la caméra » quand aucune piste vidéo
-    n'existe (ce qui règle aussi le cas vocal).
+  Donc la caméra coupée au départ doit RESTER dans l'offre : sans elle, il faudrait une
+  renégociation. Hypothèse non mesurée : capturer, négocier, puis `stop()` aussitôt (voyant allumé
+  le temps de la négociation, cadre noir chez B). Firefox non mesuré.
+
+- [ ] 🟠 **En appel VOCAL, la barre offre un bouton caméra qui ne commande rien** `[S]` — sondé le
+  29/10/2026 par la relecture (le drapeau bascule, aucune piste vidéo n'existe).
+  `CallManagerBtn` affiche le bouton caméra quel que soit le type, et `isVideoEnabled` vaut `true`
+  par défaut : la barre affiche « couper la caméra », alors que `vocal` interdit la capture vidéo.
+  Le clic bascule le drapeau sans piste, puis « activer la caméra » ne rallume rien. On se croit
+  vu, on ne l'est pas. Le bouton ne connaît pas le type d'appel (props : `status`, `isMuted`,
+  `isVideoEnabled`) : le masquer en vocal demande de le lui passer.
+
+  C'est aussi par ce bouton qu'un poste SANS caméra peut entrer dans un appel visio avec la caméra
+  « coupée ». Depuis le 29/10, la capture s'y replie sur l'audio seul au lieu d'échouer. Le cas
+  voisin en VISIO (caméra coupée reportée qui ne se rallumait plus, appelant privé de la vidéo de
+  l'appelé) est corrigé le même jour : `flux.md`, « Ce qu'un appel hérite du précédent ».
+
+- [ ] 🟢 **Le repli audio de la capture recapture aussi pour un appel annulé pendant l'invite**
+  `[S]` — mesuré le 29/10/2026 par la relecture du lot caméra (c). Caméra coupée ; acceptation ;
+  capture suspendue ; ANNULATION pendant l'invite (IDLE, room `null`) ; puis la 1re capture rejette
+  en `NotFoundError`. On observe deux captures, `{ video: true, audio: true }` puis
+  `{ video: false, audio: true }`. Le flux est ensuite coupé par la garde de room
+  d'`_enterCallSession`, sans erreur. En vrai navigateur, cela fait une 2e ouverture du micro, voire
+  une 2e invite après une invite fermée sans réponse (non mesuré), pour un appel que l'utilisateur
+  vient d'annuler. Remède proposé : `startCurrentStream` ne connaît pas la room, donc
+  `_enterCallSession`, qui possède la garde, lui passerait un prédicat « encore voulue ? » à
+  consulter avant de replier.
 
 - [ ] 🟠 **`isValidCallType` reste trop permissif sur les trois chemins ENTRANTS** `[S]`
 

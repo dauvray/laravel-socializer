@@ -54,20 +54,43 @@ export function usePeerMedia(ctx) {
      * (`createPeerContext.js:153`), et la **transmettait** au pair, `peer.call` passant le flux
      * tel quel. La caméra s'allumait sur un appel où personne ne l'avait demandée.
      *
-     * Le type n'a qu'un pouvoir de VETO : `vocal` interdit la vidéo, `visio` ne l'impose pas —
-     * sinon un utilisateur qui a coupé sa caméra la verrait se rallumer à l'appel suivant.
+     * Le TYPE décide de la capture vidéo (`vocal` l'interdit, tout autre la capture), le réglage
+     * `isVideoEnabled` de l'état de la PISTE : une caméra coupée est capturée, puis désactivée
+     * ci-dessous, et le pair ne voit rien. ⚠️ Ne pas refaire du réglage une contrainte de capture.
+     * Jusqu'au 2026-10-29, une caméra coupée reportée à l'appel suivant n'y était pas capturée :
+     * « activer la caméra » ne trouvait aucune piste, et chez l'APPELANT l'offre de PeerJS ne
+     * portait aucune ligne vidéo, que la réponse de l'appelé ne peut pas ajouter — la vidéo du
+     * pair ne lui parvenait jamais, deux écrans noirs (mesuré dans Chromium, `flux.md`). Ce second
+     * effet est désormais aussi couvert par l'offre (`connectToPeer`) ; le premier, par la seule
+     * capture.
+     *
+     * Repli : une caméra COUPÉE qui ne peut pas être capturée (absente, prise par une autre
+     * application, refusée) ne fait pas échouer la capture — le flux part en audio seul, comme
+     * avant que la caméra coupée soit capturée. Ouverte, son échec remonte : l'utilisateur veut
+     * être vu. La vidéo du pair, elle, arrive quand même : `connectToPeer` la demande dans l'offre.
      */
     const startCurrentStream = async (typeAppel = null) => {
-        const stream = await navigator.mediaDevices.getUserMedia({
-            video: typeAppel !== 'vocal' && ctx.ui.streamStates.isVideoEnabled,
-            audio: !ctx.ui.streamStates.isMuted,
-        })
+        const video = typeAppel !== 'vocal'
+        const audio = !ctx.ui.streamStates.isMuted
+        let stream
+        try {
+            stream = await navigator.mediaDevices.getUserMedia({ video, audio })
+        } catch (error) {
+            // L'état COURANT, comme pour les pistes ci-dessous : il a pu changer pendant l'invite.
+            // Borne : le repli recapture aussi pour un appel annulé pendant l'invite — la garde de
+            // room d'`_enterCallSession` coupe ensuite ce flux (mesuré, `work/webrtc2-todo.md`).
+            if (!video || !audio || ctx.ui.streamStates.isVideoEnabled) throw error
+            console.warn('[usePeerMedia] caméra coupée et indisponible — capture en audio seul', {
+                name: error?.name ?? null,
+            })
+            stream = await navigator.mediaDevices.getUserMedia({ video: false, audio })
+        }
 
-        // Les contraintes ont été lues à la DEMANDE, et `getUserMedia` dure autant que l'invite de
+        // Les pistes qui arrivent prennent l'état COURANT des drapeaux. La caméra d'abord, capturée
+        // même coupée (docblock). Et les deux parce que `getUserMedia` dure autant que l'invite de
         // permission : l'appelant, déjà CONNECTED, a pu couper son micro ou sa caméra pendant ce
-        // temps, sans piste à basculer. Les pistes qui arrivent prennent donc l'état COURANT — sans
-        // quoi elles entraient actives sous un drapeau « coupé ». `getTracks()` et non
-        // `getAudioTracks()` : un seul accesseur à doubler dans les harnais.
+        // temps, sans piste à basculer — elles entraient actives sous un drapeau « coupé ».
+        // `getTracks()` et non `getAudioTracks()` : un seul accesseur à doubler dans les harnais.
         stream.getTracks().forEach((track) => {
             if (track.kind === 'audio') track.enabled = !ctx.ui.streamStates.isMuted
             if (track.kind === 'video') track.enabled = ctx.ui.streamStates.isVideoEnabled

@@ -684,6 +684,30 @@ describe('usePeerConnections', () => {
                 )
             })
 
+            it('⭐ visio : l\'offre demande la vidéo du pair, que le flux local en porte ou non', () => {
+                // L'offre de PeerJS ne décrit que les pistes du flux passé à `peer.call`, sauf
+                // contraintes, et la réponse ne peut pas ajouter de média. Sans piste vidéo
+                // locale (caméra indisponible, repli audio de `startCurrentStream`), la vidéo du
+                // pair ne parvenait jamais : un cadre noir pour lui. Mesuré dans Chromium (`flux.md`).
+                ctx.session.currentType = 'visio'
+                ctx.media.currentStream = liveStream()
+
+                connections.connectToPeer({ userSlug: 'alice', peerId: 'p-alice' })
+
+                const [, , options] = ctx.peerStore.getLocalPeer.call.mock.calls.at(-1)
+                expect(options.constraints).toEqual({ offerToReceiveVideo: true })
+            })
+
+            it.each(['vocal', 'stream'])('%s : l\'offre ne demande aucune vidéo au pair', (type) => {
+                ctx.session.currentType = type
+                ctx.media.currentStream = liveStream()
+
+                connections.connectToPeer({ userSlug: 'alice', peerId: 'p-alice' })
+
+                const [, , options] = ctx.peerStore.getLocalPeer.call.mock.calls.at(-1)
+                expect(options.constraints).toBeUndefined()
+            })
+
             it.each(['stream', 'screen'])(
                 '%s sans flux valide : renvoie true SANS rien ouvrir (asymétrie documentée)',
                 (type) => {

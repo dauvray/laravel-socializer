@@ -495,7 +495,16 @@ export function usePeerConnections(ctx) {
                     })
                     return false
                 }
-                const call = ctx.peerStore.getLocalPeer.call(config.peerId, stream, config.options)
+                // ⚠️ En visio, l'offre DEMANDE la vidéo du pair. Sans contraintes, l'offre de PeerJS
+                // ne décrit que les pistes du flux local, et la réponse ne peut pas ajouter de
+                // média : un flux sans piste vidéo (caméra coupée et indisponible, repli audio de
+                // `startCurrentStream`) privait l'appelant de la vidéo du pair. PeerJS 1.5.4 passe
+                // `options.constraints` à `createOffer`. Option héritée de `createOffer`, mesurée
+                // dans Chromium seulement (`flux.md`).
+                const options = metadataType === 'visio'
+                    ? { ...config.options, constraints: { offerToReceiveVideo: true } }
+                    : config.options
+                const call = ctx.peerStore.getLocalPeer.call(config.peerId, stream, options)
                 _saveRoomConnection(config, call)
                 return true
             }

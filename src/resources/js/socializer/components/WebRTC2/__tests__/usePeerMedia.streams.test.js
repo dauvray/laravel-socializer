@@ -78,14 +78,14 @@ describe('usePeerMedia — flux locaux', () => {
             })
         })
 
-        it('répercute isVideoEnabled/isMuted dans les contraintes', async () => {
+        it('isMuted reste une contrainte de capture, isVideoEnabled n\'en est plus une', async () => {
             ctx.ui.streamStates.isVideoEnabled = false
             ctx.ui.streamStates.isMuted = true
 
             await media.startCurrentStream()
 
             expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledWith({
-                video: false,
+                video: true,
                 audio: false,
             })
         })
@@ -133,6 +133,10 @@ describe('usePeerMedia — flux locaux', () => {
          *    le type non transmis par `_enterCallSession` (retour au littéral) .. 0 · 3
          *    le veto rendu ABSOLU (il écraserait un `isVideoEnabled` à false) ... 2 · —
          *
+         * La troisième ligne n'est plus un mutant : depuis le 2026-10-29, `video: type !== 'vocal'`
+         * EST la règle. La caméra coupée est capturée puis désactivée, et c'est l'état de la piste
+         * qui tient le réglage (« ⭐ un appel visio capture la caméra même coupée… »).
+         *
          * ⭐ **Un 0 croisé parfait : la correction a deux moitiés, et chaque fichier n'en voit
          * qu'une.** Retirer le veto ici ne rougit aucun cas de l'appelant ; faire repasser
          * l'appelant au littéral `true` ne rougit aucun cas ici. Corriger une seule des deux
@@ -153,22 +157,63 @@ describe('usePeerMedia — flux locaux', () => {
             })
         })
 
-        it('un appel visio la demande, et respecte quand même isVideoEnabled', async () => {
-            // Le type ne PRIME pas sur le réglage : `vocal` interdit la vidéo, `visio` ne
-            // l'impose pas. Sans la seconde moitié de ce cas, un `video: type !== 'vocal'` seul
-            // resterait vert — et rallumerait la caméra d'un utilisateur qui l'a coupée.
+        it('⭐ un appel visio capture la caméra même coupée, et la livre DÉSACTIVÉE', async () => {
+            // Le type décide de la CAPTURE, le réglage de l'état de la PISTE. Non capturée, une
+            // caméra coupée ne se rallumait plus de l'appel, et chez l'appelant l'offre n'avait
+            // aucune ligne vidéo : la vidéo du pair ne lui parvenait pas. La seconde moitié tient
+            // l'autre sens : capturée, la caméra coupée ne doit pas se rallumer pour autant.
+            const video = { ...fakeTrack('video'), enabled: true }
+            navigator.mediaDevices.getUserMedia.mockResolvedValueOnce(realStream([video]))
+            ctx.ui.streamStates.isVideoEnabled = false
+
             await media.startCurrentStream('visio')
+
             expect(navigator.mediaDevices.getUserMedia).toHaveBeenLastCalledWith({
                 video: true,
                 audio: true,
             })
+            expect(video.enabled).toBe(false)
+        })
 
+        it('⭐ caméra coupée et indisponible : repli sur l\'audio seul, sans échec', async () => {
+            // Mesuré par la relecture du 2026-10-29 : capturer la caméra même coupée faisait
+            // échouer l'appel d'un poste sans caméra (ou caméra prise par une autre application)
+            // qui l'avait coupée — et qui passait avant, en audio seul. Coupée, elle n'est de
+            // toute façon pas montrée : son absence ne coûte rien.
+            const audio = { ...fakeTrack('audio'), enabled: true }
+            navigator.mediaDevices.getUserMedia
+                .mockRejectedValueOnce(Object.assign(new Error('Requested device not found'), { name: 'NotFoundError' }))
+                .mockResolvedValueOnce(realStream([audio]))
             ctx.ui.streamStates.isVideoEnabled = false
+
             await media.startCurrentStream('visio')
-            expect(navigator.mediaDevices.getUserMedia).toHaveBeenLastCalledWith({
-                video: false,
-                audio: true,
-            })
+
+            expect(navigator.mediaDevices.getUserMedia.mock.calls.map(([demande]) => demande)).toEqual([
+                { video: true, audio: true },
+                { video: false, audio: true },
+            ])
+            expect(ctx.media.currentStream.getTracks()).toEqual([audio])
+        })
+
+        it('caméra OUVERTE et indisponible : aucun repli, l\'échec remonte', async () => {
+            // L'utilisateur veut être vu : un appel qui partirait en audio seul le tromperait.
+            navigator.mediaDevices.getUserMedia
+                .mockRejectedValueOnce(Object.assign(new Error('Requested device not found'), { name: 'NotFoundError' }))
+
+            await expect(media.startCurrentStream('visio')).rejects.toThrow('Requested device not found')
+            expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledTimes(1)
+        })
+
+        it('caméra ET micro coupés, caméra indisponible : aucun repli — il n\'y aurait rien à capturer', async () => {
+            // `{ video: false, audio: false }` rejette en `TypeError` dans un navigateur : le repli
+            // remplacerait l'erreur utile (la caméra) par une erreur de programmation.
+            navigator.mediaDevices.getUserMedia
+                .mockRejectedValueOnce(Object.assign(new Error('Requested device not found'), { name: 'NotFoundError' }))
+            ctx.ui.streamStates.isVideoEnabled = false
+            ctx.ui.streamStates.isMuted = true
+
+            await expect(media.startCurrentStream('visio')).rejects.toThrow('Requested device not found')
+            expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledTimes(1)
         })
 
         it('appelée sans type — le chemin de la DIFFUSION — garde son comportement', async () => {
