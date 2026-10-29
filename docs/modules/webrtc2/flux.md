@@ -41,6 +41,15 @@ useCallManager.openCallBetweenPeer
        └─ usePeerConnections.connectToPeer → peer.call(peerId, stream, config)
 ```
 
+**Ce qu'un appel hérite du précédent : la caméra, pas le micro.** `startCurrentStream` lit
+`streamStates` dans ses contraintes de capture. Une caméra coupée reste coupée à l'appel suivant
+(le type d'appel n'a sur la vidéo qu'un droit de veto, `vocal`). Le micro, lui, repart ouvert :
+l'arrêt complet remet `isMuted` à `false` dans son `finally`, donc même quand il lève — décision
+du 2026-10-29. Reporté, un micro coupé
+demandait `audio: false` : un flux sans piste audio, que la bascule ne rattrape pas (elle ne
+bascule que les pistes existantes), et en vocal `{ video: false, audio: false }`, qui fait rejeter
+la capture puis l'acceptation. Gardé par `usePeerOrchestrator.calls.test.js`.
+
 ⚠️ **`setLocalPeer()` est appelée nue ici, et elle DOIT le rester.** La valeur ne dit rien (la
 fonction est `async`, donc toujours truthy, et sort par `undefined` sur ses chemins « rien à
 faire », **y compris quand le peer est déjà prêt** : un `if (!ready) return` est un garde mort,

@@ -572,6 +572,16 @@ export function useCallManager(ctx, { core, media, connections, transport, pool 
             if (ctx.callMachine.isStopping.value) {
                 ctx.callMachine.reset()
             }
+
+            // Un appel démarre micro ouvert — ici et non dans `resetCallState`, pour tenir aussi
+            // quand l'arrêt complet a levé avant lui. `startCurrentStream` demande
+            // `audio: !isMuted` : un micro coupé reporté à l'appel suivant y capturait un flux
+            // SANS piste audio, que la bascule ne rattrape pas — et en vocal,
+            // `{ video: false, audio: false }` fait rejeter la capture. La caméra, elle, garde
+            // son réglage d'un appel à l'autre (docblock de `startCurrentStream`).
+            if (mode !== 'partial') {
+                ctx.ui.streamStates.isMuted = false
+            }
         }
     }
 

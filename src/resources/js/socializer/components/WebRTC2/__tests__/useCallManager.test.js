@@ -999,6 +999,20 @@ describe('useCallManager', () => {
             expect(ctx.callMachine.callState.value).toBe(CALL_STATES.CONNECTED)
         })
 
+        it('un départ qui laisse l\'appel vivant ne rouvre pas le micro', async () => {
+            // La remise à zéro du micro (`finally` de `stopCallWithPeers`) ne vaut que pour
+            // l'arrêt COMPLET. Sur un arrêt partiel, elle rouvrirait le drapeau sur des pistes
+            // coupées : on se croirait entendu sans l'être. Sans effet aujourd'hui (appels 1-à-1),
+            // d'où ce cas, qui seul fait rougir la garde `mode !== 'partial'`.
+            ctx.addCurrentCallUser('bob', 'visio')
+            ctx.ui.streamStates.isMuted = true
+
+            await cm.remoteStopCall(hangupPayload())
+
+            expect(ctx.callMachine.callState.value).toBe(CALL_STATES.CONNECTED)
+            expect(ctx.ui.streamStates.isMuted).toBe(true)
+        })
+
         it('dédoublonne deux raccrochés concurrents du même pair', async () => {
             const first = cm.remoteStopCall(hangupPayload())
             const second = cm.remoteStopCall(hangupPayload())

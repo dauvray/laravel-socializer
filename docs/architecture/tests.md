@@ -201,6 +201,14 @@ automatique, et son activation est une config **locale**, jamais versionnée.
 **Rien ne se pousse en rouge.** La raison est historique : plusieurs régressions ont été introduites
 *le jour même* par le correctif précédent, faute de filet automatique entre les deux.
 
+⚠️ **« Rouge » se lit au code de sortie, pas au décompte.** Vitest compte un rejet non traité comme
+une *erreur* : la suite sort en code 1 avec tous ses cas verts (« Tests N passed », puis
+« Errors k errors »), et le hook refuse le push. Lire `echo $?` après `npm run test:run`, ou la
+ligne `Errors`, jamais la seule ligne `Tests`. Vécu le 2026-10-29 : un fichier neuf laissait deux
+rejets par cas — une promesse non attendue qui rejetait faute de conteneur DOM — et deux sessions
+l'ont pris pour du bruit de console, la console étant coupée. Corollaire : un exit 0 isolé ne
+prouve pas l'absence d'un intermittent, et le hook ne juge que sur un seul run.
+
 ---
 
 ## Stratégie : trois étages

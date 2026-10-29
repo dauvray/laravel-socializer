@@ -1027,6 +1027,18 @@ extractions : c'est 18 lignes, sous un filet cinq fois plus dense.
 
 ## Robustesse
 
+- [ ] 🟢 **Intermittent : `usePeerOrchestrator.callbacks.test.js` fait parfois sortir la suite en
+  exit 1, tous ses cas verts** `[S]` — mesuré le 29/10/2026 par la relecture, **cause lue, non
+  éprouvée**. Deux rejets non traités, « ReferenceError: document is not defined » dans `_mountHost`
+  (`usePeerMedia.js:133`), « caught after test environment was torn down » : un montage de player
+  resté en vol reprend après le démontage de l'environnement du fichier. Taux : 1 run sur 12 avec le
+  lot « un appel démarre micro ouvert », 0 sur 11 sans — non concluant, le lot ne touche ni ce
+  fichier ni `usePeerMedia`. Piste : le fichier pose bien le conteneur (l. 165), mais un `_mountHost`
+  qui attend l'import dynamique de `PlayerHost.vue` peut survivre au dernier cas. **Pourquoi ça
+  compte** : le hook `pre-push` juge sur un seul run (`docs/architecture/tests.md`, « Le filet
+  automatique ») — il peut refuser un push au hasard. Un refus sur « Errors » venant de ce fichier :
+  relancer, jamais `--no-verify`.
+
 - [x] ✅ **`useRemotePeerState` : le garde inatteignable et le signal perdu sont FERMÉS le
   31/08/2026** — avec le lot C, comme prévu. Les deux moitiés de l'item ont tenu, et une troisième
   correction est sortie en chemin.
@@ -1224,35 +1236,24 @@ extractions : c'est 18 lignes, sous un filet cinq fois plus dense.
   rejouait l'audio distant une seconde fois. Il mixait tous les flux : un indicateur « qui parle »,
   s'il revient, se fera par participant.
 
-- [ ] 🔴 **Un micro coupé à la fin d'un appel l'est encore au suivant — en visio sans piste ni retour,
-  en VOCAL l'appel ne s'établit pas** `[S]` — lu le 29/10/2026 en fermant l'item « `startAudioStream`
-  marque le micro MUET », **sondé le même jour par la relecture** (vraies couches orchestrateur + call
-  manager + media, contexte `data`/`app` comme `Notifications`, côté appelé ; `getUserMedia` factice
-  qui rend les pistes demandées et rejette `{audio:false, video:false}` en `TypeError`, comme l'impose
-  la spec — rejet simulé, pas rejoué en navigateur).
-
-  L'arrêt complet (`stopCallWithPeers` → `resetCallState`) ne remet pas `streamStates.isMuted` à
-  zéro, et `startCurrentStream` demande `audio: !isMuted`. Mesuré, micro coupé dans l'appel 1 :
-  - **appel 2 en visio** → `getUserMedia({ video: true, audio: false })`, **0 piste audio**.
-    « Activer le son » passe `isMuted` à `false` sur 0 piste — `toggleAudioState` ne fait que basculer
-    les pistes existantes, « sans couper/recapturer » : l'UI dit « micro ouvert », rien ne part ;
-  - **appel 2 en vocal** → `getUserMedia({ video: false, audio: false })` → `TypeError`, et
-    `acceptCallFromPeer` **rejette** (FSM en `receiving`). Lu, non sondé : l'exception sort de
-    `_enterCallSession` avant `sendAuthorizationRemotePeerId`, donc aucune acceptation ne part et
-    l'appelant sonne jusqu'à l'abandon ; `Notifications.respondToInvitation` attend sans `catch` —
-    rejet non traité. Côté appelant, le même rejet tomberait dans `openCallBetweenPeer` après la
-    transition CONNECTED : CONNECTED sans flux local ni connexion.
-  - témoin, sans couper le micro : appel 2 → `{ video: true, audio: true }`, 1 piste audio.
-
-  **Gravité** : le symptôme vocal est celui du 🔴 B1 (« accepter un appel vocal entrant ne fait
-  rien »), au prix d'une séquence banale — couper son micro, raccrocher, recevoir un appel vocal.
-  Reporter la préférence d'un appel à l'autre est délibéré pour la caméra (docblock de
-  `startCurrentStream`) ; c'est l'absence de piste qui la rend irréversible, et fatale en vocal.
-  **Question produit avant le code** — la décision du 29/10 (« un flux audio démarre ouvert ») porte
-  sur `getAudioStream`, pas sur les appels : un appel démarre-t-il micro ouvert (remettre `isMuted`
-  à `false` à l'arrêt complet, comme `stopWebcamStream` le fait déjà), ou garde-t-il la préférence —
-  et alors capturer la piste puis la désactiver, plutôt que ne pas la capturer ? Les deux redemandent
-  l'audio, donc ferment aussi le cas vocal.
+- [ ] 🟠 **Couper son micro ou sa caméra pendant l'invite de permission de l'APPELANT ne coupe rien**
+  `[S]` — lu le 29/10/2026 en fermant le 🔴 « micro coupé reporté à l'appel suivant », **sondé le
+  même jour par la relecture** (vraies couches, contexte `data`/`app`, `getUserMedia` de l'appelant
+  suspendu ; `startCallWithPeer` puis `openCallBetweenPeer` avec l'acceptation) : acceptation reçue,
+  invite ouverte → `connected`, capture déjà demandée en `{ video: true, audio: true }`, aucun flux ;
+  « couper le son » + « couper la caméra » → drapeaux coupés, aucune piste touchée ; invite
+  refermée → pistes audio ET vidéo `enabled: true`, drapeaux toujours « coupés ». Témoin : les mêmes
+  clics après l'arrivée du flux coupent les deux pistes. **Gravité à décider (David)**.
+  L'appelant passe CONNECTED dès la réception de l'acceptation, avant son propre
+  `getUserMedia` : la barre d'appel offre déjà « couper le son » / « couper la caméra » pendant que
+  l'invite de permission est ouverte. `toggleAudioState` / `toggleVideoState` basculent le drapeau
+  et les pistes du flux courant — il n'y en a pas encore ; les contraintes de la capture en cours ont
+  été lues avant le clic, et `_enterCallSession` n'applique pas `streamStates` aux pistes qui
+  arrivent. Le flux entre donc micro et caméra actifs sous un drapeau « coupé » : on se croit muet,
+  on est entendu — et vu. L'appelé n'est pas exposé : en RECEIVING, la barre n'offre qu'« annuler ».
+  Fenêtre : la durée de l'invite (la première fois, ou à chaque appel si le navigateur ne mémorise
+  pas la permission). Remède naturel : appliquer `isMuted` / `isVideoEnabled` aux pistes au retour
+  de la capture, dans `_enterCallSession`.
 
 - [ ] 🟢 **`StreamSimpleUI` attribue mon nom au flux de réponse d'un pair** `[S]` — relevé le
   26/10/2026 au lot E, lu dans le code, non reproduit. En mode `stream`, le flux de RÉPONSE de B arrive
