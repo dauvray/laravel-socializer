@@ -240,12 +240,12 @@ s'annule jamais ainsi, elle sonne jusqu'à sa réponse ou son auto-refus.
 est que l'arrêt complet la vide, et que le seul appelant de `startCallWithPeer` (`onStartCall`) n'en
 impose aucune. Le jour où un appel imposera la room d'une salle (appels depuis une room, différés),
 deux invitations du même compte porteront la même : ce discriminant devra comparer l'`inviteId`, que
-le signal de fermeture ne porte pas — et le garde du flux tardif, ci-dessous, aussi.
+le signal de fermeture ne porte pas — et le garde du flux tardif, ci-dessous, aussi, comme la garde
+de room de [`handleRemoteDeparture`](#départ-dun-pair).
 
 ⚠️ **Rien ne part de l'appelé, et c'est voulu.** Pas de réponse : l'appelant, revenu à IDLE, ne lit
 plus de refus pour cette invitation et n'afficherait que « … est injoignable ». Pas de
-`remoteStopCall` : rien n'est établi, et `handleRemoteDeparture` appliquerait à l'appel en cours, s'il
-y en a un, un départ qui porte la room d'un autre. Avant, l'alerte sonnait jusqu'à son auto-refus,
+`remoteStopCall` : rien n'est établi, ce n'est pas un départ. Avant, l'alerte sonnait jusqu'à son auto-refus,
 qui partait au nom de l'invitation annulée ; et si l'appelé acceptait, il restait en RECEIVING,
 périphériques ouverts — l'appelant ignore une acceptation sans invitation en vol.
 
@@ -679,6 +679,7 @@ signal serveur .CloseConnectionToPeerID → remoteStopCall ─┐   (sauf l'annu
 fermeture de connexion PeerJS → handleStreamRemoved ──────┤    qui sonne : § Annuler…)
    (entrantes seulement, contexte 'stream')               ▼
                                     useCallManager.handleRemoteDeparture
+                                      ├─ room d'un AUTRE appel ?  → ignoré en entier (console.warn)
                                       ├─ garde par participant (closingUsers) + try/finally
                                       ├─ purge remoteStreamsMap  (le type fermé, sur entry.remoteSlug)
                                       ├─ purge announcedStreamsMap

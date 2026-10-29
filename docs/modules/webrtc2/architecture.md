@@ -285,6 +285,27 @@ correction dépendait de quel transport arrivait en premier.
 Corollaire : `close-call` est **idempotent par contrat** — un même départ peut l'émettre deux
 fois si les deux transports se réveillent hors de la fenêtre du garde.
 
+**Un départ ne vaut que pour SON appel.** Le signal serveur porte la room de l'appel que son
+émetteur ferme, et des raccrochés croisés suivis d'un rappel immédiat le livrent pendant l'appel
+suivant avec le même pair. La séquence ignore donc **en entier** — allowlist comprise — un départ
+dont la room n'est pas la room d'appel courante, et le dit en `console.warn`. Sans room d'appel
+(IDLE, et le mode `stream`, où seul `useCallManager` y pose une valeur), rien n'est à comparer :
+c'est ce qui laisse passer les départs de diffusion. Un départ sans room garde l'ancien sens ; les
+deux déclencheurs la complètent d'ailleurs par celle de l'appel. La garde suppose une room
+**partagée** — l'appelé adopte celle de l'invitation (`_enterCallSession`), qu'aucune invitation du
+bundle courant n'omet — et **jamais réutilisée**, ce qui ne tient qu'aujourd'hui :
+[flux.md § Annuler…](flux.md#annuler-avant-que-lappel-soit-établi--le-verbe-de--raccrocher-).
+Gardé par `useCallManager.invitations.test.js` (§ « un départ ne vaut que pour SON appel ») ; que
+l'arrêt partiel vise la room du départ, et non la room logique, par `useCallManager.test.js`
+(« … même hors appel »).
+
+⚠️ **Le raccroché part avec la room d'appel tant qu'elle est posée — et un verbe de l'API la vide.**
+`usePeerOrchestrator.stopWebcamStream` (donc `stopStream()` / `stopAudio()`) la remet à `null` ;
+un raccroché émis ensuite partirait avec la room logique, que la garde du pair jetterait.
+Inatteignable dans le contexte d'appel aujourd'hui : seul `GroupLocalStreamBtn` atteint ce verbe,
+et il n'est monté que dans `StreamSimpleUI`. Le jour où la barre d'appel branche « arrêter le
+flux », ce chemin s'ouvre.
+
 Ce qui différencie encore les deux appelants est uniquement ce qui leur appartient :
 `remoteStopCall` valide et adapte un payload de signalisation, `handleStreamRemoved` résout le
 pair distant depuis `conn.metadata` (d'où son `waitForMeReady`, précondition de

@@ -641,10 +641,25 @@ export function useCallManager(ctx, { core, media, connections, transport, pool 
      * `close-call` est idempotent par contrat : les deux déclencheurs peuvent
      * l'émettre pour un même départ (fenêtre de course inter-transports).
      *
+     * Un départ ne vaut que pour SON appel : celui qui porte la room d'un autre est
+     * ignoré, en entier — des raccrochés croisés suivis d'un rappel immédiat livrent le
+     * signal du premier appel pendant le second, avec le même pair. Sans room d'appel
+     * (IDLE, mode `stream` : seul ce fichier y pose une valeur), rien à comparer.
+     *
      * @returns {boolean} true si la séquence a été exécutée (false = ignorée)
      */
     const handleRemoteDeparture = async ({ userSlug, type, roomId }) => {
         if (!userSlug || !isValidSlug(userSlug)) return false
+
+        const currentCallRoomId = ctx.session.currentCallRoomId
+        if (currentCallRoomId && roomId && roomId !== currentCallRoomId) {
+            console.warn(
+                '[useCallManager] départ portant la room d\'un autre appel — ignoré',
+                { userSlug, roomId, currentCallRoomId, contextId: ctx.contextId },
+            )
+            return false
+        }
+
         if (isRemoteClosing(userSlug)) return false
 
         const isCallMode = ctx.session.currentType !== 'stream'

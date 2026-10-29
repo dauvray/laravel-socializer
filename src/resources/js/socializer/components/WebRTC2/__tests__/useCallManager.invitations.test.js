@@ -69,6 +69,19 @@
  *
  * La lecture du verdict est gardée par `Notifications.test.js`, qui double le moteur : chacune
  * des deux moitiés rougit sans l'autre (mesuré).
+ *
+ * ── Un départ ne vaut que pour SON appel (mesurés le 2026-10-29) ─────────────────────────
+ *
+ *   | Neutralisé dans la garde de `handleRemoteDeparture`  | Rougit                             |
+ *   |------------------------------------------------------|------------------------------------|
+ *   | la garde entière                                     | les deux ⭐ du `describe`           |
+ *   | la condition « une room d'appel est posée »          | 5 cas `stream`, hors de ce fichier |
+ *   | la condition « le départ porte une room »            | « la séquence elle-même… »         |
+ *
+ * La deuxième ligne rougit ailleurs, et c'est le fait : sans room d'appel, rien n'est à comparer —
+ * c'est ce qui laisse passer les départs de diffusion (`usePeerOrchestrator.callbacks`,
+ * `scenarios/peerDeparture`, `scenarios/broadcastLifecycle`). Les deux autres cas du `describe` sont
+ * verts sur le code d'avant : ce sont des contrats, pas des témoins.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createMockContext } from './helpers/createMockContext.js'
@@ -429,6 +442,79 @@ describe('useCallManager × usePeerCore — invitations', () => {
             expect(await cm.openCallBetweenPeer(acceptation)).toBe(true)
             // La même acceptation, une seconde fois : plus rien n'est en vol.
             expect(await cm.openCallBetweenPeer(acceptation)).toBe(false)
+        })
+    })
+
+    /**
+     * Le signal de fin d'appel (`.CloseConnectionToPeerID` → `remoteStopCall`) porte la room de
+     * l'appel que son émetteur ferme. Des raccrochés croisés suivis d'un rappel immédiat le font
+     * arriver pendant l'appel SUIVANT avec le même pair : il ne parle pas de celui-là.
+     */
+    describe('un départ ne vaut que pour SON appel', () => {
+        const raccrocher = () => cm.stopCallWithPeers([...ctx.session.currentCallUsers], true, { mode: 'full' })
+
+        const departDAlice = (room) => cm.remoteStopCall({ fromUserSlug: 'alice', room, type: 'visio' })
+
+        const appelEtabli = async (room) => {
+            const inviteId = await cm.startCallWithPeer({ toUserSlug: 'alice', type: 'visio', room })
+            await cm.openCallBetweenPeer({
+                fromUserSlug: 'alice',
+                status: true,
+                options: { type: 'visio', room, peerId: 'alice-peer-id', inviteId },
+            })
+            expect(ctx.callMachine.callState.value).toBe(CALL_STATES.CONNECTED)
+        }
+
+        it('⭐ en `calling`, le départ qui porte la room de l\'appel précédent ne coupe pas le rappel', async () => {
+            await cm.startCallWithPeer({ toUserSlug: 'alice', type: 'visio', room: 'call-1' })
+            await raccrocher()
+            await cm.startCallWithPeer({ toUserSlug: 'alice', type: 'visio', room: 'call-2' })
+
+            await departDAlice('call-1')
+
+            expect(ctx.callMachine.callState.value).toBe(CALL_STATES.CALLING)
+            expect(ctx.session.currentCallUsers).toEqual([{ userSlug: 'alice', type: 'visio' }])
+
+            await vi.advanceTimersByTimeAsync(30_000)
+            expect(roomsInvitees().filter((room) => room === 'call-2').length).toBeGreaterThan(1)
+        })
+
+        it('⭐ appel établi : le départ qui porte la room d\'un autre appel ne le coupe pas', async () => {
+            await appelEtabli('call-2')
+
+            await departDAlice('call-1')
+
+            expect(ctx.callMachine.callState.value).toBe(CALL_STATES.CONNECTED)
+            expect(ctx.session.currentCallUsers).toEqual([{ userSlug: 'alice', type: 'visio' }])
+            // L'allowlist aussi : la séquence de départ la vide pour le pair qui s'en va.
+            expect(ctx.isAuthorizedCallPeer('alice')).toBe(true)
+        })
+
+        it('le départ qui porte la room de l\'appel courant le ferme', async () => {
+            await appelEtabli('call-1')
+
+            await departDAlice('call-1')
+
+            expect(ctx.callMachine.callState.value).toBe(CALL_STATES.IDLE)
+            expect(ctx.isAuthorizedCallPeer('alice')).toBe(false)
+        })
+
+        it('un départ SANS room garde l\'ancien sens : il vaut pour l\'appel courant', async () => {
+            await appelEtabli('call-1')
+
+            await cm.remoteStopCall({ fromUserSlug: 'alice', type: 'visio' })
+
+            expect(ctx.callMachine.callState.value).toBe(CALL_STATES.IDLE)
+        })
+
+        it('la séquence elle-même, appelée sans room, vaut aussi pour l\'appel courant', async () => {
+            // Les deux déclencheurs complètent la room par celle de l'appel : ce cas garde un
+            // troisième, qui ne le ferait pas, d'un départ jeté — un pair parti resté dans l'appel
+            // ET dans l'allowlist, ce qui rend le garde sortant permissif à son profit.
+            await appelEtabli('call-1')
+
+            expect(await cm.handleRemoteDeparture({ userSlug: 'alice', type: 'visio' })).toBe(true)
+            expect(ctx.callMachine.callState.value).toBe(CALL_STATES.IDLE)
         })
     })
 })

@@ -955,7 +955,8 @@ describe('useCallManager', () => {
         })
 
         beforeEach(() => {
-            cm.startCallWithPeer({ toUserSlug: 'alice', type: 'visio' })
+            // La room du raccroché : un départ ne vaut que pour SON appel.
+            cm.startCallWithPeer({ toUserSlug: 'alice', type: 'visio', room: 'call-room-1' })
             ctx.callMachine.transition(CALL_STATES.CONNECTED)
             ctx.media.remoteStreamsMap.set('alice-visio', {
                 stream: {}, metadata: { from: 'alice' }, remoteSlug: 'alice', remoteType: 'visio',
@@ -1031,9 +1032,9 @@ describe('useCallManager', () => {
             ...overrides,
         })
 
-        /** Place un appel visio connecté avec alice */
+        /** Place un appel visio connecté avec alice, dans la room que porte `departure()` */
         const enterConnectedCall = () => {
-            cm.startCallWithPeer({ toUserSlug: 'alice', type: 'visio' })
+            cm.startCallWithPeer({ toUserSlug: 'alice', type: 'visio', room: 'call-room-1' })
             ctx.callMachine.transition(CALL_STATES.CONNECTED)
             connections.closePeerConnection.mockClear()
         }
@@ -1071,6 +1072,21 @@ describe('useCallManager', () => {
                 clearSignalQueue: false,
             })
             expect(core.notifyCloseConnectionToPeer).not.toHaveBeenCalled()
+        })
+
+        it('l\'arrêt partiel vise la room du DÉPART, pas la room logique — même hors appel', async () => {
+            // Le seul cas où les deux rooms diffèrent encore, la garde de room écartant les autres :
+            // IDLE, rien à comparer. Un raccroché croisé y arrive après mon propre arrêt complet,
+            // et `resetCallState` laisse `currentType` au type de l'appel fini.
+            ctx.session.currentType = 'visio'
+            expect(ctx.session.currentCallRoomId).toBe(null)
+
+            await cm.handleRemoteDeparture(departure({ roomId: 'call-room-9' }))
+
+            expect(ctx.peerStore.clearWaitingRemotePeerIds).toHaveBeenCalledWith('alice', 'call-room-9')
+            expect(connections.closePeerConnection).toHaveBeenCalledWith(
+                expect.objectContaining({ room: 'call-room-9', users: ['alice'] }),
+            )
         })
 
         it('ne touche jamais aux flux des autres pairs', async () => {

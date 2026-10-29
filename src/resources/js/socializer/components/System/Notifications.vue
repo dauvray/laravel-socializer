@@ -347,9 +347,8 @@ function isAwaitingAnotherCaller(event) {
  * signal de fermeture ne porte pas aujourd'hui.
  *
  * ⚠️ Rien ne part, et c'est voulu. Pas de réponse : l'appelant ne lit plus de refus pour cette
- * invitation, il afficherait seulement « … est injoignable ». Pas de `remoteStopCall` non plus : il
- * appliquerait à l'appel en cours, s'il y en a un, un départ qui porte la room d'un autre
- * (`handleRemoteDeparture`, item ouvert de `work/webrtc2-todo.md`).
+ * invitation, il afficherait seulement « … est injoignable ». Pas de `remoteStopCall` non plus :
+ * rien n'est établi, ce n'est pas un départ.
  */
 function isCancelOfRingingInvitation(event) {
     const ringing = notificationComponentProps.value
@@ -409,9 +408,8 @@ function isAnsweredElsewhere(event) {
  *   lieu pour moi. L'appelé ne passe `connected` qu'au premier flux, donc jamais sans lui.
  *
  * ⚠️ La ROOM, pas l'expéditeur seul : un départ qui porte la room d'un autre appel (des raccrochés
- * croisés suivis d'un rappel) ne parle pas de celui-ci. Qu'il soit encore appliqué à l'appel en
- * cours est l'item `handleRemoteDeparture` de `work/webrtc2-todo.md` ; ici on ne le présente pas
- * comme une réponse.
+ * croisés suivis d'un rappel) ne parle pas de celui-ci : on ne le présente pas comme une réponse, et
+ * `handleRemoteDeparture` ne l'applique pas — même comparaison, faite là-bas.
  */
 function departureBeforeEstablishedMessage(event) {
     const isPeerOfCurrentCall = event?.room === peers.currentCallRoomId?.value

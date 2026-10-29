@@ -1412,38 +1412,6 @@ Tous mesurés **avant** d'être écrits ici, aucun n'est une impression de lectu
   si cette alerte tardive venait d'une relance. **À la prochaine occurrence** : noter l'heure du
   login de l'appareil sœur, et lire sa console avant de cliquer.
 
-- [ ] 🟠 **`handleRemoteDeparture` applique à l'appel courant un départ qui porte la room d'un autre
-  appel** `[S]` — mesuré le 27/10/2026 par la relecture du lot « clé de `usePeerRetry` ».
-
-  `.CloseConnectionToPeerID` (`Notifications.vue`) → `remoteStopCall` → `handleRemoteDeparture`
-  ne garde ni l'état d'appel ni la room. Sonde (vrai call manager + vrai core) : en `calling` vers
-  alice dans `call-2`, un départ d'alice portant `room: 'call-1'` — l'appel PRÉCÉDENT — ramène
-  l'appelant à IDLE. Sa chaîne d'invitation survivait aussi ; depuis le 27/10 elle s'éteint avec
-  l'arrêt (8d03a37), mais l'appel vivant est toujours coupé. Le signal n'est pas forgé :
-  `UserController::closeConnectionToPeerId` ignore le `fromUserSlug` déclaré et diffuse celui de
-  l'authentifié (l'écart est seulement journalisé), et il part quand alice raccroche SON appel. Cas concret, lu : des raccrochés croisés en fin
-  d'appel, suivis d'un rappel immédiat — fenêtre de l'ordre de deux latences de signalisation, non
-  mesurée. Non établi : une fermeture PeerJS (`useStreamManager.handleStreamRemoved`) atteignant le
-  contexte de `Notifications` pendant `calling` serait un second déclencheur.
-
-  ✅ Même famille, **fermée le 27/10/2026 par le refus discriminant** (569bd4f) : un refus
-  adressé à l'invitation d'un autre onglet de l'appelant retirait le pair de l'appel établi de
-  celui-ci. Épinglé (« un refus destiné à un autre onglet ne coupe pas l'appel établi »).
-
-  ℹ️ **Le bouton « annuler » ouvrait une route neuve vers ce défaut, et ne l'ouvre pas** (27/10) :
-  un onglet de B en appel avec moi, un autre onglet de B qui me fait sonner puis annule — sans le
-  morceau 2 du bouton, ce signal aurait coupé mon appel établi avec B (lu, sur le chemin que la
-  sonde de cet item a mesuré en `calling`). Il ferme désormais l'alerte sans atteindre
-  `remoteStopCall` — épinglé par « l'alerte de SON invitation disparaît… et ce n'est pas un départ ». **Ce qui reste est cet item tel quel** : une annulation qui
-  croise un refus (l'alerte n'est déjà plus là) atteint encore `handleRemoteDeparture`, et la garde
-  de room n'y est toujours pas.
-
-  ℹ️ Le même morceau ferme, en passant, un cas que personne n'avait nommé (relecture, par
-  énumération mesurée de `remoteStopCall` en IDLE, puis raisonné) : **appels croisés** — je suis en
-  `calling` vers alice pendant que SON invitation sonne chez moi ; son annulation passait par
-  `removeCurrentCallUser(alice)`, vidait mes participants et faisait le full stop de MON appel.
-  Elle ne fait plus que fermer l'alerte.
-
 - [ ] 🟢 **`acceptCallFromPeer` écrit l'allowlist AVANT une transition qui peut refuser, sans
   répondre** `[S]` — lu le 27/10/2026 en posant la garde du flux tardif, non sondé.
 
@@ -1484,15 +1452,18 @@ Tous mesurés **avant** d'être écrits ici, aucun n'est une impression de lectu
   au remontage, `createPeerContext`), donc cette purge traverserait leurs deux FSM — inatteignable
   tant que `Notifications` n'est monté qu'une fois, même borne que la purge au démontage.
 
-  ⚠️ **Cinquième chose à revoir, ajoutée le 27/10 par le lot du bouton « annuler » : deux
-  discriminants supposent qu'une room n'est JAMAIS réutilisée.** Ce n'est vrai que parce que
+  ⚠️ **Cinquième chose à revoir, ajoutée le 27/10 par le lot du bouton « annuler » : trois
+  discriminants supposent qu'une room n'est JAMAIS réutilisée** — le troisième ajouté le 29/10.
+  Ce n'est vrai que parce que
   l'arrêt complet la vide et que `onStartCall` n'en impose aucune — `ensureCurrentCallRoomId`
   conserve ou impose autant qu'il tire. Si ce chantier passe la room de la salle à
   `startCallWithPeer({ room })` : (1) `Notifications.isCancelOfRingingInvitation` — A tab1 en appel
   établi avec moi dans la salle S raccroche pendant que l'alerte de A tab2 (room S) sonne →
   l'alerte tombe et le départ n'est PAS appliqué, l'appel établi n'est pas démonté (relecture,
   raisonné sur le code) ; (2) le garde du flux tardif de `_enterCallSession` — annuler puis
-  rappeler dans la même salle laisse passer le flux de l'appel annulé. Remède commun : porter
+  rappeler dans la même salle laisse passer le flux de l'appel annulé ; (3) la garde de room de
+  `handleRemoteDeparture` — raccrocher puis rappeler dans la même salle, et le raccroché tardif du
+  premier appel coupe le second, le défaut même qu'elle ferme (raisonné). Remède commun : porter
   l'`inviteId` sur `.CloseConnectionToPeerID` (le serveur ne le relaie pas aujourd'hui) et le
   comparer, ou garder une room d'appel distincte de celle de la salle.
 

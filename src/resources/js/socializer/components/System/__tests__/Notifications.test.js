@@ -383,9 +383,9 @@ describe('Notifications — le pair d\'un appel pas encore établi s\'en va', ()
 
     it('⭐ le départ qui porte la room d\'un AUTRE appel ne dit rien', async () => {
         // Des raccrochés croisés suivis d'un rappel : le pair que j'appelle quitte l'appel
-        // PRÉCÉDENT. Ce n'est pas une réponse à mon invitation. Qu'il soit encore appliqué à
-        // l'appel en cours est l'item `handleRemoteDeparture` de work/webrtc2-todo.md — ce cas
-        // n'épingle que le toast.
+        // PRÉCÉDENT. Ce n'est pas une réponse à mon invitation. Qu'il ne soit pas non plus
+        // appliqué à l'appel en cours se joue dans le call manager, doublé ici
+        // (`useCallManager.invitations.test.js`) — ce cas n'épingle que le toast.
         enAttenteDe()
 
         await reverbListeners['.CloseConnectionToPeerID'](depart('bob', 'call-room-0'))

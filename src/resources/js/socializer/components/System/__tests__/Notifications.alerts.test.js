@@ -619,8 +619,7 @@ describe('Notifications — l\'appelant annule pendant que l\'alerte sonne', () 
         // Aucune réponse : l'appelant est déjà en IDLE, et un refus n'y produirait qu'un
         // toast « bob est injoignable » de plus.
         expect(peersDouble.acceptCallFromPeer).not.toHaveBeenCalled()
-        // Pas un départ : rien n'est établi. Le transmettre ferait appliquer à l'appel en cours,
-        // s'il y en a un, un départ qui porte la room d'un autre.
+        // Pas un départ : rien n'est établi.
         expect(peersDouble.remoteStopCall).not.toHaveBeenCalled()
         expect(window.AWN.info).toHaveBeenCalledWith('Appel de bob annulé')
     })
