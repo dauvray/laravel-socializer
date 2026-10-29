@@ -1395,6 +1395,23 @@ Tous mesurés **avant** d'être écrits ici, aucun n'est une impression de lectu
   `defineAsyncComponent` survit à l'instance remplacée et journalise à son ancienne échéance. Sans
   effet fonctionnel.
 
+- [ ] 🟢 **Observé une fois, non reproduit : une alerte sœur encore cliquable 2,8 s après la réponse
+  d'un autre appareil** `[S]` — vu le 29/10/2026 pendant la vérif « décroché ailleurs », sur deux PC
+  (bob : Edge sur `.12` et Edge sur `.11`, alice : Chrome sur `.11`). Heures du journal nginx :
+  invitation à 15:46:38Z, réponse de `.12` à **+10,15 s** — la signature d'un auto-refus (même écart
+  qu'à 15:55:35Z, où les deux appareils ont auto-refusé à 15 ms d'écart), sans preuve ; puis
+  **acceptation** de `.11` à 15:46:51Z, donc un clic sur une alerte encore affichée, qu'alice a
+  ignorée (« acceptation d'appel sans invitation en vol »). `.11` n'a envoyé aucun auto-refus vers
+  +10 s : son alerte est montée **après** 15:46:41Z, plus tard que celle de `.12`. Son WebSocket est
+  resté ouvert tout du long ; `laravel.log` ne montre aucun échec de diffusion ; Reverb ne journalise
+  pas les messages, donc la livraison de `.InvitationAnswered` à `.11` n'est pas établie.
+  **Non reproduit en trois essais le même jour** — acceptation sur `.12` à 15:55:54Z et 15:56:56Z,
+  refus sur `.12` à 16:00:24Z : à chaque fois une seule réponse au serveur, et l'alerte de `.11`
+  tombée. Seule condition propre à 15:46 : l'Edge de `.11` s'était **connecté** (login, pas un
+  rechargement) 10 s avant l'appel. Parent possible de l'item « relance … alerte morte » ci-dessus,
+  si cette alerte tardive venait d'une relance. **À la prochaine occurrence** : noter l'heure du
+  login de l'appareil sœur, et lire sa console avant de cliquer.
+
 - [ ] 🟠 **`handleRemoteDeparture` applique à l'appel courant un départ qui porte la room d'un autre
   appel** `[S]` — mesuré le 27/10/2026 par la relecture du lot « clé de `usePeerRetry` ».
 
