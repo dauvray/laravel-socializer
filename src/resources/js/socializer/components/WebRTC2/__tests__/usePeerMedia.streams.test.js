@@ -90,6 +90,40 @@ describe('usePeerMedia — flux locaux', () => {
             })
         })
 
+        it('⭐ les bascules faites pendant l\'invite de permission s\'appliquent aux pistes qui arrivent', async () => {
+            // Les contraintes sont lues à la DEMANDE, et `getUserMedia` dure autant que l'invite :
+            // la barre d'appel de l'appelant, déjà CONNECTED, offre « couper le son » et « couper
+            // la caméra » pendant ce temps. Le clic ne trouve aucune piste à basculer.
+            const audio = { ...fakeTrack('audio'), enabled: true }
+            const video = { ...fakeTrack('video'), enabled: true }
+            let livrer
+            navigator.mediaDevices.getUserMedia.mockReturnValueOnce(
+                new Promise((resolve) => { livrer = () => resolve(realStream([video, audio])) }),
+            )
+            const capture = media.startCurrentStream('visio')
+
+            ctx.ui.streamStates.isMuted = true
+            ctx.ui.streamStates.isVideoEnabled = false
+            livrer()
+            await capture
+
+            expect(audio.enabled).toBe(false)
+            expect(video.enabled).toBe(false)
+        })
+
+        it('sans bascule pendant l\'invite, les pistes arrivent actives', async () => {
+            // Le pendant du ⭐ : seul, il laisserait passer « toute piste arrive coupée » — un appel
+            // où l'on se croit entendu sans l'être, que rien d'autre dans la suite ne verrait.
+            const audio = { ...fakeTrack('audio'), enabled: true }
+            const video = { ...fakeTrack('video'), enabled: true }
+            navigator.mediaDevices.getUserMedia.mockResolvedValueOnce(realStream([video, audio]))
+
+            await media.startCurrentStream('visio')
+
+            expect(audio.enabled).toBe(true)
+            expect(video.enabled).toBe(true)
+        })
+
         /**
          * ── CONTRÔLES DE HARNAIS du veto vocal, mesurés le 2026-08-31 ─────────────
          * Référence relue verte : 22 cas ici, 89 dans `useCallManager.test.js`.

@@ -63,6 +63,16 @@ export function usePeerMedia(ctx) {
             audio: !ctx.ui.streamStates.isMuted,
         })
 
+        // Les contraintes ont été lues à la DEMANDE, et `getUserMedia` dure autant que l'invite de
+        // permission : l'appelant, déjà CONNECTED, a pu couper son micro ou sa caméra pendant ce
+        // temps, sans piste à basculer. Les pistes qui arrivent prennent donc l'état COURANT — sans
+        // quoi elles entraient actives sous un drapeau « coupé ». `getTracks()` et non
+        // `getAudioTracks()` : un seul accesseur à doubler dans les harnais.
+        stream.getTracks().forEach((track) => {
+            if (track.kind === 'audio') track.enabled = !ctx.ui.streamStates.isMuted
+            if (track.kind === 'video') track.enabled = ctx.ui.streamStates.isVideoEnabled
+        })
+
         ctx.media.currentStream = markRaw(stream) // marquer le stream comme "non réactif" pour éviter les problèmes de performance liés à la réactivité de Vue sur les objets MediaStream
         ctx.media.isStreaming = true
         return stream

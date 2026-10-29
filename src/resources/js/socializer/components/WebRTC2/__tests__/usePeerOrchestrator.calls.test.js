@@ -14,6 +14,12 @@
  * Décision du 2026-10-29 : un appel démarre micro ouvert. La caméra, elle, garde son réglage.
  * La remise à zéro vit dans le `finally` de l'arrêt complet : elle tient aussi quand il lève.
  *
+ * Côté APPELANT, une fenêtre de plus : il passe CONNECTED dès l'acceptation, avant sa propre
+ * capture, et la barre d'appel offre « couper le son » / « couper la caméra » pendant l'invite de
+ * permission. Les contraintes étaient lues avant le clic, et rien n'appliquait les drapeaux aux
+ * pistes qui arrivaient : elles entraient actives sous un drapeau « coupé ». `startCurrentStream`
+ * leur applique désormais l'état courant au retour de `getUserMedia`.
+ *
  * ── Le harnais ───────────────────────────────────────────────────────────────────────────
  *
  * ⚠️ `installFakeMedia()` rend une piste audio ET vidéo quelles que soient les contraintes : il ne
@@ -37,6 +43,17 @@
  *   | la garde `mode !== 'partial'` retirée                  | aucun ici — un cas de        |
  *   |                                                        | `useCallManager.test.js`     |
  *
+ *   | Neutralisé dans `startCurrentStream` (au retour de la capture)  | Rougit                 |
+ *   |-----------------------------------------------------------------|------------------------|
+ *   | l'application des drapeaux aux pistes, ou l'une de ses deux     | « ⭐ appelant… », et le |
+ *   | lignes, ou la ligne audio inversée ou forcée à `true`           | ⭐ d'`usePeerMedia`     |
+ *   | toute piste audio — ou vidéo — forcée à `enabled = false`       | aucun ici — le contrat |
+ *   |                                                                 | « …arrivent actives »  |
+ *   |                                                                 | d'`usePeerMedia`       |
+ *
+ * La dernière ligne est la raison d'être de ce contrat : les deux ⭐ attendent `false`, et
+ * « toute piste arrive coupée » les passait — un appel où l'on se croit entendu sans l'être.
+ *
  * Les ⭐ sont nés rouges : `{ video: true, audio: false }` en visio, le `TypeError` en vocal.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
@@ -49,6 +66,11 @@ import { usePeerOrchestrator } from '~socializer/components/WebRTC2/Composables/
 import { usePeer2Store } from '~socializer/stores/peers2.js'
 import { useMeStore } from '~estarter/stores/me.js'
 
+// L'appelant invite (POST `/send-alert-to-user`) : une réponse vide suffit, rien n'est lu dedans.
+vi.mock('~estarter/services/AjaxService.js', () => ({
+    useAjaxService: () => ({ load: vi.fn(async () => ({ data: {} })) }),
+}))
+
 /** Rend la main jusqu'à la vidange COMPLÈTE de la file de microtâches. */
 const settleTasks = () => new Promise((resolve) => setTimeout(resolve, 0))
 
@@ -56,21 +78,31 @@ describe('usePeerOrchestrator — un appel démarre micro ouvert', () => {
     let app
     let api
     let contraintes
+    /** Vrai : la prochaine capture reste suspendue — l'invite de permission est ouverte. */
+    let suspendre
+    /** Referme l'invite suspendue : la capture résout. */
+    let livrer
 
     beforeEach(async () => {
         document.body.innerHTML = '<div id="videoContainer"></div>'
         resetPeerMock()
         installFakeMedia()
         contraintes = []
-        navigator.mediaDevices.getUserMedia.mockImplementation(async (demande) => {
+        suspendre = false
+        livrer = null
+        navigator.mediaDevices.getUserMedia.mockImplementation((demande) => {
             contraintes.push({ ...demande })
             if (!demande.audio && !demande.video) {
-                throw new TypeError('At least one of audio and video must be requested')
+                return Promise.reject(new TypeError('At least one of audio and video must be requested'))
             }
             const pistes = []
             if (demande.video) pistes.push(fakeTrack('video'))
             if (demande.audio) pistes.push(fakeTrack('audio'))
-            return realStream(pistes)
+            if (suspendre) {
+                suspendre = false
+                return new Promise((resolve) => { livrer = () => resolve(realStream(pistes)) })
+            }
+            return Promise.resolve(realStream(pistes))
         })
 
         useMeStore().user = { slug: 'me', name: 'Me' }
@@ -146,6 +178,32 @@ describe('usePeerOrchestrator — un appel démarre micro ouvert', () => {
         await accepter('call-2', 'vocal')
 
         expect(contraintes.at(-1)).toEqual({ video: false, audio: true })
+    })
+
+    it('⭐ appelant : couper micro et caméra pendant l\'invite de permission coupe les pistes qui arrivent', async () => {
+        // L'appelant passe CONNECTED dès l'acceptation, AVANT sa propre capture : la barre d'appel
+        // offre ses boutons pendant que l'invite est ouverte. Avant, les drapeaux disaient
+        // « coupé » sur des pistes actives — on se croyait muet, on était entendu, et vu.
+        const inviteId = await api.startCallWithPeer({ toUserSlug: 'alice', type: 'visio' })
+        suspendre = true
+        const ouverture = api.openCallBetweenPeer({
+            fromUserSlug: 'alice',
+            status: true,
+            options: { type: 'visio', room: api.currentCallRoomId.value, peerId: 'peer-alice', inviteId },
+        })
+        await settleTasks()
+        expect(api.callState.value).toBe('connected')
+        expect(api.currentStream.value).toBeNull()
+
+        api.toggleAudioState()
+        api.toggleVideoState()
+        livrer()
+        await ouverture
+        await settleTasks()
+
+        const flux = api.currentStream.value
+        expect(flux.getAudioTracks().map((piste) => piste.enabled)).toEqual([false])
+        expect(flux.getVideoTracks().map((piste) => piste.enabled)).toEqual([false])
     })
 
     it('la caméra coupée le reste à l\'appel suivant — seul le micro est rouvert', async () => {

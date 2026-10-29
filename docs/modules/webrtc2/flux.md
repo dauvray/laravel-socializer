@@ -48,7 +48,9 @@ l'arrêt complet remet `isMuted` à `false` dans son `finally`, donc même quand
 du 2026-10-29. Reporté, un micro coupé
 demandait `audio: false` : un flux sans piste audio, que la bascule ne rattrape pas (elle ne
 bascule que les pistes existantes), et en vocal `{ video: false, audio: false }`, qui fait rejeter
-la capture puis l'acceptation. Gardé par `usePeerOrchestrator.calls.test.js`.
+la capture puis l'acceptation. Gardé par `usePeerOrchestrator.calls.test.js`. Borne connue, côté
+caméra : reportée, elle n'est pas capturée, et « activer la caméra » ne trouve alors aucune piste
+jusqu'à la fin de l'appel — `work/webrtc2-todo.md`, « Les boutons d'appel ».
 
 ⚠️ **`setLocalPeer()` est appelée nue ici, et elle DOIT le rester.** La valeur ne dit rien (la
 fonction est `async`, donc toujours truthy, et sort par `undefined` sur ses chemins « rien à
@@ -266,6 +268,15 @@ si elle a changé — flux coupé, aucun player, et ni acceptation (appelé) ni 
 La **room** et non l'état de la FSM : annuler puis appeler aussitôt quelqu'un d'autre ramène la FSM
 hors d'IDLE avant que l'invite se referme. Ce défaut existait déjà en CONNECTED (« raccrocher »
 pendant l'invite, ou départ du pair) ; le bouton le rendait atteignable d'un clic en RECEIVING.
+
+⚠️ **Couper son micro ou sa caméra pendant l'invite vaut pour les pistes qui arrivent.** En
+CONNECTED, la barre de l'appelant offre aussi « couper le son » et « couper la caméra » pendant
+l'invite, alors qu'aucune piste n'existe encore à basculer, et les contraintes de capture ont été
+lues avant le clic. `startCurrentStream` applique donc aux pistes, au retour de `getUserMedia`,
+l'état **courant** de `streamStates`. Avant le 2026-10-29, elles entraient actives sous un drapeau
+« coupé » : on se croyait muet, on était entendu, et vu. L'appelé n'y est pas exposé : en
+RECEIVING, la barre n'offre qu'« annuler ». Gardé par `usePeerOrchestrator.calls.test.js` (côté
+appelant) et `usePeerMedia.streams.test.js`.
 
 **L'appelé qui accepte puis annule ne répond donc pas — et l'appelant est prévenu quand même.** Seul
 son signal de fin d'appel arrive, avec la room de l'appel : `Notifications` affiche « <slug> est

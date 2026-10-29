@@ -1236,25 +1236,6 @@ extractions : c'est 18 lignes, sous un filet cinq fois plus dense.
   rejouait l'audio distant une seconde fois. Il mixait tous les flux : un indicateur « qui parle »,
   s'il revient, se fera par participant.
 
-- [ ] 🟠 **Couper son micro ou sa caméra pendant l'invite de permission de l'APPELANT ne coupe rien**
-  `[S]` — lu le 29/10/2026 en fermant le 🔴 « micro coupé reporté à l'appel suivant », **sondé le
-  même jour par la relecture** (vraies couches, contexte `data`/`app`, `getUserMedia` de l'appelant
-  suspendu ; `startCallWithPeer` puis `openCallBetweenPeer` avec l'acceptation) : acceptation reçue,
-  invite ouverte → `connected`, capture déjà demandée en `{ video: true, audio: true }`, aucun flux ;
-  « couper le son » + « couper la caméra » → drapeaux coupés, aucune piste touchée ; invite
-  refermée → pistes audio ET vidéo `enabled: true`, drapeaux toujours « coupés ». Témoin : les mêmes
-  clics après l'arrivée du flux coupent les deux pistes. **Gravité à décider (David)**.
-  L'appelant passe CONNECTED dès la réception de l'acceptation, avant son propre
-  `getUserMedia` : la barre d'appel offre déjà « couper le son » / « couper la caméra » pendant que
-  l'invite de permission est ouverte. `toggleAudioState` / `toggleVideoState` basculent le drapeau
-  et les pistes du flux courant — il n'y en a pas encore ; les contraintes de la capture en cours ont
-  été lues avant le clic, et `_enterCallSession` n'applique pas `streamStates` aux pistes qui
-  arrivent. Le flux entre donc micro et caméra actifs sous un drapeau « coupé » : on se croit muet,
-  on est entendu — et vu. L'appelé n'est pas exposé : en RECEIVING, la barre n'offre qu'« annuler ».
-  Fenêtre : la durée de l'invite (la première fois, ou à chaque appel si le navigateur ne mémorise
-  pas la permission). Remède naturel : appliquer `isMuted` / `isVideoEnabled` aux pistes au retour
-  de la capture, dans `_enterCallSession`.
-
 - [ ] 🟢 **`StreamSimpleUI` attribue mon nom au flux de réponse d'un pair** `[S]` — relevé le
   26/10/2026 au lot E, lu dans le code, non reproduit. En mode `stream`, le flux de RÉPONSE de B arrive
   sur la connexion sortante de A, dont la metadata est celle de A ; le registre gardant la première
@@ -1390,6 +1371,28 @@ Tous mesurés **avant** d'être écrits ici, aucun n'est une impression de lectu
   Conséquence pour qui reprendrait : ce n'est pas « ajouter un `sendData` », c'est ouvrir un canal de
   données sur la branche d'appel. À dimensionner avant. En attendant, la borne est écrite dans
   `docs/modules/webrtc2/api.md`.
+
+- [ ] 🟠 **Une caméra coupée reportée à l'appel suivant ne se rallume plus pendant cet appel** `[S]`
+  — mesuré le 29/10/2026 par la relecture du lot « couper pendant l'invite de l'appelant ».
+
+  Sonde, vraies couches, contexte `data/app`, côté appelé : caméra coupée dans l'appel 1, raccroché.
+  L'appel 2 (visio) capture `{ video: false, audio: true }`, une seule piste. « Activer la caméra »
+  passe `isVideoEnabled` à `true`, et il y a toujours 0 piste vidéo. C'est la structure du 🔴 fermé
+  pour le micro le même jour (pas de piste capturée, donc une bascule qui ne rattrape rien), côté
+  caméra et dans le sens sûr : on se croit vu, on ne l'est pas. Le report est délibéré (docblock de
+  `startCurrentStream`). C'est l'absence de piste qui le rend irréversible pendant l'appel.
+
+  Même famille, **lu, non sondé** : en appel VOCAL, `CallManagerBtn` offre aussi le bouton caméra.
+  `isVideoEnabled` y vaut `true` par défaut, la barre affiche « couper la caméra », et aucune vidéo
+  n'est jamais capturée.
+
+  Remède proposé : capturer la vidéo dès que le type le permet (`video: typeAppel !== 'vocal'`),
+  puis laisser l'application des drapeaux au retour de `getUserMedia` la désactiver. Ce mécanisme
+  existe depuis ce lot. **Décision de David attendue** :
+  - capturer puis désactiver : la caméra se rallume en cours d'appel, mais le voyant matériel reste
+    peut-être allumé sur une piste désactivée selon le navigateur (non mesuré) ;
+  - ou garder le report sans capture, et masquer « activer la caméra » quand aucune piste vidéo
+    n'existe (ce qui règle aussi le cas vocal).
 
 - [ ] 🟠 **`isValidCallType` reste trop permissif sur les trois chemins ENTRANTS** `[S]`
 
