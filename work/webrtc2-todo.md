@@ -10,122 +10,68 @@
 
 ---
 
-## ▶ Prochain lot — « couper la caméra éteint vraiment la webcam » `[M]`
+## ▶ Lot en vérification — « couper la caméra éteint vraiment la webcam » `[M]`
 
-> **Décidé par David le 29/10/2026, à faire dans une NOUVELLE conversation.** Tout ce qu'il faut
-> pour démarrer est ici. Le récit des trois lots qui y ont mené est dans `git log` (`4866d79`,
-> `005a348`, `d06a9d9`), le définitif dans [`flux.md`](../docs/modules/webrtc2/flux.md),
-> « Ce qu'un appel hérite du précédent ».
+> **Codé et testé le 29/10/2026**, sur les deux décisions de David du même jour : sans vidéo, le
+> voyant est éteint (une piste canvas tient la place de la caméra coupée, jamais capturée) ; la
+> caméra doit toujours pouvoir être rallumée (repli audio supprimé, recapture à l'activation). Le
+> définitif est dans [`flux.md`](../docs/modules/webrtc2/flux.md), « Couper la caméra l'éteint »,
+> le récit dans `git log`. **Le lot n'est pas clos** : aucun harnais ne voit un voyant.
 
-**Le but.** Quand la caméra est coupée (en cours d'appel, ou reportée au début de l'appel suivant),
-la webcam est réellement éteinte, voyant compris, et « activer la caméra » la rallume sans couper
-l'appel.
+- [ ] **Vérification de David en vrai navigateur, dans Chrome ET dans Firefox** — rechargement
+  dur des deux côtés, aucune écriture dans `.env` pendant la mesure (`.ai/rules/web-r-t-c2.md`).
+  **Firefox : « ça fonctionne » (David, 29/10/2026, sur l'arbre corrigé après la relecture)** —
+  étapes couvertes non détaillées. **Chrome : pas encore rapporté.**
+  1. Appel visio, couper la caméra en cours d'appel : le voyant s'éteint, le pair voit du NOIR
+     (pas une image figée).
+  2. La réactiver : le voyant se rallume, le pair et l'aperçu local la revoient, l'appel continue.
+  3. Raccrocher caméra coupée, rappeler, **une fois appelant et une fois appelé** : le voyant ne
+     s'allume jamais ; « activer la caméra » la fait arriver chez le pair. Le cas de l'appelé est
+     celui qu'un parcours du store aurait raté.
+  4. Caméra prise par une autre application, ou permission refusée : « activer la caméra » affiche
+     « Caméra indisponible : elle reste coupée », et le bouton revient sur « coupée ».
+  5. Diffusion : couper puis rallumer sa caméra, voyant et spectateurs. Avec un partage d'écran en
+     cours, l'écran partagé ne doit pas bouger.
+  6. Firefox seulement : une nouvelle invite de permission à la réactivation ? Et l'APERÇU LOCAL
+     revoit-il la caméra rallumée ? En headless, Firefox 151 ne suit le remplacement en place que
+     dans l'ordre « retrait puis ajout », et seulement si le flux a un micro (tableau dans
+     `usePeerMedia._replaceVideoTrack`). Aucun harnais ne le voit, ni dans happy-dom ni en suite.
 
-- [ ] 🟠 **Couper la caméra laisse le voyant de la webcam ALLUMÉ** `[M]` — mesuré par David le
-  29/10/2026 dans **Chrome 156** (poste A, `.11`, d'après le journal nginx), en début d'appel
-  (caméra coupée reportée, capturée puis désactivée). Déduit, non mesuré, en cours d'appel :
-  `toggleVideoState` ne fait lui aussi que `track.enabled = false`. Le pair ne voit rien, mais
-  l'utilisateur voit son voyant allumé et peut se croire filmé. Non vérifié dans Firefox : la spec
-  Media Capture permet d'éteindre le périphérique quand toutes ses pistes sont désactivées. Si
-  Firefox le fait, le défaut serait propre à Chrome. C'est à vérifier par David.
+- [ ] **Décision de David : le repli quand aucun bouche-trou ne peut être créé.** Posé par
+  défaut le 29/10, sur recommandation de la relecture : échouer FERMÉ, caméra ouverte mais
+  désactivée (le pair voit du noir, le voyant reste allumé). L'autre choix, arrêter la caméra
+  quand même, laisse chez le pair une image figée dans Chromium. La relecture a trouvé le cas sous
+  Firefox, où le bouche-trou levait (`requestFrame` porté par le flux), et il est corrigé. Le
+  repli ne couvre plus qu'un navigateur sans capture canvas utilisable.
 
-  Piste (relecture du 29/10) : à la coupure, ARRÊTER la piste (`track.stop()`) ; à la
-  réactivation, recapturer la caméra puis `RTCRtpSender.replaceTrack(nouvellePiste)` sur le sender
-  vidéo de chaque connexion de l'appel. Le transceiver vidéo reste en place, donc pas de
-  renégociation, que PeerJS ne gère pas.
+- [ ] 🟠 **Une caméra RALLUMÉE qui se termine seule n'est pas suivie** `[S]` — débranchée, ou prise
+  par une autre application. `_bindStreamCleanup` (`usePeerMedia.js`) ne lie que les pistes
+  présentes à la création du player local ; rien ne remet le drapeau à « coupée » ni ne pose le
+  bouche-trou, et le pair garde la dernière image, figée (mesuré dans Chromium pour une piste
+  arrêtée : en-tête de `createPlaceholderVideoTrack.js`). Avant le lot, la piste caméra INITIALE
+  terminée retirait le player local, ce qui n'était pas mieux.
 
-**Cahier des charges, mesuré par la relecture le 29/10 dans Chromium headless.** Deux
-`RTCPeerConnection`, ICE réel, dans l'ordre de PeerJS 1.5.4. **A = celui qui fait `peer.call`**
-(`addTrack` puis `createOffer({ offerToReceiveVideo: true })`) ; **B = celui qui répond**
-(`addTrack` AVANT `setRemoteDescription`, puis `createAnswer()` sans argument). Après la
-négociation : `stop()` de la piste éventuelle, `replaceTrack(caméra neuve)`, puis octets vidéo
-reçus en face. Un run par cas.
+- [ ] 🟢 **Diffusion : l'annonce « caméra active » part avant le verdict** `[S]` —
+  `GroupLocalStreamBtn.onToggleVideoVisibility` envoie `VIDEO_ACTIVE_TOGGLE` aussitôt après la
+  bascule, sans attendre `toggleVideoVisibility()`. Si la caméra ne peut pas être rallumée, les
+  spectateurs ont reçu « active » et voient le bouche-trou noir ; et la diffusion n'a pas le toast
+  de l'appel. Attendre la promesse, puis annoncer l'état final.
 
-| Cas | Direction | Octets en face, avant → après |
-|---|---|---|
-| A, vidéo désactivée (témoin) | `sendrecv` | 7 360 → 175 307 |
-| A, caméra `stop()` AVANT l'offre | `sendrecv` | 0 → 139 882 |
-| A, piste canvas, AUCUNE caméra | `sendrecv` | 0 → 140 798 |
-| A, aucune piste vidéo, `offerToReceiveVideo` | `recvonly` | 0 → 0, sans erreur |
-| B, vidéo désactivée (témoin) | `sendrecv` | 7 258 → 175 123 |
-| B, caméra `stop()` AVANT la réponse | `sendrecv` | 0 → 142 209 |
-| B, aucune piste vidéo (le repli) | `recvonly` | 0 → 0, sans erreur |
+- [ ] 🟢 **Firefox, flux visio SANS micro : l'aperçu LOCAL ne suit plus la caméra** `[S]` — mesuré
+  par la relecture du 29/10 (Firefox 151 headless). Retirer la seule piste rend le flux inactif, et
+  le `<video>` passe en `ended`. Né avec la caméra, l'aperçu reste FIGÉ sur sa dernière image à la
+  coupure (on se voit encore après avoir coupé) ; né caméra coupée, il reste noir à la
+  réactivation. Le pair n'est pas touché. Parade mesurée dans les deux sens : réassigner
+  `video.srcObject = flux` puis `play()`. `play()` seul ne suffit pas. Elle vit côté player et
+  demande un signal de `usePeerMedia`, car un `addTrack` fait par script n'émet pas `addtrack`.
+  **Inatteignable depuis l'UI du paquet aujourd'hui** (lu, non mesuré) : il faut un micro coupé
+  AVANT la capture. Le raisonnement est dans `usePeerMedia._replaceVideoTrack`. L'item ne devient
+  actif que si une UI permet de couper le micro avant la capture.
 
-Aucune erreur, ni sur `addTrack` d'une piste `ended`, ni sur `replaceTrack`. Il faut donc **une
-piste vidéo** dans l'offre ou la réponse, vivante ou non : la caméra elle-même n'a pas besoin de
-rester allumée pendant la négociation. Sans piste vidéo, `replaceTrack` échoue en silence et il
-faudrait une renégociation.
-
-**L'état de départ, au commit `d06a9d9`.**
-- `startCurrentStream` (`usePeerMedia.js`) capture la vidéo selon le TYPE seul (`vocal` l'interdit),
-  `isVideoEnabled` ne fait que désactiver la piste, et une caméra coupée indisponible se replie
-  sur l'audio seul.
-- `toggleVideoState` (`usePeerOrchestrator.js`) ne fait que `track.enabled = …` sur
-  `currentStream`. Aucun composant ne l'appelle directement : les deux passent par le relais
-  `toggleVideoVisibility` (`useMediaBroadcast.js`). La barre d'appel y arrive par `CallManagerBtn`
-  (`toggle-video`) puis `Notifications.vue`. La diffusion y arrive par `LocalStreamBtn`
-  (`toggle_video`) puis `GroupLocalStreamBtn.vue`. Le relais est **partagé**.
-- `connectToPeer` (`usePeerConnections.js`, branche visio/vocal) passe
-  `constraints: { offerToReceiveVideo: true }` à `peer.call` en visio.
-- ⚠️ **Le store ne range que les connexions SORTANTES.** `storePeerConnection(room, slug, type,
-  connection)` (`stores/peers2/actions.js`) n'a qu'un appelant, `_saveRoomConnection`, dans
-  `connectToPeer`. L'appelé répond dans le dispatcher `bind('call')` de `usePeerTransport.js`
-  (`call.answer(localStream)` puis `setUpConnectionListeners(call)`), et cette connexion n'est
-  rangée nulle part. Un `replaceTrack` qui parcourt le store ne ferait donc RIEN chez l'appelé, sans
-  erreur, et un test qui passe par le chemin initiateur resterait vert. Des deux côtés,
-  `connection.peerConnection` est une propriété ordinaire de PeerJS.
-- Un appel peut compter plusieurs pairs (`session.currentCallUsers`, des `{ userSlug, type }`).
-- L'aperçu local est le player `local-webcam`, créé par `_enterCallSession` (`useCallManager.js`)
-  sur `ctx.media.currentStream`. **Il survit à `stop()`** (déduit par la relecture d'une mesure :
-  `stop()` n'émet pas `ended` dans Chromium) :
-  `_bindStreamCleanup` (`usePeerMedia.js`) retire le player sur `ended`, or `track.stop()` n'émet
-  pas `ended`, et le flux reste `active` grâce à l'audio. Une piste ajoutée plus tard au flux n'est
-  pas liée : le lien se fait une seule fois par `videoId`.
-- Une piste vidéo arrêtée passe les gardes de flux : `connectToPeer` n'exige qu'une piste `live`
-  (`some(t => t.readyState === 'live')`), et l'audio suffit.
-
-**À trancher en cadrant.**
-- **Caméra coupée AU DÉPART** (décision de David) : capturer puis `stop()` AVANT la négociation
-  (le voyant ne s'allume que le temps de `getUserMedia` → `stop()`, non mesuré sans vraie
-  webcam), ou une **piste canvas** comme bouche-trou (aucune caméra ouverte, voyant jamais allumé).
-- **Le repli** (caméra coupée indisponible, aucune vidéo dans l'offre ni dans la réponse) : la
-  borne « pas rallumable de l'appel » est aujourd'hui acceptée, mais la piste canvas la rend
-  évitable. Rouvrir ou non : décision de David.
-- **Où retrouver la connexion de l'APPELÉ** : la ranger à la réponse, ou passer par
-  `peer.connections`, qui existe mais est `@deprecated` en PeerJS 1.5.4.
-- **Retirer ou garder la piste arrêtée dans `currentStream`.** Un pair qui arrive pendant la
-  coupure construit sa connexion sur `currentStream` à ce moment-là. Si la piste est retirée, il
-  sera `recvonly` et la caméra ne pourra plus lui être rendue. Si elle est gardée, il sera
-  `sendrecv`. C'est déduit des cas mesurés, pas mesuré en arrivée tardive.
-- **L'aperçu local** : remplacer la piste dans `currentStream`, ou fournir un flux neuf au player.
-  Le lien `ended` ne suit pas une piste ajoutée.
-- **Plusieurs pairs** : un `replaceTrack` par connexion de l'appel, entrantes comprises.
-- **La diffusion** : le relais étant partagé, elle change avec l'appel, sauf décision contraire.
-- **Le micro** : son indicateur reste lui aussi allumé quand on le coupe (déduit, non mesuré :
-  `toggleAudioState` ne fait que `track.enabled = …`). Hors périmètre, sauf décision.
-- Non mesuré : Firefox (`offerToReceiveVideo`, `replaceTrack`, le voyant), ce que B affiche avec une
-  piste `ended` plutôt que désactivée (noir ou image figée), une nouvelle invite de permission au
-  `getUserMedia` de « activer la caméra ».
-
-**La méthode des trois lots du 29/10, qui a payé.**
-- Tests rouges d'abord. Contre-épreuves (mutants) sur la suite entière, lues au **code de sortie**.
-- Relecture par une seconde session AVANT chaque commit.
-- Vérification de David en vrai navigateur, voyant compris : seule une vraie webcam le montre.
-  À faire dans Chrome ET dans Firefox.
-- Harnais : `usePeerOrchestrator.calls.test.js` (vraies couches, `getUserMedia` qui respecte les
-  contraintes, `sansCamera`). Le mock PeerJS donne aux connexions un `peerConnection` sans
-  `getSenders` (`__mocks__/peerjs.js`) : le double est à écrire, et le cas de l'APPELÉ doit avoir
-  son test.
-- Ce qu'aucun harnais ne voit (offre SDP, `replaceTrack`, octets reçus) a été mesuré dans un
-  Chromium headless, avec un `RTCPeerConnection` nu et pas PeerJS lui-même. La recette :
-  - deux `RTCPeerConnection` dans l'ordre de PeerJS 1.5.4, décrit plus haut ;
-  - les drapeaux `--use-fake-ui-for-media-stream --use-fake-device-for-media-stream` ;
-  - une page servie sur `http://localhost` (`about:blank` n'est pas un contexte sécurisé : pas de
-    `mediaDevices`) ;
-  - pas de trickle : attendre `iceGatheringState === 'complete'` avant d'échanger les descriptions ;
-  - les octets se lisent par `getStats()`, sur `inbound-rtp` avec `kind === 'video'`, champ
-    `bytesReceived`.
-  Les sondes du 29/10 vivaient dans les scratchpads des sessions : elles sont à refaire.
+- [ ] 🟢 **Le micro coupé garde, lui aussi, son indicateur allumé** `[M]` — déduit, non mesuré :
+  `toggleAudioState` ne fait que `track.enabled = false`. Hors du lot par décision par défaut.
+  Le même remède demanderait une piste audio silencieuse (WebAudio) et une recapture du micro à la
+  réactivation : à trancher par David.
 
 ---
 
