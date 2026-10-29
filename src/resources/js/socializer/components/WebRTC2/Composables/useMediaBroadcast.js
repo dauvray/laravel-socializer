@@ -209,7 +209,7 @@ export function useMediaBroadcast(type = 'data', room = 'app', options = {}, dep
         toggleAudioState()
     }
     function toggleVideoVisibility() {
-        toggleVideoState()
+        return toggleVideoState()
     }
 
     return {

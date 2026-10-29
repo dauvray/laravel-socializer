@@ -22,6 +22,7 @@
  * 👉 à ne pas confondre avec useMediaBroadcast qui gère la logique métier de diffusion (qui utilise usePeerMedia pour les flux)
  */
 import { createApp, h, markRaw, reactive } from 'vue'
+import { createPlaceholderVideoTrack } from '~socializer/components/WebRTC2/Composables/utils/createPlaceholderVideoTrack.js'
 
 export function usePeerMedia(ctx) {
 
@@ -30,6 +31,16 @@ export function usePeerMedia(ctx) {
     const creatingVideoIds = new Set()
     const streamCleanupBound = new Set()
     const streamCleanupListeners = new Map() // videoId → [{track, handler}]
+
+    // ── Caméra ───────────────────────────────────────────────────────────────
+    // Toute piste qui a été LA piste vidéo du flux courant : caméras et bouche-trous. Un sender
+    // qui en porte une envoie ce flux — jamais un partage d'écran, dont la piste n'y entre pas.
+    const localVideoTracks = new WeakSet()
+    // Les bouche-trous : une piste vidéo du flux courant qui n'y est pas est une caméra.
+    const placeholderTracks = new WeakSet()
+    // Incrémenté à chaque `applyVideoState` : une caméra capturée pour une demande que d'autres
+    // ont suivie est périmée, et arrêtée au lieu d'être posée.
+    let videoStateSequence = 0
 
     // ── Pool de players ──────────────────────────────────────────────────────
     // Un "host" = une app Vue montée une fois par container, qui rend un v-for sur
@@ -54,51 +65,200 @@ export function usePeerMedia(ctx) {
      * (`createPeerContext.js:153`), et la **transmettait** au pair, `peer.call` passant le flux
      * tel quel. La caméra s'allumait sur un appel où personne ne l'avait demandée.
      *
-     * Le TYPE décide de la capture vidéo (`vocal` l'interdit, tout autre la capture), le réglage
-     * `isVideoEnabled` de l'état de la PISTE : une caméra coupée est capturée, puis désactivée
-     * ci-dessous, et le pair ne voit rien. ⚠️ Ne pas refaire du réglage une contrainte de capture.
-     * Jusqu'au 2026-10-29, une caméra coupée reportée à l'appel suivant n'y était pas capturée :
-     * « activer la caméra » ne trouvait aucune piste, et chez l'APPELANT l'offre de PeerJS ne
-     * portait aucune ligne vidéo, que la réponse de l'appelé ne peut pas ajouter — la vidéo du
-     * pair ne lui parvenait jamais, deux écrans noirs (mesuré dans Chromium, `flux.md`). Ce second
-     * effet est désormais aussi couvert par l'offre (`connectToPeer`) ; le premier, par la seule
-     * capture.
+     * Le TYPE décide si le flux porte une piste vidéo (`vocal` l'interdit), le réglage
+     * `isVideoEnabled` décide si c'est la CAMÉRA : une caméra coupée n'est pas capturée — sans
+     * vidéo, le voyant reste éteint (décision du 2026-10-29) —, et un bouche-trou
+     * (`createPlaceholderVideoTrack`, une piste canvas noire désactivée) tient sa place.
      *
-     * Repli : une caméra COUPÉE qui ne peut pas être capturée (absente, prise par une autre
-     * application, refusée) ne fait pas échouer la capture — le flux part en audio seul, comme
-     * avant que la caméra coupée soit capturée. Ouverte, son échec remonte : l'utilisateur veut
-     * être vu. La vidéo du pair, elle, arrive quand même : `connectToPeer` la demande dans l'offre.
+     * ⚠️ Ne pas retirer ce bouche-trou au motif qu'il n'affiche rien : c'est lui qui donne à
+     * l'offre ou à la réponse une ligne vidéo `sendrecv`. Sans piste vidéo, « activer la caméra »
+     * ne pourrait plus rien envoyer de l'appel sans renégociation, et chez l'APPELANT la vidéo du
+     * pair ne lui parvenait pas (deux écrans noirs ; `connectToPeer` la demande aussi par l'offre).
+     * Mesuré dans Chromium : `flux.md`.
+     *
+     * Une caméra OUVERTE qui ne peut pas être capturée fait échouer la capture : l'utilisateur veut
+     * être vu. Coupée, elle n'est pas demandée, donc un poste sans caméra passe.
+     *
+     * Sans bouche-trou possible (`_createPlaceholder` rend `null`), la caméra coupée est capturée,
+     * puis désactivée par `applyVideoState` : l'état d'avant le 2026-10-29, voyant allumé.
      */
     const startCurrentStream = async (typeAppel = null) => {
         const video = typeAppel !== 'vocal'
+        // AVANT la capture : c'est lui qui décide si la caméra coupée est demandée ou non.
+        const placeholder = (video && !ctx.ui.streamStates.isVideoEnabled) ? _createPlaceholder() : null
+        const camera = video && !placeholder
         const audio = !ctx.ui.streamStates.isMuted
+
+        // Caméra ET micro coupés : rien à demander aux périphériques, et `getUserMedia` rejetterait
+        // `{ video: false, audio: false }`. Le vocal garde ce rejet : sans bouche-trou à y mettre,
+        // son flux serait vide.
         let stream
         try {
-            stream = await navigator.mediaDevices.getUserMedia({ video, audio })
+            stream = (placeholder && !audio)
+                ? new MediaStream()
+                : await navigator.mediaDevices.getUserMedia({ video: camera, audio })
         } catch (error) {
-            // L'état COURANT, comme pour les pistes ci-dessous : il a pu changer pendant l'invite.
-            // Borne : le repli recapture aussi pour un appel annulé pendant l'invite — la garde de
-            // room d'`_enterCallSession` coupe ensuite ce flux (mesuré, `work/webrtc2-todo.md`).
-            if (!video || !audio || ctx.ui.streamStates.isVideoEnabled) throw error
-            console.warn('[usePeerMedia] caméra coupée et indisponible — capture en audio seul', {
-                name: error?.name ?? null,
-            })
-            stream = await navigator.mediaDevices.getUserMedia({ video: false, audio })
+            // Sinon il survit à la capture refusée, minuteur compris, sans référence pour l'arrêter.
+            placeholder?.stop()
+            throw error
         }
 
-        // Les pistes qui arrivent prennent l'état COURANT des drapeaux. La caméra d'abord, capturée
-        // même coupée (docblock). Et les deux parce que `getUserMedia` dure autant que l'invite de
-        // permission : l'appelant, déjà CONNECTED, a pu couper son micro ou sa caméra pendant ce
-        // temps, sans piste à basculer — elles entraient actives sous un drapeau « coupé ».
-        // `getTracks()` et non `getAudioTracks()` : un seul accesseur à doubler dans les harnais.
-        stream.getTracks().forEach((track) => {
-            if (track.kind === 'audio') track.enabled = !ctx.ui.streamStates.isMuted
-            if (track.kind === 'video') track.enabled = ctx.ui.streamStates.isVideoEnabled
+        // Le micro prend l'état COURANT du drapeau, parce que `getUserMedia` dure autant que
+        // l'invite de permission : l'appelant, déjà CONNECTED, a pu le couper pendant ce temps,
+        // sans piste à basculer — elle entrait active sous un drapeau « coupé ».
+        stream.getAudioTracks().forEach((track) => {
+            track.enabled = !ctx.ui.streamStates.isMuted
         })
+
+        stream.getVideoTracks().forEach((track) => localVideoTracks.add(track))
+        if (placeholder) stream.addTrack(placeholder)
 
         ctx.media.currentStream = markRaw(stream) // marquer le stream comme "non réactif" pour éviter les problèmes de performance liés à la réactivité de Vue sur les objets MediaStream
         ctx.media.isStreaming = true
+
+        // La caméra aussi prend l'état COURANT, pour la même raison : coupée pendant l'invite, elle
+        // est arrêtée avant que le flux serve à quoi que ce soit (synchrone jusque-là) ; rallumée
+        // pendant l'invite, elle est capturée maintenant, et l'appel part sans l'attendre.
+        applyVideoState()
+
         return stream
+    }
+
+    /**
+     * @returns {?MediaStreamTrack} le bouche-trou, ou `null` si ce navigateur ne sait pas en
+     *          fabriquer un — l'appelant échoue alors FERMÉ (caméra désactivée, jamais montrée)
+     */
+    const _createPlaceholder = () => {
+        try {
+            const track = createPlaceholderVideoTrack()
+            placeholderTracks.add(track)
+            localVideoTracks.add(track)
+            return track
+        } catch (error) {
+            console.warn('[usePeerMedia] pas de piste pour remplacer la caméra — coupée, elle reste ouverte et désactivée', {
+                name: error?.name ?? null,
+            })
+            return null
+        }
+    }
+
+    /**
+     * Remplace la piste vidéo du flux local, EN PLACE, puis sur chaque sender qui portait une
+     * piste vidéo de ce flux — connexions entrantes comprises (`ctx.getMediaConnections`).
+     *
+     * En place, parce qu'un `<video>` dont le `srcObject` est ce flux suit le remplacement, dans
+     * l'ordre ci-dessous : l'aperçu local n'a rien à réassigner, et le player n'est pas recyclé.
+     * Sur les senders, parce que `replaceTrack` ne renégocie pas.
+     *
+     * L'ancienne piste est arrêtée SANS attendre les senders : c'est ce qui éteint le voyant.
+     * `stop()` n'émet pas `ended`, donc le nettoyage lié du player local ne se déclenche pas.
+     *
+     * ⚠️ `removeTrack` AVANT `addTrack`, et l'ordre est mesuré (aperçu local, piste livrée,
+     * 2026-10-29) :
+     *
+     *   | Ordre              | Chromium 149                 | Firefox 151                       |
+     *   |--------------------|------------------------------|-----------------------------------|
+     *   | retrait puis ajout | suit ; `inactive` émis si le | suit si le flux a un micro ; sans |
+     *   |                    | flux n'a pas de micro        | micro, ne suit plus (ci-dessous)  |
+     *   | ajout puis retrait | suit                         | ne suit JAMAIS : l'aperçu reste   |
+     *   |                    |                              | sur la première piste vidéo       |
+     *
+     * L'autre ordre ne se justifie que par l'`inactive` de Chromium, que personne n'écoute sur le
+     * flux (`_bindStreamCleanup` et `useStreamManager` l'écoutent sur les PISTES, qui ne l'émettent
+     * pas). Borne assumée : sous Firefox, sur un flux visio SANS micro, l'aperçu LOCAL ne suit plus.
+     * Retirer la seule piste rend le flux inactif, et le `<video>` passe en `ended`. Né avec la
+     * caméra, l'aperçu reste FIGÉ sur sa dernière image à la coupure : on se voit encore après avoir
+     * coupé. Né caméra coupée, il reste noir à la réactivation. Le pair n'est pas touché : il voit
+     * du noir, ses senders ne dépendent pas du flux local. Mesuré par la relecture du 2026-10-29,
+     * avec une parade côté player (réassigner `srcObject` puis `play()`) : item de
+     * `work/webrtc2-todo.md`. Ce flux ne naît que d'un micro coupé AVANT la capture, et aucune UI
+     * du paquet ne le permet aujourd'hui (lu, non mesuré). Le micro repart ouvert à chaque fin
+     * d'appel et de diffusion. L'appelant capture dans le même tour que son passage à CONNECTED
+     * (`useCallManager.openCallBetweenPeer`), l'appelé capture en RECEIVING, où la barre n'a pas
+     * de bascule, et les bascules de diffusion n'existent que pendant le flux.
+     *
+     * @returns {Promise<void>} réglée quand chaque sender porte la nouvelle piste
+     */
+    const _replaceVideoTrack = (stream, previous, next) => {
+        stream.removeTrack(previous)
+        stream.addTrack(next)
+        localVideoTracks.add(next)
+
+        // Le sender et non la piste remplacée : `sender.track` n'est mis à jour qu'à la
+        // résolution de `replaceTrack`, et deux bascules rapprochées trouveraient l'ancienne.
+        const replacements = ctx.getMediaConnections().flatMap((conn) =>
+            (conn.peerConnection?.getSenders?.() ?? [])
+                .filter((sender) => localVideoTracks.has(sender.track))
+                .map((sender) => sender.replaceTrack(next).catch((error) => {
+                    console.warn('[usePeerMedia] replaceTrack refusé — ce pair garde l\'ancienne image', {
+                        name: error?.name ?? null,
+                    })
+                }))
+        )
+
+        previous.stop()
+        return Promise.all(replacements).then(() => {})
+    }
+
+    /**
+     * Aligne la caméra sur `isVideoEnabled`. Coupée : elle est ARRÊTÉE (voyant éteint) et un
+     * bouche-trou prend sa place. Activée : elle est recapturée et remplace le bouche-trou. Dans
+     * le flux local comme sur chaque connexion du flux, sans renégociation.
+     *
+     * Ne change jamais la FORME du flux : sans piste vidéo (appel vocal, flux audio, aucun flux),
+     * il n'y a rien à aligner et le drapeau vaut pour le flux suivant.
+     *
+     * Sans bouche-trou possible, couper échoue FERMÉ : la caméra reste ouverte mais désactivée —
+     * le pair voit du noir, jamais l'image, et seul le voyant reste allumé. L'arrêter quand même
+     * laisserait chez le pair sa dernière image, figée (en-tête de `createPlaceholderVideoTrack`).
+     *
+     * @returns {Promise<boolean>} `false` si la caméra demandée n'a pas pu être capturée — le
+     *          drapeau est alors remis à `false`, pour ne pas dire « filmé » sans l'être ; `true`
+     *          sinon, y compris quand une demande plus récente a pris la main.
+     */
+    const applyVideoState = async () => {
+        const sequence = ++videoStateSequence
+        const stream = ctx.media.currentStream
+        const [current] = stream instanceof MediaStream ? stream.getVideoTracks() : []
+        if (!current) return true
+
+        const isPlaceholder = placeholderTracks.has(current)
+
+        if (!ctx.ui.streamStates.isVideoEnabled) {
+            if (isPlaceholder) return true
+            const placeholder = _createPlaceholder()
+            if (placeholder) await _replaceVideoTrack(stream, current, placeholder)
+            else current.enabled = false
+            return true
+        }
+
+        // Une caméra déjà là : celle du flux, ou celle que le repli fermé a gardée désactivée.
+        if (!isPlaceholder) {
+            current.enabled = true
+            return true
+        }
+
+        let camera
+        try {
+            const capture = await navigator.mediaDevices.getUserMedia({ video: true })
+            camera = capture.getVideoTracks()[0]
+        } catch (error) {
+            if (sequence !== videoStateSequence) return true
+            console.warn('[usePeerMedia] caméra indisponible — elle reste coupée', {
+                name: error?.name ?? null,
+            })
+            ctx.ui.streamStates.isVideoEnabled = false
+            return false
+        }
+
+        // Périmée : une bascule plus récente, ou le flux arrêté (raccroché) ou remplacé depuis.
+        if (sequence !== videoStateSequence || ctx.media.currentStream !== stream) {
+            camera.stop()
+            return true
+        }
+
+        await _replaceVideoTrack(stream, current, camera)
+        return true
     }
 
     const stopCurrentStream = () => {
@@ -439,6 +599,7 @@ export function usePeerMedia(ctx) {
     return {
         startCurrentStream,
         stopCurrentStream,
+        applyVideoState,
         startAudioStream,
         startScreenCapture,
         stopScreenCapture,

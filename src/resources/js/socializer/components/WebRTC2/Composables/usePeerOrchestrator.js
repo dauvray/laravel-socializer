@@ -359,19 +359,17 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}, 
         }
     }
 
+    /**
+     * Coupe / rallume la caméra. Le drapeau bascule tout de suite ; la caméra suit dans
+     * `media.applyVideoState` — arrêtée à la coupure (voyant éteint), recapturée à l'activation.
+     * Désactiver la piste ne suffisait pas : le pair ne voyait rien, mais le voyant restait allumé.
+     *
+     * @returns {Promise<boolean>} `false` si la caméra n'a pas pu être rallumée (drapeau remis à
+     *          `false`) — cf. `applyVideoState`
+     */
     const toggleVideoState = () => {
-        // 1. Bascule le flag dans le contexte (devient false si true, et inversement)
         context.ui.streamStates.isVideoEnabled = !context.ui.streamStates.isVideoEnabled
-
-        // 2. Applique l'état sur les tracks vidéo du stream courant
-        const stream = context.media.currentStream
-        if (stream instanceof MediaStream) {
-            stream.getVideoTracks().forEach(track => {
-                // Si isVideoEnabled est true, track.enabled sera true (l'image s'affiche)
-                // Si isVideoEnabled est false, track.enabled sera false (écran noir)
-                track.enabled = context.ui.streamStates.isVideoEnabled
-            })
-        }
+        return media.applyVideoState()
     }
 
     const createVideoElement = media.createVideoElement // exposé pour être utilisé par useMediaBroadcast (diffusion) pour créer les éléments vidéo des flux distants (et local)

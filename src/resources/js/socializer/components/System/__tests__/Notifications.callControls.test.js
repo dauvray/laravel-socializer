@@ -214,6 +214,28 @@ describe('Notifications — la barre de commande d\'appel', () => {
         expect(peersDouble.stopCallWithPeers).not.toHaveBeenCalled()
     })
 
+    it('⭐ « activer la caméra » qui échoue le dit à l\'utilisateur — et ne dit rien quand elle réussit', async () => {
+        // La caméra coupée est ÉTEINTE depuis le 2026-10-29 : la rallumer est une capture, qui
+        // peut échouer (absente, prise par une autre application, refusée). Le moteur remet alors
+        // le drapeau à « coupée » et rend `false` ; sans un mot ici, le bouton revenait en
+        // arrière sans explication.
+        wrapper = await monter()
+        peersDouble.toggleVideoVisibility.mockResolvedValueOnce(true)
+
+        await basculeVideo(wrapper).trigger('click')
+        await flushPromises()
+
+        expect(window.AWN.info).not.toHaveBeenCalled()
+
+        peersDouble.toggleVideoVisibility.mockResolvedValueOnce(false)
+
+        await basculeVideo(wrapper).trigger('click')
+        await flushPromises()
+
+        expect(window.AWN.info).toHaveBeenCalledTimes(1)
+        expect(window.AWN.info.mock.calls[0][0]).toMatch(/caméra/i)
+    })
+
     it('⭐ la boucle complète : le clic bascule l\'état, et le rendu le dit', async () => {
         wrapper = await monter()
 

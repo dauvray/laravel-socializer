@@ -459,6 +459,12 @@ signalisation : `toggleAudioState` pose `track.enabled = false` sur le flux loca
 d'en face entend du silence immédiatement. Ce qui manque est le **badge** de son côté — item ouvert
 de `work/webrtc2-todo.md`.
 
+**`toggleVideoVisibility()` rend une promesse, et son `false` est à dire à l'utilisateur.** Coupée,
+la caméra est éteinte ; la rallumer est une capture, qui peut échouer (absente, prise par une autre
+application, refusée). Le moteur remet alors `isVideoEnabled` à `false` et rend `false` : le bouton
+revient sur « coupée ». `Notifications.vue` l'annonce par un toast. La mécanique (arrêt, piste qui
+tient la place, `replaceTrack`) est dans [flux.md](flux.md), « Couper la caméra l'éteint ».
+
 ⚠️ **`normalizeDirectCallType` n'est PAS `isValidCallType`**, et les confondre a coûté un
 cul-de-sac. `isValidCallType` est dérivé de `VALID_CONNECTION_TYPES` : il accepte les **cinq**
 types de connexion (`data`, `stream`, `screen`, `visio`, `vocal`), ce qui est juste pour un type de

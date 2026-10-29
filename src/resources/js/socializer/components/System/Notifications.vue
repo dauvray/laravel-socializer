@@ -475,9 +475,17 @@ function onToggleAudioMute() {
     peers.toggleAudioMute()
 }
 
-/** Coupe / rouvre sa caméra pendant un appel. Même borne que ci-dessus sur l'annonce. */
-function onToggleVideoVisibility() {
-    peers.toggleVideoVisibility()
+/**
+ * Coupe / rouvre sa caméra pendant un appel. Même borne que ci-dessus sur l'annonce.
+ *
+ * Coupée, la caméra est ÉTEINTE : la rouvrir est une capture, qui peut échouer (absente, prise
+ * par une autre application, refusée). Le moteur remet alors le drapeau à « coupée » et rend
+ * `false` — le bouton revient en arrière, et ce toast dit pourquoi.
+ */
+async function onToggleVideoVisibility() {
+    if (await peers.toggleVideoVisibility() === false) {
+        window.AWN?.info('Caméra indisponible : elle reste coupée')
+    }
 }
 
 async function onStopCall() {

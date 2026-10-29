@@ -33,12 +33,23 @@ export function fakeTrack(kind = 'video') {
     }
 }
 
-/** Vraie instance `MediaStream` (donc `instanceof` OK) dont on pilote les pistes. */
+/**
+ * Vraie instance `MediaStream` (donc `instanceof` OK) dont on pilote les pistes.
+ *
+ * `addTrack` / `removeTrack` écrivent dans la MÊME liste que lisent les accesseurs : ceux de
+ * happy-dom écrivent dans une liste interne que les accesseurs surchargés ne voient pas, et une
+ * piste remplacée en place (la caméra coupée) n'aurait jamais quitté le flux.
+ */
 export function realStream(tracks = [fakeTrack()]) {
     const stream = new MediaStream()
     stream.getTracks = () => tracks
     stream.getVideoTracks = () => tracks.filter((t) => t.kind === 'video')
     stream.getAudioTracks = () => tracks.filter((t) => t.kind === 'audio')
+    stream.addTrack = (track) => { if (!tracks.includes(track)) tracks.push(track) }
+    stream.removeTrack = (track) => {
+        const index = tracks.indexOf(track)
+        if (index !== -1) tracks.splice(index, 1)
+    }
     return stream
 }
 

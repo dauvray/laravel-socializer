@@ -841,6 +841,9 @@ export function createMockContext(overrides = {}) {
     // ── setUpConnectionListeners (passthrough minimal) ────────────────────────
     const setUpConnectionListeners = vi.fn(() => () => {})
 
+    // ── getMediaConnections — aucune connexion média : le mock n'en range pas ──
+    const getMediaConnections = vi.fn(() => [])
+
     // ── storeConnectionEventCallbacks ─────────────────────────────────────────
     const storeConnectionEventCallbacks = vi.fn((callbacks) => {
         if (!callbacks || typeof callbacks !== 'object') return
@@ -988,6 +991,7 @@ export function createMockContext(overrides = {}) {
         beginShutdown,
         endShutdown,
         setUpConnectionListeners,
+        getMediaConnections,
         storeConnectionEventCallbacks,
         setCurrentCallUsers,
         addCurrentCallUser,

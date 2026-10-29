@@ -507,6 +507,33 @@ export function createPeerContext({ type, room, options = {} }) {
     // sans polluer les objets tiers PeerJS avec des flags personnalisés.
     const _boundConnections = new WeakSet()
 
+    // Les MediaConnection du contexte, SORTANTES ET ENTRANTES : c'est sur leurs senders que
+    // « couper / activer la caméra » remplace la piste vidéo (`usePeerMedia.applyVideoState`).
+    // ⚠️ Le store ne peut pas servir : il ne range que les sortantes (`_saveRoomConnection`),
+    // la connexion que l'appelé obtient par `call.answer()` n'y est jamais. Ce point de passage
+    // est le seul que les deux sens traversent. Hors du `reactive` : pas de proxy sur PeerJS.
+    const _mediaConnections = new Set()
+
+    /**
+     * Les MediaConnection encore vivantes du contexte, dans les deux sens.
+     * Une connexion fermée sans `close` (désinscription anticipée) est oubliée ici.
+     *
+     * ⚠️ La purge sur `!peerConnection` n'est juste que parce que l'enregistrement SUIT `answer()` :
+     * une MediaConnection entrante de PeerJS 1.5.4 n'a pas de `peerConnection` avant `answer()`
+     * (`bundler.mjs:1021`, `1077`). Les deux dispatchers de `usePeerTransport` font `answer` puis
+     * `setUpConnectionListeners` sans `await` entre les deux ; les inverser ferait oublier ici
+     * toute connexion de l'appelé, en silence. Le mock PeerJS ne le verrait pas : il pose
+     * `peerConnection` dès la création.
+     * @returns {Array<Object>}
+     */
+    const getMediaConnections = () => {
+        _mediaConnections.forEach((conn) => {
+            const state = conn.peerConnection?.connectionState
+            if (!conn.peerConnection || state === 'closed') _mediaConnections.delete(conn)
+        })
+        return [..._mediaConnections]
+    }
+
     const setUpConnectionListeners = (conn) => {
         if (!conn || typeof conn.on !== 'function') {
             return () => {}
@@ -517,6 +544,8 @@ export function createPeerContext({ type, room, options = {} }) {
             return () => {}
         }
         _boundConnections.add(conn)
+
+        if (conn.type === 'media') _mediaConnections.add(conn)
 
         // Variables de closure
         // collés sur l'objet tiers PeerJS
@@ -542,6 +571,7 @@ export function createPeerContext({ type, room, options = {} }) {
                 return
             }
             closeHandled = true
+            _mediaConnections.delete(conn)
 
             // Sanitization du type (contrôlé par le pair distant) avant utilisation comme
             // clé de store et dans les logs — un type forgé serait sinon utilisé tel quel
@@ -859,6 +889,7 @@ export function createPeerContext({ type, room, options = {} }) {
         media.remoteStreamsMap.clear()
         media.announcedStreamsMap.clear()
         media.currentStream = null
+        _mediaConnections.clear()
 
         // Réinitialise les états de session
         session.currentCallUsers = []
@@ -952,6 +983,7 @@ export function createPeerContext({ type, room, options = {} }) {
         beginShutdown,
         endShutdown,
         setUpConnectionListeners,
+        getMediaConnections,
         storeConnectionEventCallbacks,
         setCurrentCallUsers,
         addCurrentCallUser,

@@ -160,8 +160,33 @@ verbe demanderait de monter `Notifications.vue`, et le scénario ne parlerait pl
   `beforeEach`, sinon les compteurs d'appels s'accumulent.
 - **Le flux factice de `setup.js` est un objet nu**, or `_bindStreamCleanup` et `connectToPeer`
   filtrent sur `stream instanceof MediaStream` **et** sur au moins une piste `readyState === 'live'`.
-  Construire de vraies instances (happy-dom expose la classe) avec un `getTracks()` surchargé —
-  `MediaStreamTrack` a un **constructeur illégal**.
+  Construire de vraies instances (happy-dom expose la classe) avec des accesseurs surchargés —
+  `MediaStreamTrack` a un **constructeur illégal**. Prendre `realStream` de `helpers/fakeMedia.js`,
+  qui double **les trois accesseurs ET `addTrack` / `removeTrack` sur la même liste** : happy-dom
+  n'a pas de `getTracks()`, et son `addTrack` écrit dans une liste interne que des accesseurs
+  surchargés ne lisent pas. Une caméra coupée, remplacée en place dans le flux, y resterait.
+- **Une MediaConnection du mock PeerJS a des senders** : un par piste du flux passé à `peer.call`
+  (appelant) ou à `answer()` (appelé), comme le négociateur de PeerJS 1.5.4. `replaceTrack` n'écrit
+  `sender.track` qu'à sa résolution, comme le navigateur. Sans eux, un remplacement de piste était
+  vert par vacuité ; et le cas de l'APPELÉ, dont la connexion n'est pas dans le store, ne se teste
+  qu'en déclenchant un `'call'` entrant (`usePeerOrchestrator.calls.test.js`, `appelEntrant`).
+- **`installFakeMedia()` rend audio ET vidéo quelles que soient les contraintes** : il ne voit pas
+  une caméra demandée à tort. Un test sur la capture installe un `getUserMedia` qui respecte les
+  contraintes (`usePeerOrchestrator.calls.test.js`).
+- **Le canvas de happy-dom ne peint rien** (`getContext` rend `null`) : la piste qui tient la place
+  d'une caméra coupée existe dans la suite, mais ce que le pair en VOIT n'y est pas mesurable. La
+  mesure est faite en navigateur, dans l'en-tête de `createPlaceholderVideoTrack.js`.
+- **La capture canvas de happy-dom a la forme CHROMIUM** : `requestFrame` sur la piste. Firefox
+  le porte sur le flux. Sans double de la forme Firefox, la suite entière tourne sur un sosie de
+  Chromium, et le bouche-trou levait sous Firefox avec 1637 cas verts.
+  `utils/createPlaceholderVideoTrack.test.js` et `usePeerOrchestrator.calls.test.js`
+  (`formeFirefox`) surchargent `captureStream`. Et une sonde en navigateur qui appelle
+  `requestFrame?.()` mesure un autre objet que le code livré.
+- **Le mock PeerJS diverge sur deux points que ce harnais ne voit donc pas** : une MediaConnection
+  y a un `peerConnection` dès sa création, alors que PeerJS 1.5.4 ne le pose qu'à `answer()` pour
+  une entrante ; et son `replaceTrack` ne rejette jamais, alors que le vrai rejette sur une
+  connexion fermée. L'inversion `answer` / `setUpConnectionListeners`, et la branche
+  « `replaceTrack` refusé » d'`usePeerMedia`, n'ont donc aucun test.
 - **`askPeerRateLimiter.reset()` obligatoire en `beforeEach`** : le limiteur est module-level et
   `vi.useFakeTimers()` gèle `Date.now()`, donc sa fenêtre ne s'écoule jamais d'un `it` à l'autre —
   sans le reset, les tests s'étranglent mutuellement.

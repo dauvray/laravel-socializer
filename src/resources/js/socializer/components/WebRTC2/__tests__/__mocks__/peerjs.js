@@ -216,15 +216,16 @@ export class Peer {
 
         this.call = vi.fn((peerId, stream, options) => {
             const bus = _getBus()
-            if (!bus) return createMockMediaConnection()
+            if (!bus) return _wireSenders(createMockMediaConnection(), stream)
 
             const target = bus.peers.get(peerId)
             if (!target || target.destroyed) {
                 _emitPeerUnavailable(this, peerId)
-                return _orphanTo(createMockMediaConnection(options?.metadata), peerId)
+                return _wireSenders(_orphanTo(createMockMediaConnection(options?.metadata), peerId), stream)
             }
 
             const { local, remote } = _createLinkedPair('media', this, target, options?.metadata)
+            _wireSenders(local, stream)
 
             // Le flux de l'appelant n'est livré qu'au moment du `answer()` du récepteur,
             // comme en vrai (il transite après négociation ICE).
@@ -500,8 +501,48 @@ function createMockMediaConnection(metadata = {}) {
     conn.peerConnection = {
         connectionState: 'connecting',
         signalingState: 'stable',
+        getSenders: vi.fn(() => []),
     }
-    conn.answer = vi.fn()
+    conn.answer = vi.fn((answerStream) => _wireSenders(conn, answerStream))
+    return conn
+}
+
+/**
+ * Donne au `RTCPeerConnection` d'une connexion média un sender par piste du flux local, comme
+ * le négociateur de PeerJS 1.5.4 (`_addTracksToConnection`, `bundler.mjs:941`) : un
+ * `addTrack(track, stream)` par piste, SYNCHRONE — dans le constructeur côté appelant
+ * (`peer.call`), dans `answer()` côté appelé. Sans flux (appel one-way répondu à vide), aucun
+ * sender.
+ *
+ * `replaceTrack` n'écrit `sender.track` qu'à sa résolution, une TÂCHE plus tard, comme le
+ * navigateur : la spec ne met à jour la piste du sender qu'à la fin de l'opération, jamais à
+ * l'appel. Et les opérations d'une connexion se règlent dans l'ordre de leurs appels (la chaîne
+ * d'opérations du `RTCPeerConnection`).
+ *
+ * ⚠️ Le mock n'avait aucun `getSenders` : un `replaceTrack` qui parcourt les connexions y était
+ * vert par vacuité, et le cas de l'APPELÉ — dont la connexion n'est rangée nulle part dans le
+ * store — invisible.
+ *
+ * ⚠️ Sa première version, `vi.fn(async (next) => { sender.track = next })`, écrivait la piste À
+ * L'APPEL : une fonction `async` sans `await` s'exécute de façon synchrone. Une contre-épreuve l'a
+ * trouvé — filtrer les senders sur la piste remplacée au lieu des pistes du flux survivait, alors
+ * que deux bascules rapprochées laissent alors la caméra ARRÊTÉE sur le sender.
+ */
+function _wireSenders(conn, stream) {
+    let operations = Promise.resolve()
+    const senders = (stream?.getTracks?.() ?? []).map((track) => {
+        const sender = {
+            track,
+            replaceTrack: vi.fn((next) => {
+                operations = operations
+                    .then(() => new Promise((resolve) => setTimeout(resolve, 0)))
+                    .then(() => { sender.track = next })
+                return operations
+            }),
+        }
+        return sender
+    })
+    conn.peerConnection.getSenders = vi.fn(() => senders)
     return conn
 }
 
@@ -564,6 +605,7 @@ function _createLinkedPair(kind, localPeer, remotePeer, metadata = {}) {
         // reçoit rien, le receveur reçoit bien le flux — exactement le cas
         // « A diffuse vers B » de `usePeerTransport`.
         remote.answer = vi.fn((answerStream) => {
+            _wireSenders(remote, answerStream)
             _openLinkedPair(local, remote)
 
             const inbound = remote.__pendingInboundStream

@@ -379,19 +379,55 @@ describe('usePeerOrchestrator — flux locaux et bascules', () => {
             expect(audio.enabled).toBe(false)
         })
 
-        it('couper la caméra bascule le drapeau ET les pistes vidéo, dans le sens direct', async () => {
+        it('⭐ diffusion : couper la caméra l\'ARRÊTE chez soi et chez chaque spectateur, la rallumer la recapture', async () => {
+            // Le relais `toggleVideoVisibility` est partagé entre l'appel et la diffusion : la
+            // diffusion change donc avec lui. Désactiver la piste laissait le voyant allumé.
+            seedRemote()
             await api.startWebcamStream()
-            const [video] = api.currentStream.value.getVideoTracks()
+            await settleTasks()
+            const [camera] = api.currentStream.value.getVideoTracks()
+            const connexion = peerInstance.call.mock.results.at(-1).value
+            const pisteEnvoyee = () => connexion.peerConnection.getSenders()
+                .find((sender) => sender.track?.kind === 'video').track
 
-            api.toggleVideoState()
+            await api.toggleVideoState()
 
             expect(api.isVideoEnabled.value).toBe(false)
-            expect(video.enabled).toBe(false)
+            expect(camera.stop).toHaveBeenCalled()
+            const [bouchon] = api.currentStream.value.getVideoTracks()
+            expect(bouchon.enabled).toBe(false)
+            expect(pisteEnvoyee()).toBe(bouchon)
 
-            api.toggleVideoState()
+            await api.toggleVideoState()
 
+            const [rallumee] = api.currentStream.value.getVideoTracks()
             expect(api.isVideoEnabled.value).toBe(true)
-            expect(video.enabled).toBe(true)
+            expect(rallumee).not.toBe(camera)
+            expect(rallumee.enabled).toBe(true)
+            expect(pisteEnvoyee()).toBe(rallumee)
+            expect(bouchon.readyState).toBe('ended')
+        })
+
+        it('⭐ couper la caméra ne touche pas au partage d\'écran : son sender garde l\'écran', async () => {
+            // Le partage d'écran a sa propre connexion, dont le sender vidéo porte la piste de
+            // l'écran. Remplacer « toute piste vidéo » au lieu des seules pistes du flux caméra
+            // mettrait le bouche-trou — ou la caméra rallumée — à la place de l'écran partagé.
+            seedRemote()
+            await api.startWebcamStream()
+            await settleTasks()
+            await api.startScreenCapture()
+            await settleTasks()
+            const appelEcran = peerInstance.call.mock.calls
+                .findIndex(([, , options]) => options?.metadata?.type === 'screen')
+            expect(appelEcran).toBeGreaterThanOrEqual(0)
+            const connexionEcran = peerInstance.call.mock.results[appelEcran].value
+            const [ecran] = api.screenStream.value.getVideoTracks()
+
+            await api.toggleVideoState()
+            await api.toggleVideoState()
+
+            const pistes = connexionEcran.peerConnection.getSenders().map((sender) => sender.track)
+            expect(pistes).toEqual([ecran])
         })
 
         it('une bascule ne touche QUE les pistes de son propre média', async () => {

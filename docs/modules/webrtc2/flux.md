@@ -42,16 +42,65 @@ useCallManager.openCallBetweenPeer
 ```
 
 **Ce qu'un appel hérite du précédent : la caméra, pas le micro.** Une caméra coupée reste coupée à
-l'appel suivant, mais elle y est **capturée** : le type d'appel seul décide de la capture vidéo
-(`vocal` l'interdit, `visio` la capture), et `isVideoEnabled` ne fait que désactiver la piste à son
-arrivée. Le pair ne voit rien, et « activer la caméra » la rallume. Si cette caméra coupée ne peut
-pas être capturée (absente, prise par une autre application, refusée), la capture se replie sur
-l'audio seul au lieu d'échouer : l'appel passe, et la caméra ne se rallume pas de cet appel.
-Ouverte, son échec remonte. Le micro, lui, repart ouvert : l'arrêt complet remet `isMuted` à
-`false` dans son `finally`, donc même quand il lève. Reporté, un micro coupé demandait
-`audio: false` : un flux sans piste audio, que la bascule ne rattrape pas (elle ne bascule que les
-pistes existantes), et en vocal `{ video: false, audio: false }`, qui fait rejeter la capture puis
-l'acceptation. Décisions du 2026-10-29, gardées par `usePeerOrchestrator.calls.test.js`.
+l'appel suivant, et elle n'y est **pas capturée** : sans vidéo, le voyant de la webcam reste éteint.
+Le type d'appel décide si le flux porte une piste vidéo (`vocal` l'interdit), `isVideoEnabled` si
+cette piste est la caméra. Sinon, une piste canvas noire et désactivée tient sa place
+(`createPlaceholderVideoTrack`). Un poste sans caméra qui l'a coupée passe donc ; une caméra
+OUVERTE dont la capture échoue fait échouer l'appel. Le micro, lui, repart ouvert : l'arrêt complet
+remet `isMuted` à `false` dans son `finally`, donc même quand il lève. Reporté, un micro coupé
+demandait `audio: false` : un flux sans piste audio, que la bascule ne rattrape pas (elle ne
+bascule que les pistes existantes), et en vocal `{ video: false, audio: false }`, qui fait rejeter
+la capture puis l'acceptation. Décisions du 2026-10-29, gardées par
+`usePeerOrchestrator.calls.test.js`.
+
+**Couper la caméra l'éteint, la rallumer la recapture**, dans l'appel comme dans la diffusion, qui
+partagent le relais `toggleVideoVisibility`. `usePeerMedia.applyVideoState` aligne la caméra sur le
+drapeau. Coupée, la caméra est **arrêtée** (`stop()`) et le bouche-trou prend sa place. Activée,
+elle est recapturée (`getUserMedia({ video: true })`) et remplace le bouche-trou. Le remplacement
+se fait en place dans le flux local, que l'aperçu suit, puis par `RTCRtpSender.replaceTrack` sur
+chaque connexion du flux, sans renégociation : PeerJS n'en fait pas. Si la caméra ne peut pas être
+rallumée, le drapeau revient à « coupée » et l'appel l'annonce par un toast. Une capture devenue
+inutile (rebascule, raccroché) est arrêtée dès son arrivée. En vocal, il n'y a aucune piste à
+aligner : le réglage vaut pour l'appel suivant. Désactiver la piste (`track.enabled = false`), ce
+que faisait la bascule jusque-là, ne suffit pas : le pair ne voit rien, mais le voyant reste
+allumé (vu par David le 2026-10-29, Chrome 156).
+
+⚠️ **Le bouche-trou n'est pas décoratif : sans piste vidéo, la caméra ne peut plus être rendue à
+l'appel.** C'est lui qui donne à l'offre (A, l'appelant) ou à la réponse (B, l'appelé) une ligne
+vidéo `sendrecv`. Mesuré dans Chromium headless sur deux `RTCPeerConnection` dans l'ordre de
+PeerJS 1.5.4 : après la négociation, `stop()` de la piste éventuelle, `replaceTrack(caméra neuve)`,
+puis octets vidéo reçus en face.
+
+| Cas | Direction | Octets en face, avant → après |
+|---|---|---|
+| A, vidéo désactivée (témoin) | `sendrecv` | 7 360 → 175 307 |
+| A, caméra arrêtée AVANT l'offre | `sendrecv` | 0 → 139 882 |
+| A, piste canvas, aucune caméra | `sendrecv` | 0 → 140 798 |
+| A, aucune piste vidéo, `offerToReceiveVideo` | `recvonly` | 0 → 0, sans erreur |
+| B, vidéo désactivée (témoin) | `sendrecv` | 7 258 → 175 123 |
+| B, caméra arrêtée AVANT la réponse | `sendrecv` | 0 → 142 209 |
+| B, aucune piste vidéo | `recvonly` | 0 → 0, sans erreur |
+
+Le bouche-trou doit aussi être **désactivé ET alimenté en images** : remplacée par `null` ou par
+un canvas qui ne produit aucune image, la caméra laisse chez le pair sa dernière image, figée
+(Chromium). Le noir vient de la désactivation, pas de la couleur peinte. Et `requestFrame` n'est
+pas au même endroit selon le navigateur : sur la piste dans Chromium, sur le flux dans Firefox.
+L'appeler sur la piste levait sous Firefox, et la coupure laissait alors la caméra active chez le
+pair sous un bouton « coupée ». Les mesures sont dans l'en-tête de `createPlaceholderVideoTrack.js`,
+à côté des lignes qu'elles protègent.
+
+**Sans bouche-trou possible** (aucune capture canvas utilisable), la coupure échoue FERMÉE : la
+caméra reste ouverte mais désactivée, le pair voit du noir, et seul le voyant reste allumé. C'est
+l'état d'avant le 2026-10-29. Une caméra coupée au départ est alors capturée, puis désactivée.
+L'arrêter sans rien à sa place laisserait chez le pair une image figée. Choix par défaut de la
+relecture du 2026-10-29, à confirmer par David.
+
+⚠️ **Les connexions de l'APPELÉ ne sont pas dans le store**, qui ne range que les sortantes
+(`_saveRoomConnection`). Un `replaceTrack` qui parcourrait le store ne ferait rien chez l'appelé,
+sans erreur, et un test passant par l'initiateur resterait vert. Le remplacement parcourt
+`createPeerContext.getMediaConnections()`, alimenté par `setUpConnectionListeners`, le seul point
+de passage des deux sens. Il ne remplace que les senders qui portent une piste vidéo **de ce flux**,
+et non toute piste vidéo : le partage d'écran a sa propre connexion, et son sender garde l'écran.
 
 ⚠️ **En visio, l'offre de l'APPELANT demande la vidéo du pair, même sans caméra locale.** Sans
 contraintes, l'offre de PeerJS ne décrit que les pistes du flux passé à `peer.call`, et une réponse
@@ -59,26 +108,22 @@ SDP ne peut pas ajouter de média à l'offre : une piste vidéo absente du flux 
 revenait pas de l'appelé non plus. A coupait sa caméra, raccrochait, rappelait B : B voyait un cadre
 noir pour A, ce qui est attendu, et A en voyait **deux** (vu par David le 2026-10-29).
 `connectToPeer` passe donc `constraints: { offerToReceiveVideo: true }` à `peer.call` en visio
-(PeerJS 1.5.4 la transmet à `createOffer`). La capture de la caméra coupée n'est pas ce qui fait
-recevoir la vidéo du pair : elle sert à pouvoir la rallumer dans l'appel. Mesuré dans Chromium
-headless, sur deux `RTCPeerConnection` dans l'ordre de PeerJS 1.5.4 (l'appelé fait `addTrack`
-avant `setRemoteDescription`) :
+(PeerJS 1.5.4 la transmet à `createOffer`). Depuis que le bouche-trou tient la place d'une caméra
+coupée, un flux visio porte toujours une piste vidéo : la contrainte reste en ceinture. Mesuré dans
+Chromium headless, sur deux `RTCPeerConnection` dans l'ordre de PeerJS 1.5.4 (l'appelé fait
+`addTrack` avant `setRemoteDescription`) :
 
 | Flux de l'appelant | Contraintes d'offre | Offre | L'appelant reçoit |
 |---|---|---|---|
 | audio seul | aucune (l'ancien comportement) | `m=audio` | audio |
 | audio + vidéo active | aucune | `m=audio m=video` | audio + vidéo |
 | audio + vidéo **désactivée** | aucune | `m=audio m=video` | audio + vidéo |
-| audio seul (repli : caméra coupée indisponible) | `offerToReceiveVideo` | `m=audio m=video` | audio + vidéo |
-| audio + vidéo désactivée (le cas courant) | `offerToReceiveVideo` | `m=audio m=video` | audio + vidéo |
+| audio seul | `offerToReceiveVideo` | `m=audio m=video` | audio + vidéo |
+| audio + vidéo désactivée | `offerToReceiveVideo` | `m=audio m=video` | audio + vidéo |
 | audio + vidéo active | `offerToReceiveVideo` | `m=audio m=video` | audio + vidéo |
 
 Avec une piste vidéo, la contrainte n'ajoute pas de seconde ligne vidéo. `offerToReceiveVideo` est
 une option héritée de `createOffer` : non mesurée dans Firefox.
-
-**Une caméra coupée garde le voyant de la webcam ALLUMÉ** : la piste est désactivée, pas arrêtée.
-Mesuré par David le 2026-10-29 en début d'appel (caméra coupée reportée). Déduit, non mesuré, en
-cours d'appel : `toggleVideoState` ne fait lui aussi que `track.enabled = false`.
 
 ⚠️ **`setLocalPeer()` est appelée nue ici, et elle DOIT le rester.** La valeur ne dit rien (la
 fonction est `async`, donc toujours truthy, et sort par `undefined` sur ses chemins « rien à
