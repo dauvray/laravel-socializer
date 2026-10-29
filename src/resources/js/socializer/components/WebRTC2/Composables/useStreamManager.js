@@ -160,8 +160,46 @@ export function useStreamManager(ctx, { media, callManager }) {
         // les lit plutôt que de re-parser la clé ou `metadata.from`.
         const streamKey = `${remoteSlug}-${remoteType}`
 
-        if (ctx.media.remoteStreamsMap.has(streamKey)) {
-            return
+        // Même clé : c'est une RE-LIVRAISON du même flux, ou un flux NEUF du même pair.
+        //
+        // ⚠️ L'idempotence porte sur l'identité du FLUX, pas sur la seule clé. Mesuré le
+        // 29/10/2026 : un pair qui renégocie livre un second `MediaStream`, distinct, sous la
+        // même clé. Refusé ici, il était perdu — et l'entrée en place ne libérait jamais la
+        // clé : ses pistes restaient `live` alors qu'elles ne portaient plus d'image, donc ni
+        // `_bindRemoteStreamCleanup` (qui attend `ended`/`inactive`) ni le TTL (que
+        // `_hasLiveTrack` retient) ne pouvaient l'évincer. Verrou définitif, vignette figée
+        // chez le récepteur, et rien au journal.
+        //
+        // ⚠️ Et SEULEMENT du même peerId. `streamKey` dérive de `metadata.from`, déclaratif :
+        // un pair au peerId non mappé qui déclare le slug d'un autre passe l'admission — le
+        // garde ne refuse qu'une résolution CONTRADICTOIRE, pas une résolution absente.
+        // Remplacer sur la seule clé offrirait à tout membre de la room l'éviction en boucle du
+        // flux d'autrui. Comparer le peerId conserve le « premier arrivé gagne » face à un
+        // tiers, et ne rouvre que le cas mesuré. Un pair qui RECHARGE change de peerId : son
+        // ancien flux part par la séquence de départ (`useCallManager._purgePeerStreams`).
+        //
+        // ⚠️ BORNE ASSUMÉE : le remplacement ne vaut QU'EN MODE `stream`, le seul mesuré, et
+        // c'est ce mode qui le rend sûr — aucun player DOM n'y est créé (même condition qu'au
+        // `createVideoElement` plus bas), donc remplacer s'y réduit à réécrire cette entrée.
+        // Hors de ce mode il faudrait détruire puis recréer le player, et `createVideoElement`
+        // pose son verrou AVANT son premier `await` sans l'avoir relâché quand une seconde
+        // livraison arrive : le registre tiendrait le flux neuf, le DOM l'ancien. Les deux
+        // livraisons s'entrelacent déjà à l'`await` de tête de cette fonction, donc awaiter la
+        // création n'y changerait rien. La voie propre serait d'exposer un remplacement de flux
+        // sur le slot (`_acquireSlot` sait déjà réécrire `slot.streamData`) : c'est une addition
+        // d'API, elle n'est pas faite, et jusque-là visio et vocal gardent le verrou décrit
+        // ci-dessus — inchangé par rapport à avant ce correctif, ni réparé ni aggravé.
+        const current = ctx.media.remoteStreamsMap.get(streamKey)
+
+        if (current) {
+            const memePair = Boolean(current.peerId) && Boolean(conn?.peer) && current.peerId === conn.peer
+            const sansPlayerDom = ctx.session.currentType === 'stream'
+
+            if (!memePair || current.stream === stream || !sansPlayerDom) {
+                return
+            }
+
+            ctx.media.remoteStreamsMap.delete(streamKey)
         }
 
         // Nettoyage préventif avant ajout (taille bornée + TTL)

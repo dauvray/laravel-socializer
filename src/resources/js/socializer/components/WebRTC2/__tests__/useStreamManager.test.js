@@ -266,16 +266,66 @@ describe('useStreamManager', () => {
             expect(ctx.media.remoteStreamsMap.has('alice-visio')).toBe(true)
         })
 
-        it('ignore un second flux pour la même clé (idempotence)', async () => {
-            await sm.handleStreamReceived(fakeStream(), fakeConn())
+        it('ignore la RE-LIVRAISON du même flux (idempotence)', async () => {
+            const flux = fakeStream()
+            await sm.handleStreamReceived(flux, fakeConn())
             media.createVideoElement.mockClear()
             callManager.markCallConnected.mockClear()
 
-            await sm.handleStreamReceived(fakeStream(), fakeConn())
+            await sm.handleStreamReceived(flux, fakeConn())
 
             expect(ctx.media.remoteStreamsMap.size).toBe(1)
             expect(media.createVideoElement).not.toHaveBeenCalled()
             expect(callManager.markCallConnected).not.toHaveBeenCalled()
+        })
+
+        it('⭐ un flux NEUF du même pair REMPLACE celui en place (mode stream)', async () => {
+            // Le cas mesuré le 29/10/2026 : le pair renégocie et livre un second MediaStream
+            // sous la même clé. Refusé, il était perdu — et l'entrée en place ne libérait
+            // jamais la clé, ses pistes restant `live` sans plus porter d'image : ni
+            // `_bindRemoteStreamCleanup` ni le TTL ne peuvent l'évincer. Verrou définitif.
+            ctx.session.currentType = 'stream'
+            const ancien = fakeStream()
+            const neuf = fakeStream()
+            await sm.handleStreamReceived(ancien, fakeConn())
+
+            await sm.handleStreamReceived(neuf, fakeConn())
+
+            expect(ctx.media.remoteStreamsMap.size).toBe(1)
+            expect(ctx.media.remoteStreamsMap.get('alice-visio').stream).toBe(neuf)
+            // Aucun player en mode stream : c'est ce qui rend le remplacement sûr ici.
+            expect(media.createVideoElement).not.toHaveBeenCalled()
+            expect(media.removeVideoElement).not.toHaveBeenCalled()
+        })
+
+        it('⭐ HORS mode stream, le flux neuf ne remplace pas — borne assumée', async () => {
+            // Détruire puis recréer le player exposerait la course de `createVideoElement`
+            // (verrou posé avant son premier `await`). Tant qu'un remplacement de flux n'est
+            // pas exposé sur le slot, visio et vocal gardent le verrou d'avant ce correctif.
+            const ancien = fakeStream()
+            await sm.handleStreamReceived(ancien, fakeConn())
+            media.createVideoElement.mockClear()
+
+            await sm.handleStreamReceived(fakeStream(), fakeConn())
+
+            expect(ctx.media.remoteStreamsMap.get('alice-visio').stream).toBe(ancien)
+            expect(media.createVideoElement).not.toHaveBeenCalled()
+            expect(media.removeVideoElement).not.toHaveBeenCalled()
+        })
+
+        it('⭐ un flux d\'un AUTRE peerId ne remplace pas, même en déclarant le même slug', async () => {
+            // `streamKey` dérive de `metadata.from`, déclaratif, et l'admission ne refuse qu'une
+            // résolution CONTRADICTOIRE : un peerId non mappé passe. Sans cette garde, tout
+            // membre de la room évincerait en boucle le flux d'autrui — en mode stream, le seul
+            // où le remplacement est ouvert.
+            ctx.session.currentType = 'stream'
+            const legitime = fakeStream()
+            await sm.handleStreamReceived(legitime, fakeConn())
+
+            await sm.handleStreamReceived(fakeStream(), fakeConn({ peer: 'peer-mallory' }))
+
+            expect(ctx.media.remoteStreamsMap.get('alice-visio').stream).toBe(legitime)
+            expect(media.createVideoElement).not.toHaveBeenCalled()
         })
 
         it('mode stream : enregistre le flux sans créer de player DOM', async () => {
