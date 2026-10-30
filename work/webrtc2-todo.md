@@ -14,9 +14,11 @@
 >
 > **Ce que le gel ne suspend pas** : les deux volets du §7 de
 > [`work/deploiement-tiers.md`](../../../../work/deploiement-tiers.md) du projet hôte, qui porte
-> l'état du lock et des tags. En dev, un `composer install` ramène l'arbre de travail du paquet à la
-> référence du lock sans rien dire ; rien n'est perdu si le paquet est poussé avant, et le geste du
-> §7 (pousser, puis mettre à jour le lock) remet l'écart à zéro, jusqu'au commit suivant. Pour un
+> l'état du lock et des tags. En dev, `composer install` ne touche pas le paquet tant que le lock et
+> `vendor/composer/installed.json` désignent la même référence ; il ne lit pas le HEAD du clone. Le
+> retour au lock vient d'un `vendor/` recréé, ou d'un lock qui change : Composer refuse alors si des
+> commits ne sont pas poussés, et sinon remet la branche au sha du lock. Le geste du §7 (pousser,
+> puis mettre à jour le lock) remet l'écart à zéro, jusqu'au commit suivant. Pour un
 > tiers qui déploie la pile de l'hôte, le paquet installé est celui du lock : c'est le 🔴 du
 > chantier de déploiement de l'hôte, qui n'est pas gelé.
 >
@@ -264,14 +266,14 @@
 
 ## Sécurité — fermer le chemin (a), et ça se joue au backend
 
-- [ ] 🟠 **Basculer `SOCIALIZER_PEER_ATTESTATION_ENFORCE=true` chez chaque consommateur** `[S]` —
+- [ ] 🟠 **Basculer `SOCIALIZER_PEER_ATTESTATION_ENFORCE=true` chez chaque déploiement qui porte le bundle** `[S]` —
   **le code est prêt, et la bascule est FAITE EN DEV le 28/10/2026** : `.env` du bac à sable
   `estarter-test`, mode strict en continu. Le mécanisme a tourné en vrai, à deux navigateurs, sur
   ses quatre issues : nominal admis, sans attestation refusé sans que le serveur le voie, serveur
   muet admis en fail-open et compté, attestation périmée refusée **et journalisée** (`reason:
   expired`, `attested_slug` du diffuseur, `auth_user_slug` du récepteur). Ce qui reste est un geste
-  de DÉPLOIEMENT chez chaque consommateur, après sa phase d'observation — et aucun consommateur n'a
-  encore le bundle porteur (cf. l'en-tête de ce fichier, et le §7 de `work/deploiement-tiers.md`
+  de DÉPLOIEMENT chez chaque déploiement qui porte le bundle, après sa phase d'observation — et
+  aucun déploiement autre que le bac à sable n'a encore le bundle porteur (cf. l'en-tête de ce fichier, et le §7 de `work/deploiement-tiers.md`
   de l'hôte).
 
   La procédure, ses **trois termes** et la **recette de vérification manuelle** (rôles, blocages,

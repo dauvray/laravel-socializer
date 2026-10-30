@@ -23,7 +23,7 @@ npm run test:run                      # JS — DEPUIS LA RACINE DU PROJET HÔTE
 composer install && vendor/bin/phpunit  # PHP — depuis ce paquet
 ```
 
-> ⚠️ **Ne pas dupliquer les chantiers déjà ouverts.** Plusieurs rustines de la doc y sont déjà
+> ⚠️ **Ne pas dupliquer les autres chantiers.** Plusieurs rustines de la doc y sont déjà
 > cadrées, avec leur analyse : [webrtc2-todo.md](webrtc2-todo.md) et
 > [sass-todo.md](sass-todo.md) (thème sombre, `@extend`). Ce fichier y **renvoie** — une règle, un
 > seul endroit.
