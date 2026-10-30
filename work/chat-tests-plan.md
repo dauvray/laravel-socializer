@@ -1,7 +1,8 @@
 # Chat — Plan de tests unitaires
 
-> **Chantier ouvert, non démarré.** Un seul fichier de test existe
-> (`dateSeparatorRender.test.js`). L'infra de tests du package est décrite dans
+> **Chantier ouvert, non démarré.** Côté JS, un seul fichier de test existe
+> (`dateSeparatorRender.test.js`) ; côté PHP, `tests/Feature/Chat/` existe
+> (`ChatRegistrationTest.php`, `AuthorPayloadTest.php`), hors de ce plan qui ne vise que le front. L'infra de tests du package est décrite dans
 > [`docs/architecture/tests.md`](../docs/architecture/tests.md) ; les invariants à épingler dans
 > [`docs/modules/chat.md`](../docs/modules/chat.md).
 
@@ -23,7 +24,7 @@ le composant n'est testé en montage complet qu'à la fin.
 Couche 0 → utils/dateSeparator        (fonction pure, zéro Vue)
 Couche 1 → useFileAttachments         (ref only, DOM minimal — composable partagé)
 Couche 2 → useTypingIndicator         (logique pure, deps injectées)
-Couche 3 → useChatScroll              (onMounted/watch/onUnmounted + DOM + timers)
+Couche 3 → useStickyScroll            (onMounted/watch/onUnmounted + DOM + timers)
 Couche 4 → ChatComponent.vue          (montage + câblage : stores, Echo, router, eventBus)
 ```
 
@@ -70,9 +71,9 @@ partent avec le fichier, et le test qui les épingle avec eux.
 ## Avancement
 
 - [ ] Couche 0 — `dateSeparator.test.js`
-- [ ] Couche 1 — `useChatAttachments.test.js`
+- [ ] Couche 1 — `useFileAttachments.test.js`
 - [ ] Couche 2 — `useTypingIndicator.test.js`
-- [ ] Couche 3 — `useChatScroll.test.js`
+- [ ] Couche 3 — `useStickyScroll.test.js`
 - [ ] Couche 4 — `ChatComponent.test.js` (+ helpers infra ci-dessus)
 
 ---
@@ -93,9 +94,9 @@ Aucun import Vue, aucun mock. Test le plus rentable, à faire en premier.
 
 ---
 
-### Couche 1 — `useChatAttachments.test.js`
+### Couche 1 — `useFileAttachments.test.js`
 
-**Périmètre** : `composables/useChatAttachments.js` → `attachedFiles`, `onFileAdded`,
+**Périmètre** : `~socializer/composables/useFileAttachments.js` (partagé) → `attachedFiles`, `onFileAdded`,
 `removeFromList`, `clear`. Pas de lifecycle Vue → appel direct possible (sans `withSetup`).
 
 - [ ] état initial : `attachedFiles` = tableau vide
@@ -143,11 +144,12 @@ injectés en dépendances → appel direct (pas de lifecycle).
 
 ---
 
-### Couche 3 — `useChatScroll.test.js`
+### Couche 3 — `useStickyScroll.test.js`
 
-**Périmètre** : `composables/useChatScroll.js`. Utilise `onMounted`/`onUnmounted`/`watch`
-→ **doit** passer par `withSetup`. DOM + `setTimeout` sensibles (cf. ARCHITECTURE : ne pas
-« simplifier » les `setTimeout(1000)`).
+**Périmètre** : `~socializer/composables/useStickyScroll.js`. Utilise `onMounted`/`onUnmounted`/`watch`
+→ **doit** passer par `withSetup`. DOM + `setTimeout` sensibles (cf. `docs/modules/chat.md` : ne pas
+« simplifier » les `setTimeout(1000)`). Le composable porte aussi un `idleTimer` qui réactive
+`stickToBottom` après `IDLE_REENABLE_MS` d'inactivité : un troisième minuteur à couvrir.
 
 > Les refs `messageContainer` / `messageContainerInner` sont possédées par le composable :
 > après `withSetup`, leur affecter des éléments DOM factices (`document.createElement('div')`)
@@ -164,7 +166,7 @@ injectés en dépendances → appel direct (pas de lifecycle).
   déclenche le scroll après `setTimeout(1000)` (avancer les fake timers)
 - [ ] nouveau message en fin **mais** `stickToBottom` false → `hasNewMessages = true`, **pas** de scroll
 - [ ] **pagination** (préprend en tête, dernier `id` inchangé) → ni scroll ni `hasNewMessages`
-  (garde-fou anti-saut décrit dans ARCHITECTURE)
+  (garde-fou anti-saut décrit dans `docs/modules/chat.md`)
 
 **scrollToBottom / scrollToBottomIfStuck**
 - [ ] `scrollToBottom()` → `scrollIntoView` appelé sur `messageContainerInner`, flags reset
@@ -225,7 +227,7 @@ et des propriétés de dimension.
 - [ ] `onBeforeUnmount` → `Echo.private(me.channel).whisper('leave-chat', { chatId, userId })`
 - [ ] `onUnmounted` → `resetConversation(currentConversationIdBackup)`
 
-**Slots (API publique — cf. ARCHITECTURE)**
+**Slots (API publique — cf. `docs/modules/chat.md`)**
 - [ ] `displayUsers` true → `RoomUsersList` rendu ; false → absent
 - [ ] slot `#message` custom → reçoit le scope attendu (`item`, `index`, handlers `on*`)
 - [ ] slot `#input` custom → reçoit `onSendMessage`, `startWriting`/`stopWriting`, etc.
