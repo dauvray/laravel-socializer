@@ -1,6 +1,24 @@
 # WebRTC2 — Todo
 
-> Chantier ouvert. Les items **terminés** sont élagués : leur rationale vit dans
+> ## ⏸️ Chantier gelé le 30/10/2026 — il ne passe pas devant les autres
+>
+> Décision de David : le module sert en l'état, et aucun projet autre que le bac à sable
+> `estarter-test` ne consomme le paquet. Ce qui reste est 🟠/🟢, **ne bloque rien**, et ne se prend
+> qu'**au besoin** : quand un chantier prioritaire le croise, ou sur demande explicite. Y déposer un
+> constat sans rouvrir le chantier est l'usage prévu.
+>
+> **Pour le rouvrir** : le micro perdu en cours d'appel (🟠 de « Ce que le lot caméra a ouvert »).
+> David en a fait un lot séparé le 30/10 ; il est devenu le candidat désigné à la fermeture du 🔴
+> du même jour. Le 🟠 du spinner, ouvert ce jour-là aussi, n'a pas été classé face à lui.
+>
+> **Ce que le gel ne suspend pas** : la livraison a déjà un volet en dev — un `composer install`
+> ramène le paquet à la référence du lock, ce que couvre seulement un paquet poussé avant (§7 de
+> [`work/deploiement-tiers.md`](../../../../work/deploiement-tiers.md) du projet hôte, qui porte
+> l'état du lock et des tags). **Le jour où un projet consommera le paquet** : le volet « pour un
+> tiers » de ce même §7, puis la bascule `SOCIALIZER_PEER_ATTESTATION_ENFORCE` chez ce consommateur
+> (section « Sécurité » ci-dessous).
+
+> Les items **terminés** sont élagués : leur rationale vit dans
 > [`docs/modules/webrtc2/`](../docs/modules/webrtc2/INDEX.md), leur récit dans `git log`.
 > Tests : le harnais et ses pièges sont dans
 > [`docs/modules/webrtc2/tests.md`](../docs/modules/webrtc2/tests.md) ; la méthode transverse dans

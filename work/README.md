@@ -17,27 +17,13 @@ Le détail est dans le fichier ; le récit est dans `git log`.
 Aucun chantier ne passe devant les autres. L'ordre par défaut, tant que rien n'est demandé
 explicitement :
 
-1. **Le module WebRTC2 au fil de l'eau — [webrtc2-todo.md](webrtc2-todo.md).** **Aucun 🔴 ouvert
-   dans ce fichier.** Les deux lots du 30/10/2026 — couper la caméra éteint vraiment la webcam ; une
-   capture qui rejette ne suspend plus l'appel — sont clos sur la vérification de David en vrai
-   navigateur. Le 🟠 qu'ils ont ouvert est en tête du fichier : webcam débranchée avec son seul
-   micro, la capture ne rejette pas et l'appel reste sur le spinner. Prochain lot candidat, décidé
-   le 30/10 : le micro perdu en cours d'appel. Restent la bascule
-   `SOCIALIZER_PEER_ATTESTATION_ENFORCE` chez chaque consommateur (faite et vérifiée en dev le
-   28/10) et de la pérennisation 🟢/🟠. Un 🔴 est ouvert ailleurs dans le paquet : le tableau blanc
-   (point 3).
-
-   ⚠️ **Rien de tout cela n'est livré** : le paquet n'a **aucun tag** et le `composer.lock` de
-   l'hôte épingle un commit du 29/05. C'est le 🔴 restant de
-   [`work/deploiement-tiers.md`](../../../../work/deploiement-tiers.md) du projet hôte.
-
-2. [doc-rustines.md](doc-rustines.md) — le volet de ce paquet dans le chantier transverse. **Lots 0
+1. [doc-rustines.md](doc-rustines.md) — le volet de ce paquet dans le chantier transverse. **Lots 0
    et 1 terminés, à une tâche près** : la migration des appelants de WebRTC v1 (lots A → G) est
    close le 26/10/2026, et il reste à vider les cinq poches mortes. Les lots 3, 4 et 5 sont
    ouverts. Les leçons de méthode du chantier sont dans
    [`docs/ecrire-la-doc.md`](../docs/ecrire-la-doc.md).
 
-3. 🔴 **[whiteboard-todo.md](whiteboard-todo.md) — les deux routes du tableau blanc n'ont aucune
+2. 🔴 **[whiteboard-todo.md](whiteboard-todo.md) — les deux routes du tableau blanc n'ont aucune
    garde d'autorisation.** Ouvert le 01/09/2026. `server_id`,
    `room_id` et `vertex_id` viennent du client et ne sont confrontés à rien
    (`app/Services/WhiteBoard.php`, deux fois `// todo a protéger`) : **tout utilisateur connecté peut
@@ -63,6 +49,10 @@ explicitement :
 > y ramène** : y verser un constat sans rouvrir le chantier est l'usage prévu. La raison de la
 > prudence est dans son en-tête — chaque item y *paraît* petit et adjacent au précédent, et c'est
 > exactement comme la dérive s'est produite.
+
+> ⏸️ **[webrtc2-todo.md](webrtc2-todo.md) est gelé depuis le 30/10/2026 — au besoin seulement.**
+> Aucun 🔴 ; le module sert en l'état, et aucun projet autre que le bac à sable ne consomme le
+> paquet. Ce qu'il faut pour le rouvrir, et ce que le gel ne suspend pas, sont dans son en-tête.
 
 ---
 
@@ -152,7 +142,7 @@ explicitement :
 | Fichier | État | En une phrase |
 |---|---|---|
 | [application-v2-todo.md](application-v2-todo.md) | **non démarré** (ouvert le 28/10) | Apps **multi-fichiers** dans un salon Application, et un **éditeur de vibe coding** : fil avec un agent codeur **et** édition à la main. Compilation SFC côté serveur, iframe à **origine opaque**, pont `postMessage` seul contrat, **aucun composant maison dans l'iframe** (abandonné sur mesure). Cinq lots ordonnés par dépendances ; **le lot 1, droits et injection nGQL, est dû indépendamment du projet** : aujourd'hui tout connecté réécrit le code de n'importe quelle app, qui tourne same-origin chez chaque membre. Quatre décisions attendent David en tête du fichier. |
-| [webrtc2-todo.md](webrtc2-todo.md) | ouvert, **aucun 🔴** | Le suivi vivant du module. En tête, le 🟠 du 30/10 : une capture qui ne rejette pas (webcam débranchée) laisse l'appel sur le spinner. **Un 🟠 de déploiement** : la bascule `SOCIALIZER_PEER_ATTESTATION_ENFORCE`, faite et vérifiée en dev le 28/10 ; reste le geste chez chaque consommateur, dont la procédure impose de lire **deux** indicateurs et jamais un seul. Le reste est de la pérennisation 🟢/🟠 : fidélité du mock PeerJS, observabilité, robustesse, boutons d'appel, et une surveillance conditionnelle (taille de `usePeerTransport.js`). Les items terminés en sont élagués — leur rationale vit dans [`docs/`](../docs/modules/webrtc2/INDEX.md), leur récit dans `git log`. |
+| [webrtc2-todo.md](webrtc2-todo.md) | ⏸️ **gelé le 30/10/2026 — au besoin seulement**, aucun 🔴 | Le backlog du module, gelé en l'état. En tête, le 🟠 du 30/10 : une capture qui ne rejette pas (webcam débranchée) laisse l'appel sur le spinner. **Un 🟠 de déploiement** : la bascule `SOCIALIZER_PEER_ATTESTATION_ENFORCE`, faite et vérifiée en dev le 28/10 ; reste le geste chez chaque consommateur, dont la procédure impose de lire **deux** indicateurs et jamais un seul. Le reste est de la pérennisation 🟢/🟠 : fidélité du mock PeerJS, observabilité, robustesse, boutons d'appel, et une surveillance conditionnelle (taille de `usePeerTransport.js`). Les items terminés en sont élagués — leur rationale vit dans [`docs/`](../docs/modules/webrtc2/INDEX.md), leur récit dans `git log`. |
 | [doc-rustines.md](doc-rustines.md) | 🟠 **lots 0 et 1 terminés, à une tâche près** | rendre la doc exempte d'annotations qui compensent un défaut du code. La migration WebRTC v1 → v2 (lots A → G) est close le 26/10 ; reste au lot 1 les cinq poches mortes, puis les lots 3 (noms qui mentent), 4 (épingler par un test) et 5 (à arbitrer, ou assumer). |
 | [whiteboard-todo.md](whiteboard-todo.md) | **ouvert — un 🔴** | le tableau blanc côté SERVEUR : son service PHP, ses deux routes, sa persistance. **Ne parle pas de WebRTC.** Un seul item, et c'est une politique à trancher avant d'écrire une ligne : `saveWhiteBoard` / `loadWhiteBoard` n'ont aucune garde d'autorisation, leurs trois ids viennent du client, donc tout connecté lit ou écrase le tableau de n'importe quelle room — et l'écriture réattribue `model_id` au passage, ce qui efface la trace de la victime. Le fichier nomme les **deux** façons dont le correctif naïf (`canJoinRoom`) serait faux, et l'usage modèle à imiter (`Services/Chat.php:119`, apparié à `isCreator`). Les trois défauts du chemin de CHARGEMENT ne sont pas ici : lot 5 de [doc-rustines.md](doc-rustines.md), et non recopiés. |
 | [projection-graphe-todo.md](projection-graphe-todo.md) | ⏸️ **suspendu — au besoin seulement** | suites du correctif « un utilisateur = un mur + un feed ». Rien n'y bloque ; deux items portent une exigence d'exploitation (sauvegarder le space NebulaGraph, que rien ne reconstruira). |
