@@ -388,6 +388,21 @@ describe('usePeerMedia — flux locaux', () => {
             expect(track.removeEventListener).toHaveBeenCalledWith('inactive', expect.any(Function))
         })
 
+        it('⭐ le flux LOCAL n\'en installe aucun : la fin de son micro ne retire pas l\'aperçu', async () => {
+            // La webcam débranchée arrête aussi son micro intégré (test de David, 2026-10-30).
+            const micro = fakeTrack('audio')
+            await media.startCurrentStream()
+            const camera = ctx.media.currentStream.getVideoTracks()[0]
+            ctx.media.currentStream.addTrack(micro)
+            await media.createVideoElement({ videoId: 'local-webcam' }, ctx.media.currentStream)
+
+            micro._emit('ended')
+
+            expect(micro._has('ended')).toBe(false)
+            expect(camera._has('inactive')).toBe(false)
+            expect(ctx.peerStore.getPlayers).toHaveLength(1)
+        })
+
         it('n\'installe aucun écouteur si la valeur passée n\'est pas un MediaStream', async () => {
             // Cas réel : le flux factice « objet nu » — le garde `instanceof` doit le rejeter
             // sans empêcher la création du player.

@@ -142,6 +142,16 @@
  * Ces cas n'étaient discriminants qu'avec un `fakeTrack` à PLUSIEURS écouteurs par événement : le
  * double n'en gardait qu'un, et le dernier inscrit masquait l'autre.
  *
+ * La webcam débranchée qui emporte son micro intégré (test de David, 2026-10-30), même copie :
+ *
+ *   | Neutralisé                                              | Rougit                           |
+ *   |---------------------------------------------------------|----------------------------------|
+ *   | aucune garde : chaque piste du flux local nettoie       | les deux ⭐ du micro de webcam,   |
+ *   |                                                         | « … en cours d'appel … », et le ⭐|
+ *   |                                                         | `streams` du flux LOCAL          |
+ *   | l'ancienne garde, sur les seules pistes vidéo locales   | les mêmes, sauf « … en cours     |
+ *   |                                                         | d'appel … »                      |
+ *
  * Les ⭐ sont nés rouges : `{ video: true, audio: false }` en visio, le `TypeError` en vocal ;
  * pour la caméra, aucune piste vidéo (`[]`), y compris dans le flux passé à `peer.call` ; pour le
  * repli, l'acceptation rejetée en `NotFoundError` ; pour l'offre, `constraints` absent. Ceux du
@@ -150,6 +160,8 @@
  * `captureStream` qui lève ; puis le drapeau resté « filmé » sur une caméra arrêtée d'elle-même.
  * Cinq sont nés verts, et les tables ci-dessus les tiennent : le vocal, le partage d'écran, la
  * course de deux bascules, et les deux gardes de la caméra arrêtée.
+ * Ceux du 2026-10-30 sont nés rouges, sur l'aperçu local retiré par la fin du micro, en visio
+ * comme en vocal.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { withSetup } from './helpers/withSetup.js'
@@ -756,6 +768,48 @@ describe('usePeerOrchestrator — un appel démarre micro ouvert', () => {
 
         expect(api.isVideoEnabled.value).toBe(true)
         expect(api.currentStream.value.getVideoTracks()).toEqual([seconde])
+    })
+
+    // ── La webcam débranchée emporte son micro (test de David, 2026-10-30) ───────────────
+    //
+    // Une webcam à micro intégré, débranchée : Chrome arrête ses DEUX pistes. La caméra était
+    // suivie, le micro non — sa fin retirait l'aperçu local entier, et la caméra rebranchée puis
+    // rallumée, bien recapturée et bien envoyée, n'avait plus où s'afficher jusqu'au raccroché.
+    // L'ordre des deux `ended` n'est pas mesuré : le micro passe ici en premier, le cas le pire
+    // pour l'ancien code comme pour le nouveau, la caméra n'ayant encore rien remplacé.
+
+    it('⭐ webcam débranchée, micro intégré compris : l\'aperçu reste, et la caméra rebranchée puis rallumée y revient', async () => {
+        const connexion = await appeler()
+        const [camera] = cameras
+        const [micro] = api.currentStream.value.getAudioTracks()
+
+        micro._emit('ended')
+        camera._emit('ended')
+        await settleTasks()
+
+        expect(apercuLocal()).toBe(true)
+        expect(api.isVideoEnabled.value).toBe(false)
+
+        await expect(api.toggleVideoState()).resolves.toBe(true)
+
+        const neuve = cameras.at(-1)
+        expect(neuve).not.toBe(camera)
+        expect(api.currentStream.value.getVideoTracks()).toEqual([neuve])
+        expect(pisteEnvoyee(connexion)).toBe(neuve)
+        expect(apercuLocal()).toBe(true)
+    })
+
+    it('⭐ appel VOCAL, micro débranché : l\'aperçu local reste jusqu\'au raccroché, qui le retire', async () => {
+        await accepter('call-1', 'vocal')
+        const [micro] = api.currentStream.value.getAudioTracks()
+        expect(apercuLocal()).toBe(true)
+
+        micro._emit('ended')
+        await settleTasks()
+        expect(apercuLocal()).toBe(true)
+
+        await raccrocher()
+        expect(apercuLocal()).toBe(false)
     })
 
     // ── Relecture du 2026-10-29 : une caméra MORTE n'est jamais « filmée » ────────────────

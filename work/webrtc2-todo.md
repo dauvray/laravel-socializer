@@ -26,7 +26,15 @@
   fonctionne » (`d0a8104`), a été donné avant ce constat. Les deux séances de test du 29/10
   (21:21–21:25 et 21:37–21:44) ont en plus reçu quatre écritures dans `vendor/`. Chacune a rechargé
   à chaud les deux onglets et rendu le contexte data injoignable jusqu'au rechargement dur
-  (`.ai/rules/web-r-t-c2.md`). Étapes couvertes non détaillées. **Chrome : pas encore rapporté.**
+  (`.ai/rules/web-r-t-c2.md`). Étapes couvertes non détaillées.
+  **Rapport de David du 30/10/2026**, dans la numérotation ci-dessous (celle qu'il a reçue
+  intervertissait 5 et 6). Les étapes 1 à 5 sont OK. L'étape 6 était KO sous Chrome 156 : la
+  webcam débranchée faisait disparaître l'aperçu local, sans retour jusqu'au raccroché. Cause et
+  correctif dans `flux.md` : son micro intégré s'arrête avec elle. **L'étape 6 est à refaire**
+  après intégration, et son second volet (prise par une autre application) n'est pas rapporté.
+  L'étape 7 était KO sous Firefox **133**, par le bogue DTLS 1.3 du navigateur et non par le lot
+  (`flux.md`, « Où ça casse »). Avec `dtls.version.max = 771`, diffusion et visio passent
+  (10:11 UTC). Ses deux questions (nouvelle invite, aperçu qui suit) ne sont pas rapportées.
   ⚠️ Un troisième phénomène, non expliqué : à 20:54:45 UTC, Chrome 156 perd le serveur PeerJS
   (« Lost connection to server », tentative **5/8**, sans trace des tentatives 2 à 4), hors de
   tout rechargement à chaud et sans redémarrage de conteneur (relecture du 29/10). Cause non
@@ -97,6 +105,47 @@
   `toggleAudioState` ne fait que `track.enabled = false`. Hors du lot par décision par défaut.
   Le même remède demanderait une piste audio silencieuse (WebAudio) et une recapture du micro à la
   réactivation : à trancher par David.
+
+- [ ] 🟠 **Un micro perdu en cours d'appel ne revient pas, et l'UI le dit ouvert** `[M]` — lu,
+  non mesuré. La webcam débranchée emporte son micro intégré (vu par David le 30/10/2026,
+  `flux.md`), et rien ne suit la fin d'une piste audio. Le pair n'entend plus rien jusqu'au
+  raccroché, le bouton reste sur « micro ouvert », et « couper » puis « activer » ne fait que
+  basculer `enabled` sur une piste morte. Le remède suivrait la caméra : drapeau à « coupé », puis
+  recapture du micro à l'activation et `replaceTrack` sur les senders audio. Lot séparé, décidé par
+  David le 30/10. Il partage la recapture avec l'item ci-dessus.
+
+- [ ] 🟠 **Firefox antérieur à la correction DTLS 1.3 : aucun média avec Chrome ou Edge** — le fait
+  est dans `flux.md` (« Où ça casse »), confirmé sur un poste du GHU le 30/10/2026 (Firefox 133).
+  Le parc mêle les versions (133 et 148, sur deux postes d'après David). Trois suites :
+  - [ ] **Mesurer la première version corrigée** `[S]`, entre 134 et 148, avec la sonde de la
+    relecture (Firefox officiel face à Chromium headless, ordre PeerJS). C'est elle qui fixerait
+    le seuil d'un avertissement.
+  - [ ] **Avertir dans l'application** `[S]` — à trancher par David : en dessous du seuil, dire à
+    l'utilisateur Firefox que son navigateur ne recevra ni n'enverra d'image.
+  - [ ] **Versions de Firefox sur les postes du GHU** — question pour la DSI. Notée et laissée
+    de côté par David le 30/10.
+
+- [ ] 🟢 **Raccrocher pendant le PREMIER montage de l'aperçu local le laisse orphelin** `[S]` —
+  mesuré par la relecture du 30/10/2026, et préexistant (même résultat sur `b12a8b5`).
+  `createVideoElement('local-webcam')` est lancé sans être attendu, et le raccroché tombe pendant
+  son `await _ensureHost`. `removeVideoElement` ne trouve pas encore le player (`addPlayer` vient
+  après l'`await`) et sort sans rien faire : l'aperçu reste inscrit. Déduit, non mesuré : l'appel
+  suivant sort tôt (`slotIndex.has`) et son aperçu reste sur l'ancien flux mort. La fenêtre n'existe
+  qu'au premier montage par conteneur (import dynamique de `PlayerHost.vue`). Piste :
+  `removeVideoElement` note une suppression en attente si `creatingVideoIds.has(id)`, et
+  `createVideoElement` la relit après l'`await`.
+
+- [ ] 🟢 **coturn : `--user-quota=12` atteint par un seul onglet** `[S]` — mesuré le 30/10/2026 dans
+  `about:webrtc` (Firefox 133, poste du site). L'onglet tenait environ huit `RTCPeerConnection`, les
+  connexions de données des rooms ouvertes en plus de celle du flux. Chacune tente une allocation
+  sur l'URL UDP et sur l'URL TCP (README, non mesuré ici). La connexion du flux a reçu
+  `486 Allocation Quota Reached` sur les deux et n'a obtenu aucun candidat relais. Côté serveur,
+  rien ne le confirme ni ne le réfute : coturn ne journalise pas les allocations à sa verbosité
+  actuelle (relecture du 30/10). Sans effet ce jour-là (pairs en direct). Un poste qui a besoin du
+  relais, en VPN par exemple, perdrait son flux. Le README (« Réseaux qui ferment l'UDP ») compte
+  environ huit allocations pour un appel à deux, sans les connexions de données des autres rooms.
+  Le quota est posé par le `docker-compose.yml` de l'hôte. À trancher : le relever, ou réduire ce
+  qui alloue.
 
 ---
 

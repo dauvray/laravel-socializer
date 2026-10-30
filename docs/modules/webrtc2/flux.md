@@ -68,12 +68,18 @@ allumé (vu par David le 2026-10-29, Chrome 156).
 **Une caméra qui s'arrête d'elle-même est traitée comme une caméra coupée.** Débranchée ou privée de
 sa permission, elle émet `ended` d'après la spec Media Capture, ce qu'un `stop()` du code ne fait
 jamais (0 `ended` sur `stop()` dans Chromium 149 et Firefox 151, mesuré par la relecture du
-2026-10-29). Aucune vraie caméra n'a été mesurée. Une caméra prise par une autre application
+2026-10-29). Une vraie webcam USB débranchée l'émet bien, son micro intégré compris (vu par David le
+2026-10-30, Chrome 156 : bouton repassé sur « coupée », noir chez le pair). Une caméra prise par une autre application
 dépend de l'OS : la capture peut continuer, ou ne produire qu'un `mute`, que ce code ne suit pas.
 À confirmer par l'étape 6 de la vérification manuelle (`work/webrtc2-todo.md`). `usePeerMedia._followCamera` remet alors le drapeau à « coupée » et pose le bouche-trou,
 chez soi comme chez le pair. Cela vaut pour la caméra initiale comme pour une caméra rallumée.
-Sans ça, l'UI disait « filmé » et le pair gardait la dernière image, figée. L'aperçu local, lui,
-n'est plus retiré sur la fin de sa piste vidéo : elle est remplacée en place. Une caméra déjà
+Sans ça, l'UI disait « filmé » et le pair gardait la dernière image, figée. L'aperçu local, lui, ne
+dépend d'AUCUNE de ses pistes (`usePeerMedia._bindStreamCleanup` ignore le flux local) : il dure le
+temps de l'appel, et l'arrêt le retire. Il restait lié à la fin du micro, et la webcam débranchée
+l'emportait avec elle (vu par David le 2026-10-30). La caméra rebranchée puis rallumée était bien
+recapturée et bien envoyée, mais n'avait plus où s'afficher jusqu'au raccroché. Cette cause est lue
+dans le code et reproduite en test, pas mesurée en navigateur. Le micro perdu, lui, le reste jusqu'au
+raccroché : rien ne le recapture (lu, non mesuré ; `work/webrtc2-todo.md`). Une caméra déjà
 terminée à son arrivée (pendant l'invite de permission, son `ended` est passé avant l'écouteur) est
 traitée de même : coupée à la capture initiale, refusée à la recapture. Et « activer » ne réactive
 jamais une caméra terminée : il la recapture, y compris dans le repli fermé.
@@ -734,6 +740,7 @@ PeerJS avec les `GET /app` de nginx pour les distinguer.
 | A diffuse, B reste sur le spinner, **aucune erreur** : signalisation et `Stream reçu` passent, les pistes sont `live` et rien ne circule ; `iceConnectionState` reste `checking` | le réseau du poste **ferme l'UDP** (VPN d'entreprise, poste nomade) : les trois sortes de candidats ICE meurent ensemble, et le paquet ne servait le relais qu'en UDP. Vu de B, indistinguable d'un bug — le 29/10/2026, une journée dans le code avant de lire l'**adresse du poste** dans le journal nginx (sur site la veille, par le VPN ce jour-là) | `/get-ice-servers` annonce aussi `turn:…?transport=tcp` (`tcp_fallback`, [README « Réseaux qui ferment l'UDP »](../../../README.md#réseaux-qui-ferment-ludp--le-repli-tcp)). La méthode avant le code : l'adresse du poste dans nginx, puis la page trickle-ICE en `relay` |
 | Même symptôme, et coturn journalise `check_stun_auth: Cannot find credentials of user <exp:id>` | le **secret de signature diffère** entre PHP et coturn — après une rotation, un conteneur qui lit `.env` par `env_file:` garde l'ancienne valeur tant qu'il n'est pas recréé, et `config:clear` n'y change rien | recréer les conteneurs qui lisent `.env` ([README « Mode recommandé »](../../../README.md#mode-recommandé--credentials-éphémères-turn-rest-api)) ; contrôle par empreintes `sha256`, sans afficher le secret |
 | Même symptôme, coturn **muet**, et pourtant un Binding STUN répond | le processus coturn ne répondait plus à **aucun** Allocate authentifié, UDP ou TCP, même à mauvais mot de passe (29/10/2026 ; cause interne non datée). Un Binding Success ne prouve pas qu'il alloue | recréer coturn ; la preuve qu'il alloue est la contre-épreuve n°1 en tête de `tests/Feature/Signaling/IceServersTest.php`, en UDP puis avec `-t` |
+| Un côté sous **Firefox** : spinner ou noir, en diffusion comme en visio, **dans les deux sens**, aucune erreur ; `about:webrtc` montre une paire ICE `succeeded` qui **reçoit** des octets, et aucune image décodée | un bogue d'interop de **Firefox en DTLS 1.3** : il exportait la clé SRTP à la longueur maximale puis la tronquait, sans effet en DTLS 1.2, faux en 1.3 (David Benjamin, liste TLS de l'IETF, 10/03/2025) ; DTLS 1.3 est actif en WebRTC depuis Firefox 127 (bug 1884140). Mesuré : Firefox 133 face à Chromium 149 headless le 29/10/2026, puis sur un poste du GHU face à Chrome 156 le 30/10 (`about:webrtc` : 614 Ko reçus en 31 s, aucune image décodée). Firefox 151 (29/10) et 148 (30/10) sont sains, mesurés de même, en DTLS 1.3 (`FEFC`) et dans les deux rôles ; la première version corrigée, entre 134 et 148, n'est pas établie. Le parc du GHU mêle les versions : 133 et 148 ont tous deux servi le 29/10, sur deux postes d'après David (le journal ne porte pas d'adresse) | **aucun côté application** : la version DTLS est choisie par le navigateur. Mettre Firefox à jour, ou `about:config` → `media.peerconnection.dtls.version.max` = `771` (DTLS 1.2), qui a rétabli diffusion et visio sur ce poste. La méthode avant le code : la version de Firefox dans `browser.log` (`user_agent`) à l'heure du test. Le SDP ne la donne pas (`SDPARTA-99.0` constant), et ni la mémoire d'une séance précédente ni le poste « habituel » ne la donnent |
 
 ---
 

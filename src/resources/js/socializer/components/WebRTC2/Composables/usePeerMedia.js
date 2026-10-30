@@ -509,13 +509,25 @@ export function usePeerMedia(ctx) {
     }
 
     /**
-     * Lie le nettoyage d'un flux à la fin de sa durée de vie (ex: arrêt de la webcam, fin du partage d'écran)
-     * @param {MediaStream} stream 
-     * @param {string} videoId 
-     * @returns 
+     * Lie le nettoyage d'un flux à la fin de sa durée de vie (ex: arrêt d'un flux distant, fin du partage d'écran)
+     *
+     * Jamais pour le flux LOCAL (`currentStream`) : son aperçu vit le temps de l'appel, et l'arrêt
+     * le retire lui-même (`removeVideoElement('local-webcam')`). Aucune de ses pistes n'y met fin.
+     * La caméra est remplacée EN PLACE (caméra ↔ bouche-trou), et celle qui s'arrête d'elle-même
+     * passe par `_followCamera`. Le micro intégré d'une webcam s'arrête AVEC elle quand on la
+     * débranche : vu par David le 2026-10-30, sa fin retirait l'aperçu, et la caméra rebranchée
+     * puis rallumée n'avait plus où s'afficher jusqu'au raccroché.
+     *
+     * @param {MediaStream} stream
+     * @param {string} videoId
+     * @returns
      */
     const _bindStreamCleanup = (stream, videoId) => {
         if (!(stream instanceof MediaStream) || !videoId) {
+            return
+        }
+
+        if (stream === ctx.media.currentStream) {
             return
         }
 
@@ -531,10 +543,6 @@ export function usePeerMedia(ctx) {
 
         const entries = []
         stream.getTracks().forEach((track) => {
-            // La piste vidéo du flux local est remplacée EN PLACE (caméra ↔ bouche-trou), et une
-            // caméra qui s'arrête d'elle-même passe par `_followCamera` : retirer l'aperçu entier
-            // ici le ferait disparaître pour le reste de l'appel.
-            if (localVideoTracks.has(track)) return
             track.addEventListener('ended', cleanup, { once: true })
             track.addEventListener('inactive', cleanup, { once: true })
             entries.push({ track, handler: cleanup })
