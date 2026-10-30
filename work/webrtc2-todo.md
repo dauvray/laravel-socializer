@@ -8,15 +8,22 @@
 > constat sans rouvrir le chantier est l'usage prévu.
 >
 > **Pour le rouvrir** : le micro perdu en cours d'appel (🟠 de « Ce que le lot caméra a ouvert »).
-> David en a fait un lot séparé le 30/10 ; il est devenu le candidat désigné à la fermeture du 🔴
-> du même jour. Le 🟠 du spinner, ouvert ce jour-là aussi, n'a pas été classé face à lui.
+> David en a fait un lot séparé le 30/10 ; candidat dès ce jour-là, il est passé premier à la
+> fermeture du 🔴 du même jour. Le 🟠 du spinner, ouvert ce jour-là aussi, n'a pas été classé face
+> à lui.
 >
-> **Ce que le gel ne suspend pas** : la livraison a déjà un volet en dev — un `composer install`
-> ramène le paquet à la référence du lock, ce que couvre seulement un paquet poussé avant (§7 de
+> **Ce que le gel ne suspend pas** : les deux volets du §7 de
 > [`work/deploiement-tiers.md`](../../../../work/deploiement-tiers.md) du projet hôte, qui porte
-> l'état du lock et des tags). **Le jour où un projet consommera le paquet** : le volet « pour un
-> tiers » de ce même §7, puis la bascule `SOCIALIZER_PEER_ATTESTATION_ENFORCE` chez ce consommateur
-> (section « Sécurité » ci-dessous).
+> l'état du lock et des tags. En dev, un `composer install` ramène l'arbre de travail du paquet à la
+> référence du lock sans rien dire ; rien n'est perdu si le paquet est poussé avant, et le geste du
+> §7 (pousser, puis mettre à jour le lock) remet l'écart à zéro, jusqu'au commit suivant. Pour un
+> tiers qui déploie la pile de l'hôte, le paquet installé est celui du lock : c'est le 🔴 du
+> chantier de déploiement de l'hôte, qui n'est pas gelé.
+>
+> **Le jour où un déploiement portera le bundle porteur** — un projet consommateur, ou un tiers qui
+> déploie la pile de l'hôte une fois le lock mis à jour : sa phase d'observation commence, et la
+> bascule `SOCIALIZER_PEER_ATTESTATION_ENFORCE` ne vient qu'à son terme (section « Sécurité »
+> ci-dessous).
 
 > Les items **terminés** sont élagués : leur rationale vit dans
 > [`docs/modules/webrtc2/`](../docs/modules/webrtc2/INDEX.md), leur récit dans `git log`.
@@ -264,7 +271,8 @@
   muet admis en fail-open et compté, attestation périmée refusée **et journalisée** (`reason:
   expired`, `attested_slug` du diffuseur, `auth_user_slug` du récepteur). Ce qui reste est un geste
   de DÉPLOIEMENT chez chaque consommateur, après sa phase d'observation — et aucun consommateur n'a
-  encore le bundle porteur (cf. la ligne de ce fichier dans `work/README.md`).
+  encore le bundle porteur (cf. l'en-tête de ce fichier, et le §7 de `work/deploiement-tiers.md`
+  de l'hôte).
 
   La procédure, ses **trois termes** et la **recette de vérification manuelle** (rôles, blocages,
   attendus) sont dans
