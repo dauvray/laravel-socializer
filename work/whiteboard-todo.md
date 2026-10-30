@@ -96,21 +96,3 @@ Ce n'est pas un oubli de garde, c'est une politique absente. Trois questions, da
 - **Le plafond de 64 Ko** du canal data, que la scène Excalidraw frôle et qu'une image collée
   franchit (~294 Ko mesurés), appartient au même lot 5 et son contrat vit dans
   `docs/modules/webrtc2/api.md`.
-- **Le renvoi de scène à un arrivant** est corrigé (01/09/2026, `sendDataOnConnection`). Son
-  histoire est dans `git log` et son contrat dans `docs/modules/webrtc2/api.md`.
-  ℹ️ Daté à la relecture de la v1 : le défaut était **antérieur au lot D1**, pas une régression de
-  la migration v2. En v1, `setRemoteConnection` (« add when you are called ») n'était appelé que par
-  trois callbacks **média** — `visioPlayerCallback`, `vocalPlayerDataCallback`,
-  `visioPlayerDataCallback` — jamais par le canal data pur, et le `sendData` du store v1 n'itérait
-  lui aussi que des connexions sortantes. Le renvoi était déjà, mot pour mot, un
-  `handleExcalidrawMouseUp` — donc déjà une diffusion à tous et non un envoi ciblé.
-
-  ⚠️ **Deux pièges si vous re-vérifiez ça** — les deux ont coûté un faux départ, le second à une
-  autre session qui contrôlait cette datation :
-  1. **`setRemoteConnection` ne se grepe pas depuis les callbacks.** Il y a une indirection par
-     `usePeers.storeConnection`, donc un grep direct ne rend qu'**un** appelant et donne à croire que
-     les trois n'existent pas. Ils sont un niveau au-dessus : greper `storeConnection`.
-  2. **Deux des trois callbacks s'appellent `…DataCallback` et ne SONT PAS le canal data** : c'est le
-     canal data *d'un appel* visio/vocal. Le nom ment, seul l'appelant tranche. Lu à l'envers, ce nom
-     inverse la conclusion — c'est la même erreur de lecture qui avait failli imputer le cas de
-     l'image collée au lot D1.
