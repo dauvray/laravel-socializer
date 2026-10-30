@@ -11,7 +11,9 @@
 > Deux axes : (a) **centralisation des tokens** — couleurs et tailles en dur dispersées, ce qui
 > casse le thème sombre — et (b) **sortie de l'anti-pattern `@extend .bootstrap-class`**.
 
-## 🔴 Priorité haute — casse le thème sombre
+## 🟠 Priorité haute — casse le thème sombre
+
+> Ramenée de 🔴 à 🟠 par David le 30/10/2026 : un défaut d'affichage, pas une fonction cassée.
 
 - [ ] **`date-separator` illisible en dark mode** — `components/_chat.scss:36-49`
       `#e0e0e0`, `#666`, `#f5f5f5` en dur, ignorent `[data-bs-theme="dark"]`.

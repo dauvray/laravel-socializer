@@ -69,7 +69,7 @@
   permission refusée ou un poste sans webcam. L'appel visio ne peut alors ni être décroché ni
   passé, et personne ne sait pourquoi.
 
-  **Décision de David, avant le code, pour les DEUX chemins :**
+  **Décidé par David le 30/10/2026 : (a), pour les deux chemins.**
   - **(a) continuer caméra coupée** — le bouche-trou prend la place de la caméra, et le toast
     « Caméra indisponible : elle reste coupée » s'affiche, comme quand « activer la caméra » échoue
     en cours d'appel. « Activer la caméra » la recapture une fois libérée. Le lot a construit tout
@@ -80,7 +80,7 @@
     voit « est injoignable », sans la cause. Chez l'appelant, qui n'a plus rien à refuser :
     raccrocher en prévenant l'appelé. Dans les deux cas, un toast nomme la cause du côté qui échoue.
 
-  Recommandation : (a). La vérification du lot reprendra le cas non mesuré du lot clos, la prise en
+  (b) est écartée. La vérification du lot reprendra le cas non mesuré du lot clos, la prise en
   cours d'appel. Le même lot corrigera trois textes, hors de ce diff : le commentaire du `catch` de
   `Notifications.vue` (« ce qui lève est un refus consommé », alors qu'une acceptation lève aussi) ;
   celui d'`acceptCallFromPeer`, qui recense deux sorties sans réponse, quand une capture qui lève en
