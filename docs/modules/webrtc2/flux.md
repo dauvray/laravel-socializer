@@ -614,7 +614,8 @@ useReverbPresence(channel)          ← liste `users` (canal de présence Reverb
 useMediaBroadcast.watchUsers
   └─ useConnectionPool.syncUsersConnections(users)  ← verrou COALESCENT : la dernière liste gagne
        ├─ await ctx.waitForMeReady()
-       ├─ connections.getRoomUsersDiff(users)      ← mutex à chaîne de promesses (anti-TOCTOU)
+       ├─ connections.getRoomUsersDiff(users)      ← SANS verrou propre : synchrone après son await,
+       │                                              l'ordre des tours tient au verrou coalescent
        ├─ nettoyage des removedUsers
        └─ fan-out selon la topologie :
             mesh  → requestOrConnectPeer(arrivant)  (+ 'screen' si isCapturing)
@@ -688,6 +689,12 @@ de tout ça — un saut WebSocket sur un canal déjà rejoint et déjà autoris�
 geste le **client non-hub en star**, qui ne demande jamais le peerId d'un diffuseur autre que le hub.
 Épinglé par `scenarios/lateJoiner.test.js`, § « le peerId d'A est déjà connu sous bail », dont la
 contre-épreuve (mêmes coupures, sans canal) est la mesure du 28/08 sous forme de test.
+
+**Écarté : forcer un POST `/ask-to-peer-id` à chaque tour de présence**, pour redonner un porteur
+au chemin 3. Ce serait rouvrir « le client star compose son hub même absent de la room », avec son
+coût par tour sur le plafond de cadence — le défaut que le fan-out star a refermé
+([architecture.md § Conventions de code](architecture.md#conventions-de-code), « Le fan-out
+RÉCONCILIE »). Le whisper ferme la fenêtre sans rien ajouter à la signalisation.
 
 **Ce qui reste non couvert**, et ce n'est plus un problème de porteur mais d'**affichage** :
 `useAwaitedStreams` intersecte les annonces avec `remotePeers`, écrit derrière `waitForMeReady`. Le
@@ -862,6 +869,14 @@ fermeture de connexion PeerJS → handleStreamRemoved ──────┤    q
 Filet indépendant des événements de fermeture : `handleStreamReceived` écoute `ended` / `inactive`
 sur les pistes du flux reçu. C'est ce qui autorise `_purgePeerStreams` à ne retirer que le type
 fermé sans risque de fuite.
+
+**Un départ propre, en mode `stream`, est connu sans délai — par le transport.** PeerJS ouvre un
+canal de données interne pour toute `MediaConnection`, et sa fermeture appelle `close()`
+(`dataChannel.onclose`, `peerjs/dist/bundler.mjs`). Le `close()` du partant se propage donc à
+l'autre extrémité sans attendre l'ICE, et entre par le second déclencheur du schéma. Observé
+immédiat à deux navigateurs, sans que l'observation ait distingué cette fermeture du filet des
+pistes. La présence n'y joue aucun rôle : son tour de départ ne purge pas le registre des flux.
+Ce constat ne couvre pas le départ **brutal** (réseau coupé), où rien ne ferme ce canal proprement.
 
 ## Perte d'une connexion — l'autre lecteur, qui ne purge pas mais rétablit
 

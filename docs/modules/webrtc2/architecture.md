@@ -69,6 +69,24 @@ Règles de couplage complémentaires :
 - `Composables/utils/` est l'infra transverse : sans état partagé, importable de partout,
   jamais l'inverse.
 
+**`usePeerTransport` concentre plusieurs responsabilités, et ce n'est pas de la rustine** :
+singleton `Peer` et son cycle de vie, rafraîchissement du credential TURN et de l'attestation,
+admission entrante, dispatchers `connection` / `call`, retransmission star, `sendData`. Chaque bloc
+est composé, commenté et testé — c'est de la concentration.
+
+**Décision du 29/08/2026 : ne pas en extraire de sous-composable avant le déclencheur.** Trois
+raisons. Le déballage star, descendu dans ce fichier le même jour, n'y a ajouté qu'une poignée de
+lignes de code. Ce qui justifie une extraction est un second consommateur ou une passe qui touche
+au cycle de vie, pas le nombre de lignes seul — ne pas bâtir l'abstraction d'avance. Et la passe qui
+l'aurait justifiée, la machine à états du cycle de vie du `Peer`, venait d'être close. Le
+déclencheur : la prochaine passe qui touche au cycle de vie extrait ce bloc (singleton, ICE,
+attestation — contigu, sans lien avec le routage), ou le franchissement d'un seuil de taille suivi
+dans [`work/webrtc2-todo.md`](../../../work/webrtc2-todo.md).
+
+⚠️ **Ne pas extraire l'admission entrante**, même alors. Elle lit le registre de contextes, le store
+et la `metadata` de la connexion dans le même souffle, et c'est un chemin de sécurité : la déplacer
+coûterait la relecture de toutes les issues de sa corroboration, pour un gain de lignes.
+
 ---
 
 ## Propriétaires uniques

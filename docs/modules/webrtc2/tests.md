@@ -85,6 +85,11 @@ sortie du runner.
 - **Un pair virtuel est un onglet, pas un contexte** — et la présence se livre séquentiellement
   aux contextes d'un même onglet, sans quoi le scénario reste vert malgré le bug
   ([détail](#un-onglet-plusieurs-contextes)).
+- **`createFakePresenceChannel` ne livre pas la présence.** Il porte les whispers — l'annonce de
+  diffusion par le canal, attribuée comme Reverb l'attribue — et un `members()` qu'aucun scénario
+  n'appelle. Monter ce canal ne fait entrer personne dans la room : la présence se livre par
+  `connectRoom`, ou pair par pair en appelant `api.syncUsersConnections(users)` (cas séquentiels
+  de `lateJoiner` et de `starTopology`).
 - **Une connexion refusée ne revient jamais à son émetteur.** C'est l'asymétrie la plus coûteuse de
   PeerJS, et le mock l'a longtemps niée sur trois points, qui rendaient *structurellement*
   inobservable la panne « A diffuse, B ne voit rien » dans sa forme définitive :
@@ -155,6 +160,11 @@ verbe demanderait de monter `Notifications.vue`, et le scénario ne parlerait pl
   laisse passer » —, et `usePeerTransport.mesh.test.js` porte ce cas **avec l'avertissement de ne pas
   le lire comme « les `Map` sont supportées »**. La seule vérification réelle est manuelle, à deux
   navigateurs. Détail du mode de panne : [api.md](api.md#-senddata-peut-lever-et-le-garde-de-taille-ne-len-protège-pas).
+  **Le corollaire vaut pour tout le canal data du module** : la vérification à deux navigateurs n'y
+  est pas une formalité de fin de travail, c'est le seul contrôle qui exerce le transport réel.
+  Suite verte et build vert, le Whiteboard ne propageait plus rien. Un changement sur un chemin
+  data ne se déclare donc pas fini sur la seule foi du vert — les pièges d'une telle mesure sont
+  [en fin de page](#mesurer-à-deux-onglets--trois-pièges-déjà-payés).
 - **Les `vi.fn()` globaux de `setup.js` ne sont pas réinitialisés entre les tests** (pas de
   `clearMocks` dans `vitest.config.js`) : faire `navigator.mediaDevices.getUserMedia.mockReset()` en
   `beforeEach`, sinon les compteurs d'appels s'accumulent.
@@ -698,3 +708,21 @@ plutôt qu'un second run, pour qu'il ne puisse pas être oublié.
 toute cote absolue est vraie d'une configuration et fausse d'une autre. Ce qui est stable et
 mesurable : le cadre sans la classe d'intention s'effondre, celui qui la porte tient son ratio, et
 rien n'est clippé.
+
+---
+
+## Mesurer à deux onglets : trois pièges déjà payés
+
+Ce que la suite ne voit pas — transport réel, annonce de diffusion, délai d'une vignette — se
+mesure sur la pile réelle, souvent depuis un navigateur piloté. Trois pièges à ne pas re-payer :
+
+- **Chronométrer par sondage, jamais par `waitForSelector`.** Sur un sélecteur filtré par texte
+  (`:has-text`), il ajoute plusieurs centaines de ms de latence propre, là où un sondage `evaluate`
+  serré rend le coût réel du front. Un tel chiffre a failli être consigné comme un coût de
+  l'application.
+- **Le lien de menu « Vue ready » (`a[href="/app"]`) est une ancre simple, pas un `RouterLink`.**
+  Cliquer dessus recharge le document, et la mesure retombe sur le cas « premier chargement ». Pour
+  une navigation SPA de retour : `history.back()` (popstate → vue-router).
+- **Un contrôle positif avant toute assertion « 0 vignette ».** Vérifier d'abord que l'observateur
+  voit l'autre pair dans `remotePeers` et que la présence est abonnée. Sans cela, « aucune
+  vignette » est vert par panne de présence, pas par correction.

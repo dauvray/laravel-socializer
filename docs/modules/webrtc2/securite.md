@@ -387,6 +387,18 @@ connectToPeer ── metadata.attestation ──►  récepteur
    incident serveur en coupure de visio non rattrapable, et offrirait le levier correspondant :
    rendre la route injoignable suffirait à fermer toutes les rooms.
 
+**Deux voies ont été écartées, et ne doivent pas être rouvertes :**
+
+- **un annuaire serveur `peerId → slug`, consulté à l'admission.** Il porte une course : sur le
+  chemin présence, celui qui ouvre est celui qui a demandé, et `/ask-to-peer-id` ne transporte aucun
+  peerId. Le sien peut n'avoir jamais atteint le backend quand sa connexion arrive ; l'annuaire
+  répondrait « inconnu », qui veut dire « pas encore » et non « non ». Il exigeait en plus une route
+  de déclaration et un rafraîchissement de TTL — tout le coût, plus la course ;
+- **relayer le peerId sur `.AskToPeerID`**, pour que le récepteur écrive `addRemotePeerId`. C'est
+  remettre en service l'auto-inscription que `authorizedCallPeers` a fermée. Et un peerId
+  auto-déclaré est revendicable par deux personnes, donc empoisonnable sous un garde fail-closed :
+  mallory revendique le peerId d'alice, et c'est alice qui est refusée.
+
 **Ce que l'attestation ne change PAS, et qui surprend :** dans un échange mesh ordinaire, elle ne
 sert à rien — le mapping `slug → peerId` corrobore déjà, et le récepteur ne paie aucun aller-retour.
 Elle n'est nécessaire que là où le mapping est **structurellement** absent à l'admission, c'est-à-dire

@@ -446,7 +446,11 @@ l'appelé — le lui faire afficher demanderait un champ `fromUserName` dans les
 - **`CallRemotePeerBtn.vue`** — le bouton d'appel d'un mur. Props `user` (requise) et `type`,
   **normalisé** à `visio | vocal` (voir ci-dessous). `AWN` est optionnel avec repli
   `window.AWN` ; **`eventBus` est REQUIS** — sans lui le bouton se désactive et le journalise
-  une fois, au lieu de faire semblant.
+  une fois, au lieu de faire semblant. **Écarté** (décision du 31/08/2026) : un helper `safeInject`
+  uniforme. `inject()` ne lève pas — hors `setup()` il rend `undefined` et avertit —, donc son
+  `try/catch` ne garderait rien ; et un repli commun effacerait la distinction qui compte, un
+  toaster qui dégrade contre un bus qui échoue visiblement. La forme retenue est le prédicat
+  explicite, recopié là où il sert (`createPeerContext`, ce bouton).
 
 ⚠️ **Les deux bascules de `CallManagerBtn` n'annoncent RIEN aux pairs, et ce n'est pas un oubli.**
 `GroupLocalStreamBtn` le fait par `sendData({ type: 'AUDIO_MUTE_TOGGLE' })` ; c'est hors de portée
@@ -598,6 +602,45 @@ voit arriver le hub rétablit la connexion — ce tour-là, pas un retry. Éping
 composés, sont faux pour toujours.
 
 Ce qui tient la porte ouverte pour un futur SFU n'est pas une valeur acceptée mais la couture
-recensée dans [`work/webrtc2-todo.md`](../../../work/webrtc2-todo.md) : un SFU est « star dont le hub
-est un serveur », donc une troisième branche aux mêmes sites de décision — que ce fichier liste avec
-leur fichier propriétaire, les numéros de ligne se re-grepant.
+recensée [ci-dessous](#la-couture-dun-futur-sfu) : un SFU est « star dont le hub est un serveur »,
+donc une troisième branche aux mêmes sites de décision.
+
+### La couture d'un futur SFU
+
+**Un SFU, dans ce module, est une étoile dont le hub est un serveur.** Il pose la même question que
+`star` — « à qui j'envoie, et qui retransmet pour moi » — et y apporte une troisième réponse. Ce
+n'est pas une topologie d'une autre nature.
+
+La topologie n'est lue qu'aux sites du tableau ci-dessous, liste exhaustive de ce qu'un mode SFU
+devra répondre. Elle se re-vérifie par
+`grep -rn 'topology\.value' src/resources/js/socializer | grep -v __tests__` — qui rend aussi
+`Debug.vue`, lequel ne fait qu'afficher la topologie —, jamais par des numéros de ligne.
+
+| Fichier · fonction | Ce que la topologie y décide |
+|---|---|
+| `useConnectionPool._doSyncUsersConnections` (deux branches) | à qui je me connecte : mesh, tous ; star, le hub — ou tous si je suis le hub |
+| `usePeerTransport.sendData` (deux branches) | à qui j'envoie, et sous quelle forme : nu ou enveloppé |
+| `usePeerTransport.routeIncomingData` | ce qu'une donnée reçue est : enveloppe à retransmettre, ou message |
+| `useBroadcastPresence.announceBroadcastState` | à qui j'annonce ma diffusion — « pas mesh » y vaut déjà « le transport route » (`targets = null`) |
+| `useBroadcastPresence.handleBroadcastStateMessage` | l'annonce qu'un client star reçoit de son hub, qui a perdu son émetteur d'origine |
+
+Les deux moitiés de la question — « à qui j'envoie », « ce que je reçois » — se répondent dans le
+même fichier. `usePeerOrchestrator` ne lit plus la topologie : son wrap `onDataReceived` délègue la
+décision à `routeIncomingData` et ne garde que le sort du payload. Un SFU serait donc une troisième
+branche à côté de `mesh` et `star`, pas un câblage de plus dans la glue. `IMPLEMENTED_TOPOLOGIES`
+ne s'étend qu'en câblant tous ces sites — son docblock dit pourquoi.
+
+**Décision du 29/08/2026 (David) : pas de mode SFU pour l'instant, et rien de construit d'avance** —
+ni composable `usePeerRouter`, ni middleware de routage par-dessus `createPeerContext`. La porte doit
+rester ouverte pour une version ultérieure, mais la garder ouverte ne veut pas dire bâtir le routeur.
+Une abstraction construite pour un besoin qui n'existe pas se fige sur les hypothèses du moment, et
+devient l'obstacle qu'elle prétendait éviter. Ce qui tient la porte ouverte, c'est la couture
+connue : ce tableau.
+
+**Écarté : descendre « le routage star » entier dans `usePeerTransport`.** Le wrap `onDataReceived`
+mixe trois couches, et le commentaire de `initializePeerConnection` le revendique : transport
+(`routeIncomingData`), présence (`handleBroadcastStateMessage`), applicatif (le callback d'origine).
+Or `usePeerTransport` ne reçoit que `ctx` et ignore `useBroadcastPresence`, plusieurs étages
+au-dessus de lui ([ordre des couches](architecture.md#ordre-des-couches)). Y descendre
+l'interception de présence inverserait cet ordre. Seule la **décision** star est descendue ;
+l'interception de présence et le passe-plat applicatif restent dans la glue, faite pour ça.
