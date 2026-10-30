@@ -1,10 +1,11 @@
 # Application — Todo
 
 > Les défauts du module **Application tel qu'il tourne aujourd'hui** : une app monofichier par
-> salon, rendue dans une iframe. Ce fichier ne porte **aucune direction** pour la suite du module :
-> le chantier « Application v2 » ouvert le 28/10/2026 a été retiré le 30/10/2026, décision de
-> David, pour repartir de zéro — il ne sert pas de point de départ. Les défauts ci-dessous lui
-> survivent parce qu'ils sont dus quelle que soit la direction prise.
+> salon, rendue dans une iframe. C'est la **partie 1** : elle corrige ces défauts et **prépare** la
+> partie 2, [`application-todo-v2.md`](application-todo-v2.md) — ce qui la prépare se fait ici,
+> chaque section concernée dit pourquoi. Le chantier « Application v2 » ouvert le 28/10/2026, lui,
+> a été retiré le 30/10/2026, décision de David, pour repartir de zéro : il ne sert pas de point de
+> départ.
 >
 > Relu par mesure le 30/10/2026 par une session paire (graphe en doublure, Mongo de substitution,
 > lectures seules sur la base de dev). Sa première version déclarait sain le chemin de création —
@@ -59,8 +60,35 @@
 
 Ce n'est pas un oubli de garde, c'est une politique absente. Elle appartient à David :
 
-- [ ] **Qui ÉCRIT le code d'une app ?** Le propriétaire du serveur seul, comme à la création, ou
-      d'autres que lui ?
+- [x] **Qui ÉCRIT le code d'une app ?** **Décision de David du 30/10/2026 : tout utilisateur
+      autorisé, et pas seulement le créateur de l'app.** « Autorisé » = titulaire d'une permission
+      accordée par un admin **et** inscrit au salon de l'app. Elle vient de la partie 2
+      ([`application-todo-v2.md`](application-todo-v2.md)) ; la garde se pose ici selon cette règle
+      pour ne pas être réécrite là-bas. Ce qu'elle implique :
+      - **la permission n'existe pas.** Aucune ligne de `permissions` ne concerne les apps (base de
+        dev, 30/10), et le paquet ne déclare aucune permission (`src/`, `src/database/` compris :
+        grep vide). Son nom, et l'endroit où le paquet la déclare, sont à choisir au lot. Deux
+        précédents à regarder : le paquet **utilise** `can('list_users')` sans la déclarer
+        (`UserController`, `Services/Users.php`), et `MenuTableSeeder` porte un champ
+        `"permission" => null` par entrée de menu ;
+      - **« inscrit au salon » n'a pas de prédicat.** `canJoinRoom` n'en est pas un (section
+        ci-dessus) ; la donnée est l'arête `registered_in` user → room, le prédicat strict reste à
+        écrire ;
+      - **la garde d'écriture ne lit pas `has_creator`** : elle ne dépend ni du redressement de
+        l'arête ni de l'ordre imposé par le `dd()` ;
+      - **le propriétaire du serveur est autorisé d'office** (décision de David du 30/10/2026) :
+        il modifie les apps de son serveur sans la permission. La règle complète est donc
+        « propriétaire du serveur de l'app, OU permission ET inscrit au salon ». ⚠️ Le serveur de
+        l'app se lit dans le graphe, jamais dans la requête — c'est exactement la faille de la
+        section « Un propriétaire de serveur crée une app… ». Le chemin salon → serveur à
+        emprunter n'est pas vérifié ici ;
+      - **l'interface doit suivre la même règle** : `Room.vue` passe `:editable="isOwner"`, le
+        propriétaire du **serveur** seul. Un titulaire de la permission inscrit au salon n'y verrait
+        pas l'éditeur ;
+      - **créer le contenu « application » dans un salon** (`createSubContent`, réservé au
+        propriétaire du serveur) n'est **pas** couvert par cette décision ;
+      - ⚠️ **la permission ne s'accorde qu'une fois l'iframe isolée et l'historique en place** —
+        les deux sections suivantes.
 - [ ] **Qui LIT une app, code et données ?** Les membres du salon, ou ce que permet la visibilité
       du salon ?
 - [ ] **Qui ÉCRIT dans la base d'une app ?** Au minimum ceux qui peuvent l'utiliser — voir le piège
@@ -69,8 +97,8 @@ Ce n'est pas un oubli de garde, c'est une politique absente. Elle appartient à 
 ### Une fois tranché
 
 - [ ] Poser les gardes dans `ApplicationIA` et `Store`. Chaque `// todo a protéger` ne part
-      qu'avec la garde qu'il réclame : celui de `createApplicationVertice` attend la section
-      suivante.
+      qu'avec la garde qu'il réclame : celui de `createApplicationVertice` attend la section « Un
+      propriétaire de serveur crée une app… ».
 - [ ] Un test PHP par route (Orchestra Testbench, depuis le paquet — `docs/architecture/tests.md`) :
       connecté non membre, membre, propriétaire. **Rouges d'abord** : aujourd'hui tout passe, et un
       test d'autorisation écrit après le correctif est vert dès qu'il ne mesure rien. Mongo se
@@ -79,6 +107,128 @@ Ce n'est pas un oubli de garde, c'est une politique absente. Elle appartient à 
       `Application`.
 - [ ] Écrire la règle retenue **une seule fois** dans la doc du module — aujourd'hui une ligne de
       `docs/modules/autres-modules.md`, une page à elle si la règle déborde — et y renvoyer d'ici.
+
+---
+
+## 🔴 Le code d'une app s'exécute avec l'origine de l'hôte — les gardes de route n'y changent rien `[M]`
+
+C'est le « pourquoi 🔴 » de la section précédente, qui n'avait pas de tâche. Les gardes décident
+**qui écrit le code** ; elles ne protègent pas **les membres contre ce code**.
+
+**Mesuré le 30/10/2026** par une session paire, sur une page synthétique qui reproduit le mécanisme
+(drapeaux `sandbox` exacts, `contentDocument.write`, cookie `SameSite=Lax` host-only) — **pas** sur
+le vrai composant —, sous Chromium 149 et Firefox 151, mêmes résultats. L'app a l'origine de
+l'hôte : elle lit `localStorage`, voit le cookie `XSRF-TOKEN` (non `httponly`) et `parent.document`,
+et ses `fetch` — `credentials` par défaut ou `include`, `GET` comme `POST` — partent **avec** la
+session, réponse **lisible**. Elle ne fait donc pas qu'appeler une route au nom de qui l'ouvre, un
+admin compris : elle lit les réponses et le DOM du parent. Lu dans la source, non observé :
+`PreventRequestForgery` accepte `Sec-Fetch-Site: same-origin` sans jeton. Depuis la décision du
+30/10 (tout utilisateur autorisé écrit), accorder la permission sans isoler donnerait à chaque
+titulaire la session de chaque membre des salons où il écrit.
+
+**Pourquoi ici et pas dans la partie 2** : c'est ce qui rend la décision « qui écrit » tenable, et
+le pont que la partie 2 formalise s'appuiera sur la validation par `event.source`. Le remède ne
+demande **aucune infrastructure, ni sous-domaine** : une origine opaque suffit à isoler. L'origine
+dédiée reste dans la partie 2, seulement sur besoin.
+
+### Le remède : `srcdoc`, sans `allow-same-origin`
+
+Le document de l'iframe prend une origine opaque. Mesuré le 30/10 dans les mêmes conditions, chaque
+point dans les deux navigateurs :
+
+- `contentDocument` vaut `null` : le HTML assemblé part par `srcdoc`.
+- Les messages de l'iframe arrivent avec `event.origin === "null"`, et
+  `event.source === iframe.contentWindow` est vrai : c'est sur lui que se valide l'entrant. Le
+  filtre `VITE_APP_URL` (section 🟢 « Le pont `postMessage` ») disparaît avec.
+- `localStorage`, `document.cookie`, `parent.document` et `top.location` lèvent `SecurityError`. Les
+  `fetch` (par défaut, `include`, `POST`), une image, une navigation de l'iframe sur elle-même en
+  `GET` et un formulaire `POST` partent **sans** cookie, réponse illisible : les trois routes `GET`
+  de `routes.private.php` qui suppriment (`delete-conversation`, `delete-user-server`,
+  `delete-server-room`) ne sont pas atteignables avec la session depuis l'iframe.
+- `/vendor/estarter/embed-iframe.js`, en chemin relatif, se résout bien sur l'hôte.
+- Le `srcdoc` hérite de la CSP du parent, comme l'`about:blank` actuel — la plateforme n'en pose
+  aucune (grep vide dans l'hôte, son `docker/` et le socle ; un reverse proxy de production n'est
+  pas vérifié). Une `<meta http-equiv="Content-Security-Policy">` posée par le parent en tête du
+  `srcdoc` s'y cumule : retirée par le script, ou doublée d'une `<meta>` laxiste, elle bloque
+  toujours, et elle couvre les iframes imbriquées `srcdoc`, `data:` et `blob:`. Une CSP propre aux
+  apps ne demande donc pas d'autre origine.
+
+⚠️ **Prémisse** : la session est en `SameSite=Lax`, sans `Domain` (vu en service :
+`secure; httponly; samesite=lax`). Si elle passait un jour en `SameSite=None`, cette protection
+tomberait probablement — non mesuré, la sonde tournait en http.
+
+### ⚠️ Tel quel, le remède casse le pont dans les deux sens — EN SILENCE
+
+Mesuré le 30/10, mêmes conditions :
+
+- **Parent → iframe** : `sendMessageToIframe` appelle `postMessage` sans `targetOrigin`, donc avec
+  le défaut `"/"`, la même origine. Vers une origine opaque, le message est jeté **sans exception**.
+  Une origine opaque ne se nomme pas : l'envoi doit passer en `"*"`. Il livre alors à tout document
+  chargé dans l'iframe, y compris celui vers lequel l'app aurait navigué — rien de neuf, vu la
+  section « la navigation » ci-dessous (raisonnement, non mesuré).
+- **Iframe → parent** : les quatre `Exemples/` envoient par
+  `parent.postMessage(msg, window.location.origin)`. Sous `srcdoc`, `location.origin === "null"`, et
+  l'appel **lève** (Chromium « Invalid target origin 'null' », Firefox `SyntaxError`). `SimpleCrud`
+  et `SongManager` filtrent en plus l'entrant sur `event.origin !== window.location.origin` : ils
+  rejettent tout message du parent.
+- **Et rien ne le montre** : `embed-iframe.js` envoie en `"*"`, donc `resize_iframe` arrive,
+  `componentLoaded` passe à vrai, et l'app s'affiche chargée alors que `database` et `broadcast`
+  sont morts.
+
+Les `Exemples/` servent de modèles : les apps en base les ont probablement recopiés (non mesuré).
+
+### ⚠️ Ce qu'aucune CSP ne couvre : la navigation
+
+Mesuré le 30/10 : sous `default-src 'none'; script-src 'unsafe-inline'`, un
+`location.href = '<serveur>/…?k=…'` atteint ce serveur, dans les deux navigateurs. Une app peut
+donc sortir dans une URL **tout ce qu'on lui livre** — les données de `DATABASE_PLACEHOLDER`, la
+liste des membres. Une CSP par en-tête, sur une origine dédiée, a la même limite. **Tout ce qui
+entre dans l'iframe appartient à l'auteur de l'app** : c'est une donnée de la question « qui LIT ».
+
+### Au passage : le gabarit corrompt le code d'une app
+
+L'assemblage du HTML, que ce lot réécrit pour `srcdoc`, passe par `String.replace` avec une chaîne
+de remplacement, qui interprète `$'`, `` $` `` et `$&` : `'a<!-- X -->b'.replace('<!-- X -->', "x$'y")`
+rend `axbyb` (mesuré, Node). Une chaîne `'$'` dans le script d'une app suffit à y recopier la fin du
+gabarit. Remplacer par une fonction : `.replace(placeholder, () => valeur)`.
+
+- [ ] **Décision de David** : faire passer l'envoi en `"*"` côté app en réécrivant les `Exemples/`
+      (et les apps en base), ou injecter dans le gabarit un petit module d'envoi que les apps
+      appellent — l'amorce du SDK de la partie 2.
+- [ ] **Décision de David** : assumer que tout ce qui est livré à l'iframe appartient à l'auteur de
+      l'app — ou ne plus lui livrer ce que l'auteur ne doit pas lire.
+- [ ] Isoler — `srcdoc`, envoi en `"*"`, entrant validé sur `event.source`, `replace` par
+      fonction —, avec un test Vitest : un message dont `event.source` n'est pas l'iframe est
+      ignoré.
+- [ ] Le rejouer sur le **vrai** composant, en navigateur : une app d'exemple démarre, `database` et
+      `broadcast` passent **dans les deux sens**, et un `fetch('/…')` lancé depuis l'app part sans
+      cookie de session. Un `resize_iframe` reçu ne prouve rien.
+- [ ] Avant de livrer, inventorier les apps en base : chercher `location.origin` dans
+      `applications.code.script`.
+
+---
+
+## 🟠 Un écrasement n'a pas de retour arrière `[S]`
+
+`saveApplicationIA` remplace `code` sans rien garder. Tenable tant qu'un seul auteur écrivait ;
+depuis la décision du 30/10, tout utilisateur autorisé peut écraser l'app d'un autre.
+
+**Décision de David du 30/10/2026, non figée** : un historique **léger** — seules quelques versions
+précédentes sont gardées. Leur nombre et la forme de la restauration ne sont pas fixés.
+
+**Pourquoi ici et pas dans la partie 2** : il doit exister avant que la permission soit accordée,
+et le versionnement est une brique que la partie 2 reprendra.
+
+Proposition, non mesurée : à chaque enregistrement, pousser la version **enregistrée** (pas la
+précédente) dans un tableau borné, par un seul `updateOne` qui pose `code` et fait
+`$push` + `$each` + `$slice` sur l'historique. Aucune lecture préalable, donc pas de course entre
+deux enregistrements — le défaut même de `databaseAction` (section 🟠 plus bas). À une réserve
+près, relevée en relecture : une mise à jour **par opérateurs**, jamais le `save()` d'Eloquent, qui
+réécrit le document.
+
+- [ ] Garder les N dernières versions de `code` à chaque enregistrement (N non figé).
+- [ ] Restaurer une version — sous la même garde que l'écriture.
+- [ ] Test PHP : au-delà de N, la plus ancienne disparaît ; un non-autorisé ne restaure rien.
 
 ---
 
@@ -181,6 +331,22 @@ alors en `$in: [null]`, qui matche aussi les documents **sans** `vertexid`.
 
 ---
 
+## 🟠 `databaseAction` perd des écritures concurrentes `[S]`
+
+Lu le 30/10/2026, pas rejoué. `ApplicationIA::databaseAction` relit tout le tableau `data` du
+document `page`, le modifie en PHP et réécrit le document : deux membres qui écrivent dans la même
+fenêtre, le second efface le premier. Et `DATABASE_PLACEHOLDER` livre toutes les données de l'app
+à chaque membre au chargement — à relire avec la question « qui LIT » de la première section.
+
+**Pourquoi ici et pas dans la partie 2** : cette action est le germe de la capacité `data` de
+[`application-todo-v2.md`](application-todo-v2.md), qui se bâtira dessus. Et la garde de
+`iaApp.database` (première section) se pose dans la même méthode : un seul lot.
+
+- [ ] Opérations atomiques Mongo (`$push`, `$pull`, mise à jour positionnelle) au lieu de réécrire
+      le tableau.
+
+---
+
 ## 🟢 Les dépendances déclarables : une clé inconnue empêche l'app de démarrer `[S]`
 
 `ApplicationComponent.vue` traduit `code.dependencies` en balises à travers la table de
@@ -208,20 +374,27 @@ code de résolution recopié :
 - **Envoi vers l'iframe** : `sendMessageToIframe` passe `window.location.origin` à
   `JSON.stringify` comme *replacer* (ignoré), et `postMessage` part sans `targetOrigin` explicite.
   Ça marche grâce au défaut `"/"`, même origine. Le jour où l'iframe change d'origine, plus rien
-  n'est livré, sans erreur (fait de spécification). Pas un défaut aujourd'hui : un nom qui ment.
+  n'est livré, sans erreur — mesuré le 30/10 vers une origine opaque (section 🔴 « Le code d'une
+  app s'exécute… »). Pas un défaut aujourd'hui, un nom qui ment ; il le devient avec l'isolation.
 - **Réception depuis l'iframe** : `handleMessageFromIframe` rejette tout message dont
   `event.origin` diffère de `import.meta.env.VITE_APP_URL`, une valeur **figée au build** de
   l'image. Sur un déploiement dont l'URL diffère de celle du build, toute action de l'iframe serait
   refusée, `database` compris — non mesuré. Une valeur qu'un déployeur ajuste n'a pas sa place
   dans une clé `VITE_*`.
 
-- [ ] Mesurer le second sur un déploiement réel, et le sortir de `VITE_*` s'il se confirme.
+- [ ] Mesurer le second sur un déploiement réel, et le sortir de `VITE_*` s'il se confirme — ou
+      le laisser partir avec l'isolation (section 🔴 « Le code d'une app s'exécute… »), qui valide
+      sur `event.source`.
 
 ---
 
 ## Ce qui reste non mesuré
 
-- L'évasion du bac à sable en navigateur (fait de spécification).
+- Le retrait de l'attribut `sandbox` par l'app (fait de spécification). Le reste de l'évasion est
+  mesuré : section 🔴 « Le code d'une app s'exécute… ».
+- Le palier `srcdoc` sur le vrai composant, sous Firefox 133 (une partie du parc GHU), et
+  `Sec-Fetch-Site` effectif en https.
+- La course de `databaseAction`.
 - Le contournement de `isServerOwner` par injection, et la portée réelle de l'injection dans
   `loadApplicationIA`.
 - Qui peut devenir propriétaire d'un serveur, donc combien de comptes la création croisée concerne.
