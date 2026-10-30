@@ -30,8 +30,9 @@
   **Rapport de David du 30/10/2026**, dans la numérotation ci-dessous (celle qu'il a reçue
   intervertissait 5 et 6). Les étapes 1 à 5 sont OK. L'étape 6 était KO sous Chrome 156 : la
   webcam débranchée faisait disparaître l'aperçu local, sans retour jusqu'au raccroché. Cause et
-  correctif dans `flux.md` : son micro intégré s'arrête avec elle. **L'étape 6 est à refaire**
-  après intégration, et son second volet (prise par une autre application) n'est pas rapporté.
+  correctif dans `flux.md` : son micro intégré s'arrête avec elle. **Refaite le 30/10 après
+  `132de96` : OK** (« tout fonctionne comme prévu », David). Son second volet (prise par une
+  autre application) n'est pas rapporté.
   L'étape 7 était KO sous Firefox **133**, par le bogue DTLS 1.3 du navigateur et non par le lot
   (`flux.md`, « Où ça casse »). Avec `dtls.version.max = 771`, diffusion et visio passent
   (10:11 UTC). Ses deux questions (nouvelle invite, aperçu qui suit) ne sont pas rapportées.
