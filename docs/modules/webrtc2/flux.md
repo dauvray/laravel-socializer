@@ -121,7 +121,9 @@ autre application ne peut pas prendre la caméra que le navigateur tient EN COUR
 Edge 156). Les autres OS ne sont pas mesurés : la capture pourrait y continuer, ou ne produire
 qu'un `mute`, que ce code ne suit pas. Prise AVANT l'appel, la caméra fait échouer la capture
 (`NotReadableError` sous Chrome 156), et l'appel part caméra coupée (plus haut). Sous Edge 156, la
-même séance a journalisé une `AbortError`, attribuée au même cas par l'ordre des étapes. `usePeerMedia._followCamera` remet le drapeau à « coupée » et pose le bouche-trou,
+même séance a journalisé une `AbortError` dont la cause n'est pas établie : l'étape où Teams tenait
+la webcam la mettait sous Chrome, et `browser.log` ne garde que le nom de l'erreur, pas son
+message. `usePeerMedia._followCamera` remet le drapeau à « coupée » et pose le bouche-trou,
 chez soi comme chez le pair. Cela vaut pour la caméra initiale comme pour une caméra rallumée.
 Sans ça, l'UI disait « filmé » et le pair gardait la dernière image, figée. L'aperçu local, lui, ne
 dépend d'AUCUNE de ses pistes (`usePeerMedia._bindStreamCleanup` ignore le flux local) : il dure le
