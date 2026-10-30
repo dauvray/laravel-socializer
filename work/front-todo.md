@@ -49,7 +49,7 @@ même champ :
 
 | Appelant | Ligne |
 |---|---|
-| `stores/feed/actions.js` — `commentCreatedTrigger` / `commentDeletedTrigger` | 138, 156 |
+| `stores/feed/actions.js` — `commentCreatedTrigger` / `commentDeletedTrigger` | 138, 153 |
 | `stores/comments/actions.js` — insertion et suppression | 98-99, 139-140 |
 
 **Deux formes de `store` circulent, et une seule est sûre.** À la création, `Comments::createCommment`
@@ -93,5 +93,15 @@ sourd sans un mot (`docs/modules/webrtc2/api.md`, « En mode `data`, toujours pa
 
 - [ ] Code — `default: null`, qui dit l'intention (pas de room ⇒ pas de provider) sans changer le
       comportement ; relire les autres lectures de `this.room` du composant avant.
-- [ ] Tests — le composant n'a pas de test ; vérification à la main : une page Application sans
-      room ne monte aucun provider.
+- [ ] Tests — `Application/__tests__/ApplicationComponent.load.test.js` existe (stub de
+      `MediaBroadcastProvider`, props surchargeables) : y épingler « sans room, aucun provider monté »
+      au lieu d'une vérification à la main.
+
+## AudioRoom n'a pas de bouton Mute — décision produit ouverte (26/10/2026)
+
+Relevé à la relecture de la migration d'AudioRoom vers WebRTC2 : parité v1 stricte, le seul moyen
+de couper son micro dans un salon audio est de **quitter le salon**. Le prérequis technique est levé
+depuis le 29/10/2026 — `getAudioStream` démarre micro ouvert (`docs/modules/webrtc2/api.md`) —, donc
+le premier clic d'un bouton Mute aurait désormais un effet.
+
+- [ ] Décider (David) : un bouton Mute dans `AudioRoom/AudioComponent.vue`, ou la parité v1 assumée.
