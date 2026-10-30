@@ -10,58 +10,40 @@
 
 ---
 
-## ▶ Lot en vérification — 🔴 « une capture impossible ne suspend plus l'appel » `[M]`
+## Ce que le lot « une capture qui rejette ne suspend plus l'appel » a ouvert — clos le 30/10/2026
 
-> **Codé et testé le 30/10/2026**, sur deux décisions de David du même jour, pour l'appelé comme
-> pour l'appelant : la caméra manque, l'appel continue caméra coupée, avec un toast ; le micro
-> manque, l'appel sort proprement — l'appelé refuse, l'appelant raccroche en prévenant l'autre.
-> Le définitif est dans [`flux.md`](../docs/modules/webrtc2/flux.md), « Une capture impossible ne
-> suspend plus l'appel », la table de mutations dans l'en-tête de
-> `usePeerOrchestrator.calls.test.js`, le récit dans `git log`. **Le 🔴 reste ouvert jusqu'à la
-> vérification** : aucun harnais n'exerce une vraie caméra prise, un vrai micro absent, ni une
-> vraie invite de permission.
+> **Le 🔴 est clos le 30/10/2026**, sur la vérification de David en vrai navigateur, sur deux postes
+> Windows : Chrome 156 et Edge 156, d'après `browser.log`. Le repli caméra a joué sous Chrome sur
+> `NotReadableError` (étape 1, webcam tenue par Teams). Sous Edge, il a joué sur `AbortError` puis
+> sur `NotAllowedError` (12:23:07 et 12:26:14 UTC). Leur rattachement aux étapes 2 et 6 n'est pas
+> établi : l'étape 2 mettait Teams chez A, sous Chrome, et le journal ne garde que le nom de
+> l'erreur, pas son message. La sortie propre a joué dans les deux rôles, appelé et appelant, sous
+> Chrome 156 seulement. Aucune trace « [Notifications] réponse à une invitation ». Protocole : les
+> étapes 1, 2, 3 et 6 ont tourné dans des onglets mis à jour à chaud à 12:08:39 UTC, sans le
+> rechargement dur prescrit. Les replis attendus ont joué quand même, et le marqueur n'existe que
+> dans le nouveau code. Le définitif est dans [`flux.md`](../docs/modules/webrtc2/flux.md),
+> « Une capture qui REJETTE ne suspend plus l'appel », le récit dans `git log`. Une étape n'est
+> pas passée, et ce n'est pas un rejet : le 🟠 ci-dessous.
 
-- [ ] **Vérification de David en vrai navigateur** — rechargement dur des deux côtés, aucune
-  écriture dans `.env` pendant la mesure (`.ai/rules/web-r-t-c2.md`). La version de chaque
-  navigateur se lit dans `browser.log`. Juger sur les toasts, et sur l'absence de
-  « [Notifications] réponse à une invitation » et de « Unhandled » dans `browser.log` ; les
-  marqueurs `[useCallManager] caméra indisponible au démarrage de l'appel` et `[useCallManager]
-  aucun flux local possible` disent quelle issue a joué.
-  1. A a sa webcam dans Teams ; B l'appelle en visio, et A accepte. Attendu : l'appel s'établit, A
-     voit « Caméra indisponible : elle reste coupée » et son bouton caméra sur « coupée », B voit du
-     noir pour A, et les deux s'entendent.
-  2. Le même, A appelant : A, webcam dans Teams, appelle B, qui accepte. Même attendu chez A.
-  3. Pendant l'appel de l'étape 1, fermer Teams, puis « activer la caméra » chez A : B la voit.
-  4. Webcam débranchée avant l'appel, un autre micro restant branché (noter lequel) : même attendu
-     qu'en 1. Si la webcam porte le seul micro, l'étape teste le micro, pas la caméra.
-  5. Hérité du lot caméra : la caméra prise par une autre application EN COURS d'appel. Noter ce
-     qui se passe, et l'OS.
-  Les étapes de permission persistent pour l'origine : les faire EN DERNIER, et remettre
-  « Autoriser » après chacune.
-  6. Caméra seule bloquée dans les réglages du site, micro autorisé : même attendu qu'en 1.
-  7. Caméra et micro remis sur « Demander » dans les réglages du site de A. B appelle A ; A
-     accepte, puis refuse l'invite de permission, par son bouton de refus (le libellé varie selon la
-     version). Répondre en moins d'environ 55 s : au-delà, la relance de B abandonne, et B lit
-     « n'a pas répondu » au lieu de « injoignable ». Deux issues, à noter. Si aucune autre invite
-     n'apparaît, la déduction de `flux.md` tient : chez A, « Micro indisponible : l'appel ne peut
-     pas démarrer » et l'appel refermé ; chez B, « A est injoignable ». Si une SECONDE invite
-     apparaît, pour le micro seul, la déduction tombe : y répondre « Autoriser », puis attendre le
-     toast caméra et l'appel établi. Remettre « Autoriser » ensuite.
-  8. Caméra et micro de nouveau sur « Demander » chez A. A appelle B, B accepte, et A refuse
-     l'invite. Attendu chez A : le toast du micro, ou, si une seconde invite est autorisée, le toast
-     caméra et l'appel établi ; chez B, dans le premier cas, « Appel de A annulé ». Remettre
-     « Autoriser » ensuite.
-
-## Ce que le lot caméra a ouvert — lot clos le 30/10/2026
-
-> **« Couper la caméra éteint vraiment la webcam » est clos le 30/10/2026**, sur la vérification
-> de David en vrai navigateur, rapportée ce jour-là : étapes 1 à 5 OK, webcam débranchée OK sous
-> Chrome 156 après `132de96`. Sous Firefox, dans un flux avec micro, la réactivation ne redemande
-> pas la permission, et l'aperçu local revoit la caméra (version non établie : 133 ou 148). Le
-> définitif est dans [`flux.md`](../docs/modules/webrtc2/flux.md), « Couper la caméra l'éteint »,
-> avec le repli fermé, décidé par David le même jour. Le récit est dans `git log`. Un seul cas n'est
-> pas mesuré : la caméra prise par une autre application EN COURS d'appel (étape 5 du lot en tête).
-> En le tentant, David a trouvé un 🔴 antérieur au lot : c'est le lot en tête.
+- [ ] 🟠 **Webcam débranchée avec son seul micro : la capture ne rejette pas, et l'appel reste sur
+  le spinner** `[M]` — classé 🟠 par David le 30/10/2026, bien que le symptôme soit celui du 🔴
+  clos. Vu par David le même jour, sur un seul essai. B, sous Edge 156, accepte l'appel webcam
+  débranchée, et les deux restent sur le spinner. La capture ne rejette qu'au
+  rebranchement, en `AbortError` (12:43:36 UTC). Le repli caméra joue alors, et B part caméra
+  coupée : son acceptation est arrivée chez A, et y a été consommée. Dans cet essai, la fin de
+  l'appel est venue d'ailleurs : la capture de A (Chrome 156) a été refusée 286 ms plus tard, ses
+  permissions étant restées bloquées depuis l'étape précédente, et A est sorti proprement. Que B
+  ait reçu cette fin n'est attesté que par David : ni les toasts ni la fin d'un appel jamais
+  connecté ne sont journalisés. Aucun code ne rattrape un rejet qui n'arrive pas. Le spinner a duré
+  moins de 55 s : on ne sait pas si l'attente serait sans fin, ni si le navigateur finirait par
+  rejeter seul. Déduit, non mesuré, au-delà de 55 s : A sort par l'abandon de sa relance
+  (« n'a pas répondu »), et B reste en RECEIVING, où il peut « annuler ». Si sa capture aboutit
+  ensuite, son acceptation arrive chez un appelant qui l'ignore : c'est la trace « acceptation
+  d'appel sans invitation en vol — ignorée » de `browser.log` (10:50:05 UTC le 30/10), restée
+  inexpliquée, sans que le lien soit établi. À mesurer d'abord : l'attente dure-t-elle sans fin,
+  et que fait B quand la capture aboutit après l'abandon ? Piste : un délai maximal de capture.
+  C'est une décision de David, car une invite de permission laissée ouverte retient la capture de
+  la même façon, et un délai couperait l'utilisateur lent.
 
 - [ ] 🟢 **L'appelant d'un appelé sans micro lit « est injoignable », sans la cause** `[S]` — la
   sortie propre de l'appelé est un refus ordinaire. Le serveur ne relaie d'une réponse que les clés
@@ -73,23 +55,41 @@
   `applyVideoState()` sans l'attendre, et personne ne lit son `false`. Aucun blocage : l'appel part
   caméra coupée, mais sans le dire.
 
+## Ce que le lot caméra a ouvert — lot clos le 30/10/2026
+
+> **« Couper la caméra éteint vraiment la webcam » est clos le 30/10/2026**, sur la vérification
+> de David en vrai navigateur, rapportée ce jour-là : étapes 1 à 5 OK, webcam débranchée OK sous
+> Chrome 156 après `132de96`. Sous Firefox, dans un flux avec micro, la réactivation ne redemande
+> pas la permission, et l'aperçu local revoit la caméra (version non établie : 133 ou 148). Le
+> définitif est dans [`flux.md`](../docs/modules/webrtc2/flux.md), « Couper la caméra l'éteint »,
+> avec le repli fermé, décidé par David le même jour. Le récit est dans `git log`. Un seul cas n'est
+> pas mesuré : la caméra prise par une autre application EN COURS d'appel. En le tentant, David a
+> trouvé un 🔴 antérieur au lot, clos depuis (section ci-dessus). Le cas a été mesuré ensuite, le
+> 30/10, sous Windows : Teams ne peut pas prendre la caméra tenue par le navigateur, sans message
+> (`flux.md`).
+
 - [ ] 🟢 **Observé une fois, non expliqué : Chrome 156 perd le serveur PeerJS pendant une séance**
   `[S]` — à 20:54:45 UTC le 29/10/2026 : « Lost connection to server », tentative **5/8**, sans
   trace des tentatives 2 à 4, hors de tout rechargement à chaud et sans redémarrage de conteneur
   (relecture du 29/10). Cause non établie, peut-être le réseau du poste. Un Chrome qui « décroche »
   pendant une vérification manuelle peut venir de là, et pas du lot vérifié.
 
-- [ ] 🟠 **Firefox : sans clic dans l'onglet, aucun média distant ne joue, et la sonnerie se tait** `[M]`
-  — constaté par David le 29/10/2026 (Firefox 148) : « si je clique, ça fonctionne ». Les players
+- [ ] 🟠 **Sans clic dans l'onglet, aucun média distant ne joue sous Firefox, et la sonnerie se tait
+  sous Firefox comme sous Chrome** `[M]` — constaté par David le 29/10/2026 (Firefox 148) : « si je
+  clique, ça fonctionne ». Les players
   démarrent par l'attribut `autoplay` (`VideoPlayer.vue` et `AudioPlayer.vue` du socle). Déduit,
   non mesuré ici : Firefox bloque en silence l'`autoplay` d'un média avec du son tant que le
   document n'a reçu aucun geste, sans erreur, l'élément restant en pause. La sonnerie des alertes d'appel (`VideoCallAlert.vue`,
   `AudioCallAlert.vue`) appelle `ding.play()` chaque seconde. Les 4 `NotAllowedError` non
   rattrapées de `browser.log` (20:39:06–09 UTC, espacées d'une seconde, 14 s après un chargement
   de page) lui sont ATTRIBUÉES par déduction : ce sont les seuls `play()` explicites du code, et
-  la ligne de journal ne porte pas de pile. Que Chrome laisse passer grâce à l'historique de
-  visites du domaine est aussi une déduction : c'est ce qui expliquerait un défaut visible sous
-  Firefox seulement. Un appel ordinaire porte son
+  la ligne de journal ne porte pas de pile. Chrome bloque aussi la sonnerie, mesuré le 30/10/2026
+  dans `browser.log` : Chrome 156, « play() failed because the user didn't interact with the
+  document first », une fois par seconde de sonnerie, dans un onglet rechargé après un changement
+  de permissions et jamais touché depuis. Le message nomme la politique de lecture automatique,
+  et la cadence est celle de `ding.play()`. La déduction qui faisait passer Chrome grâce à
+  l'historique du domaine est donc fausse pour la sonnerie ; pour les players, Chrome n'est pas
+  mesuré. Un appel ordinaire porte son
   geste (« appeler », « accepter ») ; ce qui reste exposé : un spectateur de DIFFUSION qui arrive,
   un onglet rechargé pendant un appel, l'appel entrant qui sonne dans un onglet jamais touché.
   Antérieur au lot caméra. Piste, non mesurée : détecter le refus (`play()` explicite et son rejet)
