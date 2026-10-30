@@ -65,6 +65,19 @@ aligner : le réglage vaut pour l'appel suivant. Désactiver la piste (`track.en
 que faisait la bascule jusque-là, ne suffit pas : le pair ne voit rien, mais le voyant reste
 allumé (vu par David le 2026-10-29, Chrome 156).
 
+**Une caméra qui s'arrête d'elle-même est traitée comme une caméra coupée.** Débranchée ou privée de
+sa permission, elle émet `ended` d'après la spec Media Capture, ce qu'un `stop()` du code ne fait
+jamais (0 `ended` sur `stop()` dans Chromium 149 et Firefox 151, mesuré par la relecture du
+2026-10-29). Aucune vraie caméra n'a été mesurée. Une caméra prise par une autre application
+dépend de l'OS : la capture peut continuer, ou ne produire qu'un `mute`, que ce code ne suit pas.
+À confirmer par l'étape 6 de la vérification manuelle (`work/webrtc2-todo.md`). `usePeerMedia._followCamera` remet alors le drapeau à « coupée » et pose le bouche-trou,
+chez soi comme chez le pair. Cela vaut pour la caméra initiale comme pour une caméra rallumée.
+Sans ça, l'UI disait « filmé » et le pair gardait la dernière image, figée. L'aperçu local, lui,
+n'est plus retiré sur la fin de sa piste vidéo : elle est remplacée en place. Une caméra déjà
+terminée à son arrivée (pendant l'invite de permission, son `ended` est passé avant l'écouteur) est
+traitée de même : coupée à la capture initiale, refusée à la recapture. Et « activer » ne réactive
+jamais une caméra terminée : il la recapture, y compris dans le repli fermé.
+
 ⚠️ **Le bouche-trou n'est pas décoratif : sans piste vidéo, la caméra ne peut plus être rendue à
 l'appel.** C'est lui qui donne à l'offre (A, l'appelant) ou à la réponse (B, l'appelé) une ligne
 vidéo `sendrecv`. Mesuré dans Chromium headless sur deux `RTCPeerConnection` dans l'ordre de

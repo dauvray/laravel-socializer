@@ -110,7 +110,13 @@ export function usePeerMedia(ctx) {
             track.enabled = !ctx.ui.streamStates.isMuted
         })
 
-        stream.getVideoTracks().forEach((track) => localVideoTracks.add(track))
+        stream.getVideoTracks().forEach((track) => {
+            localVideoTracks.add(track)
+            _followCamera(track)
+            // Terminée pendant l'invite de permission : son `ended` est déjà passé, et l'écouteur
+            // ne le verra jamais. Elle est coupée, et l'alignement ci-dessous pose le bouche-trou.
+            if (track.readyState === 'ended') ctx.ui.streamStates.isVideoEnabled = false
+        })
         if (placeholder) stream.addTrack(placeholder)
 
         ctx.media.currentStream = markRaw(stream) // marquer le stream comme "non réactif" pour éviter les problèmes de performance liés à la réactivité de Vue sur les objets MediaStream
@@ -122,6 +128,25 @@ export function usePeerMedia(ctx) {
         applyVideoState()
 
         return stream
+    }
+
+    /**
+     * Une caméra qui s'arrête d'elle-même (débranchée, permission retirée, prise par une autre
+     * application) est traitée comme une caméra COUPÉE : drapeau à `false`, bouche-trou à sa place,
+     * dans le flux local et sur chaque sender. Sinon l'UI disait « filmé » et le pair gardait la
+     * dernière image, figée.
+     *
+     * `ended` n'est émis que par un arrêt venu du périphérique, jamais par un `stop()` du code : le
+     * remplacement volontaire ne passe pas ici. Une caméra déjà sortie du flux courant (remplacée,
+     * appel raccroché) est ignorée.
+     */
+    const _followCamera = (track) => {
+        track.addEventListener('ended', () => {
+            const stream = ctx.media.currentStream
+            if (!(stream instanceof MediaStream) || !stream.getVideoTracks().includes(track)) return
+            ctx.ui.streamStates.isVideoEnabled = false
+            applyVideoState()
+        }, { once: true })
     }
 
     /**
@@ -232,8 +257,9 @@ export function usePeerMedia(ctx) {
             return true
         }
 
-        // Une caméra déjà là : celle du flux, ou celle que le repli fermé a gardée désactivée.
-        if (!isPlaceholder) {
+        // Une caméra déjà là : celle du flux, ou celle que le repli fermé a gardée désactivée. Une
+        // caméra TERMINÉE ne se réactive pas : elle passe par la recapture, comme le bouche-trou.
+        if (!isPlaceholder && current.readyState !== 'ended') {
             current.enabled = true
             return true
         }
@@ -257,6 +283,14 @@ export function usePeerMedia(ctx) {
             return true
         }
 
+        // Terminée pendant l'invite de permission : la poser dirait « filmé » sans caméra.
+        if (camera.readyState === 'ended') {
+            console.warn('[usePeerMedia] caméra terminée dès sa capture — elle reste coupée')
+            ctx.ui.streamStates.isVideoEnabled = false
+            return false
+        }
+
+        _followCamera(camera)
         await _replaceVideoTrack(stream, current, camera)
         return true
     }
@@ -497,6 +531,10 @@ export function usePeerMedia(ctx) {
 
         const entries = []
         stream.getTracks().forEach((track) => {
+            // La piste vidéo du flux local est remplacée EN PLACE (caméra ↔ bouche-trou), et une
+            // caméra qui s'arrête d'elle-même passe par `_followCamera` : retirer l'aperçu entier
+            // ici le ferait disparaître pour le reste de l'appel.
+            if (localVideoTracks.has(track)) return
             track.addEventListener('ended', cleanup, { once: true })
             track.addEventListener('inactive', cleanup, { once: true })
             entries.push({ track, handler: cleanup })

@@ -165,6 +165,10 @@ verbe demanderait de monter `Notifications.vue`, et le scénario ne parlerait pl
   qui double **les trois accesseurs ET `addTrack` / `removeTrack` sur la même liste** : happy-dom
   n'a pas de `getTracks()`, et son `addTrack` écrit dans une liste interne que des accesseurs
   surchargés ne lisent pas. Une caméra coupée, remplacée en place dans le flux, y resterait.
+- **`fakeTrack` (`helpers/fakeMedia.js`) garde PLUSIEURS écouteurs par événement**, retirés un par
+  un, avec `{ once }`, et `stop()` n'émet rien, comme une vraie piste. Il n'en gardait qu'un : deux
+  écouteurs `ended` sur la même caméra (nettoyage du player, suivi de la caméra) n'en voyaient
+  qu'un, le dernier inscrit. `_emit('ended')` simule un arrêt venu du périphérique.
 - **Une MediaConnection du mock PeerJS a des senders** : un par piste du flux passé à `peer.call`
   (appelant) ou à `answer()` (appelé), comme le négociateur de PeerJS 1.5.4. `replaceTrack` n'écrit
   `sender.track` qu'à sa résolution, comme le navigateur. Sans eux, un remplacement de piste était

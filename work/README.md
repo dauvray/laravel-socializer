@@ -18,9 +18,10 @@ Aucun chantier ne passe devant les autres. L'ordre par défaut, tant que rien n'
 explicitement :
 
 1. **Le module WebRTC2 au fil de l'eau — [webrtc2-todo.md](webrtc2-todo.md).**
-   ▶ **Lot « couper la caméra éteint vraiment la webcam » : codé et testé le 29/10/2026, en
-   attente de la vérification de David** en vrai navigateur, Chrome ET Firefox — la liste est en
-   tête du fichier, avec les trois items que le lot a ouverts.
+   ▶ **Lot « couper la caméra éteint vraiment la webcam » : codé et testé le 29/10/2026.** Firefox
+   fonctionne à condition d'avoir cliqué dans l'onglet ; sans clic, la lecture automatique est
+   bloquée (🟠 ouvert, antérieur au lot). **Chrome : vérification de David pas encore rapportée.**
+   La liste est en tête du fichier, avec les items que le lot a ouverts.
    **Aucun 🔴 ouvert DANS CE FICHIER** — le dernier, un micro coupé reporté à l'appel suivant (fatal
    en vocal), a été ouvert et fermé le 29/10/2026. La portée est le module, pas le paquet : un 🔴
    est ouvert ailleurs, cf. le point 3 ci-dessous. « accepter un appel vocal entrant ne fait rien » est fermé

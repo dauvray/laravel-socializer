@@ -119,13 +119,37 @@
  * forme Chromium de la capture canvas. Trouvé par la relecture, en navigateur ; `formeFirefox` le
  * double désormais.
  *
+ * La caméra qui s'arrête d'elle-même (item suivant, même soir), mesurée dans une COPIE du paquet
+ * hors de la racine surveillée par Vite, pour ne pas recharger les onglets d'un test manuel
+ * (`.ai/rules/web-r-t-c2.md` de l'hôte) :
+ *
+ *   | Neutralisé                                              | Rougit                           |
+ *   |---------------------------------------------------------|----------------------------------|
+ *   | caméra initiale non suivie                              | « … en cours d'appel … »         |
+ *   | caméra recapturée non suivie                            | « appelé, caméra RALLUMÉE … »    |
+ *   | drapeau laissé à « filmé »                              | les deux ⭐                       |
+ *   | aucun remplacement par la piste noire                   | les deux ⭐                       |
+ *   | garde « la caméra est encore dans le flux » retirée     | « une caméra REMPLACÉE … »       |
+ *   | garde « un flux existe encore » retirée                 | « … APRÈS le raccroché … »       |
+ *   | l'aperçu local nettoyé sur la fin de la caméra          | « … en cours d'appel … »         |
+ *   | caméra terminée réactivée (`readyState` ignoré)         | « repli fermé, caméra arrêtée … »|
+ *   | caméra RECAPTURÉE déjà terminée posée quand même        | « caméra RECAPTURÉE déjà … »     |
+ *   | caméra INITIALE déjà terminée laissée « filmée »        | « caméra INITIALE déjà … »       |
+ *
+ * Les trois dernières lignes viennent de la relecture : elle a trouvé deux chemins où une caméra
+ * morte restait « filmée », que les quatre premiers cas ne voyaient pas.
+ *
+ * Ces cas n'étaient discriminants qu'avec un `fakeTrack` à PLUSIEURS écouteurs par événement : le
+ * double n'en gardait qu'un, et le dernier inscrit masquait l'autre.
+ *
  * Les ⭐ sont nés rouges : `{ video: true, audio: false }` en visio, le `TypeError` en vocal ;
  * pour la caméra, aucune piste vidéo (`[]`), y compris dans le flux passé à `peer.call` ; pour le
  * repli, l'acceptation rejetée en `NotFoundError` ; pour l'offre, `constraints` absent. Ceux du
  * lot du soir : la caméra demandée (`{ video: true, audio: true }`) et jamais arrêtée, aucune
  * piste à sa place, aucun `replaceTrack` ; puis, après la relecture, la `TypeError` de Firefox et
- * `captureStream` qui lève. Trois sont nés verts, et la table ci-dessus les tient : le vocal, le
- * partage d'écran, la course de deux bascules.
+ * `captureStream` qui lève ; puis le drapeau resté « filmé » sur une caméra arrêtée d'elle-même.
+ * Cinq sont nés verts, et les tables ci-dessus les tiennent : le vocal, le partage d'écran, la
+ * course de deux bascules, et les deux gardes de la caméra arrêtée.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { withSetup } from './helpers/withSetup.js'
@@ -157,6 +181,8 @@ describe('usePeerOrchestrator — un appel démarre micro ouvert', () => {
     let sansCamera
     /** Toutes les pistes CAMÉRA rendues par `getUserMedia`, dans l'ordre — le voyant, c'est elles. */
     let cameras
+    /** Vrai : la prochaine caméra capturée est déjà terminée à son arrivée (débranchée entre-temps). */
+    let cameraTerminee
 
     beforeEach(async () => {
         document.body.innerHTML = '<div id="videoContainer"></div>'
@@ -167,6 +193,7 @@ describe('usePeerOrchestrator — un appel démarre micro ouvert', () => {
         livrer = null
         sansCamera = false
         cameras = []
+        cameraTerminee = false
         navigator.mediaDevices.getUserMedia.mockImplementation((demande) => {
             contraintes.push({ ...demande })
             if (!demande.audio && !demande.video) {
@@ -179,6 +206,10 @@ describe('usePeerOrchestrator — un appel démarre micro ouvert', () => {
             if (demande.video) pistes.push(fakeTrack('video'))
             if (demande.audio) pistes.push(fakeTrack('audio'))
             cameras.push(...pistes.filter((piste) => piste.kind === 'video'))
+            if (cameraTerminee && demande.video) {
+                cameraTerminee = false
+                pistes.find((piste) => piste.kind === 'video').readyState = 'ended'
+            }
             if (suspendre) {
                 suspendre = false
                 return new Promise((resolve) => { livrer = () => resolve(realStream(pistes)) })
@@ -650,5 +681,130 @@ describe('usePeerOrchestrator — un appel démarre micro ouvert', () => {
 
         expect(cameras.at(-1).stop).toHaveBeenCalled()
         expect(api.currentStream.value).toBeNull()
+    })
+
+    // ── Une caméra qui s'arrête d'elle-même ───────────────────────────────────────────────
+    //
+    // Débranchée, permission retirée, prise par une autre application : le navigateur émet
+    // `ended` sur la piste (jamais sur un `stop()` du code). Avant, rien ne suivait : le drapeau
+    // disait « filmé », le pair gardait la dernière image figée, et la caméra INITIALE retirait
+    // même l'aperçu local entier (`_bindStreamCleanup`).
+
+    /** L'aperçu local est-il encore inscrit ? */
+    const apercuLocal = () => usePeer2Store().getPlayers.some((player) => player.videoId === 'local-webcam')
+
+    it('⭐ la caméra s\'arrête d\'elle-même en cours d\'appel : « coupée », piste noire chez le pair, aperçu gardé', async () => {
+        const connexion = await appeler()
+        const [camera] = cameras
+        expect(apercuLocal()).toBe(true)
+
+        camera._emit('ended')
+        await settleTasks()
+
+        expect(api.isVideoEnabled.value).toBe(false)
+        const [remplacante] = api.currentStream.value.getVideoTracks()
+        expect(remplacante).not.toBe(camera)
+        expect(remplacante.enabled).toBe(false)
+        // L'écouteur `ended` ne rend pas de promesse : on attend le sender, `replaceTrack` ne
+        // l'écrivant qu'à sa résolution.
+        await vi.waitFor(() => expect(pisteEnvoyee(connexion)).toBe(remplacante))
+        expect(apercuLocal()).toBe(true)
+    })
+
+    it('⭐ appelé, caméra RALLUMÉE puis arrêtée d\'elle-même : la connexion entrante reçoit la piste noire, et on peut la rallumer', async () => {
+        await couperPuisRaccrocher()
+        await accepter('call-2')
+        const appel = await appelEntrant()
+        await api.toggleVideoState()
+        const camera = cameras.at(-1)
+        expect(pisteEnvoyee(appel)).toBe(camera)
+
+        camera._emit('ended')
+        await settleTasks()
+
+        expect(api.isVideoEnabled.value).toBe(false)
+        await vi.waitFor(() => expect(pisteEnvoyee(appel)).not.toBe(camera))
+        expect(pisteEnvoyee(appel).enabled).toBe(false)
+
+        await expect(api.toggleVideoState()).resolves.toBe(true)
+        expect(pisteEnvoyee(appel)).toBe(cameras.at(-1))
+        expect(cameras.at(-1)).not.toBe(camera)
+    })
+
+    it('une caméra qui s\'arrête APRÈS le raccroché ne touche à rien', async () => {
+        await appeler()
+        const [camera] = cameras
+        await raccrocher()
+
+        camera._emit('ended')
+        await settleTasks()
+
+        expect(api.currentStream.value).toBeNull()
+        expect(api.isVideoEnabled.value).toBe(true)
+    })
+
+    it('une caméra REMPLACÉE (coupée par l\'utilisateur) qui émet `ended` ensuite ne coupe pas la suivante', async () => {
+        await appeler()
+        const [premiere] = cameras
+        await api.toggleVideoState()
+        await api.toggleVideoState()
+        const seconde = cameras.at(-1)
+        expect(seconde).not.toBe(premiere)
+
+        premiere._emit('ended')
+        await settleTasks()
+
+        expect(api.isVideoEnabled.value).toBe(true)
+        expect(api.currentStream.value.getVideoTracks()).toEqual([seconde])
+    })
+
+    // ── Relecture du 2026-10-29 : une caméra MORTE n'est jamais « filmée » ────────────────
+
+    it('⭐ repli fermé, caméra arrêtée d\'elle-même : « activer » la RECAPTURE, au lieu de réactiver la morte', async () => {
+        vi.spyOn(HTMLCanvasElement.prototype, 'captureStream').mockImplementation(() => {
+            throw new TypeError('captureStream indisponible')
+        })
+        const connexion = await appeler()
+        const [camera] = cameras
+
+        camera._emit('ended')
+        await settleTasks()
+        expect(api.isVideoEnabled.value).toBe(false)
+
+        await expect(api.toggleVideoState()).resolves.toBe(true)
+
+        const neuve = cameras.at(-1)
+        expect(neuve).not.toBe(camera)
+        expect(contraintes.at(-1)).toEqual({ video: true })
+        expect(api.currentStream.value.getVideoTracks()).toEqual([neuve])
+        expect(pisteEnvoyee(connexion)).toBe(neuve)
+        expect(api.isVideoEnabled.value).toBe(true)
+    })
+
+    it('⭐ caméra RECAPTURÉE déjà terminée à son arrivée : « activer » échoue, rien de mort n\'est posé', async () => {
+        await couperPuisRaccrocher()
+        await accepter('call-2')
+        const appel = await appelEntrant()
+        const bouchon = pisteEnvoyee(appel)
+        cameraTerminee = true
+
+        await expect(api.toggleVideoState()).resolves.toBe(false)
+
+        expect(api.isVideoEnabled.value).toBe(false)
+        expect(api.currentStream.value.getVideoTracks()).toEqual([bouchon])
+        expect(pisteEnvoyee(appel)).toBe(bouchon)
+    })
+
+    it('⭐ caméra INITIALE déjà terminée à son arrivée : l\'appel part caméra coupée, piste noire à sa place', async () => {
+        cameraTerminee = true
+
+        await accepter('call-1')
+
+        const [camera] = cameras
+        expect(camera.readyState).toBe('ended')
+        expect(api.isVideoEnabled.value).toBe(false)
+        const [piste] = api.currentStream.value.getVideoTracks()
+        expect(piste).not.toBe(camera)
+        expect(piste.enabled).toBe(false)
     })
 })

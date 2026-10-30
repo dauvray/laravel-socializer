@@ -16,6 +16,11 @@ import { vi } from 'vitest'
 /**
  * Piste factice : expose ce que lit le code (`readyState`, `stop`, `kind`) avec un vrai
  * registre de listeners, pour pouvoir simuler la fin de vie d'un flux (`ended`).
+ *
+ * PLUSIEURS écouteurs par événement, retirés un par un, avec `{ once }`, comme une vraie piste :
+ * le registre n'en gardait qu'un, et deux écouteurs `ended` sur la même caméra (le nettoyage du
+ * player et le suivi de la caméra) n'en voyaient qu'un en test. `stop()` n'émet rien, comme dans
+ * le navigateur : seul `_emit` simule un arrêt venu du périphérique.
  */
 export function fakeTrack(kind = 'video') {
     const listeners = {}
@@ -24,12 +29,27 @@ export function fakeTrack(kind = 'video') {
         enabled: true,
         readyState: 'live',
         stop: vi.fn(function stop() { this.readyState = 'ended' }),
-        addEventListener: vi.fn((event, handler) => { listeners[event] = handler }),
-        removeEventListener: vi.fn((event) => { delete listeners[event] }),
+        addEventListener: vi.fn((event, handler, options) => {
+            const list = listeners[event] ?? (listeners[event] = [])
+            if (!list.some((entry) => entry.handler === handler)) {
+                list.push({ handler, once: options === true ? false : !!options?.once })
+            }
+        }),
+        removeEventListener: vi.fn((event, handler) => {
+            if (!listeners[event]) return
+            listeners[event] = handler === undefined
+                ? []
+                : listeners[event].filter((entry) => entry.handler !== handler)
+        }),
         dispatchEvent: vi.fn(),
-        /** Déclenche un événement de piste (ex. arrêt natif du partage d'écran). */
-        _emit(event) { listeners[event]?.() },
-        _has(event) { return typeof listeners[event] === 'function' },
+        /** Déclenche un événement de piste (ex. arrêt natif du partage d'écran, caméra débranchée). */
+        _emit(event) {
+            if (event === 'ended') this.readyState = 'ended'
+            const list = [...(listeners[event] ?? [])]
+            listeners[event] = (listeners[event] ?? []).filter((entry) => !entry.once)
+            list.forEach((entry) => entry.handler())
+        },
+        _has(event) { return (listeners[event] ?? []).length > 0 },
     }
 }
 

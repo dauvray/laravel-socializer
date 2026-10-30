@@ -20,8 +20,18 @@
 
 - [ ] **Vérification de David en vrai navigateur, dans Chrome ET dans Firefox** — rechargement
   dur des deux côtés, aucune écriture dans `.env` pendant la mesure (`.ai/rules/web-r-t-c2.md`).
-  **Firefox : « ça fonctionne » (David, 29/10/2026, sur l'arbre corrigé après la relecture)** —
-  étapes couvertes non détaillées. **Chrome : pas encore rapporté.**
+  **Firefox 148 : fonctionne à condition d'avoir CLIQUÉ dans l'onglet (David, 29/10/2026).** Sans
+  clic, « instable » : la politique de lecture automatique de Firefox bloque en silence tout média
+  avec du son tant que l'onglet n'a reçu aucun geste (item ci-dessous). Le premier rapport, « ça
+  fonctionne » (`d0a8104`), a été donné avant ce constat. Les deux séances de test du 29/10
+  (21:21–21:25 et 21:37–21:44) ont en plus reçu quatre écritures dans `vendor/`. Chacune a rechargé
+  à chaud les deux onglets et rendu le contexte data injoignable jusqu'au rechargement dur
+  (`.ai/rules/web-r-t-c2.md`). Étapes couvertes non détaillées. **Chrome : pas encore rapporté.**
+  ⚠️ Un troisième phénomène, non expliqué : à 20:54:45 UTC, Chrome 156 perd le serveur PeerJS
+  (« Lost connection to server », tentative **5/8**, sans trace des tentatives 2 à 4), hors de
+  tout rechargement à chaud et sans redémarrage de conteneur (relecture du 29/10). Cause non
+  établie, peut-être le réseau du poste. Un Chrome qui « décroche » pendant la vérification
+  peut venir de là, pas du lot.
   1. Appel visio, couper la caméra en cours d'appel : le voyant s'éteint, le pair voit du NOIR
      (pas une image figée).
   2. La réactiver : le voyant se rallume, le pair et l'aperçu local la revoient, l'appel continue.
@@ -32,7 +42,12 @@
      « Caméra indisponible : elle reste coupée », et le bouton revient sur « coupée ».
   5. Diffusion : couper puis rallumer sa caméra, voyant et spectateurs. Avec un partage d'écran en
      cours, l'écran partagé ne doit pas bouger.
-  6. Firefox seulement : une nouvelle invite de permission à la réactivation ? Et l'APERÇU LOCAL
+  6. Pendant l'appel, caméra allumée, la débrancher, puis séparément la prendre dans une autre
+     application. Attendu : le bouton repasse sur « coupée », le pair voit du noir et l'aperçu local
+     reste là ; « activer la caméra » la rallume une fois libérée. La prise par une autre
+     application peut ne rien déclencher selon l'OS (`mute` au lieu de `ended`) : noter lequel. Ajouté le 29/10 avec le suivi des caméras qui s'arrêtent
+     d'elles-mêmes (`flux.md`).
+  7. Firefox seulement : une nouvelle invite de permission à la réactivation ? Et l'APERÇU LOCAL
      revoit-il la caméra rallumée ? En headless, Firefox 151 ne suit le remplacement en place que
      dans l'ordre « retrait puis ajout », et seulement si le flux a un micro (tableau dans
      `usePeerMedia._replaceVideoTrack`). Aucun harnais ne le voit, ni dans happy-dom ni en suite.
@@ -44,12 +59,22 @@
   Firefox, où le bouche-trou levait (`requestFrame` porté par le flux), et il est corrigé. Le
   repli ne couvre plus qu'un navigateur sans capture canvas utilisable.
 
-- [ ] 🟠 **Une caméra RALLUMÉE qui se termine seule n'est pas suivie** `[S]` — débranchée, ou prise
-  par une autre application. `_bindStreamCleanup` (`usePeerMedia.js`) ne lie que les pistes
-  présentes à la création du player local ; rien ne remet le drapeau à « coupée » ni ne pose le
-  bouche-trou, et le pair garde la dernière image, figée (mesuré dans Chromium pour une piste
-  arrêtée : en-tête de `createPlaceholderVideoTrack.js`). Avant le lot, la piste caméra INITIALE
-  terminée retirait le player local, ce qui n'était pas mieux.
+- [ ] 🟠 **Firefox : sans clic dans l'onglet, aucun média distant ne joue, et la sonnerie se tait** `[M]`
+  — constaté par David le 29/10/2026 (Firefox 148) : « si je clique, ça fonctionne ». Les players
+  démarrent par l'attribut `autoplay` (`VideoPlayer.vue` et `AudioPlayer.vue` du socle). Déduit,
+  non mesuré ici : Firefox bloque en silence l'`autoplay` d'un média avec du son tant que le
+  document n'a reçu aucun geste, sans erreur, l'élément restant en pause. La sonnerie des alertes d'appel (`VideoCallAlert.vue`,
+  `AudioCallAlert.vue`) appelle `ding.play()` chaque seconde. Les 4 `NotAllowedError` non
+  rattrapées de `browser.log` (20:39:06–09 UTC, espacées d'une seconde, 14 s après un chargement
+  de page) lui sont ATTRIBUÉES par déduction : ce sont les seuls `play()` explicites du code, et
+  la ligne de journal ne porte pas de pile. Que Chrome laisse passer grâce à l'historique de
+  visites du domaine est aussi une déduction : c'est ce qui expliquerait un défaut visible sous
+  Firefox seulement. Un appel ordinaire porte son
+  geste (« appeler », « accepter ») ; ce qui reste exposé : un spectateur de DIFFUSION qui arrive,
+  un onglet rechargé pendant un appel, l'appel entrant qui sonne dans un onglet jamais touché.
+  Antérieur au lot caméra. Piste, non mesurée : détecter le refus (`play()` explicite et son rejet)
+  et proposer « cliquer pour lancer le son » ; rattraper le rejet de la sonnerie. Les players
+  vivent dans le SOCLE : une correction là est une tâche d'estarter, à router.
 
 - [ ] 🟢 **Diffusion : l'annonce « caméra active » part avant le verdict** `[S]` —
   `GroupLocalStreamBtn.onToggleVideoVisibility` envoie `VIDEO_ACTIVE_TOGGLE` aussitôt après la
