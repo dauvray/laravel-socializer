@@ -6,24 +6,14 @@ a été **vu et laissé de côté**, avec de quoi le reprendre.
 
 > ## ⏸️ Chantier suspendu — il ne passe pas devant les autres
 >
-> **§1, §3 et §7 sont livrés.** Ce qui reste est 🟢/🟠, **ne bloque rien**, et ne se prend qu'**au
-> besoin** : quand un chantier prioritaire le croise, ou sur demande explicite.
+> Ce qui reste est 🟢/🟠, **ne bloque rien**, et ne se prend qu'**au besoin** : quand un chantier
+> prioritaire le croise, ou sur demande explicite.
 >
 > ⚠️ **Y déposer un constat sans rouvrir le chantier est l'usage prévu** — c'est ainsi que §11 et
 > §12 sont arrivés. Et le piège à ne pas retomber dedans : chaque item d'ici *paraît* petit et
 > adjacent au précédent. C'est exactement comme la dérive s'est produite.
 
 ---
-
-## 1. Les serveurs de groupes ne sont pas projetables en console ✅
-
-Livré. Le propriétaire est résolu depuis MySQL (le leader du groupe), l'étape est idempotente par
-relecture + id dérivé, et le vid est mémorisé dans `extras` — sans quoi un serveur projeté restait
-invisible du front et non supprimable. Le durable est dans `projection-graphe.md` ; la leçon de
-harnais — la doublure rend la forme qu'on lui script — dans `architecture/tests.md`.
-
-⚠️ Un rattrapage peut sortir en code 1 sur `Session not existed!` : expiration de session Thrift,
-pas un défaut de projection. Écrit dans `projection-graphe.md`, « réparer un réplica ».
 
 ## 2. Aucune commande ne dédoublonne une base déjà divergente 🟠
 
@@ -35,25 +25,18 @@ Le correctif empêche de créer un doublon ; il n'en supprime aucun. Le dev a é
 - [ ] Si oui : refuser de tourner sur un mur qui porte du contenu, et rapporter au lieu de
       supprimer par défaut (`--dry-run` comme mode normal)
 
-## 3. `ArticleDeletedListener` supprimait le mauvais sommet ✅
+Relèvent aussi de ce §, sans case propre : les sommets d'article nés sous un id aléatoire avant
+l'id dérivé, et les documents Mongo sans sommet du dev (constaté le 22/08 : 3 posts sur un mur
+détruit, messages et pages non audités). C'est une divergence de **données** — le volet sécurité
+est arbitré dans l'autre sens : ne pas rouvrir la re-synchronisation
+([`securite.md`, piège 2](../docs/modules/webrtc2/securite.md#deux-pièges-du-graphe-que-ce-garde-contourne)).
 
-Livré. La création souffrait du défaut symétrique — un sommet né sous `uniqidReal()` qu'aucune
-suppression ne pouvait viser — d'où la leçon remontée dans `projection-graphe.md` : **un id dérivé
-n'est pas qu'une garantie d'unicité, c'est la seule adresse qu'un autre écrivain puisse recalculer.**
-
-Reste dehors, et relève du §2 : les sommets d'article déjà nés sous un id aléatoire.
-
-## 4. Deux traces d'installation à nettoyer 🟢
+## 4. Une trace d'installation à nettoyer 🟢
 
 - [ ] `SocializerInstall.php` ajoute `DB_GRAPH_SPACE=network` à `.env`, mais la config lit
       `DB_NEBULA_GRAPH_SPACE` (`config/database.php`, défaut `infrastructure`) : **la ligne écrit une
       variable que personne ne lit**. Attention en corrigeant : ajouter la vraie variable en fin de
       `.env` sur une installation qui la définit déjà se marcherait dessus.
-- [ ] `SocializerInstall.php` appelle `createUserAndNetwork($chatbot)` alors que le
-      `static::created` d'`EstarterUser` a déjà déclenché `UserCreatedListener` treize lignes plus
-      haut. C'était une double projection ; l'idempotence la rend inoffensive, et elle vaut même
-      rattrapage si le listener a échoué. **À garder**, mais à commenter sur place pour que
-      personne ne la « nettoie » en croyant supprimer un doublon.
 
 ## 5. `getFeedFollowers($feedVertexId)` prend un id de MUR 🟢
 
@@ -64,36 +47,14 @@ temps à chaque lecture.
 - [ ] Renommer le paramètre — et vérifier au passage ce que `feed_id` désigne vraiment dans la
       collection `posts` de Mongo
 
-## 6. Le réplica a déjà divergé de Mongo 🟠
-
-Constaté le 22/08 sur le dev : 3 posts Mongo pointent sur un mur `e1d5c82dc5951` **qui n'existe
-plus** (probablement un `dropSpace` du 28/05), et le graphe compte 0 sommet `post` pour 3 documents.
-34 messages et 14 pages Mongo n'ont pas été audités.
-
-⚠️ **Ce n'est plus un sujet de sécurité, et le volet sécurité a été arbitré dans l'autre sens.**
-E4.2 a tranché le 24/08 : plutôt que de re-synchroniser le réplica, les gardes ont **cessé de le
-lire** ([`securite.md`, piège 2](../docs/modules/webrtc2/securite.md#deux-pièges-du-graphe-que-ce-garde-contourne)).
-Ne pas rouvrir la question de la re-synchronisation en s'appuyant sur ce §6 : ce qui reste ici est
-une divergence de **données** — des documents Mongo sans sommet — et une projection idempotente
-reste ce qui rendrait un rattrapage rejouable, si un besoin réel le demande.
-
-## 7. Restaurer un article ne recrée pas son sommet ✅
-
-Livré. `ArticleRestoredListener` repose le sommet, et le corps « poser le sommet d'un article » vit
-désormais dans un trait unique — ce que le test asserte en comparant la requête **entière** de la
-restauration à celle de la création. `ArticleUpdated` reste sans listener, par décision datée dans
-`projection-graphe.md`.
-
-Deux sujets en sont sortis, ci-dessous : §8 (l'arête d'auteur) et §9 (le trou de couverture).
-
 ## 8. La création en ligne d'un article ne pose pas son arête d'auteur 🟢
 
-Vu le 23/08 en fermant le §7, et **délibérément laissé ouvert** : `has_creator` n'est écrit que par
+Vu le 23/08 en livrant `ArticleRestoredListener`, et **délibérément laissé ouvert** : `has_creator` n'est écrit que par
 `GraphProjection::projectArticleAuthors()`. Un article créé dans l'application n'a donc pas d'arête
 d'auteur jusqu'à la prochaine projection, alors que la suppression, elle, l'emporte (`WITH EDGE`).
 
 La restauration ne la repose pas non plus — **parité stricte avec la création**, décidée le 23/08 : la
-combler côté restauration seule ferait diverger deux chemins d'écriture, le motif même du §3.
+combler côté restauration seule ferait diverger deux chemins d'écriture, le motif que raconte `projection-graphe.md`.
 
 Priorité basse, et c'est mesuré : **personne ne lit cette arête**. Aucun `MATCH` ni `GO FROM` sur le
 sommet `article` dans socializer ni dans eblogger — la projection de l'article est aujourd'hui en
@@ -110,13 +71,11 @@ sommet `article` dans socializer ni dans eblogger — la projection de l'article
   techniquement, `Socializable::isCreator` (source non typée), ne reçoit que des vids de **salon** de
   ses trois appelants. Le sommet `article` n'a qu'un autre voisin : `reply_of`, depuis les
   commentaires — son rôle est d'être l'ancre d'un fil, rien de plus.
-- **La réserve technique du `sleep` est levée : c'est du folklore.** « Sommet puis arête dans la même
-  requête » est déjà le motif de **12 sites de production**, dont 8 avec `has_creator`, et
-  `createUserAndNetwork()` le fait **à l'intérieur de la projection batch** (`projectUsers`). Les
-  deux `sleep()` de `create_nebula` encadrent du **DDL**, dont l'asynchronie est réelle ; celui de
-  `projectAll():68` sépare deux DML, et le docblock de la méthode dit lui-même que « les arêtes
-  tolèrent que leur cible arrive après elles ». Les 20 s sont donc à retirer, que l'arbitrage aille
-  dans un sens ou dans l'autre.
+- **La réserve technique du `sleep` est levée** — le pourquoi est dans `projection-graphe.md`
+  (« poser un sommet puis son arête à la suite est sûr »). D'où une tâche, quel que soit
+  l'arbitrage :
+  - [ ] Retirer la pause de `projectAll()` avant `projectArticleAuthors()`, et son commentaire
+        « le graphe est asynchrone », qui contredit la doc `[S]`
 - **L'auteur est déjà atteignable sans arête** : le sommet porte `identifier`, et
   `revealIdentifier(…)->author` est le motif que `Comments::notifyCommentReplyOfAuthor` emploie déjà.
 - ⚠️ **`author_id` n'est PAS nullable** — `create_articles_table.php`, `integer unsigned` sans
@@ -124,11 +83,8 @@ sommet `article` dans socializer ni dans eblogger — la projection de l'article
   nécessaire, pour une **autre** raison : pas de clé étrangère, et `EstarterUser` est en
   `SoftDeletes`, donc `$article->author` rend `null` dès que l'auteur est en corbeille (rien ne
   nettoie ces `author_id` orphelins — `UserDeletedListener` d'eblogger est intégralement commenté).
-  **C'est un défaut actif**, indépendant de l'arbitrage : `projectArticleAuthors()` déréférence
-  `$article->author->id` sans garde, et l'`Error` n'est pas rattrapée par `tentative()`, qui ne capte
-  que `NebulaGraphException` — **un seul auteur en corbeille fait donc échouer `migrate` et
-  `nebula-populate` en entier**, alors que le docblock de la classe cite précisément ce cas comme
-  exemple de ce que le rattrapage par item protège.
+  **C'est un défaut actif**, indépendant de l'arbitrage, et il est sorti de ce chantier suspendu :
+  item « Hors chantier » de [`README.md`](README.md).
 
 ## 9. `projectArticles()` n'est exercé par aucun test 🟢
 
