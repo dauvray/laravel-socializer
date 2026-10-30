@@ -53,7 +53,7 @@
  *     compose rien. Seul le retry la repose, une fois la demande plus vieille que
  *     `SIGNALING_STALE_MS` (branche « signalisation stale » de `_handleConnectionAttempt`) —
  *     bien après la fenêtre de ce scénario, et chaque `sendData` du client est jeté d'ici là.
- *     La durée mesurée est dans `work/webrtc2-todo.md`.
+ *     Mesuré par la relecture du 26/10/2026 : 15,8 s et 32 envois jetés, contre 46 ms et un.
  *   - **Seul le cas séquentiel voit l'attente de l'arrivant** : `connectRoom` livre la
  *     présence à tous dans le même tick et referme la fenêtre avant de l'ouvrir.
  *

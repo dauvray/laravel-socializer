@@ -16,10 +16,10 @@
  *      donc une seconde initialisation sur le même contexte est silencieusement ignorée.
  *
  * Le wrap `onDataReceived` et celui d'`onConnectionOpen` sont couverts par
- * `usePeerOrchestrator.broadcastPresence.test.js`. ⏸️ Le cas star de `onDataReceived`
- * (enveloppe `__starRoute` retransmise par le hub) est **délibérément absent** : c'est le
- * seul cas de la tâche 6 que le déplacement du routage star vers `usePeerTransport`
- * réécrira — cf. `work/webrtc2-todo.md`.
+ * `usePeerOrchestrator.broadcastPresence.test.js`, y compris le cas star de `onDataReceived`
+ * (enveloppe `__starRoute` retransmise par le hub) : describe « branche hub du wrap
+ * onDataReceived (topologie star) ». La décision star elle-même vit dans
+ * `usePeerTransport.routeIncomingData`.
  *
  * ── Choix d'infra ─────────────────────────────────────────────────────────────
  *

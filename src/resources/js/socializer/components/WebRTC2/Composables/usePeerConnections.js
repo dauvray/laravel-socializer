@@ -309,7 +309,10 @@ export function usePeerConnections(ctx) {
         // est le type du CONTEXTE (clé de routage du signal) tandis que `connectionType`
         // porte la connexion réellement demandée — c'est ce qui permet à la signalisation
         // d'ouvrir une connexion 'screen', qu'elle n'ouvrait jamais auparavant.
-        // Absent (backend non à jour, appels internes) ⇒ on retombe sur `type`.
+        // Absent ⇒ on retombe sur `type`. Ce n'est pas une rétrocompatibilité à retirer : un
+        // émetteur resté sur un bundle antérieur est relayé avec un `connectionType` nul, et le
+        // retry de `useConnectionPool` passe le type de connexion dans `type` (`'screen'`
+        // compris) — `docs/architecture/signalisation.md`.
         const type = payload?.connectionType || payload?.type || ctx.currentType.value
 
         const mySlug = ctx.meStore.getMe?.slug

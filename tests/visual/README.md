@@ -74,7 +74,7 @@ Ce qui tranche est la **géométrie comparée à celle de l'ancêtre**, ou la ca
 
 ### Il n'y a pas de hauteur de référence — c'est un résultat, pas un oubli
 
-`work/webrtc2-todo.md` cite ~391 px mesurés à la main le 28/08. **Ce chiffre ne doit pas servir
+Une mesure à la main du 28/08 a donné ~391 px. **Ce chiffre ne doit pas servir
 de seuil.** La largeur du conteneur de page est un **réglage** — `layout_class_container` par
 route, à défaut `config('estarter.bootstrap_container_type')`, qui vaut `container-fluid` chez
 cet hôte et `container` par défaut dans le paquet. Toute cote absolue serait vraie d'une

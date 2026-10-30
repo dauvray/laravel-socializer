@@ -303,8 +303,9 @@ export const IMPLEMENTED_TOPOLOGIES = new Set(['mesh', 'star'])
  * Distinguées des valeurs inconnues pour que le message d'erreur dise « pas encore »
  * plutôt que « faute de frappe » — les deux appellent des gestes opposés chez celui
  * qui le lit. Ce qui tient la porte ouverte pour un futur SFU n'est pas une valeur
- * acceptée mais la couture recensée dans `work/webrtc2-todo.md` : un SFU est « star
- * dont le hub est un serveur », donc une troisième branche à ces mêmes sept sites.
+ * acceptée mais la couture recensée dans `docs/modules/webrtc2/api.md` (« La couture
+ * d'un futur SFU ») : un SFU est « star dont le hub est un serveur », donc une troisième
+ * branche aux mêmes sites de décision.
  */
 export const RESERVED_TOPOLOGIES = new Set(['sfu'])
 
