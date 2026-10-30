@@ -113,18 +113,14 @@
   AVANT la capture. Le raisonnement est dans `usePeerMedia._replaceVideoTrack`. L'item ne devient
   actif que si une UI permet de couper le micro avant la capture.
 
-- [ ] 🟢 **Le micro coupé garde, lui aussi, son indicateur allumé** `[M]` — déduit, non mesuré :
-  `toggleAudioState` ne fait que `track.enabled = false`. Hors du lot par décision par défaut.
-  Le même remède demanderait une piste audio silencieuse (WebAudio) et une recapture du micro à la
-  réactivation : à trancher par David.
-
 - [ ] 🟠 **Un micro perdu en cours d'appel ne revient pas, et l'UI le dit ouvert** `[M]` — lu,
   non mesuré. La webcam débranchée emporte son micro intégré (vu par David le 30/10/2026,
   `flux.md`), et rien ne suit la fin d'une piste audio. Le pair n'entend plus rien jusqu'au
   raccroché, le bouton reste sur « micro ouvert », et « couper » puis « activer » ne fait que
   basculer `enabled` sur une piste morte. Le remède suivrait la caméra : drapeau à « coupé », puis
   recapture du micro à l'activation et `replaceTrack` sur les senders audio. Lot séparé, décidé par
-  David le 30/10. Il partage la recapture avec l'item ci-dessus.
+  David le 30/10. La recapture ne sert qu'à ressusciter une piste morte : couper le micro reste un
+  `enabled = false`, par décision du 30/10 (`flux.md`).
 
 - [ ] 🟠 **Firefox antérieur à la correction DTLS 1.3 : aucun média avec Chrome ou Edge** — le fait
   est dans `flux.md` (« Où ça casse »), confirmé sur un poste du GHU le 30/10/2026 (Firefox 133).

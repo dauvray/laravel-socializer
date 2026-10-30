@@ -111,6 +111,12 @@ allumé (vu par David le 2026-10-29, Chrome 156). Vérifié par David en vrai na
 réactivation ne redemande pas la permission, et l'aperçu local revoit la caméra rallumée. Sans
 micro, l'aperçu ne suit pas : `usePeerMedia._replaceVideoTrack`.
 
+**Couper le micro ne l'éteint pas, et c'est assumé** (décision de David du 2026-10-30) :
+`toggleAudioState` ne fait que `track.enabled = false`. Le pair n'entend plus rien, mais le micro
+reste ouvert, et l'indicateur du navigateur et de l'OS reste allumé (déduit, non mesuré). Un micro
+n'a pas de voyant matériel, et l'éteindre demanderait une piste silencieuse (WebAudio) plus une
+recapture à chaque réactivation.
+
 **Une caméra qui s'arrête d'elle-même est traitée comme une caméra coupée.** Débranchée ou privée de
 sa permission, elle émet `ended` d'après la spec Media Capture, ce qu'un `stop()` du code ne fait
 jamais (0 `ended` sur `stop()` dans Chromium 149 et Firefox 151, mesuré par la relecture du
