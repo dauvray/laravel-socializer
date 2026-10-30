@@ -45,8 +45,15 @@ useCallManager.openCallBetweenPeer
 l'appel suivant, et elle n'y est **pas capturée** : sans vidéo, le voyant de la webcam reste éteint.
 Le type d'appel décide si le flux porte une piste vidéo (`vocal` l'interdit), `isVideoEnabled` si
 cette piste est la caméra. Sinon, une piste canvas noire et désactivée tient sa place
-(`createPlaceholderVideoTrack`). Un poste sans caméra qui l'a coupée passe donc ; une caméra
-OUVERTE dont la capture échoue fait échouer l'appel. Le micro, lui, repart ouvert : l'arrêt complet
+(`createPlaceholderVideoTrack`). Un poste sans caméra qui l'a coupée passe donc, sauf dans le repli
+fermé, qui la demande encore (plus bas). Une caméra OUVERTE dont la capture échoue (prise par une
+autre application, permission refusée, absente) fait échouer la capture, et l'appel reste suspendu,
+sans que rien dise pourquoi. La caméra étant ouverte par défaut, un poste sans webcam y tombe dès
+son premier appel visio. Chez l'appelé, l'échec n'est rattrapé nulle part et aucune réponse ne part
+(vu par David le 2026-10-30, webcam tenue par Teams). Chez l'appelant, `Notifications.vue` le
+rattrape et se contente de le journaliser (vu dans `browser.log` le 2026-10-29, Edge 156), mais la
+relance de l'invitation est déjà arrêtée : il reste en CONNECTED (mesuré en harnais). C'est le 🔴
+de `work/webrtc2-todo.md`. Le micro, lui, repart ouvert : l'arrêt complet
 remet `isMuted` à `false` dans son `finally`, donc même quand il lève. Reporté, un micro coupé
 demandait `audio: false` : un flux sans piste audio, que la bascule ne rattrape pas (elle ne
 bascule que les pistes existantes), et en vocal `{ video: false, audio: false }`, qui fait rejeter
@@ -63,15 +70,20 @@ rallumée, le drapeau revient à « coupée » et l'appel l'annonce par un toast
 inutile (rebascule, raccroché) est arrêtée dès son arrivée. En vocal, il n'y a aucune piste à
 aligner : le réglage vaut pour l'appel suivant. Désactiver la piste (`track.enabled = false`), ce
 que faisait la bascule jusque-là, ne suffit pas : le pair ne voit rien, mais le voyant reste
-allumé (vu par David le 2026-10-29, Chrome 156).
+allumé (vu par David le 2026-10-29, Chrome 156). Vérifié par David en vrai navigateur, rapporté le
+2026-10-30. Sous Firefox (133 ou 148, la version n'est pas établie), dans un flux AVEC micro, la
+réactivation ne redemande pas la permission, et l'aperçu local revoit la caméra rallumée. Sans
+micro, l'aperçu ne suit pas : `usePeerMedia._replaceVideoTrack`.
 
 **Une caméra qui s'arrête d'elle-même est traitée comme une caméra coupée.** Débranchée ou privée de
 sa permission, elle émet `ended` d'après la spec Media Capture, ce qu'un `stop()` du code ne fait
 jamais (0 `ended` sur `stop()` dans Chromium 149 et Firefox 151, mesuré par la relecture du
 2026-10-29). Une vraie webcam USB débranchée l'émet bien, son micro intégré compris (vu par David le
-2026-10-30, Chrome 156 : bouton repassé sur « coupée », noir chez le pair). Une caméra prise par une autre application
-dépend de l'OS : la capture peut continuer, ou ne produire qu'un `mute`, que ce code ne suit pas.
-À confirmer par l'étape 6 de la vérification manuelle (`work/webrtc2-todo.md`). `usePeerMedia._followCamera` remet alors le drapeau à « coupée » et pose le bouche-trou,
+2026-10-30, Chrome 156 : bouton repassé sur « coupée », noir chez le pair). Une caméra prise par
+une autre application EN COURS d'appel n'est pas mesurée : selon l'OS, la capture peut continuer,
+ou ne produire qu'un `mute`, que ce code ne suit pas. Prise AVANT, elle fait échouer la capture
+(`NotReadableError` sous Windows, Chrome 156, le 2026-10-30), et c'est l'appel suspendu décrit
+plus haut. `usePeerMedia._followCamera` remet le drapeau à « coupée » et pose le bouche-trou,
 chez soi comme chez le pair. Cela vaut pour la caméra initiale comme pour une caméra rallumée.
 Sans ça, l'UI disait « filmé » et le pair gardait la dernière image, figée. L'aperçu local, lui, ne
 dépend d'AUCUNE de ses pistes (`usePeerMedia._bindStreamCleanup` ignore le flux local) : il dure le
@@ -111,8 +123,8 @@ pair sous un bouton « coupée ». Les mesures sont dans l'en-tête de `createPl
 **Sans bouche-trou possible** (aucune capture canvas utilisable), la coupure échoue FERMÉE : la
 caméra reste ouverte mais désactivée, le pair voit du noir, et seul le voyant reste allumé. C'est
 l'état d'avant le 2026-10-29. Une caméra coupée au départ est alors capturée, puis désactivée.
-L'arrêter sans rien à sa place laisserait chez le pair une image figée. Choix par défaut de la
-relecture du 2026-10-29, à confirmer par David.
+L'arrêter sans rien à sa place laisserait chez le pair une image figée. Décision de David du
+2026-10-30, sur la recommandation de la relecture.
 
 ⚠️ **Les connexions de l'APPELÉ ne sont pas dans le store**, qui ne range que les sortantes
 (`_saveRoomConnection`). Un `replaceTrack` qui parcourrait le store ne ferait rien chez l'appelé,

@@ -10,63 +10,88 @@
 
 ---
 
-## ▶ Lot en vérification — « couper la caméra éteint vraiment la webcam » `[M]`
+## Ce que le lot caméra a ouvert — lot clos le 30/10/2026
 
-> **Codé et testé le 29/10/2026**, sur les deux décisions de David du même jour : sans vidéo, le
-> voyant est éteint (une piste canvas tient la place de la caméra coupée, jamais capturée) ; la
-> caméra doit toujours pouvoir être rallumée (repli audio supprimé, recapture à l'activation). Le
-> définitif est dans [`flux.md`](../docs/modules/webrtc2/flux.md), « Couper la caméra l'éteint »,
-> le récit dans `git log`. **Le lot n'est pas clos** : aucun harnais ne voit un voyant.
+> **« Couper la caméra éteint vraiment la webcam » est clos le 30/10/2026**, sur la vérification
+> de David en vrai navigateur, rapportée ce jour-là : étapes 1 à 5 OK, webcam débranchée OK sous
+> Chrome 156 après `132de96`. Sous Firefox, dans un flux avec micro, la réactivation ne redemande
+> pas la permission, et l'aperçu local revoit la caméra (version non établie : 133 ou 148). Le définitif est dans
+> [`flux.md`](../docs/modules/webrtc2/flux.md), « Couper la caméra l'éteint », avec le repli fermé,
+> décidé par David le même jour. Le récit est dans `git log`. Un seul cas n'est pas mesuré : la
+> caméra prise par une autre application EN COURS d'appel. En le tentant, David a trouvé le 🔴
+> ci-dessous, antérieur au lot.
 
-- [ ] **Vérification de David en vrai navigateur, dans Chrome ET dans Firefox** — rechargement
-  dur des deux côtés, aucune écriture dans `.env` pendant la mesure (`.ai/rules/web-r-t-c2.md`).
-  **Firefox 148 : fonctionne à condition d'avoir CLIQUÉ dans l'onglet (David, 29/10/2026).** Sans
-  clic, « instable » : la politique de lecture automatique de Firefox bloque en silence tout média
-  avec du son tant que l'onglet n'a reçu aucun geste (item ci-dessous). Le premier rapport, « ça
-  fonctionne » (`d0a8104`), a été donné avant ce constat. Les deux séances de test du 29/10
-  (21:21–21:25 et 21:37–21:44) ont en plus reçu quatre écritures dans `vendor/`. Chacune a rechargé
-  à chaud les deux onglets et rendu le contexte data injoignable jusqu'au rechargement dur
-  (`.ai/rules/web-r-t-c2.md`). Étapes couvertes non détaillées.
-  **Rapport de David du 30/10/2026**, dans la numérotation ci-dessous (celle qu'il a reçue
-  intervertissait 5 et 6). Les étapes 1 à 5 sont OK. L'étape 6 était KO sous Chrome 156 : la
-  webcam débranchée faisait disparaître l'aperçu local, sans retour jusqu'au raccroché. Cause et
-  correctif dans `flux.md` : son micro intégré s'arrête avec elle. **Refaite le 30/10 après
-  `132de96` : OK** (« tout fonctionne comme prévu », David). Son second volet (prise par une
-  autre application) n'est pas rapporté.
-  L'étape 7 était KO sous Firefox **133**, par le bogue DTLS 1.3 du navigateur et non par le lot
-  (`flux.md`, « Où ça casse »). Avec `dtls.version.max = 771`, diffusion et visio passent
-  (10:11 UTC). Ses deux questions (nouvelle invite, aperçu qui suit) ne sont pas rapportées.
-  ⚠️ Un troisième phénomène, non expliqué : à 20:54:45 UTC, Chrome 156 perd le serveur PeerJS
-  (« Lost connection to server », tentative **5/8**, sans trace des tentatives 2 à 4), hors de
-  tout rechargement à chaud et sans redémarrage de conteneur (relecture du 29/10). Cause non
-  établie, peut-être le réseau du poste. Un Chrome qui « décroche » pendant la vérification
-  peut venir de là, pas du lot.
-  1. Appel visio, couper la caméra en cours d'appel : le voyant s'éteint, le pair voit du NOIR
-     (pas une image figée).
-  2. La réactiver : le voyant se rallume, le pair et l'aperçu local la revoient, l'appel continue.
-  3. Raccrocher caméra coupée, rappeler, **une fois appelant et une fois appelé** : le voyant ne
-     s'allume jamais ; « activer la caméra » la fait arriver chez le pair. Le cas de l'appelé est
-     celui qu'un parcours du store aurait raté.
-  4. Caméra prise par une autre application, ou permission refusée : « activer la caméra » affiche
-     « Caméra indisponible : elle reste coupée », et le bouton revient sur « coupée ».
-  5. Diffusion : couper puis rallumer sa caméra, voyant et spectateurs. Avec un partage d'écran en
-     cours, l'écran partagé ne doit pas bouger.
-  6. Pendant l'appel, caméra allumée, la débrancher, puis séparément la prendre dans une autre
-     application. Attendu : le bouton repasse sur « coupée », le pair voit du noir et l'aperçu local
-     reste là ; « activer la caméra » la rallume une fois libérée. La prise par une autre
-     application peut ne rien déclencher selon l'OS (`mute` au lieu de `ended`) : noter lequel. Ajouté le 29/10 avec le suivi des caméras qui s'arrêtent
-     d'elles-mêmes (`flux.md`).
-  7. Firefox seulement : une nouvelle invite de permission à la réactivation ? Et l'APERÇU LOCAL
-     revoit-il la caméra rallumée ? En headless, Firefox 151 ne suit le remplacement en place que
-     dans l'ordre « retrait puis ajout », et seulement si le flux a un micro (tableau dans
-     `usePeerMedia._replaceVideoTrack`). Aucun harnais ne le voit, ni dans happy-dom ni en suite.
+- [ ] 🔴 **Un appel visio dont la capture caméra est refusée reste suspendu, des deux côtés et
+  sans un mot** `[M]` — caméra prise par une autre application, permission refusée ou caméra
+  absente : toute capture qui échoue avec la caméra OUVERTE. Le défaut a deux chemins, et la
+  correction doit traiter les deux.
 
-- [ ] **Décision de David : le repli quand aucun bouche-trou ne peut être créé.** Posé par
-  défaut le 29/10, sur recommandation de la relecture : échouer FERMÉ, caméra ouverte mais
-  désactivée (le pair voit du noir, le voyant reste allumé). L'autre choix, arrêter la caméra
-  quand même, laisse chez le pair une image figée dans Chromium. La relecture a trouvé le cas sous
-  Firefox, où le bouche-trou levait (`requestFrame` porté par le flux), et il est corrigé. Le
-  repli ne couvre plus qu'un navigateur sans capture canvas utilisable.
+  **Côté appelé : vu par David le 30/10/2026, puis mesuré.** A a la webcam dans Teams, B l'appelle,
+  A accepte, et les deux restent sur le spinner. Dans `browser.log`, deux fois (10:47:53 et
+  10:48:28 UTC), chez l'appelé (Windows, Chrome 156) : « Unhandled error during execution of
+  component event handler » sur `AlertComponent`, puis `Unhandled Promise Rejection
+  NotReadableError Could not start video source`. Aucun `catch` sur le chemin (`VideoCallAlert` →
+  `AlertComponent` → `Notifications.vue` → `acceptCallFromPeer`). `_enterCallSession` lève après la
+  transition en RECEIVING et après `addCurrentCallUser` ; il laisse la marque
+  `markAuthorizedCallPeer` (lu, non mesuré). Aucune réponse ne part, ni acceptation ni refus. La sonde de la relecture
+  du 30/10, sur le harnais de `usePeerOrchestrator.calls.test.js`, compte zéro POST vers
+  `/response-to-authorization-peer`, contre un quand la caméra est libre, et le même blocage pour
+  `NotReadableError`, `NotAllowedError` (permission refusée) et `NotFoundError` (pas de caméra).
+  L'appelant ne sort que par
+  l'abandon de la relance d'invitation, environ 55 s après l'ENVOI de l'invitation (10:49:22 UTC
+  chez Edge 156), sur un toast « n'a pas répondu » qui se trompe de cause. Ce que voient ensuite les
+  appels suivants chez l'appelé resté en RECEIVING n'est pas lu.
+
+  **Côté appelant : pire.** `Notifications.vue` rattrape bien le rejet d'`openCallBetweenPeer`,
+  mais n'en fait qu'un `console.error('[Notifications] réponse à une invitation')`. Sa trace dans
+  `browser.log` n'est donc PAS un « Unhandled Promise Rejection ». Elle a été vue en vrai navigateur :
+  `browser.log`, le 29/10 à 18:39:57 UTC, Edge 156, « [Notifications] réponse à une invitation
+  NotReadableError Could not start video source ». Cette trace prouve le chemin, pas la durée : la
+  page a été quittée 21 s plus tard, et l'arbre était alors en plein lot (entre `d06a9d9` et
+  `c4f79ae`). Et
+  `openCallBetweenPeer` arrête la relance (`stopInviteRetry`) AVANT la transition et la capture qui
+  lève : il n'y a plus ni relance ni abandon. Dans la sonde de la relecture (harnais), l'appelant
+  est encore CONNECTED dix minutes après le rejet, et `peer.call` n'a jamais été appelé. Son appelé,
+  qui a déjà accepté, attend en RECEIVING un appel qui ne viendra pas (déduit, non mesuré).
+
+  La capture rejette par décision quand la caméra est OUVERTE et indisponible : c'est le cas
+  « caméra OUVERTE et indisponible : aucun repli, l'échec remonte » de
+  `usePeerMedia.streams.test.js`. Ce qui ne tient pas l'échec, c'est le code en aval. Le défaut est
+  antérieur au lot : à `d06a9d9`, la capture levait déjà, et `useCallManager.js` n'a pas changé
+  depuis. La diffusion n'est pas touchée : `GroupLocalStreamBtn` rattrape et nomme
+  `NotReadableError`. Dans le repli fermé du lot, faute de bouche-trou possible, la caméra est
+  demandée même coupée (lu, non mesuré). Et `isVideoEnabled` vaut `true` par défaut
+  (`createPeerContext.js`) : un poste SANS webcam est bloqué dès son premier appel visio, sans
+  qu'aucune autre application soit en jeu (`NotFoundError`, mesuré en harnais). Les scénarios
+  ci-dessus sont ceux des tests rouges du lot.
+
+  Pourquoi 🔴 : sur un poste du GHU, une webcam tenue par Teams est un cas ordinaire, comme une
+  permission refusée ou un poste sans webcam. L'appel visio ne peut alors ni être décroché ni
+  passé, et personne ne sait pourquoi.
+
+  **Décision de David, avant le code, pour les DEUX chemins :**
+  - **(a) continuer caméra coupée** — le bouche-trou prend la place de la caméra, et le toast
+    « Caméra indisponible : elle reste coupée » s'affiche, comme quand « activer la caméra » échoue
+    en cours d'appel. « Activer la caméra » la recapture une fois libérée. Le lot a construit tout
+    ce mécanisme, et l'option vaut à l'identique chez l'appelé et chez l'appelant. Elle renverse le
+    cas « aucun repli » et son motif (« l'utilisateur veut être vu ») : le toast prévient
+    l'utilisateur au lieu de le tromper.
+  - **(b) abandonner l'appel proprement** — chez l'appelé, une réponse `status: false` : l'appelant
+    voit « est injoignable », sans la cause. Chez l'appelant, qui n'a plus rien à refuser :
+    raccrocher en prévenant l'appelé. Dans les deux cas, un toast nomme la cause du côté qui échoue.
+
+  Recommandation : (a). La vérification du lot reprendra le cas non mesuré du lot clos, la prise en
+  cours d'appel. Le même lot corrigera trois textes, hors de ce diff : le commentaire du `catch` de
+  `Notifications.vue` (« ce qui lève est un refus consommé », alors qu'une acceptation lève aussi) ;
+  celui d'`acceptCallFromPeer`, qui recense deux sorties sans réponse, quand une capture qui lève en
+  est une troisième ; et le schéma « Appel sortant » de `flux.md`, qui fait arrêter la relance par
+  `Notifications`, quand `Notifications.vue` dit l'inverse.
+
+- [ ] 🟢 **Observé une fois, non expliqué : Chrome 156 perd le serveur PeerJS pendant une séance**
+  `[S]` — à 20:54:45 UTC le 29/10/2026 : « Lost connection to server », tentative **5/8**, sans
+  trace des tentatives 2 à 4, hors de tout rechargement à chaud et sans redémarrage de conteneur
+  (relecture du 29/10). Cause non établie, peut-être le réseau du poste. Un Chrome qui « décroche »
+  pendant une vérification manuelle peut venir de là, et pas du lot vérifié.
 
 - [ ] 🟠 **Firefox : sans clic dans l'onglet, aucun média distant ne joue, et la sonnerie se tait** `[M]`
   — constaté par David le 29/10/2026 (Firefox 148) : « si je clique, ça fonctionne ». Les players
@@ -1522,20 +1547,23 @@ Tous mesurés **avant** d'être écrits ici, aucun n'est une impression de lectu
   `isVideoEnabled`) : le masquer en vocal demande de le lui passer.
 
   C'est aussi par ce bouton qu'un poste SANS caméra peut entrer dans un appel visio avec la caméra
-  « coupée ». Depuis le 29/10, la capture s'y replie sur l'audio seul au lieu d'échouer. Le cas
+  « coupée ». Depuis le lot caméra (29/10), une caméra coupée n'est plus demandée : un bouche-trou
+  tient sa place, et la capture passe. Le repli fermé, sans bouche-trou possible, fait exception :
+  il la demande encore (le 🔴 en tête). Le cas
   voisin en VISIO (caméra coupée reportée qui ne se rallumait plus, appelant privé de la vidéo de
   l'appelé) est corrigé le même jour : `flux.md`, « Ce qu'un appel hérite du précédent ».
 
-- [ ] 🟢 **Le repli audio de la capture recapture aussi pour un appel annulé pendant l'invite**
-  `[S]` — mesuré le 29/10/2026 par la relecture du lot caméra (c). Caméra coupée ; acceptation ;
-  capture suspendue ; ANNULATION pendant l'invite (IDLE, room `null`) ; puis la 1re capture rejette
-  en `NotFoundError`. On observe deux captures, `{ video: true, audio: true }` puis
-  `{ video: false, audio: true }`. Le flux est ensuite coupé par la garde de room
-  d'`_enterCallSession`, sans erreur. En vrai navigateur, cela fait une 2e ouverture du micro, voire
-  une 2e invite après une invite fermée sans réponse (non mesuré), pour un appel que l'utilisateur
-  vient d'annuler. Remède proposé : `startCurrentStream` ne connaît pas la room, donc
-  `_enterCallSession`, qui possède la garde, lui passerait un prédicat « encore voulue ? » à
-  consulter avant de replier.
+- [ ] 🟢 **Une caméra rallumée pendant l'invite est recapturée pour un appel annulé pendant
+  l'invite** `[S]` — mesuré le 30/10/2026 par la relecture de la clôture du lot caméra, en harnais
+  happy-dom, côté appelant, dont la barre offre ses bascules dès CONNECTED. Le repli audio qui
+  faisait la double capture du 29/10 a disparu avec le lot. Mais `startCurrentStream` lance
+  `applyVideoState()` sans l'attendre, AVANT la garde de room d'`_enterCallSession`. Caméra coupée,
+  rallumée pendant l'invite, appel annulé pendant l'invite : deux captures, `{ video: false,
+  audio: true }` puis `{ video: true }`. La caméra est arrêtée dès son arrivée, et l'état final
+  est propre (IDLE, aucun flux). Mais la première capture ne demandait PAS la caméra : en vrai
+  navigateur, la seconde peut ouvrir une invite de permission caméra pour un appel annulé (non
+  mesuré). Piste : n'aligner la caméra qu'après la garde de room, ou passer à `startCurrentStream`
+  un prédicat « encore voulue ? ».
 
 - [ ] 🟠 **`isValidCallType` reste trop permissif sur les trois chemins ENTRANTS** `[S]`
 
