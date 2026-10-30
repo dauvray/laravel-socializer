@@ -39,7 +39,7 @@
       `68vh` (`components/_chat.scss:15-16`),
       `top: -45px` (`components/_chat.scss:110`),
       `--messenger-height` (déjà en custom-prop, OK),
-      largeurs `300px`/`450px` (`_socializer.scss:44,253`).
+      largeurs `300px`/`450px` (`_socializer.scss:44,293`).
 - [ ] **URL d'image externe en dur** — `components/_chat.scss:18`
       `user-images.githubusercontent.com/...` en prod → rapatrier l'asset dans
       les ressources du package, ou en variable.
