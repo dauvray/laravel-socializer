@@ -2,7 +2,8 @@
 
 > **À quoi ça sert :** la convention documentaire du package — quoi écrire, où, et sous quelle
 > forme.
-> **Quand le lire :** avant d'ajouter un `.md`, et quand un chantier se termine.
+> **Quand le lire :** avant d'ajouter un `.md`, avant de déclarer un lot fini, et quand un chantier
+> se termine.
 
 ---
 
@@ -143,17 +144,73 @@ module dans son `tests.md`.
 
 ---
 
+## Vérifier une phrase de doc
+
+Une phrase se vérifie contre ce qu'elle décrit, jamais contre une autre phrase :
+
+- **l'état d'une classe nommée** (un listener « branché », un événement « écouté ») se vérifie sur le
+  **câblage** — `php artisan event:list` —, pas sur l'existence du fichier ;
+- **le comportement d'une requête** se vérifie contre un **vrai graphe**, jamais contre la doublure
+  de test, qui ne fait que ce qu'on lui a appris ;
+- **une convention** se vérifie au grep : une page de référence peut violer la règle que le paquet
+  énonce ailleurs.
+
+On retrouve une phrase par le **grep de son mot-clé**, jamais par un numéro de ligne : la ligne n'est
+qu'un raccourci, et un numéro faux ne casse rien — il égare.
+
+⚠️ **Une annotation ne vit pas que dans `docs/`.** Un commentaire de code, un docblock ou un titre de
+test en sont aussi, et deviennent faux au même moment. L'inventaire d'une passe de doc se fait sur
+`git ls-files`, pas sur `docs/` et les `CLAUDE.md`.
+
+### Les phrases qui deviennent fausses sans que personne ne les touche
+
+Avant de déclarer un lot fini, relire chaque phrase qu'il touche avec la question de son espèce :
+
+| Espèce | Exemple | La question qui la repère |
+|---|---|---|
+| **Le décompte** | « cinq appelants », « treize fichiers » | ce lot change-t-il un nombre écrit quelque part ? |
+| **La mesure à zéro** | « ce contrat n'est épinglé par aucun test » | elle devient fausse à la seconde où le test qu'elle réclame est posé |
+| **La bonne nouvelle** | « les `JSON.parse` des appelants restent valables tels quels » | une phrase qui conclut qu'il n'y a rien à faire se revérifie **en premier** : elle est écrite pour être crue |
+| **Le fait exact sans objet** | « ce module lit `conn.connectionId` : inchangé », sur une ligne que le lot supprime | cette phrase parle-t-elle d'un code qui existera encore après le lot ? |
+| **La description jamais vraie** | « ClassRoom est le cas d'usage type de la topologie star » | aucune relecture de décomptes ne la rattrape : seul le lot qui touche le module la croise |
+| **L'intention que le code ne tient pas** | « éviction des flux *sans activité* », sur un code qui évinçait un flux vivant | quelle ligne fait ce que cette phrase dit ? |
+
+Les deux dernières sont les plus coûteuses : elles ne se **périment** pas, elles sont fausses dès leur
+naissance.
+
+### Une recette est un point de départ, pas une autorité
+
+Un plan écrit en **lisant** le code — table de correspondance d'une migration, liste de fichiers à
+supprimer — n'est vérifié que par le premier lot qui l'**exécute**. Il compare des contrats, pas des
+implémentations, et il ne cherche pas ce qu'il ne sait pas manquer. Sa correction est un livrable de
+chaque lot qui s'en sert. Une liste de suppression se vérifie par sa **preuve** (un grep qui rend
+zéro, un build dont les chunks sont ceux attendus), pas par sa liste.
+
+---
+
 ## Quand un chantier se termine
 
 C'est le moment où la doc se dégrade si on ne fait rien. Le geste :
 
 1. **Extraire le durable** du fichier de `work/` — le pourquoi, les pièges, les deltas assumés — et
    le remonter dans le `docs/` concerné.
-2. **Supprimer** les cases à cocher, les décomptes et le récit chronologique. Ils sont dans git.
-3. **Supprimer le fichier de `work/`** s'il ne reste rien, et retirer sa ligne de `work/README.md`.
+2. **Réécrire les renvois.** Chercher ce qui pointe vers le fichier ou la section coupée **à trois
+   endroits** : hors de `work/` (commentaires de code, docblocks de test, pages de `docs/`) ;
+   **dans** `work/` lui-même, d'un fichier de suivi à l'autre ; et dans les dépôts qui pointent ce
+   paquet — le projet hôte et le `work/` du socle. Chaque renvoi est repointé vers le `docs/` qui
+   reçoit le durable, ou retiré — sinon la coupe fabrique des annotations fausses. Puis recompter
+   les cases ouvertes de chaque fichier avant et après (`grep -o '\[ \]'`) : toute baisse doit
+   égaler la liste des suppressions annoncées.
+3. **Supprimer** les cases à cocher, les décomptes et le récit chronologique. Ils sont dans git.
+4. **Supprimer le fichier de `work/`** s'il ne reste rien, et retirer sa ligne de `work/README.md`.
 
 C'est exactement ce qu'a fait le chantier Chat : todolist retirée une fois terminée, seul le
 rationale conservé.
+
+⚠️ **La phrase par laquelle un fichier de `work/` se déclare vide de substance est la première à
+falsifier** — « tout ce qui concerne la v2 est dans `api.md` », « ce qu'elles ont appris […] est
+dans `docs/ecrire-la-doc.md` », « les items terminés sont élagués ». Elle est écrite pour qu'on coupe
+sans relire, et chacune de ces trois s'est révélée fausse au moment de la coupe.
 
 ---
 
