@@ -379,7 +379,13 @@ Avant ce champ, la signalisation n'ouvrait **jamais** la connexion d'écran vers
 le moteur de retry le faisait, ~1,5 s plus tard. Le partage d'écran reposait donc entièrement sur
 la chaîne de retry, ce qui l'a rendu totalement cassable deux fois par un simple `return` prématuré.
 
-`connectionType` absent ⇒ repli sur `type` — rétrocompatible avec un backend non déployé.
+`connectionType` absent ⇒ repli sur `type`, dans `connectToPeer` comme dans la réponse de
+`responseRemotePeerConnection`. **Ce repli n'est pas une rétrocompatibilité à retirer.** Un « backend
+non déployé » n'existe pas : PHP et JS partent dans le même tag, et l'hôte compile le bundle depuis
+le même `vendor/`. Deux cas réels produisent l'absence : un émetteur resté sur un bundle antérieur,
+que le backend relaie avec un `connectionType` nul (le `nullable` [plus haut](#cinq-invariants-backend)),
+et le moteur de retry de `useConnectionPool`, qui appelle `connectToPeer` avec le type de connexion
+dans `type` — `'screen'` compris. Sans le repli, le retry d'écran ouvrirait le type du contexte.
 
 ---
 

@@ -542,6 +542,14 @@ const { channel } = useReverbChannel('test', { type: 'private' })
 channel()?.subscribed(() => console.log('Souscrit !'))
 ```
 
+⚠️ **`subscribed(cb)` est un écouteur d'événement, pas une promesse.** Echo le branche sur
+`pusher:subscription_succeeded`, que pusher-js émet à la confirmation et ne rejoue pas. Sur un canal
+déjà confirmé, le rappel ne part donc pas — au mieux à la confirmation suivante, après une
+reconnexion. Un « attendre l'abonnement » écrit ainsi répare le cas où la confirmation arrive après,
+et casse celui où elle était déjà là : l'action n'a plus jamais lieu. Lire l'état d'abord —
+`channel()?.subscription?.subscribed`, le booléen du canal pusher-js —, et ne s'abonner que s'il est
+faux.
+
 ---
 
 ## `useReverbPresence` — sucre syntaxique

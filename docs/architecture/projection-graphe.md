@@ -145,6 +145,14 @@ leurs serveurs.** Une arête vers un sommet jamais posé ne fait pas exister ce 
 NebulaGraph un sommet n'existe que s'il porte un tag —, donc `owned_by` pendrait dans le vide. Le
 reste est insensible à l'ordre : une arête tolère que sa cible arrive après elle.
 
+**Poser un sommet puis son arête à la suite, dans le même appel et sans pause, est sûr — ce n'est
+pas une course.** Un `INSERT EDGE` ne vérifie pas que ses extrémités existent : il n'a donc rien à
+attendre du sommet posé juste avant. C'est le motif courant du paquet, y compris en lot —
+`createUserAndNetwork()` pose ses sommets puis leurs arêtes à la suite. L'asynchronie qui justifie
+les `sleep(sleeping_duration)` de `create_nebula` est celle du **schéma** : ils encadrent du DDL. La
+pause de `projectAll()` avant `projectArticleAuthors()`, elle, sépare deux DML ; son commentaire
+« le graphe est asynchrone » ne la fonde pas, et elle ne protège rien.
+
 `projectAll()` compte les écritures refusées et rapporte chacune par un `callable` ; **il ne décide
 pas**. Le rattrapage est **par item** : une seule ligne bancale ne doit pas emporter tout ce qui a
 déjà été projeté. Et seule `NebulaGraphException` est rattrapée — une `TypeError` ici est un bug de

@@ -2,7 +2,8 @@
 
 > **À quoi ça sert :** les conventions transverses du package — celles qu'on ne devine pas en
 > lisant un fichier au hasard.
-> **Quand le lire :** avant d'ajouter un fichier, un store, un modèle, une route ou du SCSS.
+> **Quand le lire :** avant d'ajouter ou de supprimer un fichier, un store, un modèle, une route
+> ou du SCSS.
 
 Les conventions **propres à WebRTC2** sont dans
 [modules/webrtc2/architecture.md](../modules/webrtc2/architecture.md#conventions-de-code).
@@ -140,6 +141,23 @@ Le fichier racine est fin : il importe les trois autres et les assemble. Les sto
 `routes/application.js` exporte un tableau de routes vue-router, avec `component: () => import(...)`
 (lazy) et un `meta.breadcrumb` **obligatoire**. La base d'URL vient d'une globale
 `router_base_url`.
+
+### Avant de déclarer un fichier orphelin
+
+⚠️ **Un `import()` à gabarit échappe à une extraction des chemins importés entre guillemets.**
+`` import(`../rooms/components/${componentName}.vue`) ``, dans
+`socializer_custom_elements/routes/application.js`, ne nomme aucun fichier : Vite développe le
+gabarit en glob, et chaque fichier du dossier visé devient un chunk. Un relevé des chemins entre
+guillemets conclut donc « aucun importeur » pour `rooms/components/TestRoom.vue`, qui est pourtant
+routé.
+
+Un grep des backticks (`` grep -rnE 'import\(\s*`' src/ ``) trouve ces imports, mais ne dit pas ce
+qu'ils atteignent. **Seul le diff de la liste des chunks entre le build d'avant et celui d'après le
+dit** — noms comparés sans leur hash : un chunk qui disparaît sans que son fichier ait été supprimé
+est un fichier que la suppression vient de rendre orphelin. C'est ce diff, pas l'extraction des
+imports, qui a montré qu'en retirant la v1, `callbacks/` perdait son importeur en entier : le store
+l'atteignait par des imports à gabarit. Le build est aussi le seul contrôle qui voie un import cassé
+dans un fichier qu'aucun test n'importe.
 
 ---
 

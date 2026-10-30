@@ -204,6 +204,12 @@ ajoute **agents IA** (`agents/settings.js`), **types de rooms** (`rooms/config.j
 Les contrôleurs sont eux aussi substituables : les routes les référencent **par config**
 (`config('socializer.controllers_front.user').'@methode'`), jamais en dur.
 
+⚠️ **Conséquence : une garde posée dans un contrôleur disparaît chez l'hôte qui le remplace.** Une
+garde d'autorisation qui doit tenir quel que soit le contrôleur va donc dans le **service**
+(`src/app/Services/`), auquel un contrôleur de remplacement délègue encore le travail — les
+contrôleurs sont minces ([conventions.md](conventions.md#php)). Les gardes déjà posées en contrôleur
+— `mayReach()` dans `UserController` — passent à la charge de qui substitue celui-ci.
+
 ---
 
 ## Zones mortes connues
