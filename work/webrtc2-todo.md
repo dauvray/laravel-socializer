@@ -10,82 +10,68 @@
 
 ---
 
+## ▶ Lot en vérification — 🔴 « une capture impossible ne suspend plus l'appel » `[M]`
+
+> **Codé et testé le 30/10/2026**, sur deux décisions de David du même jour, pour l'appelé comme
+> pour l'appelant : la caméra manque, l'appel continue caméra coupée, avec un toast ; le micro
+> manque, l'appel sort proprement — l'appelé refuse, l'appelant raccroche en prévenant l'autre.
+> Le définitif est dans [`flux.md`](../docs/modules/webrtc2/flux.md), « Une capture impossible ne
+> suspend plus l'appel », la table de mutations dans l'en-tête de
+> `usePeerOrchestrator.calls.test.js`, le récit dans `git log`. **Le 🔴 reste ouvert jusqu'à la
+> vérification** : aucun harnais n'exerce une vraie caméra prise, un vrai micro absent, ni une
+> vraie invite de permission.
+
+- [ ] **Vérification de David en vrai navigateur** — rechargement dur des deux côtés, aucune
+  écriture dans `.env` pendant la mesure (`.ai/rules/web-r-t-c2.md`). La version de chaque
+  navigateur se lit dans `browser.log`. Juger sur les toasts, et sur l'absence de
+  « [Notifications] réponse à une invitation » et de « Unhandled » dans `browser.log` ; les
+  marqueurs `[useCallManager] caméra indisponible au démarrage de l'appel` et `[useCallManager]
+  aucun flux local possible` disent quelle issue a joué.
+  1. A a sa webcam dans Teams ; B l'appelle en visio, et A accepte. Attendu : l'appel s'établit, A
+     voit « Caméra indisponible : elle reste coupée » et son bouton caméra sur « coupée », B voit du
+     noir pour A, et les deux s'entendent.
+  2. Le même, A appelant : A, webcam dans Teams, appelle B, qui accepte. Même attendu chez A.
+  3. Pendant l'appel de l'étape 1, fermer Teams, puis « activer la caméra » chez A : B la voit.
+  4. Webcam débranchée avant l'appel, un autre micro restant branché (noter lequel) : même attendu
+     qu'en 1. Si la webcam porte le seul micro, l'étape teste le micro, pas la caméra.
+  5. Hérité du lot caméra : la caméra prise par une autre application EN COURS d'appel. Noter ce
+     qui se passe, et l'OS.
+  Les étapes de permission persistent pour l'origine : les faire EN DERNIER, et remettre
+  « Autoriser » après chacune.
+  6. Caméra seule bloquée dans les réglages du site, micro autorisé : même attendu qu'en 1.
+  7. Caméra et micro remis sur « Demander » dans les réglages du site de A. B appelle A ; A
+     accepte, puis refuse l'invite de permission, par son bouton de refus (le libellé varie selon la
+     version). Répondre en moins d'environ 55 s : au-delà, la relance de B abandonne, et B lit
+     « n'a pas répondu » au lieu de « injoignable ». Deux issues, à noter. Si aucune autre invite
+     n'apparaît, la déduction de `flux.md` tient : chez A, « Micro indisponible : l'appel ne peut
+     pas démarrer » et l'appel refermé ; chez B, « A est injoignable ». Si une SECONDE invite
+     apparaît, pour le micro seul, la déduction tombe : y répondre « Autoriser », puis attendre le
+     toast caméra et l'appel établi. Remettre « Autoriser » ensuite.
+  8. Caméra et micro de nouveau sur « Demander » chez A. A appelle B, B accepte, et A refuse
+     l'invite. Attendu chez A : le toast du micro, ou, si une seconde invite est autorisée, le toast
+     caméra et l'appel établi ; chez B, dans le premier cas, « Appel de A annulé ». Remettre
+     « Autoriser » ensuite.
+
 ## Ce que le lot caméra a ouvert — lot clos le 30/10/2026
 
 > **« Couper la caméra éteint vraiment la webcam » est clos le 30/10/2026**, sur la vérification
 > de David en vrai navigateur, rapportée ce jour-là : étapes 1 à 5 OK, webcam débranchée OK sous
 > Chrome 156 après `132de96`. Sous Firefox, dans un flux avec micro, la réactivation ne redemande
-> pas la permission, et l'aperçu local revoit la caméra (version non établie : 133 ou 148). Le définitif est dans
-> [`flux.md`](../docs/modules/webrtc2/flux.md), « Couper la caméra l'éteint », avec le repli fermé,
-> décidé par David le même jour. Le récit est dans `git log`. Un seul cas n'est pas mesuré : la
-> caméra prise par une autre application EN COURS d'appel. En le tentant, David a trouvé le 🔴
-> ci-dessous, antérieur au lot.
+> pas la permission, et l'aperçu local revoit la caméra (version non établie : 133 ou 148). Le
+> définitif est dans [`flux.md`](../docs/modules/webrtc2/flux.md), « Couper la caméra l'éteint »,
+> avec le repli fermé, décidé par David le même jour. Le récit est dans `git log`. Un seul cas n'est
+> pas mesuré : la caméra prise par une autre application EN COURS d'appel (étape 5 du lot en tête).
+> En le tentant, David a trouvé un 🔴 antérieur au lot : c'est le lot en tête.
 
-- [ ] 🔴 **Un appel visio dont la capture caméra est refusée reste suspendu, des deux côtés et
-  sans un mot** `[M]` — caméra prise par une autre application, permission refusée ou caméra
-  absente : toute capture qui échoue avec la caméra OUVERTE. Le défaut a deux chemins, et la
-  correction doit traiter les deux.
+- [ ] 🟢 **L'appelant d'un appelé sans micro lit « est injoignable », sans la cause** `[S]` — la
+  sortie propre de l'appelé est un refus ordinaire. Le serveur ne relaie d'une réponse que les clés
+  de `RELAYED_OPTION_KEYS` : y transmettre la cause demande une clé de plus, côté PHP et côté
+  `usePeerCore.sendAuthorizationRemotePeerId`.
 
-  **Côté appelé : vu par David le 30/10/2026, puis mesuré.** A a la webcam dans Teams, B l'appelle,
-  A accepte, et les deux restent sur le spinner. Dans `browser.log`, deux fois (10:47:53 et
-  10:48:28 UTC), chez l'appelé (Windows, Chrome 156) : « Unhandled error during execution of
-  component event handler » sur `AlertComponent`, puis `Unhandled Promise Rejection
-  NotReadableError Could not start video source`. Aucun `catch` sur le chemin (`VideoCallAlert` →
-  `AlertComponent` → `Notifications.vue` → `acceptCallFromPeer`). `_enterCallSession` lève après la
-  transition en RECEIVING et après `addCurrentCallUser` ; il laisse la marque
-  `markAuthorizedCallPeer` (lu, non mesuré). Aucune réponse ne part, ni acceptation ni refus. La sonde de la relecture
-  du 30/10, sur le harnais de `usePeerOrchestrator.calls.test.js`, compte zéro POST vers
-  `/response-to-authorization-peer`, contre un quand la caméra est libre, et le même blocage pour
-  `NotReadableError`, `NotAllowedError` (permission refusée) et `NotFoundError` (pas de caméra).
-  L'appelant ne sort que par
-  l'abandon de la relance d'invitation, environ 55 s après l'ENVOI de l'invitation (10:49:22 UTC
-  chez Edge 156), sur un toast « n'a pas répondu » qui se trompe de cause. Ce que voient ensuite les
-  appels suivants chez l'appelé resté en RECEIVING n'est pas lu.
-
-  **Côté appelant : pire.** `Notifications.vue` rattrape bien le rejet d'`openCallBetweenPeer`,
-  mais n'en fait qu'un `console.error('[Notifications] réponse à une invitation')`. Sa trace dans
-  `browser.log` n'est donc PAS un « Unhandled Promise Rejection ». Elle a été vue en vrai navigateur :
-  `browser.log`, le 29/10 à 18:39:57 UTC, Edge 156, « [Notifications] réponse à une invitation
-  NotReadableError Could not start video source ». Cette trace prouve le chemin, pas la durée : la
-  page a été quittée 21 s plus tard, et l'arbre était alors en plein lot (entre `d06a9d9` et
-  `c4f79ae`). Et
-  `openCallBetweenPeer` arrête la relance (`stopInviteRetry`) AVANT la transition et la capture qui
-  lève : il n'y a plus ni relance ni abandon. Dans la sonde de la relecture (harnais), l'appelant
-  est encore CONNECTED dix minutes après le rejet, et `peer.call` n'a jamais été appelé. Son appelé,
-  qui a déjà accepté, attend en RECEIVING un appel qui ne viendra pas (déduit, non mesuré).
-
-  La capture rejette par décision quand la caméra est OUVERTE et indisponible : c'est le cas
-  « caméra OUVERTE et indisponible : aucun repli, l'échec remonte » de
-  `usePeerMedia.streams.test.js`. Ce qui ne tient pas l'échec, c'est le code en aval. Le défaut est
-  antérieur au lot : à `d06a9d9`, la capture levait déjà, et `useCallManager.js` n'a pas changé
-  depuis. La diffusion n'est pas touchée : `GroupLocalStreamBtn` rattrape et nomme
-  `NotReadableError`. Dans le repli fermé du lot, faute de bouche-trou possible, la caméra est
-  demandée même coupée (lu, non mesuré). Et `isVideoEnabled` vaut `true` par défaut
-  (`createPeerContext.js`) : un poste SANS webcam est bloqué dès son premier appel visio, sans
-  qu'aucune autre application soit en jeu (`NotFoundError`, mesuré en harnais). Les scénarios
-  ci-dessus sont ceux des tests rouges du lot.
-
-  Pourquoi 🔴 : sur un poste du GHU, une webcam tenue par Teams est un cas ordinaire, comme une
-  permission refusée ou un poste sans webcam. L'appel visio ne peut alors ni être décroché ni
-  passé, et personne ne sait pourquoi.
-
-  **Décidé par David le 30/10/2026 : (a), pour les deux chemins.**
-  - **(a) continuer caméra coupée** — le bouche-trou prend la place de la caméra, et le toast
-    « Caméra indisponible : elle reste coupée » s'affiche, comme quand « activer la caméra » échoue
-    en cours d'appel. « Activer la caméra » la recapture une fois libérée. Le lot a construit tout
-    ce mécanisme, et l'option vaut à l'identique chez l'appelé et chez l'appelant. Elle renverse le
-    cas « aucun repli » et son motif (« l'utilisateur veut être vu ») : le toast prévient
-    l'utilisateur au lieu de le tromper.
-  - **(b) abandonner l'appel proprement** — chez l'appelé, une réponse `status: false` : l'appelant
-    voit « est injoignable », sans la cause. Chez l'appelant, qui n'a plus rien à refuser :
-    raccrocher en prévenant l'appelé. Dans les deux cas, un toast nomme la cause du côté qui échoue.
-
-  (b) est écartée. La vérification du lot reprendra le cas non mesuré du lot clos, la prise en
-  cours d'appel. Le même lot corrigera trois textes, hors de ce diff : le commentaire du `catch` de
-  `Notifications.vue` (« ce qui lève est un refus consommé », alors qu'une acceptation lève aussi) ;
-  celui d'`acceptCallFromPeer`, qui recense deux sorties sans réponse, quand une capture qui lève en
-  est une troisième ; et le schéma « Appel sortant » de `flux.md`, qui fait arrêter la relance par
-  `Notifications`, quand `Notifications.vue` dit l'inverse.
+- [ ] 🟢 **Caméra rallumée PENDANT l'invite, puis indisponible : le drapeau retombe sur « coupée »
+  sans toast** `[S]` — mesuré par la relecture du 30/10/2026, en harnais. `startCurrentStream` lance
+  `applyVideoState()` sans l'attendre, et personne ne lit son `false`. Aucun blocage : l'appel part
+  caméra coupée, mais sans le dire.
 
 - [ ] 🟢 **Observé une fois, non expliqué : Chrome 156 perd le serveur PeerJS pendant une séance**
   `[S]` — à 20:54:45 UTC le 29/10/2026 : « Lost connection to server », tentative **5/8**, sans
@@ -1549,7 +1535,7 @@ Tous mesurés **avant** d'être écrits ici, aucun n'est une impression de lectu
   C'est aussi par ce bouton qu'un poste SANS caméra peut entrer dans un appel visio avec la caméra
   « coupée ». Depuis le lot caméra (29/10), une caméra coupée n'est plus demandée : un bouche-trou
   tient sa place, et la capture passe. Le repli fermé, sans bouche-trou possible, fait exception :
-  il la demande encore (le 🔴 en tête). Le cas
+  il la demande encore, et son échec sort l'appel proprement (`flux.md`). Le cas
   voisin en VISIO (caméra coupée reportée qui ne se rallumait plus, appelant privé de la vidéo de
   l'appelé) est corrigé le même jour : `flux.md`, « Ce qu'un appel hérite du précédent ».
 

@@ -30,13 +30,12 @@ useCallManager.startCallWithPeer
   … le distant accepte …
 
 Reverb .ResponseToAuthorizationPeer → Notifications.vue
-  ├─ peers.stopCallInviteRetry(inviteId)
-  └─ peers.openCallBetweenPeer(event)
+  └─ peers.openCallBetweenPeer(event)       ← lui seul juge la réponse, et arrête la relance
 useCallManager.openCallBetweenPeer
-  ├─ core.stopCallInviteRetryForUser(...)
+  ├─ core.stopCallInviteRetryForUser(...)   ← AVANT la capture
   ├─ peerStore.addRemotePeerId(fromUserSlug, options.peerId)
   ├─ callMachine.transition(CONNECTED)
-  ├─ _enterCallSession()   → media.startCurrentStream() + createVideoElement('local-webcam')
+  ├─ _enterCallSession()   → _startCallStream() + createVideoElement('local-webcam')
   └─ pool.requestOrConnectPeer(fromUserSlug)
        └─ usePeerConnections.connectToPeer → peer.call(peerId, stream, config)
 ```
@@ -46,14 +45,45 @@ l'appel suivant, et elle n'y est **pas capturée** : sans vidéo, le voyant de l
 Le type d'appel décide si le flux porte une piste vidéo (`vocal` l'interdit), `isVideoEnabled` si
 cette piste est la caméra. Sinon, une piste canvas noire et désactivée tient sa place
 (`createPlaceholderVideoTrack`). Un poste sans caméra qui l'a coupée passe donc, sauf dans le repli
-fermé, qui la demande encore (plus bas). Une caméra OUVERTE dont la capture échoue (prise par une
-autre application, permission refusée, absente) fait échouer la capture, et l'appel reste suspendu,
-sans que rien dise pourquoi. La caméra étant ouverte par défaut, un poste sans webcam y tombe dès
-son premier appel visio. Chez l'appelé, l'échec n'est rattrapé nulle part et aucune réponse ne part
-(vu par David le 2026-10-30, webcam tenue par Teams). Chez l'appelant, `Notifications.vue` le
-rattrape et se contente de le journaliser (vu dans `browser.log` le 2026-10-29, Edge 156), mais la
-relance de l'invitation est déjà arrêtée : il reste en CONNECTED (mesuré en harnais). C'est le 🔴
-de `work/webrtc2-todo.md`. Le micro, lui, repart ouvert : l'arrêt complet
+fermé, qui la demande encore (plus bas).
+
+**Une capture impossible ne suspend plus l'appel** (décisions de David du 2026-10-30, pour
+l'appelé comme pour l'appelant). Avant, le rejet de `startCurrentStream` remontait tel quel et
+personne ne le rattrapait. L'appelé ne répondait jamais (vu par David le 2026-10-30, webcam tenue
+par Teams). L'appelant, dont la relance était déjà arrêtée, restait en CONNECTED (`browser.log` du
+2026-10-29, Edge 156, et harnais). La caméra étant ouverte par défaut, un poste sans webcam y
+tombait dès son premier appel visio. `useCallManager._startCallStream` tranche désormais :
+
+- **La caméra manque — l'appel continue caméra coupée.** Il s'agit d'une caméra OUVERTE absente,
+  prise par une autre application, ou refusée seule dans les réglages du site. Une seconde capture
+  part sans caméra, et le bouche-trou prend sa place. Le drapeau vaut « coupée » pendant cette
+  capture, et ne le reste que si elle réussit. `mediaUnavailableSignal` (`device: 'camera'`) fait afficher à `Notifications.vue`
+  « Caméra indisponible : elle reste coupée », le même toast que l'échec d'« activer la caméra »,
+  qui la recapture une fois libérée. Pas de toast pour une caméra que l'utilisateur a coupée
+  pendant l'invite.
+- **Le micro manque — l'appel sort proprement** (`_leaveUncapturableCall`). Le micro peut être
+  refusé, absent ou pris, en visio comme en vocal. Une permission bloquée en bloc à l'invite de
+  Chrome en fait partie, d'après une déduction non mesurée : elle bloquerait aussi le micro.
+  L'appelé revient au repos, puis REFUSE l'appel : l'appelant lit « est injoignable », sans la
+  cause. Dans cet ordre, aucune annulation ni aucun rappel ne tombe entre les deux. L'appelant
+  raccroche en prévenant l'appelé, dans la room de l'appel, et l'appelé lit « Appel de … annulé ».
+  Le message est épinglé par `Notifications.test.js`, la room transportée par
+  `usePeerOrchestrator.calls.test.js`. Aucun des deux n'a encore été vu en vrai navigateur. Chez
+  celui qui manque de micro, le toast dit « Micro indisponible : l'appel ne peut pas démarrer », et
+  `close-call` réarme le bouton d'appel du mur. La caméra garde son réglage.
+
+`getUserMedia` ne dit pas quel périphérique a manqué. Une caméra demandée est donc supposée
+fautive, et le repli est tenté avant de conclure au micro : deux captures quand c'est le micro.
+Le repli n'a lieu que si la caméra était demandée quand la capture est partie, et si l'appel est
+encore voulu : la seconde capture peut rouvrir une invite de permission. Une borne est assumée :
+dans le repli fermé (un navigateur sans capture canvas), la seconde capture redemande la caméra,
+et son échec sort sous le toast du micro. `startCurrentStream` garde son contrat, l'échec remonte :
+la diffusion le rattrape et nomme la cause (`GroupLocalStreamBtn`). Dans `browser.log`, les deux
+issues s'écrivent `[useCallManager] caméra indisponible au démarrage de l'appel` et
+`[useCallManager] aucun flux local possible`. Gardé par `usePeerOrchestrator.calls.test.js`, dont
+l'en-tête porte la table de mutations.
+
+Le micro, lui, ne s'hérite pas d'un appel à l'autre : il repart ouvert, parce que l'arrêt complet
 remet `isMuted` à `false` dans son `finally`, donc même quand il lève. Reporté, un micro coupé
 demandait `audio: false` : un flux sans piste audio, que la bascule ne rattrape pas (elle ne
 bascule que les pistes existantes), et en vocal `{ video: false, audio: false }`, qui fait rejeter
@@ -82,8 +112,8 @@ jamais (0 `ended` sur `stop()` dans Chromium 149 et Firefox 151, mesuré par la 
 2026-10-30, Chrome 156 : bouton repassé sur « coupée », noir chez le pair). Une caméra prise par
 une autre application EN COURS d'appel n'est pas mesurée : selon l'OS, la capture peut continuer,
 ou ne produire qu'un `mute`, que ce code ne suit pas. Prise AVANT, elle fait échouer la capture
-(`NotReadableError` sous Windows, Chrome 156, le 2026-10-30), et c'est l'appel suspendu décrit
-plus haut. `usePeerMedia._followCamera` remet le drapeau à « coupée » et pose le bouche-trou,
+(`NotReadableError` sous Windows, Chrome 156, le 2026-10-30), et l'appel part caméra coupée
+(plus haut). `usePeerMedia._followCamera` remet le drapeau à « coupée » et pose le bouche-trou,
 chez soi comme chez le pair. Cela vaut pour la caméra initiale comme pour une caméra rallumée.
 Sans ça, l'UI disait « filmé » et le pair gardait la dernière image, figée. L'aperçu local, lui, ne
 dépend d'AUCUNE de ses pistes (`usePeerMedia._bindStreamCleanup` ignore le flux local) : il dure le

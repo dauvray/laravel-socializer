@@ -443,6 +443,11 @@ export function usePeerOrchestrator( type = 'data', room = 'app', options = {}, 
         // (Notifications.vue), qui le remet à null. Aucune couche intermédiaire ne l'observe.
         inviteAbandonedSignal: context.inviteAbandonedSignal,
 
+        // Un périphérique a manqué au démarrage d'un appel : la caméra (l'appel continue caméra
+        // coupée) ou le micro (l'appel sort proprement). Écrit par useCallManager, consommé par
+        // l'UI (Notifications.vue).
+        mediaUnavailableSignal: context.mediaUnavailableSignal,
+
         // session
         localPeerId: context.localPeerId,
         currentType: context.currentType,

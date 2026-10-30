@@ -76,8 +76,10 @@ export function usePeerMedia(ctx) {
      * pair ne lui parvenait pas (deux écrans noirs ; `connectToPeer` la demande aussi par l'offre).
      * Mesuré dans Chromium : `flux.md`.
      *
-     * Une caméra OUVERTE qui ne peut pas être capturée fait échouer la capture : l'utilisateur veut
-     * être vu. Coupée, elle n'est pas demandée, donc un poste sans caméra passe.
+     * Une caméra OUVERTE qui ne peut pas être capturée fait échouer la capture, et la suite
+     * appartient à l'appelant : un APPEL repart caméra coupée, avec un toast
+     * (`useCallManager._startCallStream`, décision du 2026-10-30) ; la diffusion garde l'échec, que
+     * `GroupLocalStreamBtn` nomme. Coupée, elle n'est pas demandée, donc un poste sans caméra passe.
      *
      * Sans bouche-trou possible (`_createPlaceholder` rend `null`), la caméra coupée est capturée,
      * puis désactivée par `applyVideoState` : l'état d'avant le 2026-10-29, voyant allumé.

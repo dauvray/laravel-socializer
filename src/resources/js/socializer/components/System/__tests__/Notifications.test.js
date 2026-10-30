@@ -257,6 +257,34 @@ describe('Notifications — l\'invitation qui ne part pas', () => {
     })
 })
 
+describe('Notifications — un périphérique manque au démarrage d\'un appel', () => {
+
+    // Décisions de David du 2026-10-30 (`useCallManager._startCallStream`) : la caméra manque,
+    // l'appel continue caméra coupée ; le micro manque, l'appel sort proprement. Sans ces toasts,
+    // on se croirait vu, ou l'appel disparaîtrait sans un mot.
+    it('caméra : l\'annonce, et consomme le signal pour que le suivant repasse', async () => {
+        peersDouble.mediaUnavailableSignal.value = { device: 'camera', name: 'NotReadableError' }
+        await nextTick()
+
+        expect(window.AWN.info).toHaveBeenCalledWith('Caméra indisponible : elle reste coupée')
+        expect(peersDouble.mediaUnavailableSignal.value).toBeNull()
+
+        peersDouble.mediaUnavailableSignal.value = { device: 'camera', name: 'NotFoundError' }
+        await nextTick()
+
+        expect(window.AWN.info).toHaveBeenCalledTimes(2)
+    })
+
+    it('micro : dit que l\'appel ne peut pas démarrer', async () => {
+        peersDouble.mediaUnavailableSignal.value = { device: 'microphone', name: 'NotAllowedError' }
+        await nextTick()
+
+        expect(window.AWN.info).toHaveBeenCalledWith('Micro indisponible : l\'appel ne peut pas démarrer')
+        expect(window.AWN.info).toHaveBeenCalledTimes(1)
+        expect(peersDouble.mediaUnavailableSignal.value).toBeNull()
+    })
+})
+
 describe('Notifications — abandon du retry d\'invitation', () => {
 
     it('rejoue le chemin du refus : toast, close-call, puis openCallBetweenPeer', async () => {

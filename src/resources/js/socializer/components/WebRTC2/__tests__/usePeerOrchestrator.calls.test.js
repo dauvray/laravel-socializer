@@ -152,6 +152,41 @@
  *   | l'ancienne garde, sur les seules pistes vidéo locales   | les mêmes, sauf « … en cours     |
  *   |                                                         | d'appel … »                      |
  *
+ * Une capture impossible au démarrage d'un appel (2026-10-30, décisions de David : la caméra
+ * manque, l'appel continue caméra coupée ; le micro manque, il sort proprement), mesurée sur ce
+ * fichier et sur `Notifications.test.js` (« toast ») :
+ *
+ *   | Neutralisé                                              | Rougit                           |
+ *   |---------------------------------------------------------|----------------------------------|
+ *   | aucun repli caméra : le premier rejet remonte           | 9, dont les 6 ⭐ de la caméra     |
+ *   | drapeau laissé « ouvert » pour la seconde capture       | 7                                |
+ *   | drapeau à « coupée » AVANT la garde de room             | 7, dont « appel annulé … »       |
+ *   | caméra « demandée » lue APRÈS la capture                | « ⭐ appelant qui coupe … »       |
+ *   | garde « encore voulu ? » retirée du premier rejet       | « appel annulé pendant l'invite »|
+ *   | repli tenté même caméra non demandée                    | « ⭐ VOCAL … », « … déjà COUPÉE »|
+ *   | drapeau non rétabli quand la seconde capture rejette    | « ⭐ appelé, MICRO … », « … qui   |
+ *   |                                                         | rejette … »                      |
+ *   | second rejet relevé même pour un appel arrêté           | « … qui rejette … »              |
+ *   | toast même pour une caméra coupée par l'utilisateur     | « ⭐ appelant qui coupe … »       |
+ *   | signal caméra jamais écrit                              | les 4 ⭐ de la caméra seule       |
+ *   | signal caméra écrit AVANT la garde de room              | « … SECONDE capture : rien … »   |
+ *   | appelé : aucun refus, ou pas de retour au repos         | les 3 cas de l'appelé sans micro |
+ *   | appelé : le refus AVANT le retour au repos              | « ⭐ appelé, MICRO … » (né rouge, |
+ *   |                                                         | relecture du 30/10)              |
+ *   | appelé : le refus hors du `finally`                     | AUCUN — l'arrêt complet ne lève  |
+ *   |                                                         | pas dans le harnais              |
+ *   | appelant : raccroche SANS prévenir                      | « ⭐ appelant, MICRO … »          |
+ *   | signal micro jamais écrit                               | les 4 cas sans micro             |
+ *   | `close-call` non émis                                   | les 2 ⭐ du MICRO                 |
+ *   | toast caméra, ou toast micro, retiré                    | 1 « toast » chacun               |
+ *   | signal non consommé                                     | les 2 « toast »                  |
+ *
+ * Les deux lignes « caméra demandée lue APRÈS » et « drapeau à coupée AVANT la garde » sont celles
+ * de la relecture : elles survivaient à toute la suite avant leurs cas. Nés rouges : tous les ⭐,
+ * sur le rejet lui-même ou sur le signal sans `device`, « caméra libérée … » et « … qui
+ * rejette … ». Nés verts, tenus par la table : « appel annulé … », dont la garde était déjà écrite,
+ * et « … SECONDE capture : rien … », écrit après le code.
+ *
  * Les ⭐ sont nés rouges : `{ video: true, audio: false }` en visio, le `TypeError` en vocal ;
  * pour la caméra, aucune piste vidéo (`[]`), y compris dans le flux passé à `peer.call` ; pour le
  * repli, l'acceptation rejetée en `NotFoundError` ; pour l'offre, `constraints` absent. Ceux du
@@ -170,12 +205,15 @@ import { bootLocalPeer } from './helpers/bootLocalPeer.js'
 import { installFakeMedia, fakeTrack, realStream } from './helpers/fakeMedia.js'
 import { resetPeerMock, getLastPeerInstance, createMockMediaConnection } from './__mocks__/peerjs.js'
 import { usePeerOrchestrator } from '~socializer/components/WebRTC2/Composables/usePeerOrchestrator.js'
+import { ENDPOINTS } from '~socializer/components/WebRTC2/webrtc2.config.js'
 import { usePeer2Store } from '~socializer/stores/peers2.js'
 import { useMeStore } from '~estarter/stores/me.js'
 
-// L'appelant invite (POST `/send-alert-to-user`) : une réponse vide suffit, rien n'est lu dedans.
+// L'appelant invite (POST `/send-alert-to-user`), l'appelé répond : une réponse vide suffit, rien
+// n'est lu dedans. Hissé pour compter les réponses qui partent (`reponsesEnvoyees`).
+const { load } = vi.hoisted(() => ({ load: vi.fn(async () => ({ data: {} })) }))
 vi.mock('~estarter/services/AjaxService.js', () => ({
-    useAjaxService: () => ({ load: vi.fn(async () => ({ data: {} })) }),
+    useAjaxService: () => ({ load }),
 }))
 
 /** Rend la main jusqu'à la vidange COMPLÈTE de la file de microtâches. */
@@ -191,10 +229,17 @@ describe('usePeerOrchestrator — un appel démarre micro ouvert', () => {
     let livrer
     /** Vrai : le poste n'a pas de caméra — toute demande vidéo rejette, comme Chromium. */
     let sansCamera
+    /** Le nom de l'erreur de ce rejet : absente, prise par une autre application, refusée. */
+    let erreurCamera
+    /** Vrai : le poste n'a pas de micro — toute demande audio rejette, sous le nom `erreurMicro`. */
+    let sansMicro
+    let erreurMicro
     /** Toutes les pistes CAMÉRA rendues par `getUserMedia`, dans l'ordre — le voyant, c'est elles. */
     let cameras
     /** Vrai : la prochaine caméra capturée est déjà terminée à son arrivée (débranchée entre-temps). */
     let cameraTerminee
+    /** L'eventBus injecté : `close-call` réarme le bouton d'appel du mur. */
+    let bus
 
     beforeEach(async () => {
         document.body.innerHTML = '<div id="videoContainer"></div>'
@@ -204,6 +249,10 @@ describe('usePeerOrchestrator — un appel démarre micro ouvert', () => {
         suspendre = false
         livrer = null
         sansCamera = false
+        erreurCamera = 'NotFoundError'
+        sansMicro = false
+        erreurMicro = 'NotFoundError'
+        load.mockClear()
         cameras = []
         cameraTerminee = false
         navigator.mediaDevices.getUserMedia.mockImplementation((demande) => {
@@ -211,8 +260,14 @@ describe('usePeerOrchestrator — un appel démarre micro ouvert', () => {
             if (!demande.audio && !demande.video) {
                 return Promise.reject(new TypeError('At least one of audio and video must be requested'))
             }
-            if (sansCamera && demande.video) {
-                return Promise.reject(Object.assign(new Error('Requested device not found'), { name: 'NotFoundError' }))
+            const refus = (sansCamera && demande.video && erreurCamera) || (sansMicro && demande.audio && erreurMicro)
+            if (refus) {
+                const erreur = Object.assign(new Error('Requested device not found'), { name: refus })
+                if (suspendre) {
+                    suspendre = false
+                    return new Promise((_, reject) => { livrer = () => reject(erreur) })
+                }
+                return Promise.reject(erreur)
             }
             const pistes = []
             if (demande.video) pistes.push(fakeTrack('video'))
@@ -235,9 +290,10 @@ describe('usePeerOrchestrator — un appel démarre micro ouvert', () => {
             vi.spyOn(console, niveau).mockImplementation(() => {})
         }
 
+        bus = mockEventBus()
         ;[api, app] = withSetup(
             () => usePeerOrchestrator('data', 'app'),
-            { provides: { eventBus: mockEventBus() } },
+            { provides: { eventBus: bus } },
         )
         await bootLocalPeer(() => api.initializePeerConnection({}), { peerId: 'my-peer-id' })
     })
@@ -860,5 +916,231 @@ describe('usePeerOrchestrator — un appel démarre micro ouvert', () => {
         const [piste] = api.currentStream.value.getVideoTracks()
         expect(piste).not.toBe(camera)
         expect(piste.enabled).toBe(false)
+    })
+
+    // ── Une capture impossible ne suspend plus l'appel ─────────────────────────────────────
+    //
+    // Décisions de David du 2026-10-30, pour l'appelé comme pour l'appelant (🔴 de
+    // `work/webrtc2-todo.md`). Une capture qui rejetait faisait lever `_enterCallSession` :
+    // l'appelé ne répondait jamais, et l'appelant restait en CONNECTED sans relance ni abandon.
+    // La CAMÉRA manque (absente, prise, refusée seule dans les réglages du site) : l'appel
+    // continue caméra coupée. Le MICRO manque : l'appel sort proprement — l'appelé refuse,
+    // l'appelant raccroche en prévenant l'autre.
+
+    /** Le `status` de chaque réponse à une invitation partie de ce poste. */
+    const reponsesEnvoyees = () => load.mock.calls
+        .filter(([url]) => url === ENDPOINTS.RESPONSE_TO_AUTHORIZATION_PEER)
+        .map(([, , corps]) => corps.status)
+
+    /** Les fins d'appel annoncées au pair (POST `/close-connection-to-peer-id`). */
+    const finsAnnoncees = () => load.mock.calls
+        .filter(([url]) => url === ENDPOINTS.CLOSE_CONNECTION_TO_PEER_ID)
+        .map(([, , corps]) => ({ toUserSlug: corps.toUserSlug, room: corps.room }))
+
+    /** Appelant : alice accepte. Sans attendre de connexion, qui peut ne jamais partir. */
+    const ouvrirApresAcceptation = async () => {
+        const inviteId = await api.startCallWithPeer({ toUserSlug: 'alice', type: 'visio' })
+        return api.openCallBetweenPeer({
+            fromUserSlug: 'alice',
+            status: true,
+            options: { type: 'visio', room: api.currentCallRoomId.value, peerId: 'peer-alice', inviteId },
+        })
+    }
+
+    it.each(['NotFoundError', 'NotReadableError', 'NotAllowedError'])(
+        '⭐ appelé, caméra OUVERTE indisponible (%s) : l\'acceptation part, caméra coupée, piste noire à sa place',
+        async (nom) => {
+            sansCamera = true
+            erreurCamera = nom
+
+            await accepter('call-1')
+
+            expect(reponsesEnvoyees()).toEqual([true])
+            expect(contraintes).toEqual([{ video: true, audio: true }, { video: false, audio: true }])
+            expect(api.isVideoEnabled.value).toBe(false)
+            expect(api.currentStream.value.getVideoTracks().map((piste) => piste.enabled)).toEqual([false])
+            expect(pistesAudio()).toBe(1)
+            expect(api.mediaUnavailableSignal.value).toEqual({ device: 'camera', name: nom })
+
+            // L'appel de l'initiateur est répondu avec ce flux. CONNECTED attend le premier flux
+            // distant (`markCallConnected`), que le double n'émet pas.
+            const appel = await appelEntrant()
+            expect(appel.answer).toHaveBeenCalledWith(api.currentStream.value)
+        },
+    )
+
+    it('⭐ appelant, caméra OUVERTE indisponible : l\'appel part caméra coupée, piste noire offerte', async () => {
+        sansCamera = true
+        erreurCamera = 'NotReadableError'
+
+        const connexion = await appeler()
+
+        expect(getLastPeerInstance().call).toHaveBeenCalledTimes(1)
+        expect(api.callState.value).toBe('connected')
+        expect(api.isVideoEnabled.value).toBe(false)
+        expect(pisteEnvoyee(connexion)?.enabled).toBe(false)
+        expect(api.mediaUnavailableSignal.value).toEqual({ device: 'camera', name: 'NotReadableError' })
+    })
+
+    it('caméra libérée ensuite : « activer la caméra » la rallume dans l\'appel', async () => {
+        sansCamera = true
+        await accepter('call-1')
+        const appel = await appelEntrant()
+
+        sansCamera = false
+        await expect(api.toggleVideoState()).resolves.toBe(true)
+
+        const camera = cameras.at(-1)
+        expect(api.isVideoEnabled.value).toBe(true)
+        expect(pisteEnvoyee(appel)).toBe(camera)
+    })
+
+    it('⭐ appelant qui coupe sa caméra PENDANT l\'invite, caméra prise : l\'appel part, sans toast', async () => {
+        // La caméra était demandée quand la capture est partie : c'est d'elle que vient le
+        // rejet, même coupée depuis. Coupée par l'utilisateur, il n'y a rien à lui apprendre.
+        sansCamera = true
+        erreurCamera = 'NotReadableError'
+        suspendre = true
+        const ouverture = ouvrirApresAcceptation()
+        await settleTasks()
+
+        await api.toggleVideoState()
+        livrer()
+        await ouverture
+        await settleTasks()
+
+        expect(contraintes).toEqual([{ video: true, audio: true }, { video: false, audio: true }])
+        expect(getLastPeerInstance().call).toHaveBeenCalledTimes(1)
+        expect(api.callState.value).toBe('connected')
+        expect(api.isVideoEnabled.value).toBe(false)
+        expect(api.mediaUnavailableSignal.value).toBeNull()
+    })
+
+    it('appel annulé pendant l\'invite : le refus de la caméra ne relance AUCUNE capture, et le drapeau reste', async () => {
+        // La seconde capture, en audio seul, peut rouvrir une invite de permission : elle n'a de
+        // sens que pour un appel encore voulu.
+        sansCamera = true
+        suspendre = true
+        const acceptation = accepter('call-1')
+        await settleTasks()
+
+        await raccrocher()
+        livrer()
+        await acceptation
+
+        expect(contraintes).toEqual([{ video: true, audio: true }])
+        expect(reponsesEnvoyees()).toEqual([])
+        expect(api.mediaUnavailableSignal.value).toBeNull()
+        expect(api.currentStream.value).toBeNull()
+        expect(api.isVideoEnabled.value).toBe(true)
+    })
+
+    it('appel arrêté pendant la SECONDE capture : rien n\'est annoncé, aucune réponse ne part', async () => {
+        navigator.mediaDevices.getUserMedia.mockImplementationOnce(() => Promise.reject(
+            Object.assign(new Error('Could not start video source'), { name: 'NotReadableError' }),
+        ))
+        suspendre = true
+        const acceptation = accepter('call-1')
+        await settleTasks()
+
+        await raccrocher()
+        livrer()
+        await acceptation
+
+        expect(contraintes).toEqual([{ video: false, audio: true }])
+        expect(api.mediaUnavailableSignal.value).toBeNull()
+        expect(reponsesEnvoyees()).toEqual([])
+        expect(api.currentStream.value).toBeNull()
+    })
+
+    it('appel arrêté pendant la SECONDE capture, qui rejette : rien ne lève, et le drapeau revient', async () => {
+        navigator.mediaDevices.getUserMedia.mockImplementationOnce(() => Promise.reject(
+            Object.assign(new Error('Could not start video source'), { name: 'NotReadableError' }),
+        ))
+        sansMicro = true
+        suspendre = true
+        const acceptation = accepter('call-1')
+        await settleTasks()
+
+        await raccrocher()
+        livrer()
+
+        await expect(acceptation).resolves.toBeUndefined()
+        expect(api.isVideoEnabled.value).toBe(true)
+        expect(reponsesEnvoyees()).toEqual([])
+        expect(api.mediaUnavailableSignal.value).toBeNull()
+    })
+
+    it('⭐ appelé, MICRO indisponible, caméra là : il REFUSE l\'appel, revient au repos, et le dit', async () => {
+        sansMicro = true
+        // L'état au moment où le refus part : le repos d'abord, pour qu'aucune annulation ni aucun
+        // rappel ne tombe entre le refus et l'arrêt.
+        let etatAuRefus = null
+        load.mockImplementation(async (url) => {
+            if (url === ENDPOINTS.RESPONSE_TO_AUTHORIZATION_PEER) etatAuRefus = api.callState.value
+            return { data: {} }
+        })
+
+        await accepter('call-1')
+
+        // Deux captures : `getUserMedia` ne dit pas quel périphérique a manqué, donc le repli de la
+        // caméra est tenté d'abord.
+        expect(contraintes).toEqual([{ video: true, audio: true }, { video: false, audio: true }])
+        expect(reponsesEnvoyees()).toEqual([false])
+        const [, , refus] = load.mock.calls.find(([url]) => url === ENDPOINTS.RESPONSE_TO_AUTHORIZATION_PEER)
+        expect(refus.options).toEqual({ type: 'visio', room: 'call-1', inviteId: 'invite-call-1' })
+        expect(etatAuRefus).toBe('idle')
+        expect(api.callState.value).toBe('idle')
+        expect(api.currentStream.value).toBeNull()
+        // La caméra n'y était pour rien : le drapeau revient, l'appel suivant la rouvre.
+        expect(api.isVideoEnabled.value).toBe(true)
+        expect(api.mediaUnavailableSignal.value).toEqual({ device: 'microphone', name: 'NotFoundError' })
+        expect(bus.$emit).toHaveBeenCalledWith('close-call', [{ userSlug: 'alice', type: 'visio' }])
+    })
+
+    it('⭐ appel VOCAL, micro refusé : une seule capture, puis le refus', async () => {
+        sansMicro = true
+        erreurMicro = 'NotAllowedError'
+
+        await accepter('call-1', 'vocal')
+
+        expect(contraintes).toEqual([{ video: false, audio: true }])
+        expect(reponsesEnvoyees()).toEqual([false])
+        expect(api.callState.value).toBe('idle')
+        expect(api.mediaUnavailableSignal.value).toEqual({ device: 'microphone', name: 'NotAllowedError' })
+    })
+
+    it('caméra déjà COUPÉE, micro refusé : une seule capture — la caméra n\'y est pour rien — puis le refus', async () => {
+        await couperPuisRaccrocher()
+        const capturesAvant = contraintes.length
+        sansMicro = true
+        erreurMicro = 'NotAllowedError'
+
+        await accepter('call-2')
+
+        expect(contraintes.slice(capturesAvant)).toEqual([{ video: false, audio: true }])
+        expect(reponsesEnvoyees().at(-1)).toBe(false)
+        expect(api.mediaUnavailableSignal.value).toEqual({ device: 'microphone', name: 'NotAllowedError' })
+    })
+
+    it('⭐ appelant, MICRO indisponible : il raccroche en prévenant l\'appelé, sans jamais l\'appeler', async () => {
+        sansMicro = true
+        const inviteId = await api.startCallWithPeer({ toUserSlug: 'alice', type: 'visio' })
+        const room = api.currentCallRoomId.value
+
+        await expect(api.openCallBetweenPeer({
+            fromUserSlug: 'alice',
+            status: true,
+            options: { type: 'visio', room, peerId: 'peer-alice', inviteId },
+        })).resolves.toBe(true)
+        await settleTasks()
+
+        expect(getLastPeerInstance().call).not.toHaveBeenCalled()
+        // La room de l'appel : celle par laquelle l'appelé, en RECEIVING, reconnaît SON appel.
+        expect(finsAnnoncees()).toEqual([{ toUserSlug: 'alice', room }])
+        expect(api.callState.value).toBe('idle')
+        expect(api.currentStream.value).toBeNull()
+        expect(api.mediaUnavailableSignal.value).toEqual({ device: 'microphone', name: 'NotFoundError' })
+        expect(bus.$emit).toHaveBeenCalledWith('close-call', [{ userSlug: 'alice', type: 'visio' }])
     })
 })

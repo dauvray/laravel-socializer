@@ -205,7 +205,9 @@ describe('usePeerMedia — flux locaux', () => {
         })
 
         it('caméra OUVERTE et indisponible : aucun repli, l\'échec remonte', async () => {
-            // L'utilisateur veut être vu : un appel qui partirait en audio seul le tromperait.
+            // La suite appartient à l'appelant. Un APPEL repart caméra coupée, avec un toast
+            // (`useCallManager._startCallStream`, 2026-10-30) ; la diffusion garde l'échec, que
+            // `GroupLocalStreamBtn` nomme.
             navigator.mediaDevices.getUserMedia
                 .mockRejectedValueOnce(Object.assign(new Error('Requested device not found'), { name: 'NotFoundError' }))
 

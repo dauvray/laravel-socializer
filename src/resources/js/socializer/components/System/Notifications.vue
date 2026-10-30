@@ -184,9 +184,11 @@ const { whisper: whisperPing } = useReverbChannel(userChannel, {
             // du mur pendant l'appel.
             //
             // Fail-open : un moteur qui lève ne doit pas taire un refus. Le chemin périmé rend
-            // `false` avant tout code qui AGIT — seules des lectures le précèdent —, donc ce qui
-            // lève est un refus consommé : sans le `catch`, le bouton du mur resterait désarmé
-            // pour la vie de la page.
+            // `false` avant tout code qui AGIT — seules des lectures le précèdent —, donc un REFUS
+            // qui lève est un refus consommé : sans le `catch`, le bouton du mur resterait désarmé
+            // pour la vie de la page. Une acceptation dont la capture échoue ne lève plus : la
+            // caméra manque, l'appel continue sans elle ; le micro manque, `openCallBetweenPeer`
+            // raccroche lui-même (`useCallManager._startCallStream`, 2026-10-30).
             let answered = true
             try {
                 answered = await peers.openCallBetweenPeer({
@@ -294,6 +296,23 @@ watch(() => peers.inviteAbandonedSignal.value, async (abandoned) => {
         status: false,
         options: { type },
     })
+})
+
+// Un périphérique a manqué au démarrage d'un appel (décisions de David du 2026-10-30,
+// `useCallManager._startCallStream`). La caméra : l'appel continue caméra coupée, et sans ce toast
+// on se croirait vu — le même que l'échec d'« activer la caméra » (`onToggleVideoVisibility`). Le
+// micro : l'appel est sorti proprement, et il faut dire pourquoi il a disparu.
+const MEDIA_UNAVAILABLE_MESSAGES = {
+    camera: 'Caméra indisponible : elle reste coupée',
+    microphone: 'Micro indisponible : l\'appel ne peut pas démarrer',
+}
+
+watch(() => peers.mediaUnavailableSignal.value, (unavailable) => {
+    if (!unavailable) return
+
+    peers.mediaUnavailableSignal.value = null
+    const message = MEDIA_UNAVAILABLE_MESSAGES[unavailable.device]
+    if (message) window.AWN?.info(message)
 })
 
 // Méthodes

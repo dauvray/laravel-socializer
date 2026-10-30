@@ -212,6 +212,78 @@ export function useCallManager(ctx, { core, media, connections, transport, pool 
     }
 
     /**
+     * Capture le flux local d'un appel. Une caméra OUVERTE qui ne peut pas être capturée — absente,
+     * prise par une autre application, ou refusée seule dans les réglages du site — ne fait plus
+     * échouer l'appel : il continue caméra coupée, un bouche-trou à sa place, et l'UI l'annonce
+     * (`mediaUnavailableSignal`). Décision de David du 2026-10-30, pour l'appelé comme pour
+     * l'appelant. `startCurrentStream` garde, lui, son contrat (l'échec remonte) : la diffusion le
+     * rattrape et nomme la cause (`GroupLocalStreamBtn`).
+     *
+     * Le repli ne recapture que si la caméra était demandée quand la capture est partie — sinon le
+     * rejet vient du micro, et recapturer sans caméra rejetterait pareil — et que l'appel est encore
+     * voulu : la seconde capture peut rouvrir une invite de permission. Le drapeau vaut « coupée »
+     * pendant la seconde capture (le bouche-trou en dépend), et ne le reste que si elle réussit : si
+     * elle rejette aussi, c'est le micro qui manque, et la caméra retrouve son réglage. Ce qui lève encore — le micro manque, ou le repli fermé
+     * redemande la caméra — est la sortie propre de l'appel (`_leaveUncapturableCall`).
+     *
+     * @returns {Promise<?{device: 'camera', name: ?string}>} la cause quand l'appel part caméra
+     *          coupée faute de caméra ; `null` sinon, y compris pour un appel arrêté pendant la
+     *          capture, et pour une caméra que l'utilisateur a coupée pendant l'invite.
+     */
+    const _startCallStream = async (type, callRoomId) => {
+        const cameraRequested = type !== 'vocal' && ctx.ui.streamStates.isVideoEnabled
+        const isStillWanted = () => ctx.session.currentCallRoomId === callRoomId
+
+        let cameraError
+        try {
+            await media.startCurrentStream(type)
+            return null
+        } catch (error) {
+            // Arrêté pendant l'invite : la garde de room d'`_enterCallSession` sort, sans rien
+            // recapturer ni annoncer.
+            if (!isStillWanted()) return null
+            if (!cameraRequested) throw error
+            cameraError = error
+        }
+
+        const videoWanted = ctx.ui.streamStates.isVideoEnabled
+        ctx.ui.streamStates.isVideoEnabled = false
+        try {
+            await media.startCurrentStream(type)
+        } catch (error) {
+            ctx.ui.streamStates.isVideoEnabled = videoWanted
+            if (!isStillWanted()) return null
+            throw error
+        }
+
+        console.warn('[useCallManager] caméra indisponible au démarrage de l\'appel — il continue caméra coupée', {
+            name: cameraError?.name ?? null,
+        })
+        // Coupée par l'utilisateur pendant l'invite : rien à lui apprendre.
+        return videoWanted ? { device: 'camera', name: cameraError?.name ?? null } : null
+    }
+
+    /**
+     * Sort d'un appel dont le flux local ne peut pas être capturé du tout : le micro manque (refusé,
+     * absent, pris), ou le repli fermé redemande une caméra indisponible. Décision de David du
+     * 2026-10-30 : l'appel sort proprement, au lieu de rester suspendu. L'arrêt complet ramène la
+     * FSM au repos, et `notifyRemote` prévient le pair — l'appelant raccroche ; l'appelé, lui,
+     * refuse, ce que fait son appelant. `close-call` réarme le bouton d'appel du mur, et le signal
+     * fait dire la cause par l'UI.
+     *
+     * Borne : `getUserMedia` ne dit pas quel périphérique a manqué. Dans le repli fermé (un
+     * navigateur sans capture canvas), c'est peut-être la caméra, sous le toast du micro.
+     */
+    const _leaveUncapturableCall = async ({ fromUserSlug, type, error, notifyRemote }) => {
+        console.warn('[useCallManager] aucun flux local possible — l\'appel ne peut pas démarrer', {
+            name: error?.name ?? null,
+        })
+        ctx.mediaUnavailableSignal.value = { device: 'microphone', name: error?.name ?? null }
+        ctx.eventBus.$emit('close-call', [{ userSlug: fromUserSlug, type }])
+        await stopCallWithPeers([{ userSlug: fromUserSlug, type }], notifyRemote, { mode: 'full' })
+    }
+
+    /**
      * Démarre la session d'appel locale.
      * Commun à `acceptCallFromPeer` (récepteur qui accepte) et `openCallBetweenPeer` (initiateur confirmé).
      * Configure l'état, démarre le stream local et crée l'élément vidéo local.
@@ -229,7 +301,7 @@ export function useCallManager(ctx, { core, media, connections, transport, pool 
 
         // Le TYPE d'appel, et non `true` : cet argument était ignoré (la fonction n'en prenait
         // aucun), si bien qu'un appel `vocal` capturait et transmettait une piste vidéo.
-        await media.startCurrentStream(type)
+        const cameraUnavailable = await _startCallStream(type, callRoomId)
 
         // ⚠️ `getUserMedia` dure autant que l'invite de permission reste ouverte, et pendant ce
         // temps la barre d'appel offre « annuler » (RECEIVING) ou « raccrocher » (CONNECTED) ; un
@@ -250,6 +322,9 @@ export function useCallManager(ctx, { core, media, connections, transport, pool 
             media.stopCurrentStream()
             return false
         }
+
+        // Annoncé une fois l'appel confirmé vivant : un appel arrêté entre-temps n'a rien à dire.
+        if (cameraUnavailable) ctx.mediaUnavailableSignal.value = cameraUnavailable
 
         const me = ctx.meStore.getMe
 
@@ -306,16 +381,35 @@ export function useCallManager(ctx, { core, media, connections, transport, pool 
             // `_enterCallSession` : une transition refusée (déjà en appel) sort sans réponse et
             // laisse la marque jusqu'au reset de l'appel en cours ; un arrêt pendant
             // l'acquisition du flux sort sans réponse aussi, la marque étant alors effacée par
-            // l'arrêt. Ce commentaire disait la réponse partie « transition refusée comprise » :
+            // l'arrêt. Une capture impossible ne sort plus sans réponse : elle REFUSE l'appel,
+            // puis l'arrêt complet efface la marque. Ce commentaire disait la réponse partie
+            // « transition refusée comprise » :
             // faux, le `return` la précède — item ouvert de `work/webrtc2-todo.md`.
             // Pas conditionné à `options.peerId` : l'autorisation porte sur le pair, le
             // mapping sur son identité PeerJS. Deux faits distincts.
             ctx.markAuthorizedCallPeer(fromUserSlug)
 
             if (!ctx.callMachine.transition(CALL_STATES.RECEIVING)) return
+
+            let entered
+            try {
+                entered = await _enterCallSession({ fromUserSlug, room, type })
+            } catch (error) {
+                // Aucun flux possible : l'appelé revient au repos, puis REFUSE l'appel. Le repos
+                // d'abord : le refus part ensuite, et aucune annulation ni aucun rappel ne tombe
+                // entre les deux (l'annulation y faisait annoncer un micro absent pour un appel
+                // fini). Le refus dans un `finally` : sans lui, l'appelant attendrait l'abandon de
+                // sa relance, même si l'arrêt lève.
+                try {
+                    await _leaveUncapturableCall({ fromUserSlug, type, error, notifyRemote: false })
+                } finally {
+                    await core.sendAuthorizationRemotePeerId({ ...payload, status: false, options: { ...payload.options } })
+                }
+                return
+            }
             // Arrêté pendant l'invite de permission : pas d'acceptation, elle partirait au nom
             // d'un appel fini.
-            if (!await _enterCallSession({ fromUserSlug, room, type })) return
+            if (!entered) return
         }
 
         // ✅ Ajouter l'inviteId dans les options retournées
@@ -473,7 +567,17 @@ export function useCallManager(ctx, { core, media, connections, transport, pool 
         ctx.markAuthorizedCallPeer(fromUserSlug)
 
         if (!ctx.callMachine.transition(CALL_STATES.CONNECTED)) return true
-        if (!await _enterCallSession({ fromUserSlug, room, type })) return true
+
+        let entered
+        try {
+            entered = await _enterCallSession({ fromUserSlug, room, type })
+        } catch (error) {
+            // Aucun flux possible : raccrocher en prévenant l'appelé, qui a déjà accepté et
+            // attendrait un appel qui ne viendra pas. La relance est déjà arrêtée (plus haut).
+            await _leaveUncapturableCall({ fromUserSlug, type, error, notifyRemote: true })
+            return true
+        }
+        if (!entered) return true
 
         pool.requestOrConnectPeer(fromUserSlug)
         return true

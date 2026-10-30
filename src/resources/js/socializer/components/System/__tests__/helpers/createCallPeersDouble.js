@@ -26,8 +26,8 @@ import { vi } from 'vitest'
  *      (lot F), elle rend `null` sur ses refus et l'appelant en déduit qu'il doit rejouer le
  *      chemin du refus. Un double qui résout `undefined` ferait passer TOUS les cas nominaux par
  *      le chemin d'échec, sans le dire.
- *   5. **`inviteAbandonedSignal` est un VRAI ref** : le composant l'observe par `watch` et c'est
- *      lui qui le remet à null.
+ *   5. **`inviteAbandonedSignal` et `mediaUnavailableSignal` sont de VRAIS refs** : le composant
+ *      les observe par `watch`, et c'est lui qui les remet à null.
  *   6. **`isCallEstablished` est une FONCTION**, comme `callStatus` : la production l'expose telle
  *      quelle (`useCallManager`), et le composant l'appelle au moment du signal.
  *   7. **`openCallBetweenPeer` RÉSOUT un verdict booléen**, `true` par défaut — « la réponse valait
@@ -61,6 +61,7 @@ export const createCallPeersDouble = () => {
         currentCallUsers: ref([]),
         currentCallRoomId: ref(null),
         inviteAbandonedSignal: ref(null),
+        mediaUnavailableSignal: ref(null),
 
         // Bascules de flux local, exposées à `CallManagerBtn` pendant un appel.
         isMuted: computed(() => etatsFlux.isMuted),
@@ -71,6 +72,7 @@ export const createCallPeersDouble = () => {
 
     const reinitialiser = () => {
         api.inviteAbandonedSignal.value = null
+        api.mediaUnavailableSignal.value = null
         api.currentCallUsers.value = []
         api.currentCallRoomId.value = null
         statutAppel.value = 'calling'

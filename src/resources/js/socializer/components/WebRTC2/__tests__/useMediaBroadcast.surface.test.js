@@ -109,6 +109,7 @@ const EXPECTED_STATE = [
     'callState',
     'callInprogress',
     'inviteAbandonedSignal',      // Notifications.vue:168 — observé par `watch`
+    'mediaUnavailableSignal',    // Notifications.vue — observé par `watch`
     'localPeerId',
     'currentType',
     'currentRoom',

@@ -936,6 +936,13 @@ export function createPeerContext({ type, room, options = {} }) {
     // connaît ni la FSM d'appel ni l'UI. Le consommateur le remet à null.
     const inviteAbandonedSignal = ref(null)
 
+    // Signal réactif : communication inverse useCallManager → UI (Notifications.vue).
+    // useCallManager y écrit `{ device, name }` quand un périphérique manque au démarrage d'un
+    // appel : `'camera'` (absente, prise, ou refusée seule dans les réglages du site) — l'appel
+    // continue caméra coupée ; `'microphone'` — l'appel sort proprement. L'UI le dit par un
+    // toast ; elle le remet à null.
+    const mediaUnavailableSignal = ref(null)
+
     // Signal réactif : communication inverse createPeerContext → useConnectionPool.
     // `handleClose` y écrit le slug du pair dont une connexion vient de tomber ; le pool
     // l'observe et décide, seul, s'il y a lieu de re-composer.
@@ -1001,6 +1008,9 @@ export function createPeerContext({ type, room, options = {} }) {
 
         // signal réactif (usePeerCore → UI)
         inviteAbandonedSignal,
+
+        // signal réactif (useCallManager → UI)
+        mediaUnavailableSignal,
 
         // signal réactif (createPeerContext → useConnectionPool)
         connectionLostSignal,
