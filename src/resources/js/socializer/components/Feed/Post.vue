@@ -4,7 +4,7 @@
             v-if="item.post.type == 'shared'"
             :user="item.post.shared_by">
         </SharedThumbnail>
-        
+        <PostOrigin v-if="postOrigin" :breadcrumbs="postOrigin" />
         <div class="card post-wrapper">
             <div class="post-header">
                 <div class="post-header-inner">
@@ -104,6 +104,7 @@
             LikeButtons,
             ShareButton,
             SharedThumbnail: defineAsyncComponent(() => import('./widgets/SharedThumbnail.vue')),
+            PostOrigin: defineAsyncComponent(() => import('./widgets/PostOrigin.vue')),
         },
         props: {
             item: {
@@ -127,6 +128,13 @@
             },
             canShare: function() {
                 return this.item.author.slug !== this.me.slug && this.item.post.shared_by.slug !== this.me.slug
+            },
+            postOrigin: function() {
+                let origin = []
+                if( this.item.post.server ) origin.push( this.item.post.server )
+                if( this.item.post.room ) origin.push( this.item.post.room )
+                if(origin.length === 0) return null
+                return origin
             },
         },
         methods: {

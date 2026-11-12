@@ -67,9 +67,11 @@ class Feed
             OPTIONAL MATCH (p)-[z:liked_by]->(:user) 
             OPTIONAL MATCH (p)-[x:disliked_by]->(:user)
             OPTIONAL MATCH (p)<-[sh:sharing_of]-(:share)
+            OPTIONAL MATCH (p)-[:published_in]->(wa:wall)-[:published_in]->(roo:room)-[:published_in]->(ser:server)
+
             RETURN p AS post, author AS user, p.created_at AS createdAt, count(DISTINCT c) as nb_comments, 
             count(DISTINCT z) as likes, count(DISTINCT x) as dislikes, count(DISTINCT sh) as shares, 
-            'original' AS type, null AS shared_by 
+            'original' AS type, null AS shared_by, roo.room.name as roomName, ser.server.name as serverName, ser.server.vid as serverVid
             ORDER BY createdAt DESC 
 
             UNION  
@@ -80,9 +82,11 @@ class Feed
             OPTIONAL MATCH (p)-[z:liked_by]->(:user) 
             OPTIONAL MATCH (p)-[x:disliked_by]->(:user)
             OPTIONAL MATCH (p)<-[sh:sharing_of]-(:share)
+            OPTIONAL MATCH (p)-[:published_in]->(wa:wall)-[:published_in]->(roo:room)-[:published_in]->(ser:server)
+
             RETURN p AS post, author AS user,p.created_at AS createdAt, count(DISTINCT c) as nb_comments, 
             count(DISTINCT z) as likes, count(DISTINCT x) as dislikes, count(DISTINCT sh) as shares, 
-            'shared' AS type, u AS shared_by 
+            'shared' AS type, u AS shared_by, roo.room.name as roomName,  ser.server.name as serverName, ser.server.vid as serverVid
             ORDER BY createdAt DESC 
          ");
 

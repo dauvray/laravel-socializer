@@ -31,6 +31,11 @@ class Post extends JsonResource
                 'shares' => $this->resource['shares'] ?? 0,
                 'type' => $this->resource['type'] ?? $post['type'] ?? null,
                 'shared_by' => $this->resource['shared_by'] ?? $post['shared_by'][0] ?? [],
+                'room' => !empty($this->resource['roomName']) ? $this->resource['roomName'] : null,
+                'server' => !empty($this->resource['serverName']) ? [ 
+                    "id" =>  $this->resource['serverVid'],
+                    "name" =>  $this->resource['serverName'] 
+                ]: null
             ],
            'author' => [
                 'function' => $user['function'],
