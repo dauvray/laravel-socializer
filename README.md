@@ -134,7 +134,7 @@ Add to bootstrap/app.php ( n8n )
     })
 
 
-Build the component
+Build the component (first installation only — updates will go through `php artisan socializer:upgrade`, still a no-op while the package is in development)
      
     php artisan socializer:build
     npm run dev

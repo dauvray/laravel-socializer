@@ -64,7 +64,9 @@ puis suivre sa table de routage vers `docs/INDEX.md`. Ne pas explorer le code au
   suite — `docs/architecture/tests.md`.
 - Contribution documentaire : **`docs/` = définitif, `work/` = chantier**. Une case à cocher ou un
   décompte de tests ⇒ le fichier appartient à `work/`. Détail dans `docs/ecrire-la-doc.md`.
-- Installation / mise à jour dans une app hôte : `{{ $assist->artisanCommand('socializer:build') }}`.
+- Installation dans une app neuve : `{{ $assist->artisanCommand('socializer:build') }}`, qui ne se rejoue
+  jamais sur une app installée (`db:seed`, fichiers patchés et copiés) ; mise à jour :
+  `{{ $assist->artisanCommand('socializer:upgrade') }}`, encore sans effet (bannière seule ; paquet en développement).
 @endscoped
 
 @scoped(['vendor/dauvray/laravel-socializer/src/resources/js/socializer/components/Server/**'])

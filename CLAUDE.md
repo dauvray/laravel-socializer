@@ -30,8 +30,10 @@ npm run test:run
 # Tests PHP — DEPUIS CE PAQUET (Orchestra Testbench, aucun serveur requis)
 composer install && vendor/bin/phpunit
 
-# Installation / mise à jour du package dans l'app (publish + migrate + seed + patch de fichiers)
+# build : installer, app neuve seulement (publish + migrate + seed + patch de fichiers) — ne se rejoue jamais
 php artisan socializer:build
+# upgrade : mettre à jour une app déjà installée — encore sans effet (bannière seule), le paquet est en développement
+php artisan socializer:upgrade
 
 # Activer le hook qui refuse de pousser une suite rouge (une fois, dans ce dépôt)
 git config core.hooksPath hooks
